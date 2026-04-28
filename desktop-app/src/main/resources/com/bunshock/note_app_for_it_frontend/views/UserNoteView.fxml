@@ -78,8 +78,10 @@
                             <columns>
                                 <TableColumn fx:id="colAssetType" text="TIPO" prefWidth="100"/>
                                 <TableColumn fx:id="colAssetBrand" text="MARCA" prefWidth="100"/>
+                                <TableColumn fx:id="colAssetModel" text="MODELO" prefWidth="150"/>
                                 <TableColumn fx:id="colAssetSerial" text="S/N" prefWidth="150"/>
                                 <TableColumn fx:id="colAssetAF" text="A/F" prefWidth="80"/>
+                                <TableColumn fx:id="colAssetObs" text="OBSERVACIONES" prefWidth="250"/>
                                 <TableColumn fx:id="colAssetActions" text="ACCIONES" prefWidth="80"/>
                             </columns>
                         </TableView>
@@ -94,6 +96,7 @@
                             <columns>
                                 <TableColumn fx:id="colCountType" text="TIPO" prefWidth="100"/>
                                 <TableColumn fx:id="colCountBrand" text="MARCA" prefWidth="100"/>
+                                <TableColumn fx:id="colCountModel" text="MODELO" prefWidth="150"/>
                                 <TableColumn fx:id="colCountQty" text="CANT." prefWidth="60"/>
                                 <TableColumn fx:id="colCountObs" text="OBSERVACIONES" prefWidth="250"/>
                                 <TableColumn fx:id="colCountActions" text="ACCIONES" prefWidth="80"/>
