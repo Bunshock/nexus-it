@@ -48,9 +48,7 @@ public class NoteGeneratorController {
 
     @FXML
     private void handleGenerateNote() {
-        String obs = txtObservations.getText();
-        // Here you will collect data from the active sub-controller + this observations field
-        System.out.println("Generando nota con observaciones: " + obs);
+        System.out.println("Generando nota ...");
     }
 
 }

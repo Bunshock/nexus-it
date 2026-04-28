@@ -10,7 +10,7 @@
     <children>
         <HBox prefHeight="50.0" spacing="0">
             <children>
-                <ToggleButton fx:id="btnUserNote" text="NOTA PARA USUARIO" maxWidth="Infinity" HBox.hgrow="ALWAYS" styleClass="entity-button-left" selected="true">
+                <ToggleButton fx:id="btnUserNote" text="NOTA PARA USUARIO" maxWidth="Infinity" HBox.hgrow="ALWAYS" styleClass="entity-button-left" selected="true" toggleGroup="$entityGroup">
                     <toggleGroup>
                         <ToggleGroup fx:id="entityGroup"/>
                     </toggleGroup>
