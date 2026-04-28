@@ -41,8 +41,7 @@
                         <HBox spacing="8">
                             <children>
                                 <Button text="Limpiar" onAction="#handleClearUserFields" styleClass="button-secondary"/>
-                                <Button text="🔍 Buscar en AD" onAction="#handleADSearch" 
-                                        style="-fx-background-color: #0c8570; -fx-text-fill: white; -fx-font-size: 11; -fx-font-weight: bold; -fx-cursor: hand;"/>
+                                <Button text="🔍 Buscar en AD" onAction="#handleADSearch" styleClass="button-ad-search"/>
                             </children>
                         </HBox>
                     </children>

@@ -183,6 +183,27 @@
     -fx-font-size: 13px;
 }
 
+/* AD Search button */
+.button-ad-search {
+    -fx-background-color: #0c8570;
+    -fx-text-fill: white;
+    -fx-font-weight: bold;
+    -fx-background-radius: 4;
+    -fx-cursor: hand;
+    -fx-border-color: transparent;
+    -fx-border-width: 1;
+}
+
+.button-ad-search:hover {
+    -fx-background-color: #0e9a82; 
+    -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.1), 5, 0, 0, 2);
+}
+
+.button-ad-search:pressed {
+    -fx-translate-y: 1px;
+    -fx-effect: none;
+}
+
 /* "Limpiar" button - AD section */
 .button-secondary {
     -fx-background-color: transparent;

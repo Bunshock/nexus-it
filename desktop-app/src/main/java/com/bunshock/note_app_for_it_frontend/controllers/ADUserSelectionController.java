@@ -2,16 +2,18 @@ package com.bunshock.note_app_for_it_frontend.controllers;
 
 import java.util.List;
 
+import org.controlsfx.control.PopOver;
+
 import com.bunshock.note_app_for_it_frontend.models.ADUser;
 
 import javafx.collections.FXCollections;
 import javafx.fxml.FXML;
 import javafx.scene.control.Button;
+import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
-import javafx.scene.control.Tooltip;
+import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
-import javafx.util.Duration;
 
 public class ADUserSelectionController {
 
@@ -32,25 +34,54 @@ public class ADUserSelectionController {
 
     private void setupCellFactory() {
         lstResults.setCellFactory(lv -> new ListCell<ADUser>() {
+            private final PopOver popOver = new PopOver();
+
             @Override
             protected void updateItem(ADUser user, boolean empty) {
                 super.updateItem(user, empty);
+
                 if (empty || user == null) {
                     setText(null);
-                    setTooltip(null);
+                    setGraphic(null);
+                    setOnMouseEntered(null);
+                    setOnMouseExited(null);
                 } else {
                     setText(user.getFullName() + " [" + user.getUsername() + "]");
                     
-                    // The Hover Detail Tooltip
-                    Tooltip details = new Tooltip(
+                    VBox detailsBox = new VBox(8);
+                    detailsBox.setStyle("-fx-padding: 15; -fx-background-color: #1e293b; -fx-border-color: #0c8570; -fx-border-width: 1;");
+                    
+                    Label lblHeader = new Label("DETALLES DE ACTIVE DIRECTORY");
+                    lblHeader.setStyle("-fx-text-fill: #0c8570; -fx-font-weight: bold; -fx-font-size: 10px;");
+                    
+                    Label lblData = new Label(
                         "DNI: " + user.getDni() + "\n" +
-                        "Email: " + user.getEmail() + "\n" +
-                        "OU: " + user.getDistinguishedName() + "\n" +
-                        "Grupos: " + user.getMemberOfSummary()
+                        "EMAIL: " + user.getEmail() + "\n" +
+                        "OU: " + user.getDistinguishedName() + "\n\n" +
+                        "GRUPOS:\n" + user.getMemberOfSummary()
                     );
-                    details.setShowDelay(Duration.millis(200));
-                    details.setStyle("-fx-font-size: 11px; -fx-background-color: #334155;");
-                    setTooltip(details);
+                    lblData.setStyle("-fx-text-fill: white; -fx-font-size: 11px;");
+                    lblData.setWrapText(true);
+                    lblData.setMaxWidth(300);
+
+                    detailsBox.getChildren().addAll(lblHeader, lblData);
+
+                    popOver.setContentNode(detailsBox);
+                    popOver.setArrowLocation(PopOver.ArrowLocation.LEFT_TOP);
+                    popOver.setCornerRadius(4);
+                    popOver.setAnimated(true);
+
+                    this.setOnMouseEntered(event -> {
+                        if (!popOver.isShowing()) {
+                            popOver.show(this);
+                        }
+                    });
+
+                    this.setOnMouseExited(event -> {
+                        if (popOver.isShowing()) {
+                            popOver.hide();
+                        }
+                    });
                 }
             }
         });
