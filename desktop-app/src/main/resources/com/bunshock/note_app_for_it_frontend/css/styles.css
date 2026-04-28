@@ -162,16 +162,15 @@
 /* User note generation: Main input field */
 .form-input-main {
     -fx-background-color: white;
-    -fx-border-color: #cbd5e1;
+    -fx-border-color: #cbd5e1; /* The "nice" gray you liked */
+    -fx-border-width: 1.5;      /* Consistent thickness */
     -fx-border-radius: 4;
-    -fx-padding: 8 10 8 10; /* Slightly more vertical padding than 'small' */
-    -fx-font-size: 13px; /* Standard readable size */
-    -fx-text-fill: #334155;
+    -fx-background-radius: 4;
+    -fx-padding: 8 10;
 }
 
 .form-input-main:focused {
-    -fx-border-color: #0c8570;
-    -fx-background-color: #fcfdfd;
+    -fx-border-color: #0c8570; /* Teal focus */
 }
 
 /* User note generation: Disabled input field */
@@ -182,6 +181,21 @@
     -fx-border-radius: 4;
     -fx-padding: 8 10 8 10;
     -fx-font-size: 13px;
+}
+
+/* "Limpiar" button - AD section */
+.button-secondary {
+    -fx-background-color: transparent;
+    -fx-text-fill: #64748b;
+    -fx-border-color: #e2e8f0;
+    -fx-border-radius: 4;
+    -fx-padding: 4 10;
+}
+
+.button-secondary:hover {
+    -fx-background-color: #fcf9f8;
+    -fx-text-fill: #1e293b;
+    -fx-border-color: #cbd5e1;
 }
 
 /* -- EQUIPMENT TABLE - START  */
