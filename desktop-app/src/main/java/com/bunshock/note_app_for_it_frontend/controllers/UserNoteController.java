@@ -31,17 +31,20 @@ public class UserNoteController {
     // User info fields
     @FXML private TextField txtUserDni;
     @FXML private TextField txtUserName;
+    @FXML private TextField txtUserEmail;
 
     // Equipment tables
     // Assets Table (S/N)
     @FXML private TableView<AssetItem> tblAssets;
-    @FXML private TableColumn<AssetItem, String> colAssetType, colAssetBrand, colAssetSerial, colAssetAF;
+    @FXML private TableColumn<AssetItem, String> colAssetType, colAssetBrand, colAssetModel, colAssetSerial, colAssetAF;
+    @FXML private TableColumn<AssetItem, String> colAssetObs;
     @FXML private TableColumn<AssetItem, Void> colAssetActions;
 
     // Countables Table (Quantity)
     @FXML private TableView<CountableItem> tblCountables;
-    @FXML private TableColumn<CountableItem, String> colCountType, colCountBrand;
+    @FXML private TableColumn<CountableItem, String> colCountType, colCountBrand, colCountModel;
     @FXML private TableColumn<CountableItem, Integer> colCountQty;
+    @FXML private TableColumn<CountableItem, String> colCountObs;
     @FXML private TableColumn<CountableItem, Void> colCountActions;
 
     private ObservableList<AssetItem> assetList = FXCollections.observableArrayList();
@@ -53,28 +56,17 @@ public class UserNoteController {
             if (newToggle != null) {
                 ToggleButton selectedBtn = (ToggleButton) newToggle;
                 String selectedType = selectedBtn.getText();
+                System.out.println("Tipo de nota seleccionado: " + selectedType);
             }
         });
 
         btnTypeEntrega.setSelected(true);
 
+        // Set up empty tables
         setupAssetTable();
         setupCountableTable();
         
-        // Add a listener to DNI to simulate AD lookup later
-        txtUserDni.textProperty().addListener((obs, oldVal, newVal) -> {
-            if (newVal.length() >= 7) {
-                // Future AD Lookup logic here
-                txtUserName.setText("Cargando usuario...");
-            }
-            else {
-                txtUserName.clear();
-            }
-        });
-    }
-
-    private void handleNoteTypeChange(String type) {
-        System.out.println("Cambiando lógica para perfil: " + type);
+        // TODO: AD lookup for user data. Use listener or a "Buscar en AD" button
     }
 
     @FXML
@@ -84,7 +76,6 @@ public class UserNoteController {
             Parent root = loader.load();
 
             ItemDialogController controller = loader.getController();
-            // Crucial: Pass the reference of 'this' controller to the dialog
             controller.setParentController(this); 
 
             Stage stage = new Stage();
@@ -98,18 +89,13 @@ public class UserNoteController {
         }
     }
 
-    @FXML
-    private void handleRemoveItem() {
-        System.out.println("Removiendo item seleccionado");
-    }
-
     private void setupAssetTable() {
         colAssetType.setCellValueFactory(d -> d.getValue().getType());
         colAssetBrand.setCellValueFactory(d -> d.getValue().getBrand());
         colAssetSerial.setCellValueFactory(d -> d.getValue().getSerial());
         colAssetAF.setCellValueFactory(d -> d.getValue().getAf());
         tblAssets.setItems(assetList);
-        // setupActionsColumn(colAssetActions); // Reuse your action logic here
+        // setupActionsColumn(colAssetActions);
     }
 
     private void setupCountableTable() {
@@ -120,7 +106,7 @@ public class UserNoteController {
         // setupActionsColumn(colCountActions);
     }
 
-    // Methods for the Dialog to call
+    // Methods for the ItemDialogView to call
     public void addAsset(AssetItem item) { assetList.add(item); }
     public void addCountable(CountableItem item) { countableList.add(item); }
 
