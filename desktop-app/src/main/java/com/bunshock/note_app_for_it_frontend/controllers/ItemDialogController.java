@@ -14,20 +14,24 @@ import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
 
 public class ItemDialogController {
+        
+    // Toggle for equipment mode
+    @FXML private ToggleButton btnModeAsset, btnModeCountable;
+    
     // Common fields
     @FXML private SearchableComboBox<String> cmbType;
     @FXML private TextField txtBrand, txtModel, txtObs;
-    
-    // Toggle for Mode
-    @FXML private ToggleButton btnModeAsset, btnModeCountable;
-    
-    // Mode-specific containers
-    @FXML private VBox containerAssetFields; // Wraps SN and AF fields
-    @FXML private VBox containerCountableFields; // Wraps Quantity field
-    @FXML private Spinner<Integer> spinQty;
-    @FXML private TextField txtSerial, txtAF;
 
-    @FXML private Button btnAdd;
+    // Mode-specific containers
+    // Asset-specific fields
+    @FXML private VBox containerAssetFields;
+    @FXML private TextField txtSerial, txtAF;
+    // Countable-specific fields
+    @FXML private VBox containerCountableFields;
+    @FXML private Spinner<Integer> spinQty;
+    
+    // Action buttons
+    @FXML private Button btnAdd, btnCancel;
 
     private UserNoteController parentController;
 
@@ -42,13 +46,12 @@ public class ItemDialogController {
         // Toggle Assets
         containerAssetFields.setVisible(isAsset);
         containerAssetFields.setManaged(isAsset);
+        // TODO: Add a "Buscar en inventario" button for assets that opens a search dialog. The dialog
+        // will allow searching for existing assets using S/N or A/F using GLPI or cached DB data
         
         // Toggle Countables
         containerCountableFields.setVisible(!isAsset);
         containerCountableFields.setManaged(!isAsset);
-        
-        // Auto-resize the window to fit the new content
-        btnAdd.getScene().getWindow().sizeToScene();
     }
 
     @FXML
@@ -69,6 +72,6 @@ public class ItemDialogController {
 
     @FXML
     private void onCancel() {
-        ((Stage) btnAdd.getScene().getWindow()).close();
+        ((Stage) btnCancel.getScene().getWindow()).close();
     }
 }

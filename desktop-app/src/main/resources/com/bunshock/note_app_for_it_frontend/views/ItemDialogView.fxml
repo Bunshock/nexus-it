@@ -10,6 +10,7 @@
     <children>
         <Label text="DETALLES DEL ITEM" style="-fx-font-weight: bold; -fx-text-fill: #0c8570; -fx-font-size: 16px;"/>
 
+        <!-- Mode selection -->
         <HBox alignment="CENTER" prefHeight="40.0" spacing="0">
             <children>
                 <ToggleButton fx:id="btnModeAsset" text="ÚNICO (S/N)" maxWidth="Infinity" HBox.hgrow="ALWAYS" 
@@ -23,13 +24,14 @@
             </children>
         </HBox>
 
+        <!-- Common fields -->
         <GridPane hgap="15" vgap="15">
             <columnConstraints>
                 <ColumnConstraints percentWidth="35"/>
                 <ColumnConstraints percentWidth="65"/>
             </columnConstraints>
             <children>
-                <Label text="TIPO DE ITEM" styleClass="input-label-small" GridPane.rowIndex="0"/>
+                <Label text="TIPO" styleClass="input-label-small" GridPane.rowIndex="0"/>
                 <SearchableComboBox fx:id="cmbType" GridPane.rowIndex="0" GridPane.columnIndex="1"/>
 
                 <Label text="MARCA" styleClass="input-label-small" GridPane.rowIndex="1"/>
@@ -40,6 +42,7 @@
             </children>
         </GridPane>
 
+        <!-- Asset-specific fields -->
         <VBox fx:id="containerAssetFields" spacing="15">
             <children>
                 <GridPane hgap="15" vgap="15">
@@ -58,6 +61,7 @@
             </children>
         </VBox>
 
+        <!-- Countable-specific fields -->
         <VBox fx:id="containerCountableFields" spacing="15" visible="false" managed="false">
             <children>
                 <HBox alignment="CENTER_LEFT" spacing="15">
@@ -69,6 +73,10 @@
             </children>
         </VBox>
 
+        <!-- Footer separator -->
+        <VBox VBox.vgrow="ALWAYS"/>
+
+        <!-- Comments -->
         <VBox spacing="5">
             <children>
                 <Label text="COMENTARIOS / ESTADO" styleClass="input-label-small"/>
@@ -78,7 +86,7 @@
 
         <HBox alignment="CENTER_RIGHT" spacing="10">
             <children>
-                <Button text="Cancelar" onAction="#onCancel" style="-fx-background-color: transparent; -fx-text-fill: #666;"/>
+                <Button fx:id="btnCancel" text="Cancelar" onAction="#onCancel" style="-fx-background-color: transparent; -fx-text-fill: #666;"/>
                 <Button fx:id="btnAdd" text="Añadir a la Nota" onAction="#onSave" 
                         style="-fx-background-color: #0c8570; -fx-text-fill: white; -fx-font-weight: bold; -fx-padding: 10 20;"/>
             </children>
