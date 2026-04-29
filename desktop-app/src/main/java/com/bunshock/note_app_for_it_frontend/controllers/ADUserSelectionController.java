@@ -67,8 +67,13 @@ public class ADUserSelectionController {
                     detailsBox.getChildren().addAll(lblHeader, lblData);
 
                     popOver.setContentNode(detailsBox);
-                    popOver.setArrowLocation(PopOver.ArrowLocation.LEFT_TOP);
-                    popOver.setCornerRadius(4);
+
+                    popOver.setOpacity(0.95);
+                    popOver.setArrowSize(10);
+                    popOver.setArrowIndent(12);
+                    popOver.setCornerRadius(8);
+
+                    popOver.setArrowLocation(PopOver.ArrowLocation.LEFT_CENTER);
                     popOver.setAnimated(true);
 
                     this.setOnMouseEntered(event -> {
@@ -108,6 +113,17 @@ public class ADUserSelectionController {
 
     private void closeWindow() {
         ((Stage) btnSelect.getScene().getWindow()).close();
-        parentController.animateSuccess();
+        parentController.triggerFeedback("✔ Usuario cargado", "#0c8570");
     }
+
+    @FXML
+    public void initialize() {
+        // Double-click shortcut for user selection
+        lstResults.setOnMouseClicked(event -> {
+            if (event.getClickCount() == 2 && lstResults.getSelectionModel().getSelectedItem() != null) {
+                handleSelection();
+            }
+        });
+    }
+
 }

@@ -38,10 +38,13 @@
                     <children>
                         <Label text="DATOS DEL USUARIO" style="-fx-font-weight: bold; -fx-text-fill: #0c8570; -fx-font-size: 13px;"/>
                         <Region HBox.hgrow="ALWAYS" />
+
+                        <Label fx:id="lblADStatus" text="" style="-fx-font-size: 11px; -fx-font-weight: bold;" />
+
                         <HBox spacing="8">
                             <children>
                                 <Button text="Limpiar" onAction="#handleClearUserFields" styleClass="button-secondary"/>
-                                <Button text="🔍 Buscar en AD" onAction="#handleADSearch" styleClass="button-ad-search"/>
+                                <Button text="🔍 Buscar en AD" onAction="#handleADSearch" styleClass="button-primary"/>
                             </children>
                         </HBox>
                     </children>
@@ -88,7 +91,7 @@
                         <HBox alignment="CENTER_LEFT">
                             <Label text="EQUIPOS CON S/N (Notebooks, Monitores, etc.)" styleClass="form-section-caption"/>
                             <Region HBox.hgrow="ALWAYS" />
-                            <Button text="+ Agregar" onAction="#handleAddItem" styleClass="add-button-small"/>
+                            <Button text="+ Agregar" onAction="#handleAddItem" styleClass="button-primary"/>
                         </HBox>
                         <TableView fx:id="tblAssets" styleClass="modern-table" prefHeight="200">
                             <columns>

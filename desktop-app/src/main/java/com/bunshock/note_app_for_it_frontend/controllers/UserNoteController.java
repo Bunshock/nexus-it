@@ -17,7 +17,6 @@ import javafx.fxml.FXML;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
-import javafx.scene.control.Alert;
 import javafx.scene.control.Label;
 import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableView;
@@ -37,6 +36,9 @@ public class UserNoteController {
     @FXML private ToggleButton btnTypeDevolucion;
     @FXML private ToggleButton btnTypePrestamo;
     @FXML private ToggleButton btnTypeFinContrato;
+
+    // AD search fields and status
+    @FXML private Label lblADStatus;
 
     // User info fields
     @FXML private TextField txtUserDni;
@@ -87,26 +89,25 @@ public class UserNoteController {
         String name = txtUserName.getText();
         String username = txtUserAccount.getText();
 
-        // Only search in AD if at least one field is filled
+        // Case: No criteria entered
         if (dni.isEmpty() && name.isEmpty() && username.isEmpty()) {
-            Alert alert = new Alert(Alert.AlertType.WARNING);
-            alert.setContentText("Por favor, ingrese al menos un criterio (DNI, Nombre o Username) para buscar.");
-            alert.show();
+            triggerFeedback("⚠ Ingrese criterios de búsqueda", "#f59e0b");
             return;
         }
 
         List<ADUser> results = adService.search(dni, name, username);
 
+        // Case: No results found
         if (results.isEmpty()) {
-            Alert alert = new Alert(Alert.AlertType.INFORMATION);
-            alert.setTitle("Búsqueda AD");
-            alert.setHeaderText(null);
-            alert.setContentText("No se encontró ningún usuario con los criterios ingresados.");
-            alert.showAndWait();
-        } else if (results.size() == 1) {
+            triggerFeedback("✘ Usuario no encontrado", "#ef4444");
+            return;
+        }
+
+        // Case: At least one result found
+        if (results.size() == 1) {
             ADUser user = results.get(0);
             updateUserData(user.getDni(), user.getFullName(), user.getUsername(), user.getEmail());
-            animateSuccess();
+            triggerFeedback("✔ Usuario cargado", "#0c8570");
         } else {
             showUserSelectionDialog(results);
         }
@@ -139,49 +140,64 @@ public class UserNoteController {
         }
     }
 
-    // A small animation for success AD lookup feedback
-    public void animateSuccess() {
-        // Start and end colors
-        Color startColor = Color.web("#0c8570");
+    // AD lookup feedback animation and status label update
+    public void triggerFeedback(String message, String hexColor) {
+        Color startColor = Color.web(hexColor);
         Color endColor = Color.web("#cbd5e1");
+
+        lblADStatus.setText(message);
+        lblADStatus.setStyle("-fx-text-fill: " + hexColor + ";");
+        lblADStatus.setOpacity(1.0);
 
         Timeline timeline = new Timeline();
         
-        int frames = 40; 
-        int durationMs = 2000;
+        int holdMs = 1000; 
+        int fadeMs = 2000;
+        int totalMs = holdMs + fadeMs;
+        int frames = 60; 
 
         for (int i = 0; i <= frames; i++) {
-            double fraction = (double) i / frames;
+            double currentTime = (double) i / frames * totalMs;
+            double fraction;
+
+            if (currentTime <= holdMs) {
+                fraction = 0.0;
+            } else {
+                fraction = (currentTime - holdMs) / fadeMs;
+            }
+
             KeyFrame keyFrame = new KeyFrame(
-                Duration.millis(durationMs * fraction),
+                Duration.millis(currentTime),
                 e -> {
-                    // Mix the colors based on how far we are in the 2 seconds
                     Color mixed = startColor.interpolate(endColor, fraction);
-                    
-                    // Convert the Color object to a CSS hex string
                     String hex = String.format("#%02x%02x%02x", 
                         (int)(mixed.getRed() * 255), 
                         (int)(mixed.getGreen() * 255), 
                         (int)(mixed.getBlue() * 255));
                     
-                    // Apply the style
-                    String style = "-fx-border-color: " + hex + "; -fx-border-width: 1.5;";
-                    txtUserDni.setStyle(style);
-                    txtUserName.setStyle(style);
-                    txtUserAccount.setStyle(style);
+                    String borderStyle = "-fx-border-color: " + hex + "; -fx-border-width: 1.5;";
+                    txtUserDni.setStyle(borderStyle);
+                    txtUserName.setStyle(borderStyle);
+                    txtUserAccount.setStyle(borderStyle);
+
+                    lblADStatus.setOpacity(1.0 - fraction);
                 }
             );
             timeline.getKeyFrames().add(keyFrame);
         }
-        
-        // Reset the style to return control to the CSS file
-        timeline.setOnFinished(e -> {
-            txtUserDni.setStyle("");
-            txtUserName.setStyle("");
-            txtUserAccount.setStyle("");
-        });
 
+        timeline.setOnFinished(e -> {
+            resetStyles();
+            lblADStatus.setText("");
+        });
+        
         timeline.play();
+    }
+
+    private void resetStyles() {
+        txtUserDni.setStyle("");
+        txtUserName.setStyle("");
+        txtUserAccount.setStyle("");
     }
 
     @FXML void handleClearUserFields() {

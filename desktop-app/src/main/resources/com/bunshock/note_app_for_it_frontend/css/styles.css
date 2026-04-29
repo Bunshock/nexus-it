@@ -108,6 +108,46 @@
     -fx-text-fill: white;
 }
 
+/* Note Generation: bottom action buttons */
+.button-primary-large {
+    -fx-background-color: #0c8570;
+    -fx-text-fill: white;
+    -fx-font-weight: bold;
+    -fx-padding: 10 20 10 20;
+    -fx-background-radius: 5;
+    -fx-border-color: transparent;
+    -fx-border-width: 1;
+    -fx-cursor: hand;
+}
+
+.button-primary-large:hover {
+    -fx-background-color: #0e9a82; 
+    -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.1), 5, 0, 0, 2);
+}
+
+.button-primary-large:pressed, .button-secondary-large:pressed {
+    -fx-translate-y: 1px;
+    -fx-effect: none;
+}
+
+.button-secondary-large {
+    -fx-background-color: transparent;
+    -fx-text-fill: #64748b;
+    -fx-border-color: #e2e8f0;
+    -fx-border-width: 1.5;
+    -fx-border-radius: 5;
+    -fx-background-radius: 5;
+    -fx-padding: 10 20; 
+    -fx-font-weight: bold;
+    -fx-cursor: hand;
+}
+
+.button-secondary-large:hover {
+    -fx-background-color: #f8fafc;
+    -fx-text-fill: #1e293b;
+    -fx-border-color: #cbd5e1;
+}
+
 /* User note generation: Note type label */
 .form-section-caption {
     -fx-text-fill: #0c8570;
@@ -183,8 +223,8 @@
     -fx-font-size: 13px;
 }
 
-/* AD Search button */
-.button-ad-search {
+/* AD Search and "+ Agregar" buttons */
+.button-primary {
     -fx-background-color: #0c8570;
     -fx-text-fill: white;
     -fx-font-weight: bold;
@@ -194,12 +234,12 @@
     -fx-border-width: 1;
 }
 
-.button-ad-search:hover {
+.button-primary:hover {
     -fx-background-color: #0e9a82; 
     -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.1), 5, 0, 0, 2);
 }
 
-.button-ad-search:pressed {
+.button-primary:pressed, .button-secondary:pressed {
     -fx-translate-y: 1px;
     -fx-effect: none;
 }
@@ -211,6 +251,7 @@
     -fx-border-color: #e2e8f0;
     -fx-border-radius: 4;
     -fx-padding: 4 10;
+    -fx-cursor: hand;
 }
 
 .button-secondary:hover {
@@ -219,17 +260,96 @@
     -fx-border-color: #cbd5e1;
 }
 
-/* -- EQUIPMENT TABLE - START  */
 
-/* Add item button */
-.add-button-small {
-    -fx-background-color: #0c8570;
+/* AD User Selection: header */
+/* Gradient Header for AD Selection */
+.ad-header-gradient {
+    -fx-background-color: linear-gradient(to right, #0c8570, #0a6d5c);
+    -fx-padding: 0 25;
+    -fx-background-radius: 7 7 0 0; /* Match the outer VBox radius */
+}
+
+.ad-header-title {
     -fx-text-fill: white;
-    -fx-font-size: 10px;
     -fx-font-weight: bold;
-    -fx-background-radius: 4;
+    -fx-font-size: 16px;
+}
+
+.ad-header-subtitle {
+    -fx-text-fill: rgba(255, 255, 255, 0.7);
+    -fx-font-weight: bold;
+    -fx-font-size: 9px;
+    -fx-letter-spacing: 1px;
+    -fx-text-transform: uppercase;
+}
+
+/* Enhancing the ListView table feel */
+.ad-selection-list {
+    -fx-background-color: transparent;
+    -fx-border-color: #e2e8f0;
+    -fx-border-width: 1;
+    -fx-background-radius: 5;
+    -fx-border-radius: 5;
+}
+
+.ad-selection-list .list-cell:filled:hover {
+    -fx-background-color: #f1f5f9;
+    /* Subtle blue-ish tint on hover to show interactivity */
+    -fx-text-fill: #0c8570;
+}
+
+/* AD User Selection: table */
+.ad-selection-list {
+    -fx-background-color: white;
+    -fx-background-radius: 0 0 8 8; /* Rounded only at the bottom to match window */
+    -fx-border-color: #e2e8f0;
+    -fx-border-width: 1;
+    /* Remove default focus ring */
+    -fx-focus-color: transparent;
+    -fx-faint-focus-color: transparent;
+}
+
+.ad-selection-list .list-cell {
+    -fx-padding: 14 20; /* Slightly more breathing room */
+    -fx-border-color: transparent transparent #f1f5f9 transparent;
+    -fx-background-color: white;
+    -fx-text-fill: #334155;
+    -fx-font-size: 13px;
+    /* Smooth out the hover transition */
+    -fx-transition: background-color 0.2s; 
+}
+
+.ad-selection-list .list-cell:filled:hover {
+    -fx-background-color: #f8fafc;
+    -fx-text-fill: #0c8570;
     -fx-cursor: hand;
 }
+
+.ad-selection-list .list-cell:filled:selected {
+    -fx-background-color: #f0fdfa; /* Very light SITA teal tint */
+    -fx-text-fill: #0c8570;
+    -fx-font-weight: bold;
+    /* The "Accent" - adds a solid bar on the left of the selected row */
+    -fx-border-color: transparent transparent #f1f5f9 #0c8570;
+    -fx-border-width: 0 0 1 4;
+}
+
+/* Scrollbar polish: Making it look like a modern "thin" scrollbar */
+.ad-selection-list .scroll-bar:vertical {
+    -fx-background-color: transparent;
+    -fx-pref-width: 6;
+}
+
+.ad-selection-list .scroll-bar:vertical .thumb {
+    -fx-background-color: #cbd5e1;
+    -fx-background-radius: 10;
+}
+
+.ad-selection-list .scroll-bar:vertical .thumb:hover {
+    -fx-background-color: #94a3b8;
+}
+
+/* -- EQUIPMENT TABLE - START  */
 
 /* User note generation: Equipment table */
 .modern-table {

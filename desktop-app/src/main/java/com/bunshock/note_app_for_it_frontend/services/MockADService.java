@@ -30,13 +30,25 @@ public class MockADService implements IADService {
 
     @Override
     public List<ADUser> search(String dni, String name, String username) {
-        // Filter using the provided criteria. If a criteria is empty, it won't be used for filtering.
+        // Clean the input (remove dots)
+        String cleanInputDni = (dni != null) ? dni.replace(".", "").trim() : "";
+        
         return mockDatabase.stream()
-            .filter(user -> 
-                (dni != null && !dni.isEmpty() && user.getDni().contains(dni)) ||
-                (name != null && !name.isEmpty() && user.getFullName().toLowerCase().contains(name.toLowerCase())) ||
-                (username != null && !username.isEmpty() && user.getUsername().toLowerCase().contains(username.toLowerCase()))
-            )
+            .filter(user -> {
+                // Clean the database DNI for comparison
+                String dbDniClean = user.getDni().replace(".", "");
+
+                // Check if input DNI is a partial match of the cleaned DB DNI
+                boolean matchesDni = !cleanInputDni.isEmpty() && dbDniClean.contains(cleanInputDni);
+                
+                boolean matchesName = name != null && !name.isEmpty() && 
+                                    user.getFullName().toLowerCase().contains(name.toLowerCase());
+                                    
+                boolean matchesUser = username != null && !username.isEmpty() && 
+                                    user.getUsername().toLowerCase().contains(username.toLowerCase());
+                
+                return matchesDni || matchesName || matchesUser;
+            })
             .collect(Collectors.toList());
     }
     
