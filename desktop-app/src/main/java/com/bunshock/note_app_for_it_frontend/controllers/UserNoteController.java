@@ -188,9 +188,7 @@ public class UserNoteController {
         txtUserDni.clear();
         txtUserName.clear();
         txtUserAccount.clear();
-        lblUserEmail.setText("");
-
-        txtUserDni.requestFocus();
+        lblUserEmail.setText("email: ");
     }
 
     @FXML
