@@ -121,7 +121,7 @@
 
 /* Hover Effect (When ALREADY selected) */
 .entity-button-left:selected:hover, .entity-button-right:selected:hover {
-    -fx-background-color: #0e9a82; /* Slightly lighter teal */
+    -fx-background-color: #0e9a82;
 }
 
 /* Note Generation: bottom action buttons */
@@ -218,15 +218,15 @@
 /* User note generation: Main input field */
 .form-input-main {
     -fx-background-color: white;
-    -fx-border-color: #cbd5e1; /* The "nice" gray you liked */
-    -fx-border-width: 1.5;      /* Consistent thickness */
+    -fx-border-color: #cbd5e1;
+    -fx-border-width: 1.5;
     -fx-border-radius: 4;
     -fx-background-radius: 4;
     -fx-padding: 8 10;
 }
 
 .form-input-main:focused {
-    -fx-border-color: #0c8570; /* Teal focus */
+    -fx-border-color: #0c8570;
 }
 
 /* User note generation: Disabled input field */
@@ -282,7 +282,7 @@
 .ad-header-gradient {
     -fx-background-color: linear-gradient(to right, #0c8570, #0a6d5c);
     -fx-padding: 0 25;
-    -fx-background-radius: 7 7 0 0; /* Match the outer VBox radius */
+    -fx-background-radius: 7 7 0 0;
 }
 
 .ad-header-title {
@@ -310,14 +310,13 @@
 
 .ad-selection-list .list-cell:filled:hover {
     -fx-background-color: #f1f5f9;
-    /* Subtle blue-ish tint on hover to show interactivity */
     -fx-text-fill: #0c8570;
 }
 
 /* AD User Selection: table */
 .ad-selection-list {
     -fx-background-color: white;
-    -fx-background-radius: 0 0 8 8; /* Rounded only at the bottom to match window */
+    -fx-background-radius: 0 0 8 8;
     -fx-border-color: #e2e8f0;
     -fx-border-width: 1;
     /* Remove default focus ring */
@@ -326,12 +325,11 @@
 }
 
 .ad-selection-list .list-cell {
-    -fx-padding: 14 20; /* Slightly more breathing room */
+    -fx-padding: 14 20;
     -fx-border-color: transparent transparent #f1f5f9 transparent;
     -fx-background-color: white;
     -fx-text-fill: #334155;
     -fx-font-size: 13px;
-    /* Smooth out the hover transition */
     -fx-transition: background-color 0.2s; 
 }
 
@@ -342,10 +340,9 @@
 }
 
 .ad-selection-list .list-cell:filled:selected {
-    -fx-background-color: #f0fdfa; /* Very light SITA teal tint */
+    -fx-background-color: #f0fdfa;
     -fx-text-fill: #0c8570;
     -fx-font-weight: bold;
-    /* The "Accent" - adds a solid bar on the left of the selected row */
     -fx-border-color: transparent transparent #f1f5f9 #0c8570;
     -fx-border-width: 0 0 1 4;
 }
@@ -368,7 +365,7 @@
 /* -- EQUIPMENT TABLE - START  */
 
 .table-section-caption {
-    -fx-text-fill: #475569; /* Darker Slate Gray */
+    -fx-text-fill: #475569;
     -fx-font-size: 11px;
     -fx-font-weight: bold;
     -fx-letter-spacing: 1px;
@@ -377,6 +374,7 @@
 
 /* User note generation: Equipment table */
 .modern-table {
+    -fx-font-family: "Segoe UI", "Inter", sans-serif;
     -fx-background-color: transparent;
     -fx-background-insets: 0;
     -fx-border-color: #e2e8f0;
@@ -394,7 +392,7 @@
 .modern-table .column-header {
     -fx-background-color: transparent;
     -fx-size: 35;
-    -fx-border-color: rgba(255, 255, 255, 0.1);
+    -fx-border-color: rgba(255, 255, 255, 0.2);
     -fx-border-width: 0 1 0 0;
     -fx-alignment: CENTER; 
 }
@@ -406,7 +404,7 @@
     /* CHANGE THIS TO CENTER */
     -fx-alignment: CENTER;
     -fx-text-alignment: CENTER;
-    -fx-max-width: Infinity; /* Allow label to grow to fill header */
+    -fx-max-width: Infinity;
 }
 
 /* Removing the ugly "empty" extra column space */
@@ -416,10 +414,10 @@
 
 /* Row Styling */
 .modern-table .table-row-cell {
+    -fx-cell-size: 30;
     -fx-background-color: white;
     -fx-border-color: #f1f5f9;
-    -fx-border-width: 0 0 1 0; /* Horizontal lines only */
-    -fx-cell-size: 40;
+    -fx-border-width: 0 0 1 0;
 }
 
 /* Hover and Selection: Soft Teal instead of default Blue */
@@ -428,8 +426,27 @@
 }
 
 .modern-table .table-row-cell:selected {
-    -fx-background-color: #e6fffa;
-    -fx-text-fill: #0c8570;
+    -fx-background-color: #6ebdb0;
+    -fx-background-insets: 0;
+}
+
+.modern-table .table-row-cell:selected .table-cell {
+    -fx-text-fill: #f4f8f7;
+    -fx-font-weight: bold;
+    -fx-border-color: #0c8570;
+    -fx-border-width: 1 0 1 0;
+}
+
+.modern-table .table-cell {
+    -fx-alignment: CENTER;
+    -fx-text-fill: #334155;
+    -fx-padding: 0 10;
+    -fx-border-color: transparent #e2e8f0 transparent transparent;
+    -fx-border-width: 0 1 0 0;
+}
+
+.modern-table .table-cell:last-visible {
+    -fx-border-color: transparent;
 }
 
 /* Remove internal focus ring */
@@ -437,10 +454,46 @@
     -fx-background-insets: 0;
 }
 
+/* Placeholder for empty tables */
 .modern-table .placeholder .label {
     -fx-text-fill: #94a3b8;
     -fx-font-size: 14px;
     -fx-font-italic: italic;
+}
+
+/* Action buttons column */
+.button-icon-delete {
+    -fx-background-color: transparent;
+    -fx-text-fill: #94a3b8;
+    -fx-cursor: hand;
+    -fx-font-size: 14px;
+    -fx-padding: 0;
+}
+
+.button-icon-delete:hover {
+    -fx-text-fill: #ef4444;
+    -fx-scale-x: 1.1;
+    -fx-scale-y: 1.1;
+}
+
+.button-icon-edit {
+    -fx-background-color: transparent;
+    -fx-text-fill: #94a3b8;
+    -fx-cursor: hand;
+    -fx-font-size: 14px;
+    -fx-padding: 0;
+}
+
+.button-icon-edit:hover {
+    -fx-text-fill: #0c8570;
+    -fx-scale-x: 1.1;
+    -fx-scale-y: 1.1;
+}
+
+/* Container for multiple buttons */
+.action-container {
+    -fx-spacing: 12;
+    -fx-alignment: CENTER;
 }
 
 /* -- EQUIPMENT TABLE - END  */

@@ -2,6 +2,7 @@ package com.bunshock.note_app_for_it_frontend.controllers;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.function.Consumer;
 
 import com.bunshock.note_app_for_it_frontend.models.ADUser;
 import com.bunshock.note_app_for_it_frontend.models.AssetItem;
@@ -17,15 +18,19 @@ import javafx.fxml.FXML;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
+import javafx.scene.control.Button;
 import javafx.scene.control.Label;
+import javafx.scene.control.TableCell;
 import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableView;
 import javafx.scene.control.TextField;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.ToggleGroup;
+import javafx.scene.layout.HBox;
 import javafx.scene.paint.Color;
 import javafx.stage.Modality;
 import javafx.stage.Stage;
+import javafx.util.Callback;
 import javafx.util.Duration;
 
 public class UserNoteController {
@@ -84,8 +89,68 @@ public class UserNoteController {
         setupAssetTable();
         setupCountableTable();
 
+        // Set up action columns
+        colAssetActions.setCellFactory(createActionCellFactory(
+            this::handleEditAsset,
+            asset -> assetList.remove(asset)
+        ));
+
+        colCountActions.setCellFactory(createActionCellFactory(
+            this::handleEditCountable, 
+            countable -> countableList.remove(countable)
+        ));
+
         // Populate with mock data for testing
         populateMockTableData();
+    }
+
+    // Generalized cell factory method for action columns (if needed in the future)
+    private <T> Callback<TableColumn<T, Void>, TableCell<T, Void>> createActionCellFactory(
+            Consumer<T> editAction, 
+            Consumer<T> deleteAction) {
+        
+        return param -> new TableCell<T, Void>() {
+            private final Button btnEdit = new Button("✏");
+            private final Button btnDelete = new Button("🗑");
+            private final HBox container = new HBox(btnEdit, btnDelete);
+
+            {
+                btnEdit.getStyleClass().add("button-icon-edit");
+                btnDelete.getStyleClass().add("button-icon-delete");
+                container.getStyleClass().add("action-container");
+
+                btnEdit.setOnAction(event -> {
+                    T item = getTableView().getItems().get(getIndex());
+                    if (item != null) editAction.accept(item);
+                });
+
+                btnDelete.setOnAction(event -> {
+                    T item = getTableView().getItems().get(getIndex());
+                    if (item != null) deleteAction.accept(item);
+                });
+            }
+
+            @Override
+            protected void updateItem(Void item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty) {
+                    setGraphic(null);
+                } else {
+                    setGraphic(container);
+                }
+            }
+        };
+    }
+
+    // TODO: Generalize handleEdit methods
+    private void handleEditAsset(AssetItem asset) {
+        System.out.println("Editing asset: " + asset.getModel());
+        // TODO: Call item dialog pre-filled with item data for editing
+    }
+
+    private void handleEditCountable(CountableItem countable) {
+        System.out.println("Editing countable: " + countable.getType());
+        // TODO: Call item dialog pre-filled with item data for editing
     }
 
     // Mock equipment tables for testing UI
