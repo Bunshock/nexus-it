@@ -59,7 +59,7 @@ public class ItemDialogController {
         if (btnModeAsset.isSelected()) {
             parentController.addAsset(new AssetItem(
                 cmbType.getValue(), txtBrand.getText(), txtModel.getText(),
-                txtSerial.getText(), txtAF.getText(), txtObs.getText()
+                txtObs.getText(), txtSerial.getText(), txtAF.getText()
             ));
         } else {
             parentController.addCountable(new CountableItem(
