@@ -73,6 +73,8 @@ public class UserNoteController {
                 ToggleButton selectedBtn = (ToggleButton) newToggle;
                 String selectedType = selectedBtn.getText();
                 System.out.println("Tipo de nota seleccionado: " + selectedType);
+            } else {
+                oldToggle.setSelected(true);
             }
         });
 

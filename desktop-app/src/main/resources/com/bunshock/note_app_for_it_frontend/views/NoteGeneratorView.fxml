@@ -31,7 +31,7 @@
         <VBox spacing="5" minHeight="110.0" prefHeight="110.0" maxHeight="110.0"
                 style="-fx-background-color: white; -fx-background-radius: 0 0 10 10; -fx-padding: 15 20 20 20;">
             <children>
-                <Label text="OBSERVACIONES GENERALES" styleClass="form-section-caption"/>
+                <Label text="OBSERVACIONES GENERALES" style="-fx-font-weight: bold; -fx-text-fill: #0c8570; -fx-font-size: 13px;"/>
                 <TextField fx:id="txtObservations" 
                         prefHeight="35.0" 
                         promptText="Ingrese detalles adicionales aquí..." 

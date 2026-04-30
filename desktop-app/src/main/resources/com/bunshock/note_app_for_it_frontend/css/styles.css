@@ -92,20 +92,36 @@
     -fx-cursor: hand;
     -fx-padding: 15;
     -fx-border-color: #ccc;
+    /* Transition for smoother hover */
+    -fx-transition: background-color 0.2s;
 }
 
 .entity-button-left {
     -fx-background-radius: 10 0 0 0;
     -fx-border-width: 1 0 1 1;
 }
+
 .entity-button-right {
     -fx-background-radius: 0 10 0 0;
     -fx-border-width: 1 1 1 1;
 }
 
+/* Hover Effect (When NOT selected) */
+.entity-button-left:hover, .entity-button-right:hover {
+    -fx-background-color: #d5d5d5;
+    -fx-text-fill: #333;
+}
+
+/* Selected State */
 .entity-button-left:selected, .entity-button-right:selected {
     -fx-background-color: #0c8570;
     -fx-text-fill: white;
+    -fx-border-color: #0c8570;
+}
+
+/* Hover Effect (When ALREADY selected) */
+.entity-button-left:selected:hover, .entity-button-right:selected:hover {
+    -fx-background-color: #0e9a82; /* Slightly lighter teal */
 }
 
 /* Note Generation: bottom action buttons */
@@ -149,7 +165,7 @@
 }
 
 /* User note generation: Note type label */
-.form-section-caption {
+.user-note-type-caption {
     -fx-text-fill: #0c8570;
     -fx-font-size: 10px;
     -fx-font-weight: bold;
@@ -351,6 +367,14 @@
 
 /* -- EQUIPMENT TABLE - START  */
 
+.table-section-caption {
+    -fx-text-fill: #475569; /* Darker Slate Gray */
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-letter-spacing: 1px;
+    -fx-padding: 0 0 5 0;
+}
+
 /* User note generation: Equipment table */
 .modern-table {
     -fx-background-color: transparent;
@@ -372,13 +396,17 @@
     -fx-size: 35;
     -fx-border-color: rgba(255, 255, 255, 0.1);
     -fx-border-width: 0 1 0 0;
+    -fx-alignment: CENTER; 
 }
 
 .modern-table .column-header .label {
     -fx-text-fill: white;
     -fx-font-size: 10px;
     -fx-font-weight: bold;
-    -fx-alignment: CENTER_LEFT;
+    /* CHANGE THIS TO CENTER */
+    -fx-alignment: CENTER;
+    -fx-text-alignment: CENTER;
+    -fx-max-width: Infinity; /* Allow label to grow to fill header */
 }
 
 /* Removing the ugly "empty" extra column space */

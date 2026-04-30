@@ -5,6 +5,7 @@ import com.bunshock.note_app_for_it_frontend.utils.ViewFactory;
 import javafx.fxml.FXML;
 import javafx.scene.control.TextField;
 import javafx.scene.control.ToggleButton;
+import javafx.scene.control.ToggleGroup;
 import javafx.scene.layout.StackPane;
 
 public class NoteGeneratorController {
@@ -14,6 +15,7 @@ public class NoteGeneratorController {
 
     // Profile selection buttons
     @FXML private ToggleButton btnUserNote, btnProviderNote;
+    @FXML private ToggleGroup entityGroup;
     
     // Specific note profile content area
     @FXML private StackPane dynamicContentArea;
@@ -30,6 +32,13 @@ public class NoteGeneratorController {
     public void initialize() {
         btnUserNote.setOnAction(e -> showUserNoteView());
         btnProviderNote.setOnAction(e -> showProviderNoteView());
+
+        // Ensure one profile is always selected
+        entityGroup.selectedToggleProperty().addListener((obs, oldToggle, newToggle) -> {
+            if (newToggle == null) {
+                oldToggle.setSelected(true);
+            }
+        });
     }
 
     private void showUserNoteView() {

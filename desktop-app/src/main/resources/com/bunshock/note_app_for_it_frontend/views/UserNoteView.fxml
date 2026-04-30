@@ -10,7 +10,7 @@
         <!-- User Note Type Selection -->
         <VBox spacing="0" style="-fx-padding: 0 0 5 0;">
             <children>
-                <Label text="TIPO DE MOVIMIENTO" styleClass="form-section-caption"/>
+                <Label text="TIPO DE MOVIMIENTO" style="-fx-font-weight: bold; -fx-text-fill: #0c8570; -fx-font-size: 13px; -fx-padding: 0 0 5 0;"/>
                 <HBox prefHeight="40.0" spacing="0">
                     <fx:define>
                         <ToggleGroup fx:id="typeGroup" />
@@ -83,25 +83,28 @@
         <!-- Equipment detail tables -->
        <VBox spacing="15" VBox.vgrow="ALWAYS">
             <children>
-                <Label text="DETALLE DEL EQUIPAMIENTO" style="-fx-font-weight: bold; -fx-text-fill: #0c8570; -fx-font-size: 13px;"/>
+                <Label text="DETALLES DEL EQUIPAMIENTO" style="-fx-font-weight: bold; -fx-text-fill: #0c8570; -fx-font-size: 13px;"/>
 
                 <!-- Equipment details - Asset -->
                 <VBox spacing="5" VBox.vgrow="ALWAYS">
                     <children>
                         <HBox alignment="CENTER_LEFT">
-                            <Label text="EQUIPOS CON S/N (Notebooks, Monitores, etc.)" styleClass="form-section-caption"/>
+                            <Label text="Equipos con S/N (Notebooks, Monitores, etc.)" styleClass="table-section-caption"/>
                             <Region HBox.hgrow="ALWAYS" />
                             <Button text="+ Agregar" onAction="#handleAddItem" styleClass="button-primary"/>
                         </HBox>
-                        <TableView fx:id="tblAssets" styleClass="modern-table" prefHeight="200">
+                        <TableView fx:id="tblAssets" styleClass="modern-table" VBox.vgrow="ALWAYS">
+                            <columnResizePolicy>
+                                <TableView fx:constant="CONSTRAINED_RESIZE_POLICY" />
+                            </columnResizePolicy>
                             <columns>
-                                <TableColumn fx:id="colAssetType" text="TIPO" prefWidth="100"/>
-                                <TableColumn fx:id="colAssetBrand" text="MARCA" prefWidth="100"/>
-                                <TableColumn fx:id="colAssetModel" text="MODELO" prefWidth="150"/>
-                                <TableColumn fx:id="colAssetSerial" text="S/N" prefWidth="150"/>
-                                <TableColumn fx:id="colAssetAF" text="A/F" prefWidth="80"/>
-                                <TableColumn fx:id="colAssetObs" text="OBSERVACIONES" prefWidth="250"/>
-                                <TableColumn fx:id="colAssetActions" text="ACCIONES" prefWidth="80"/>
+                                <TableColumn fx:id="colAssetType" text="TIPO" prefWidth="100" minWidth="100" maxWidth="100"/>
+                                <TableColumn fx:id="colAssetBrand" text="MARCA" prefWidth="100" minWidth="100" maxWidth="100"/>
+                                <TableColumn fx:id="colAssetModel" text="MODELO" prefWidth="150" minWidth="150" maxWidth="150"/>
+                                <TableColumn fx:id="colAssetSerial" text="S/N" prefWidth="150" minWidth="150" maxWidth="150"/>
+                                <TableColumn fx:id="colAssetAF" text="A/F" prefWidth="80" minWidth="80" maxWidth="80"/>
+                                <TableColumn fx:id="colAssetObs" text="OBSERVACIONES" />
+                                <TableColumn fx:id="colAssetActions" text="ACCIONES" prefWidth="80" minWidth="80" maxWidth="80"/>
                             </columns>
                         </TableView>
                     </children>
@@ -110,15 +113,18 @@
                 <!-- Equipment details - Countable -->
                 <VBox spacing="5" VBox.vgrow="ALWAYS">
                     <children>
-                        <Label text="PERIFÉRICOS Y OTROS (Por Cantidad)" styleClass="form-section-caption"/>
-                        <TableView fx:id="tblCountables" styleClass="modern-table" prefHeight="150">
+                        <Label text="Periféricos y otros (Por Cantidad)" styleClass="table-section-caption"/>
+                        <TableView fx:id="tblCountables" styleClass="modern-table" VBox.vgrow="ALWAYS">
+                            <columnResizePolicy>
+                                <TableView fx:constant="CONSTRAINED_RESIZE_POLICY" />
+                            </columnResizePolicy>
                             <columns>
-                                <TableColumn fx:id="colCountType" text="TIPO" prefWidth="100"/>
-                                <TableColumn fx:id="colCountBrand" text="MARCA" prefWidth="100"/>
-                                <TableColumn fx:id="colCountModel" text="MODELO" prefWidth="150"/>
-                                <TableColumn fx:id="colCountQty" text="CANT." prefWidth="60"/>
-                                <TableColumn fx:id="colCountObs" text="OBSERVACIONES" prefWidth="250"/>
-                                <TableColumn fx:id="colCountActions" text="ACCIONES" prefWidth="80"/>
+                                <TableColumn fx:id="colCountType" text="TIPO" prefWidth="100" minWidth="100" maxWidth="100"/>
+                                <TableColumn fx:id="colCountBrand" text="MARCA" prefWidth="100" minWidth="100" maxWidth="100"/>
+                                <TableColumn fx:id="colCountModel" text="MODELO" prefWidth="150" minWidth="150" maxWidth="150"/>
+                                <TableColumn fx:id="colCountQty" text="CANT." prefWidth="60" minWidth="60" maxWidth="60"/>
+                                <TableColumn fx:id="colCountObs" text="OBSERVACIONES" />
+                                <TableColumn fx:id="colCountActions" text="ACCIONES" prefWidth="80" minWidth="80" maxWidth="80"/>
                             </columns>
                         </TableView>
                     </children>
