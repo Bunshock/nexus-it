@@ -94,6 +94,9 @@
                             <Button text="+ Agregar" onAction="#handleAddItem" styleClass="button-primary"/>
                         </HBox>
                         <TableView fx:id="tblAssets" styleClass="modern-table" VBox.vgrow="ALWAYS">
+                            <placeholder>
+                                <Label text="No hay ítems cargados. Haga click en '+ Agregar'." />
+                            </placeholder>
                             <columnResizePolicy>
                                 <TableView fx:constant="CONSTRAINED_RESIZE_POLICY" />
                             </columnResizePolicy>
@@ -115,6 +118,9 @@
                     <children>
                         <Label text="Periféricos y otros (Por Cantidad)" styleClass="table-section-caption"/>
                         <TableView fx:id="tblCountables" styleClass="modern-table" VBox.vgrow="ALWAYS">
+                            <placeholder>
+                                <Label text="No hay ítems cargados. Haga click en '+ Agregar'." />
+                            </placeholder>
                             <columnResizePolicy>
                                 <TableView fx:constant="CONSTRAINED_RESIZE_POLICY" />
                             </columnResizePolicy>

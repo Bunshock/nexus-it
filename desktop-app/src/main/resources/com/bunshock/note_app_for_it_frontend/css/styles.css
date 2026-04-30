@@ -437,6 +437,12 @@
     -fx-background-insets: 0;
 }
 
+.modern-table .placeholder .label {
+    -fx-text-fill: #94a3b8;
+    -fx-font-size: 14px;
+    -fx-font-italic: italic;
+}
+
 /* -- EQUIPMENT TABLE - END  */
 
 /* User note generation: Observation text field */
