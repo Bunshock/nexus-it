@@ -83,6 +83,26 @@ public class UserNoteController {
         // Set up empty tables
         setupAssetTable();
         setupCountableTable();
+
+        // Populate with mock data for testing
+        populateMockTableData();
+    }
+
+    // Mock equipment tables for testing UI
+    private void populateMockTableData() {
+        // Mock Assets (The top table)
+        assetList.addAll(
+            new AssetItem("Notebook", "HP", "ProBook 450 G9", "Cargador original, Mouse USB", "SN123456", "AF789012"),
+            new AssetItem("Monitor", "Samsung", "F24T35", "Cable HDMI, Cable de poder", "SN789012", "AF345678"),
+            new AssetItem("Teclado", "Logitech", "K120", "Nuevo en caja", "SN345678", "AF901234")
+        );
+
+        // Mock Countables (The bottom table)
+        countableList.addAll(
+            new CountableItem("Cable UTP 2mts", "Generic", "CAT6", 1, "Gris"),
+            new CountableItem("Adaptador HDMI a VGA", "Nisuta", "NS-ADHV", 10, "Blanco"),
+            new CountableItem("Mouse Pad", "Generic", "Standard", 1, "Negro - Siglo 21")
+        );
     }
 
     @FXML
@@ -232,8 +252,10 @@ public class UserNoteController {
     private void setupAssetTable() {
         colAssetType.setCellValueFactory(d -> d.getValue().getType());
         colAssetBrand.setCellValueFactory(d -> d.getValue().getBrand());
+        colAssetModel.setCellValueFactory(d -> d.getValue().getModel());
         colAssetSerial.setCellValueFactory(d -> d.getValue().getSerial());
         colAssetAF.setCellValueFactory(d -> d.getValue().getAf());
+        colAssetObs.setCellValueFactory(d -> d.getValue().getObservations());
         tblAssets.setItems(assetList);
         // setupActionsColumn(colAssetActions);
     }
@@ -241,7 +263,9 @@ public class UserNoteController {
     private void setupCountableTable() {
         colCountType.setCellValueFactory(d -> d.getValue().getType());
         colCountBrand.setCellValueFactory(d -> d.getValue().getBrand());
+        colCountModel.setCellValueFactory(d -> d.getValue().getModel());
         colCountQty.setCellValueFactory(d -> d.getValue().getQuantity().asObject());
+        colCountObs.setCellValueFactory(d -> d.getValue().getObservations());
         tblCountables.setItems(countableList);
         // setupActionsColumn(colCountActions);
     }
