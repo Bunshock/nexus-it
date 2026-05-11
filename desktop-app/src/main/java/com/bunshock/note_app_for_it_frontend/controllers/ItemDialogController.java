@@ -33,9 +33,9 @@ public class ItemDialogController {
     // Action buttons
     @FXML private Button btnAdd, btnCancel;
 
-    private UserNoteController parentController;
+    private NoteGeneratorController parentController;
 
-    public void setParentController(UserNoteController parent) {
+    public void setParentController(NoteGeneratorController parent) {
         this.parentController = parent;
     }
 

@@ -6,41 +6,58 @@
 <VBox spacing="20" xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1"
       fx:controller="com.bunshock.note_app_for_it_frontend.controllers.ProviderNoteController">
     <children>
-        <VBox spacing="10" style="-fx-border-color: #ddd; -fx-border-width: 0 0 1 0; -fx-padding: 0 0 15 0;">
+        
+        <VBox spacing="10">
             <children>
-                <Label text="Datos del Proveedor" style="-fx-font-weight: bold; -fx-font-size: 16; -fx-text-fill: #0c8570;"/>
+                <HBox alignment="CENTER_LEFT" spacing="10">
+                    <children>
+                        <Label text="DATOS DEL PROVEEDOR" style="-fx-font-weight: bold; -fx-text-fill: #0c8570; -fx-font-size: 13px;"/>
+                        <Region HBox.hgrow="ALWAYS" />
+                    </children>
+                </HBox>
+
                 <GridPane hgap="15" vgap="10">
                     <columnConstraints>
-                        <ColumnConstraints prefWidth="120"/>
-                        <ColumnConstraints hgrow="ALWAYS"/>
+                        <ColumnConstraints percentWidth="35"/>
                     </columnConstraints>
                     <children>
-                        <Label text="Nombre:" GridPane.rowIndex="0" GridPane.columnIndex="0"/>
-                        <TextField fx:id="txtProviderName" promptText="Ej: TRENDIT" GridPane.rowIndex="0" GridPane.columnIndex="1"/>
+                        <VBox spacing="2" GridPane.columnIndex="0">
+                            <Label text="NOMBRE" styleClass="input-label-small"/>
+                            <TextField fx:id="txtProviderName" styleClass="form-input-main"/>
+                        </VBox>
                     </children>
                 </GridPane>
+                
             </children>
         </VBox>
 
         <VBox spacing="10">
             <children>
-                <Label text="Detalles del Equipamiento" style="-fx-font-weight: bold; -fx-font-size: 16; -fx-text-fill: #0c8570;"/>
+                <HBox alignment="CENTER_LEFT" spacing="10">
+                    <children>
+                        <Label text="DATOS DE QUIEN RECIBE" style="-fx-font-weight: bold; -fx-text-fill: #0c8570; -fx-font-size: 13px;"/>
+                        <Region HBox.hgrow="ALWAYS" />
+                    </children>
+                </HBox>
+
                 <GridPane hgap="15" vgap="10">
                     <columnConstraints>
-                        <ColumnConstraints prefWidth="120"/>
-                        <ColumnConstraints hgrow="ALWAYS"/>
+                        <ColumnConstraints percentWidth="35"/>
+                        <ColumnConstraints percentWidth="25"/>
                     </columnConstraints>
                     <children>
-                        <Label text="Tipo de Item:" GridPane.rowIndex="0" GridPane.columnIndex="0"/>
-                        <SearchableComboBox fx:id="cmbItemType" promptText="Monitor, Notebook, Teclado..." GridPane.rowIndex="0" GridPane.columnIndex="1"/>
-                        
-                        <Label text="Número de Serie:" GridPane.rowIndex="1" GridPane.columnIndex="0"/>
-                        <TextField fx:id="txtSerialNumber" promptText="S/N o Service Tag" GridPane.rowIndex="1" GridPane.columnIndex="1"/>
-                        
-                        <Label text="Observaciones:" GridPane.rowIndex="2" GridPane.columnIndex="0"/>
-                        <TextArea fx:id="txtObservations" prefHeight="80" promptText="Ej: Se entrega con cargador..." wrapText="true" GridPane.rowIndex="2" GridPane.columnIndex="1"/>
+                        <VBox spacing="2" GridPane.columnIndex="0">
+                            <Label text="NOMBRE COMPLETO" styleClass="input-label-small"/>
+                            <TextField fx:id="txtProviderName" styleClass="form-input-main"/>
+                        </VBox>
+
+                        <VBox spacing="2" GridPane.columnIndex="1">
+                            <Label text="DNI" styleClass="input-label-small"/>
+                            <TextField fx:id="txtProviderDni" styleClass="form-input-main"/>
+                        </VBox>
                     </children>
                 </GridPane>
+
             </children>
         </VBox>
         
