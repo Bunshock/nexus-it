@@ -104,14 +104,14 @@ public class UserNoteController {
         populateMockTableData();
     }
 
-    // Generalized cell factory method for action columns (if needed in the future)
+    // Generalized cell factory method for action columns
     private <T> Callback<TableColumn<T, Void>, TableCell<T, Void>> createActionCellFactory(
             Consumer<T> editAction, 
             Consumer<T> deleteAction) {
         
         return param -> new TableCell<T, Void>() {
-            private final Button btnEdit = new Button("✏");
-            private final Button btnDelete = new Button("🗑");
+            private final Button btnEdit = new Button("🖉");
+            private final Button btnDelete = new Button("❌");
             private final HBox container = new HBox(btnEdit, btnDelete);
 
             {
@@ -159,7 +159,7 @@ public class UserNoteController {
         assetList.addAll(
             new AssetItem("Notebook", "HP", "ProBook 450 G9", "Cargador original, Mouse USB", "SN123456", "AF789012"),
             new AssetItem("Monitor", "Samsung", "F24T35", "Cable HDMI, Cable de poder", "SN789012", "AF345678"),
-            new AssetItem("Teclado", "Logitech", "K120", "Nuevo en caja", "SN345678", "AF901234")
+            new AssetItem("Teclado", "Logitech", "K120", "Nuevo en caja", "SN345678", "IT-00000008")
         );
 
         // Mock Countables (The bottom table)

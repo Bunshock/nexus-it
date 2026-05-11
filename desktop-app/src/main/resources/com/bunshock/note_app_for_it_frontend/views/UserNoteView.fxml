@@ -101,11 +101,11 @@
                                 <TableView fx:constant="CONSTRAINED_RESIZE_POLICY" />
                             </columnResizePolicy>
                             <columns>
-                                <TableColumn fx:id="colAssetType" text="TIPO" prefWidth="100" minWidth="100" maxWidth="100"/>
+                                <TableColumn fx:id="colAssetType" text="TIPO" prefWidth="120" minWidth="120" maxWidth="120"/>
                                 <TableColumn fx:id="colAssetBrand" text="MARCA" prefWidth="100" minWidth="100" maxWidth="100"/>
-                                <TableColumn fx:id="colAssetModel" text="MODELO" prefWidth="150" minWidth="150" maxWidth="150"/>
+                                <TableColumn fx:id="colAssetModel" text="MODELO" prefWidth="180" minWidth="180" maxWidth="180"/>
                                 <TableColumn fx:id="colAssetSerial" text="S/N" prefWidth="150" minWidth="150" maxWidth="150"/>
-                                <TableColumn fx:id="colAssetAF" text="A/F" prefWidth="80" minWidth="80" maxWidth="80"/>
+                                <TableColumn fx:id="colAssetAF" text="A/F" prefWidth="100" minWidth="100" maxWidth="100"/>
                                 <TableColumn fx:id="colAssetObs" text="OBSERVACIONES" />
                                 <TableColumn fx:id="colAssetActions" text="ACCIONES" prefWidth="80" minWidth="80" maxWidth="80"/>
                             </columns>
@@ -125,9 +125,9 @@
                                 <TableView fx:constant="CONSTRAINED_RESIZE_POLICY" />
                             </columnResizePolicy>
                             <columns>
-                                <TableColumn fx:id="colCountType" text="TIPO" prefWidth="100" minWidth="100" maxWidth="100"/>
+                                <TableColumn fx:id="colCountType" text="TIPO" prefWidth="120" minWidth="120" maxWidth="120"/>
                                 <TableColumn fx:id="colCountBrand" text="MARCA" prefWidth="100" minWidth="100" maxWidth="100"/>
-                                <TableColumn fx:id="colCountModel" text="MODELO" prefWidth="150" minWidth="150" maxWidth="150"/>
+                                <TableColumn fx:id="colCountModel" text="MODELO" prefWidth="180" minWidth="180" maxWidth="180"/>
                                 <TableColumn fx:id="colCountQty" text="CANT." prefWidth="60" minWidth="60" maxWidth="60"/>
                                 <TableColumn fx:id="colCountObs" text="OBSERVACIONES" />
                                 <TableColumn fx:id="colCountActions" text="ACCIONES" prefWidth="80" minWidth="80" maxWidth="80" sortable="false" resizable="false"/>

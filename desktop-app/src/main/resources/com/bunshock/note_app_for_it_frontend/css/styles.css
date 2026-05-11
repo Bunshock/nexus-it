@@ -462,7 +462,7 @@
 }
 
 /* Action buttons column */
-.button-icon-delete {
+.button-icon-delete, .button-icon-edit {
     -fx-background-color: transparent;
     -fx-text-fill: #94a3b8;
     -fx-cursor: hand;
@@ -470,24 +470,20 @@
     -fx-padding: 0;
 }
 
-.button-icon-delete:hover {
+.button-icon-delete:hover, .table-row-cell:selected .button-icon-delete:hover {
     -fx-text-fill: #ef4444;
     -fx-scale-x: 1.1;
     -fx-scale-y: 1.1;
 }
 
-.button-icon-edit {
-    -fx-background-color: transparent;
-    -fx-text-fill: #94a3b8;
-    -fx-cursor: hand;
-    -fx-font-size: 14px;
-    -fx-padding: 0;
-}
-
-.button-icon-edit:hover {
+.button-icon-edit:hover, .table-row-cell:selected .button-icon-edit:hover {
     -fx-text-fill: #0c8570;
     -fx-scale-x: 1.1;
     -fx-scale-y: 1.1;
+}
+
+.table-row-cell:selected .button-icon-edit, .table-row-cell:selected .button-icon-delete {
+    -fx-text-fill: #f4f8f7;
 }
 
 /* Container for multiple buttons */
