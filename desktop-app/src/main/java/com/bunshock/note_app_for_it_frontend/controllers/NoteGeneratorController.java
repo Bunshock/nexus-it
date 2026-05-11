@@ -52,7 +52,15 @@ public class NoteGeneratorController {
     @FXML
     private void handleClearForm() {
         txtObservations.clear();
-        // You'll also want a way to tell the sub-controllers to clear their fields
+
+        // Clear fields in the currently loaded profile view
+        if (viewFactory.getUserNoteView() != null) {
+            viewFactory.getUserNoteController().clearAllFields();
+        }
+
+        if (viewFactory.getProviderNoteView() != null) {
+            viewFactory.getProviderNoteController().clearAllFields();
+        }
     }
 
     @FXML

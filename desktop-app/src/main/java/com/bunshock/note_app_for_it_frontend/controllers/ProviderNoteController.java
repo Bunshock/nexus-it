@@ -21,4 +21,9 @@ public class ProviderNoteController {
     public void initialize() {
         cmbItemType.setItems(FXCollections.observableArrayList("Notebook", "Monitor", "..."));
     }
+
+    public void clearAllFields() {
+        // To be implemented ...
+    }
+
 }

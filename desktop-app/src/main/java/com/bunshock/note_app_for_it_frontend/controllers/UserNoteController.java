@@ -339,4 +339,11 @@ public class UserNoteController {
     public void addAsset(AssetItem item) { assetList.add(item); }
     public void addCountable(CountableItem item) { countableList.add(item); }
 
+    // Clear all user note fields (called from NoteGeneratorController)
+    public void clearAllFields() {
+        handleClearUserFields();
+        assetList.clear();
+        countableList.clear();
+    }
+
 }
