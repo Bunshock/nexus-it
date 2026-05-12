@@ -2,7 +2,7 @@
 Continuation of `html-template-editor-to-print` repository, revamped for IT support area.
 
 ## Description:
-During my time at the IT Support Office of Universidad Siglo 21 (Campus Branch), I noticed that the equipment registration process could be improved. Specifically, the generation of handover and return notes was prone to various failures because the process was entirely manual.
+During my time at the IT Support Office of Universidad Siglo 21 (Campus), I noticed that the equipment registration process could be improved. Specifically, the generation of handover and return notes was prone to various failures because the process was entirely manual.
 
 Driven by this, I decided to analyze the situation and take action. First, I developed an initial prototype. Its main goals were to streamline note generation, prevent typing errors (by implementing a mini-database in a `.json` file), and improve and standardize the design using `.html` templates. The app was deployed locally on users' PCs, utilizing a file server for shared resources such as templates, profiles, and the database.
 
