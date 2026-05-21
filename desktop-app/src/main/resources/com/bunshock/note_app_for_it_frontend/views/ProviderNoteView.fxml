@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <?import javafx.scene.layout.*?>
 <?import javafx.scene.control.*?>
-<?import org.controlsfx.control.SearchableComboBox?>
 
 <VBox spacing="20" xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1"
       fx:controller="com.bunshock.note_app_for_it_frontend.controllers.ProviderNoteController">
@@ -9,38 +8,31 @@
         
         <VBox spacing="10">
             <children>
-                <HBox alignment="CENTER_LEFT" spacing="10">
+                <Label text="DATOS DEL PROVEEDOR" styleClass="section-label"/>
+                <HBox spacing="20" alignment="CENTER_LEFT">
                     <children>
-                        <Label text="DATOS DEL PROVEEDOR" style="-fx-font-weight: bold; -fx-text-fill: #0c8570; -fx-font-size: 13px;"/>
-                        <Region HBox.hgrow="ALWAYS" />
+                        <ComboBox fx:id="cmbProviderSearch" promptText="Seleccionar proveedor..." styleClass="provider-combobox"
+                            prefWidth="400" maxWidth="500"/>
+                        <Button fx:id="btnNewProvider" text="Nuevo Proveedor" styleClass="button-primary"/>
                     </children>
                 </HBox>
-
-                <GridPane hgap="15" vgap="10">
-                    <columnConstraints>
-                        <ColumnConstraints percentWidth="35"/>
-                    </columnConstraints>
-                    <children>
-                        <VBox spacing="2" GridPane.columnIndex="0">
-                            <Label text="NOMBRE" styleClass="input-label-small"/>
-                            <TextField fx:id="txtProviderName" styleClass="form-input-main"/>
-                        </VBox>
-                    </children>
-                </GridPane>
-                
             </children>
         </VBox>
 
+        <Separator style="-fx-opacity: 0.5;"/>
+
         <VBox spacing="10">
             <children>
-                <HBox alignment="CENTER_LEFT" spacing="10">
+                <HBox alignment="CENTER_LEFT" spacing="15">
                     <children>
-                        <Label text="DATOS DE QUIEN RECIBE" style="-fx-font-weight: bold; -fx-text-fill: #0c8570; -fx-font-size: 13px;"/>
-                        <Region HBox.hgrow="ALWAYS" />
+                        <Label text="RECIBE EN REPRESENTACIÓN" styleClass="section-label"/>
+                        <CheckBox fx:id="chkEnableResponsible" 
+                                text="Incluir detalles del responsable" 
+                                styleClass="custom-checkbox-inline"/>
                     </children>
                 </HBox>
 
-                <GridPane hgap="15" vgap="10">
+                <GridPane fx:id="gridResponsibleDetails" disable="true" hgap="15" vgap="10">
                     <columnConstraints>
                         <ColumnConstraints percentWidth="35"/>
                         <ColumnConstraints percentWidth="25"/>
@@ -48,12 +40,12 @@
                     <children>
                         <VBox spacing="2" GridPane.columnIndex="0">
                             <Label text="NOMBRE COMPLETO" styleClass="input-label-small"/>
-                            <TextField fx:id="txtProviderName" styleClass="form-input-main"/>
+                            <TextField fx:id="txtProviderResponsibleName" styleClass="form-input-main"/>
                         </VBox>
 
                         <VBox spacing="2" GridPane.columnIndex="1">
                             <Label text="DNI" styleClass="input-label-small"/>
-                            <TextField fx:id="txtProviderDni" styleClass="form-input-main"/>
+                            <TextField fx:id="txtProviderResponsibleDni" styleClass="form-input-main"/>
                         </VBox>
                     </children>
                 </GridPane>

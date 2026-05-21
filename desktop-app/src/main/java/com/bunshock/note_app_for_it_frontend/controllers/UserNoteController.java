@@ -25,7 +25,7 @@ import javafx.util.Duration;
 public class UserNoteController {
 
     // Note type selection
-    @FXML private ToggleGroup typeGroup;
+    @FXML private ToggleGroup userNoteTypeGroup;
     @FXML private ToggleButton btnTypeEntrega;
     @FXML private ToggleButton btnTypeDevolucion;
     @FXML private ToggleButton btnTypePrestamo;
@@ -45,7 +45,7 @@ public class UserNoteController {
 
     public void initialize() {
         // Setup note type toggle group
-        typeGroup.selectedToggleProperty().addListener((obs, oldToggle, newToggle) -> {
+        userNoteTypeGroup.selectedToggleProperty().addListener((obs, oldToggle, newToggle) -> {
             if (newToggle != null) {
                 ToggleButton selectedBtn = (ToggleButton) newToggle;
                 String selectedType = selectedBtn.getText();
@@ -93,7 +93,7 @@ public class UserNoteController {
         txtUserDni.setText(dni);
         txtUserName.setText(name);
         txtUserAccount.setText(username);
-        lblUserEmail.setText(email);
+        lblUserEmail.setText("email: " + email);
     }
 
     private void showUserSelectionDialog(List<ADUser> results) {

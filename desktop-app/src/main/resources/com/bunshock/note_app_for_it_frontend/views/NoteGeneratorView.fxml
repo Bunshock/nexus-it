@@ -10,17 +10,17 @@
     <children>
         <HBox prefHeight="50.0" spacing="0">
             <children>
-                <ToggleButton fx:id="btnUserNote" text="NOTA PARA USUARIO" maxWidth="Infinity" HBox.hgrow="ALWAYS" styleClass="entity-button-left" selected="true" toggleGroup="$entityGroup">
+                <ToggleButton fx:id="btnUserNote" text="NOTA PARA USUARIO" maxWidth="Infinity" HBox.hgrow="ALWAYS" styleClass="type-button-left" selected="true" toggleGroup="$typeGroup">
                     <toggleGroup>
-                        <ToggleGroup fx:id="entityGroup"/>
+                        <ToggleGroup fx:id="typeGroup"/>
                     </toggleGroup>
                 </ToggleButton>
-                <ToggleButton fx:id="btnProviderNote" text="NOTA PARA PROVEEDOR" maxWidth="Infinity" HBox.hgrow="ALWAYS" styleClass="entity-button-right" toggleGroup="$entityGroup"/>
+                <ToggleButton fx:id="btnProviderNote" text="NOTA PARA PROVEEDOR" maxWidth="Infinity" HBox.hgrow="ALWAYS" styleClass="type-button-right" toggleGroup="$typeGroup"/>
             </children>
         </HBox>
 
         <!-- Note content -->
-        <StackPane fx:id="dynamicContentArea" VBox.vgrow="ALWAYS" minHeight="230.0" prefHeight="230.0"
+        <StackPane fx:id="dynamicContentArea" VBox.vgrow="ALWAYS" minHeight="240.0" prefHeight="240.0"
                 style="-fx-background-color: white; -fx-background-radius: 10 10 0 0; -fx-padding: 20;">
             <children>
                 <Label text="Seleccione un perfil arriba para cargar el formulario." style="-fx-text-fill: #aaa;"/>
@@ -31,7 +31,7 @@
        <VBox spacing="15" VBox.vgrow="ALWAYS"
                 style="-fx-background-color: white; -fx-background-radius: 0 0 10 10; -fx-padding: 15 20 20 20;">
             <children>
-                <Label text="DETALLES DEL EQUIPAMIENTO" style="-fx-font-weight: bold; -fx-text-fill: #0c8570; -fx-font-size: 13px;"/>
+                <Label text="DETALLES DEL EQUIPAMIENTO" styleClass="section-label"/>
 
                 <!-- Equipment details - Asset -->
                 <VBox spacing="5" VBox.vgrow="ALWAYS">
@@ -90,11 +90,11 @@
         <VBox spacing="5" minHeight="110.0" prefHeight="110.0" maxHeight="110.0"
                 style="-fx-background-color: white; -fx-background-radius: 10 10 10 10; -fx-padding: 15 20 20 20;">
             <children>
-                <Label text="OBSERVACIONES GENERALES" style="-fx-font-weight: bold; -fx-text-fill: #0c8570; -fx-font-size: 13px;"/>
+                <Label text="OBSERVACIONES GENERALES" styleClass="section-label"/>
                 <TextField fx:id="txtObservations" 
                         prefHeight="35.0" 
                         promptText="Ingrese detalles adicionales aquí..." 
-                        styleClass="modern-text-field-small"
+                        styleClass="text-field-small"
                         style="-fx-alignment: CENTER_LEFT;"/>
             </children>
         </VBox>

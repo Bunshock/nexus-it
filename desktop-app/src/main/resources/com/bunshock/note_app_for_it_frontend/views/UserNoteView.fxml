@@ -8,22 +8,22 @@
     <children>
 
         <!-- User Note Type Selection -->
-        <VBox spacing="0" style="-fx-padding: 0 0 5 0;">
+        <VBox spacing="0" style="-fx-padding: 0 0 -5 0;">
             <children>
-                <Label text="TIPO DE MOVIMIENTO" style="-fx-font-weight: bold; -fx-text-fill: #0c8570; -fx-font-size: 13px; -fx-padding: 0 0 5 0;"/>
-                <HBox prefHeight="40.0" spacing="0">
+                <Label text="TIPO DE MOVIMIENTO" styleClass="section-label"/>
+                <HBox spacing="0" style="-fx-padding: 5 0 0 0;">
                     <fx:define>
-                        <ToggleGroup fx:id="typeGroup" />
+                        <ToggleGroup fx:id="userNoteTypeGroup" />
                     </fx:define>
                     <children>
                         <ToggleButton fx:id="btnTypeEntrega" text="ENTREGA" selected="true"
-                                    maxWidth="Infinity" HBox.hgrow="ALWAYS" styleClass="type-button-left" toggleGroup="$typeGroup"/>
+                                    maxWidth="Infinity" HBox.hgrow="ALWAYS" styleClass="small-toggle-button-left" toggleGroup="$userNoteTypeGroup"/>
                         <ToggleButton fx:id="btnTypeDevolucion" text="DEVOLUCIÓN" 
-                                    maxWidth="Infinity" HBox.hgrow="ALWAYS" styleClass="type-button-middle" toggleGroup="$typeGroup"/>
+                                    maxWidth="Infinity" HBox.hgrow="ALWAYS" styleClass="small-toggle-button-middle" toggleGroup="$userNoteTypeGroup"/>
                         <ToggleButton fx:id="btnTypePrestamo" text="PRÉSTAMO" 
-                                    maxWidth="Infinity" HBox.hgrow="ALWAYS" styleClass="type-button-middle" toggleGroup="$typeGroup"/>
+                                    maxWidth="Infinity" HBox.hgrow="ALWAYS" styleClass="small-toggle-button-middle" toggleGroup="$userNoteTypeGroup"/>
                         <ToggleButton fx:id="btnTypeFinContrato" text="FIN DE CONTRATO (ENTREGA)" 
-                                    maxWidth="Infinity" HBox.hgrow="ALWAYS" styleClass="type-button-right" toggleGroup="$typeGroup"/>
+                                    maxWidth="Infinity" HBox.hgrow="ALWAYS" styleClass="small-toggle-button-right" toggleGroup="$userNoteTypeGroup"/>
                     </children>
                 </HBox>
             </children>
@@ -36,7 +36,7 @@
             <children>
                 <HBox alignment="CENTER_LEFT" spacing="10">
                     <children>
-                        <Label text="DATOS DEL USUARIO" style="-fx-font-weight: bold; -fx-text-fill: #0c8570; -fx-font-size: 13px;"/>
+                        <Label text="DATOS DEL USUARIO" styleClass="section-label"/>
                         <Region HBox.hgrow="ALWAYS" />
 
                         <Label fx:id="lblADStatus" text="" style="-fx-font-size: 11px; -fx-font-weight: bold;" />
@@ -71,7 +71,7 @@
                             <Label text="USERNAME" styleClass="input-label-small"/>
                             <TextField fx:id="txtUserAccount" styleClass="form-input-main"/>
                             <Label fx:id="lblUserEmail" text="email: " 
-                                style="-fx-text-fill: #94a3b8; -fx-font-size: 10px; -fx-font-style: italic;"/>
+                                style="-fx-text-fill: #94a3b8; -fx-font-size: 11px; -fx-font-style: italic; -fx-padding: 0 0 0 5;"/>
                         </VBox>
                     </children>
                 </GridPane>

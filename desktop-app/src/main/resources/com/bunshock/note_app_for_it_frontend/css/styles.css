@@ -1,3 +1,96 @@
+/* --- Common styles - START --- */
+
+/* Section label*/
+.section-label {
+    -fx-font-weight: bold;
+    -fx-text-fill: #0c8570;
+    -fx-font-size: 13px;
+    -fx-letter-spacing: 0.5px;
+}
+
+/* Primary action button */
+.button-primary {
+    -fx-background-color: #0c8570;
+    -fx-text-fill: white;
+    -fx-font-weight: bold;
+    -fx-background-radius: 4;
+    -fx-cursor: hand;
+    -fx-border-color: transparent;
+    -fx-border-width: 1;
+}
+
+.button-primary:hover {
+    -fx-background-color: #0e9a82; 
+    -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.1), 5, 0, 0, 2);
+}
+
+/* Secondary action button */
+.button-secondary {
+    -fx-background-color: transparent;
+    -fx-text-fill: #64748b;
+    -fx-border-color: #e2e8f0;
+    -fx-border-radius: 4;
+    -fx-padding: 4 10;
+    -fx-cursor: hand;
+}
+
+.button-secondary:hover {
+    -fx-background-color: #fcf9f8;
+    -fx-text-fill: #1e293b;
+    -fx-border-color: #cbd5e1;
+}
+
+.button-primary:pressed, .button-secondary:pressed {
+    -fx-translate-y: 1px;
+    -fx-effect: none;
+}
+
+/* Small text field (used in observations field) */
+.text-field-small {
+    -fx-background-color: white;
+    -fx-border-color: #cbd5e1;
+    -fx-border-radius: 4;
+    -fx-padding: 5 10 5 10;
+    -fx-font-size: 12px;
+}
+
+/* Input label */
+.input-label-small {
+    -fx-text-fill: #64748b;
+    -fx-font-size: 9px;
+    -fx-font-weight: bold;
+}
+
+/* Input field */
+.form-input-main {
+    -fx-background-color: white;
+    -fx-border-color: #cbd5e1;
+    -fx-border-width: 1.5;
+    -fx-border-radius: 4;
+    -fx-background-radius: 4;
+    -fx-padding: 8 10;
+}
+
+.form-input-main:focused {
+    -fx-border-color: #0c8570;
+}
+
+/* Disabled text field */
+.text-field:disabled {
+    -fx-opacity: 0.5;
+    -fx-background-color: #f1f5f9;
+    -fx-border-color: #e2e8f0;
+}
+
+/* Disabled label */
+.label:disabled {
+    -fx-opacity: 0.6;
+}
+
+/* --- Common styles - END --- */
+
+/* --- MainView styles - START --- */
+
 /* Sidebar style */
 .sidebar {
     -fx-background-color: #0c8570;
@@ -13,6 +106,7 @@
     -fx-font-family: "Arial Bold", "Segoe UI Black", sans-serif;
     -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.3), 0, 0, 0, 1.5);
 }
+
 /* Sidebar subtitle */
 .sidebar-title-sub {
     -fx-text-fill: #b2dfdb;
@@ -37,7 +131,7 @@
     -fx-font-family: "Segoe UI", sans-serif;
 }
 
-/* Sidebar button base style */
+/* Sidebar button */
 .nav-button {
     -fx-background-color: rgba(255, 255, 255, 0.03);
     -fx-text-fill: #e0f2f1;
@@ -46,25 +140,20 @@
     -fx-background-radius: 8;
     -fx-cursor: hand;
     -fx-font-family: "Segoe UI", Helvetica, Arial, sans-serif;
-
-    /* Tiny edge on top to make it look 3D */
     -fx-border-color: rgba(255, 255, 255, 0.08);
     -fx-border-width: 1;
     -fx-border-radius: 8;
 }
 
-/* Navbar button: Focused effect */
 .nav-button:focused {
     -fx-background-color: rgba(255, 255, 255, 0.07);
 }
 
-/* Navbar button: Hover effect */
 .nav-button:hover {
     -fx-background-color: rgba(255, 255, 255, 0.12);
     -fx-effect: dropshadow(three-pass-box, rgba(0, 0, 0, 0.1), 5, 0, 0, 0);
 }
 
-/* Navbar button: Selected style */
 .nav-button:selected {
     -fx-background-color: #006064;
     -fx-text-fill: white;
@@ -72,7 +161,7 @@
     -fx-effect: innershadow(three-pass-box, rgba(0, 0, 0, 0.3), 5, 0, 0, 2);
 }
 
-/* Navbar logo frame style */
+/* Sidebar logo frame style */
 .logo-frame {
     -fx-background-color: rgba(255, 255, 255, 0.15);
     -fx-background-radius: 10;
@@ -83,287 +172,70 @@
     -fx-max-width: 140;
 }
 
-/* Note Generation: top header buttons */
-.entity-button-left, .entity-button-right {
-    -fx-background-color: #e0e0e0;
-    -fx-text-fill: #555;
+/* --- MainView styles - END --- */
+
+/* --- NoteGeneratorView styles - START --- */
+
+/* Toggle buttons for note type (user-provider-delivery) */
+.type-button-left, .type-button-right {
+    -fx-background-color: linear-gradient(to bottom, #f8fafc, #f1f5f9);
+    -fx-text-fill: #64748b;
     -fx-font-weight: bold;
     -fx-font-size: 14px;
     -fx-cursor: hand;
-    -fx-padding: 15;
-    -fx-border-color: #ccc;
-    /* Transition for smoother hover */
-    -fx-transition: background-color 0.2s;
-}
-
-.entity-button-left {
-    -fx-background-radius: 10 0 0 0;
-    -fx-border-width: 1 0 1 1;
-}
-
-.entity-button-right {
-    -fx-background-radius: 0 10 0 0;
-    -fx-border-width: 1 1 1 1;
-}
-
-/* Hover Effect (When NOT selected) */
-.entity-button-left:hover, .entity-button-right:hover {
-    -fx-background-color: #d5d5d5;
-    -fx-text-fill: #333;
-}
-
-/* Selected State */
-.entity-button-left:selected, .entity-button-right:selected {
-    -fx-background-color: #0c8570;
-    -fx-text-fill: white;
-    -fx-border-color: #0c8570;
-}
-
-/* Hover Effect (When ALREADY selected) */
-.entity-button-left:selected:hover, .entity-button-right:selected:hover {
-    -fx-background-color: #0e9a82;
-}
-
-/* Note Generation: bottom action buttons */
-.button-primary-large {
-    -fx-background-color: #0c8570;
-    -fx-text-fill: white;
-    -fx-font-weight: bold;
-    -fx-padding: 10 20 10 20;
-    -fx-background-radius: 5;
-    -fx-border-color: transparent;
-    -fx-border-width: 1;
-    -fx-cursor: hand;
-}
-
-.button-primary-large:hover {
-    -fx-background-color: #0e9a82; 
-    -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.1), 5, 0, 0, 2);
-}
-
-.button-primary-large:pressed, .button-secondary-large:pressed {
-    -fx-translate-y: 1px;
-    -fx-effect: none;
-}
-
-.button-secondary-large {
-    -fx-background-color: transparent;
-    -fx-text-fill: #64748b;
-    -fx-border-color: #e2e8f0;
-    -fx-border-width: 1.5;
-    -fx-border-radius: 5;
-    -fx-background-radius: 5;
-    -fx-padding: 10 20; 
-    -fx-font-weight: bold;
-    -fx-cursor: hand;
-}
-
-.button-secondary-large:hover {
-    -fx-background-color: #f8fafc;
-    -fx-text-fill: #1e293b;
+    -fx-padding: 15 30;
     -fx-border-color: #cbd5e1;
-}
-
-/* User note generation: Note type label */
-.user-note-type-caption {
-    -fx-text-fill: #0c8570;
-    -fx-font-size: 10px;
-    -fx-font-weight: bold;
-    -fx-letter-spacing: 0.5px;
-    -fx-padding: 0 0 2 2;
-}
-
-/* User note generation type buttons */
-.type-button-left, .type-button-middle, .type-button-right {
-    -fx-background-color: #f1f5f9;
-    -fx-text-fill: #64748b;
-    -fx-font-size: 12px;
-    -fx-font-weight: bold;
-    -fx-border-color: #cbd5e1;
-    -fx-cursor: hand;
+    -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.05), 5, 0, 0, 1);
+    -fx-transition: all 0.2s ease-in-out;
 }
 
 .type-button-left {
-    -fx-background-radius: 8 0 0 8;
+    -fx-background-radius: 15 0 0 15 !important;
+    -fx-border-radius: 15 0 0 15 !important;
     -fx-border-width: 1 0 1 1;
 }
-.type-button-middle {
-    -fx-background-radius: 0;
-    -fx-border-width: 1 0 1 1;
-}
+
 .type-button-right {
-    -fx-background-radius: 0 8 8 0;
+    -fx-background-radius: 0 15 15 0 !important;
+    -fx-border-radius: 0 15 15 0 !important;
     -fx-border-width: 1 1 1 1;
 }
 
-/* User note generation type buttons: Hover effect */
-.type-button-left:hover, .type-button-middle:hover, .type-button-right:hover {
-    -fx-background-color: #e2e8f0;
+.type-button-left:hover, .type-button-right:hover {
+    -fx-background-color: linear-gradient(to bottom, #ffffff, #f1f5f9);
+    -fx-text-fill: #334155;
+    -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.1), 8, 0, 0, 2);
 }
 
-/* User note generation type buttons: Selected state */
-.type-button-left:selected, .type-button-middle:selected, .type-button-right:selected {
-    -fx-background-color: #0c8570; 
-    -fx-text-fill: white;
-    -fx-border-color: #0c8570;
-}
-
-/* User note generation: Input label */
-.input-label-small {
-    -fx-text-fill: #64748b;
-    -fx-font-size: 9px;
-    -fx-font-weight: bold;
-}
-
-/* User note generation: Main input field */
-.form-input-main {
-    -fx-background-color: white;
-    -fx-border-color: #cbd5e1;
-    -fx-border-width: 1.5;
-    -fx-border-radius: 4;
-    -fx-background-radius: 4;
-    -fx-padding: 8 10;
-}
-
-.form-input-main:focused {
-    -fx-border-color: #0c8570;
-}
-
-/* User note generation: Disabled input field */
-.form-input-disabled {
-    -fx-background-color: #f8fafc;
-    -fx-text-fill: #64748b;
-    -fx-border-color: #e2e8f0;
-    -fx-border-radius: 4;
-    -fx-padding: 8 10 8 10;
-    -fx-font-size: 13px;
-}
-
-/* AD Search and "+ Agregar" buttons */
-.button-primary {
+.type-button-left:selected, .type-button-right:selected {
     -fx-background-color: #0c8570;
     -fx-text-fill: white;
-    -fx-font-weight: bold;
-    -fx-background-radius: 4;
-    -fx-cursor: hand;
-    -fx-border-color: transparent;
-    -fx-border-width: 1;
+    -fx-border-color: #086d5a;
+    -fx-effect: innershadow(three-pass-box, rgba(0,0,0,0.25), 6, 0, 0, 2);
 }
 
-.button-primary:hover {
-    -fx-background-color: #0e9a82; 
-    -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.1), 5, 0, 0, 2);
+.type-button-left:selected:hover, .type-button-right:selected:hover {
+    -fx-background-color: #0e9a82;
+    -fx-effect: innershadow(three-pass-box, rgba(0,0,0,0.3), 8, 0, 0, 3);
 }
 
-.button-primary:pressed, .button-secondary:pressed {
-    -fx-translate-y: 1px;
-    -fx-effect: none;
-}
-
-/* "Limpiar" button - AD section */
-.button-secondary {
-    -fx-background-color: transparent;
-    -fx-text-fill: #64748b;
-    -fx-border-color: #e2e8f0;
-    -fx-border-radius: 4;
-    -fx-padding: 4 10;
-    -fx-cursor: hand;
-}
-
-.button-secondary:hover {
-    -fx-background-color: #fcf9f8;
-    -fx-text-fill: #1e293b;
-    -fx-border-color: #cbd5e1;
-}
-
-
-/* AD User Selection: header */
-/* Gradient Header for AD Selection */
-.ad-header-gradient {
-    -fx-background-color: linear-gradient(to right, #0c8570, #0a6d5c);
-    -fx-padding: 0 25;
-    -fx-background-radius: 7 7 0 0;
-}
-
-.ad-header-title {
-    -fx-text-fill: white;
-    -fx-font-weight: bold;
-    -fx-font-size: 16px;
-}
-
-.ad-header-subtitle {
-    -fx-text-fill: rgba(255, 255, 255, 0.7);
-    -fx-font-weight: bold;
-    -fx-font-size: 9px;
-    -fx-letter-spacing: 1px;
-    -fx-text-transform: uppercase;
-}
-
-/* Enhancing the ListView table feel */
-.ad-selection-list {
-    -fx-background-color: transparent;
-    -fx-border-color: #e2e8f0;
-    -fx-border-width: 1;
-    -fx-background-radius: 5;
-    -fx-border-radius: 5;
-}
-
-.ad-selection-list .list-cell:filled:hover {
-    -fx-background-color: #f1f5f9;
-    -fx-text-fill: #0c8570;
-}
-
-/* AD User Selection: table */
-.ad-selection-list {
-    -fx-background-color: white;
-    -fx-background-radius: 0 0 8 8;
-    -fx-border-color: #e2e8f0;
-    -fx-border-width: 1;
-    /* Remove default focus ring */
+.type-button-left:focused {
+    -fx-background-radius: 15 0 0 15 !important;
+    -fx-border-radius: 15 0 0 15 !important;
     -fx-focus-color: transparent;
     -fx-faint-focus-color: transparent;
 }
 
-.ad-selection-list .list-cell {
-    -fx-padding: 14 20;
-    -fx-border-color: transparent transparent #f1f5f9 transparent;
-    -fx-background-color: white;
-    -fx-text-fill: #334155;
-    -fx-font-size: 13px;
-    -fx-transition: background-color 0.2s; 
+.type-button-right:focused {
+    -fx-background-radius: 0 15 15 0 !important;
+    -fx-border-radius: 0 15 15 0 !important;
+    -fx-focus-color: transparent;
+    -fx-faint-focus-color: transparent;
 }
 
-.ad-selection-list .list-cell:filled:hover {
-    -fx-background-color: #f8fafc;
-    -fx-text-fill: #0c8570;
-    -fx-cursor: hand;
-}
+/* -- Equipment table style - START --  */
 
-.ad-selection-list .list-cell:filled:selected {
-    -fx-background-color: #f0fdfa;
-    -fx-text-fill: #0c8570;
-    -fx-font-weight: bold;
-    -fx-border-color: transparent transparent #f1f5f9 #0c8570;
-    -fx-border-width: 0 0 1 4;
-}
-
-/* Scrollbar polish: Making it look like a modern "thin" scrollbar */
-.ad-selection-list .scroll-bar:vertical {
-    -fx-background-color: transparent;
-    -fx-pref-width: 6;
-}
-
-.ad-selection-list .scroll-bar:vertical .thumb {
-    -fx-background-color: #cbd5e1;
-    -fx-background-radius: 10;
-}
-
-.ad-selection-list .scroll-bar:vertical .thumb:hover {
-    -fx-background-color: #94a3b8;
-}
-
-/* -- EQUIPMENT TABLE - START  */
-
+/* Table small description (as title) */
 .table-section-caption {
     -fx-text-fill: #475569;
     -fx-font-size: 11px;
@@ -372,8 +244,9 @@
     -fx-padding: 0 0 5 0;
 }
 
-/* User note generation: Equipment table */
+/* Equipment table */
 .modern-table {
+    -fx-column-resize-policy: constrained-resize;
     -fx-font-family: "Segoe UI", "Inter", sans-serif;
     -fx-background-color: transparent;
     -fx-background-insets: 0;
@@ -382,7 +255,27 @@
     -fx-border-radius: 8;
 }
 
-/* Header Styling: Teal Background with White Caps Text */
+.modern-table .virtual-flow .scroll-bar:vertical {
+    -fx-background-color: transparent;
+    -fx-padding: 0;
+}
+
+.modern-table .filler {
+    -fx-background-color: transparent;
+}
+
+.modern-table:focused {
+    -fx-background-insets: 0;
+}
+
+/* Placeholder for empty tables */
+.modern-table .placeholder .label {
+    -fx-text-fill: #94a3b8;
+    -fx-font-size: 14px;
+    -fx-font-italic: italic;
+}
+
+/* Table column headers */
 .modern-table .column-header-background {
     -fx-background-color: #0c8570;
     -fx-background-radius: 7 7 0 0;
@@ -401,18 +294,12 @@
     -fx-text-fill: white;
     -fx-font-size: 10px;
     -fx-font-weight: bold;
-    /* CHANGE THIS TO CENTER */
     -fx-alignment: CENTER;
     -fx-text-alignment: CENTER;
     -fx-max-width: Infinity;
 }
 
-/* Removing the ugly "empty" extra column space */
-.modern-table .filler {
-    -fx-background-color: transparent;
-}
-
-/* Row Styling */
+/* Table row */
 .modern-table .table-row-cell {
     -fx-cell-size: 30;
     -fx-background-color: white;
@@ -420,7 +307,6 @@
     -fx-border-width: 0 0 1 0;
 }
 
-/* Hover and Selection: Soft Teal instead of default Blue */
 .modern-table .table-row-cell:hover {
     -fx-background-color: #f0fdfa;
 }
@@ -449,19 +335,7 @@
     -fx-border-color: transparent;
 }
 
-/* Remove internal focus ring */
-.modern-table:focused {
-    -fx-background-insets: 0;
-}
-
-/* Placeholder for empty tables */
-.modern-table .placeholder .label {
-    -fx-text-fill: #94a3b8;
-    -fx-font-size: 14px;
-    -fx-font-italic: italic;
-}
-
-/* Action buttons column */
+/* Table action buttons column */
 .button-icon-delete, .button-icon-edit {
     -fx-background-color: transparent;
     -fx-text-fill: #94a3b8;
@@ -486,27 +360,293 @@
     -fx-text-fill: #f4f8f7;
 }
 
-/* Container for multiple buttons */
 .action-container {
     -fx-spacing: 12;
     -fx-alignment: CENTER;
 }
 
-/* -- EQUIPMENT TABLE - END  */
+/* -- Equipment table style - END --  */
 
-/* User note generation: Observation text field */
-.modern-text-field-small {
+/* Footer action buttons */
+/* Generate note button */
+.button-primary-large {
+    -fx-background-color: #0c8570;
+    -fx-text-fill: white;
+    -fx-font-weight: bold;
+    -fx-padding: 10 20 10 20;
+    -fx-background-radius: 5;
+    -fx-border-color: transparent;
+    -fx-border-width: 1;
+    -fx-cursor: hand;
+}
+
+.button-primary-large:hover {
+    -fx-background-color: #0e9a82; 
+    -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.1), 5, 0, 0, 2);
+}
+
+/* Clear form button */
+.button-secondary-large {
+    -fx-background-color: transparent;
+    -fx-text-fill: #64748b;
+    -fx-border-color: #e2e8f0;
+    -fx-border-width: 1.5;
+    -fx-border-radius: 5;
+    -fx-background-radius: 5;
+    -fx-padding: 10 20; 
+    -fx-font-weight: bold;
+    -fx-cursor: hand;
+}
+
+.button-secondary-large:hover {
+    -fx-background-color: #f8fafc;
+    -fx-text-fill: #1e293b;
+    -fx-border-color: #cbd5e1;
+}
+
+.button-primary-large:pressed, .button-secondary-large:pressed {
+    -fx-translate-y: 1px;
+    -fx-effect: none;
+}
+
+/* --- NoteGeneratorView styles - END --- */
+
+/* --- UserNoteView styles - START --- */
+
+/* User note type toggle buttons */
+.small-toggle-button-left, .small-toggle-button-middle, .small-toggle-button-right {
+    -fx-background-color: linear-gradient(to bottom, #f8fafc, #f1f5f9);
+    -fx-text-fill: #64748b;
+    -fx-font-size: 12px;
+    -fx-font-weight: bold;
+    -fx-border-color: #cbd5e1;
+    -fx-cursor: hand;
+    -fx-padding: 8 16;
+    -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.03), 3, 0, 0, 1);
+    -fx-transition: all 0.15s ease-in-out;
+}
+
+.small-toggle-button-left {
+    -fx-background-radius: 8 0 0 8 !important;
+    -fx-border-radius: 8 0 0 8 !important;
+    -fx-border-width: 1 0 1 1;
+}
+.small-toggle-button-middle {
+    -fx-background-radius: 0 !important;
+    -fx-border-radius: 0 !important;
+    -fx-border-width: 1 0 1 1;
+}
+.small-toggle-button-right {
+    -fx-background-radius: 0 8 8 0 !important;
+    -fx-border-radius: 0 8 8 0 !important;
+    -fx-border-width: 1 1 1 1;
+}
+
+.small-toggle-button-left:hover, .small-toggle-button-middle:hover, .small-toggle-button-right:hover {
+    -fx-background-color: linear-gradient(to bottom, #ffffff, #f1f5f9);
+    -fx-text-fill: #334155;
+    -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.08), 4, 0, 0, 1);
+}
+
+.small-toggle-button-left:selected, .small-toggle-button-middle:selected, .small-toggle-button-right:selected {
+    -fx-background-color: #0c8570; 
+    -fx-text-fill: white;
+    -fx-border-color: #086d5a;
+    -fx-effect: innershadow(three-pass-box, rgba(0,0,0,0.2), 4, 0, 0, 1);
+}
+
+.small-toggle-button-left:selected:hover, .small-toggle-button-middle:selected:hover, .small-toggle-button-right:selected:hover {
+    -fx-background-color: #0e9a82;
+}
+
+.small-toggle-button-left:focused {
+    -fx-background-radius: 8 0 0 8 !important;
+    -fx-border-radius: 8 0 0 8 !important;
+    -fx-focus-color: transparent;
+}
+
+.small-toggle-button-middle:focused {
+    -fx-background-radius: 0 !important;
+    -fx-border-radius: 0 !important;
+    -fx-focus-color: transparent;
+}
+
+.small-toggle-button-right:focused {
+    -fx-background-radius: 0 8 8 0 !important;
+    -fx-border-radius: 0 8 8 0 !important;
+    -fx-focus-color: transparent;
+}
+
+/* --- UserNoteView styles - END --- */
+
+/* --- ADUserSelectionView styles - START --- */
+
+/* Header */
+.ad-header-gradient {
+    -fx-background-color: linear-gradient(to right, #0c8570, #0a6d5c);
+    -fx-padding: 0 25;
+    -fx-background-radius: 7 7 0 0;
+}
+
+.ad-header-title {
+    -fx-text-fill: white;
+    -fx-font-weight: bold;
+    -fx-font-size: 16px;
+}
+
+.ad-header-subtitle {
+    -fx-text-fill: rgba(255, 255, 255, 0.7);
+    -fx-font-weight: bold;
+    -fx-font-size: 9px;
+    -fx-letter-spacing: 1px;
+    -fx-text-transform: uppercase;
+}
+
+/* User list */
+.ad-selection-list {
+    -fx-background-color: white;
+    -fx-background-radius: 0 0 8 8;
+    -fx-border-color: #e2e8f0;
+    -fx-border-width: 1;
+    -fx-focus-color: transparent;
+    -fx-faint-focus-color: transparent;
+}
+
+.ad-selection-list .list-cell {
+    -fx-padding: 14 20;
+    -fx-border-color: transparent transparent #f1f5f9 transparent;
+    -fx-background-color: white;
+    -fx-text-fill: #334155;
+    -fx-font-size: 13px;
+    -fx-transition: background-color 0.2s; 
+}
+
+.ad-selection-list .list-cell:filled:hover {
+    -fx-background-color: #f8fafc;
+    -fx-text-fill: #0c8570;
+    -fx-cursor: hand;
+}
+
+.ad-selection-list .list-cell:filled:selected {
+    -fx-background-color: #f0fdfa;
+    -fx-text-fill: #0c8570;
+    -fx-font-weight: bold;
+    -fx-border-color: transparent transparent #f1f5f9 #0c8570;
+    -fx-border-width: 0 0 1 4;
+}
+
+.ad-selection-list .scroll-bar:vertical {
+    -fx-background-color: transparent;
+    -fx-pref-width: 6;
+}
+
+.ad-selection-list .scroll-bar:vertical .thumb {
+    -fx-background-color: #cbd5e1;
+    -fx-background-radius: 10;
+}
+
+.ad-selection-list .scroll-bar:vertical .thumb:hover {
+    -fx-background-color: #94a3b8;
+}
+
+/* --- ADUserSelectionView styles - END --- */
+
+/* --- ProviderNoteView styles - START --- */
+
+/* Provider combobox */
+.provider-combobox {
     -fx-background-color: white;
     -fx-border-color: #cbd5e1;
     -fx-border-radius: 4;
-    -fx-padding: 5 10 5 10;
-    -fx-font-size: 12px;
+    -fx-background-radius: 4;
+    -fx-pref-height: 38;
+    -fx-background-insets: 0;
+    -fx-focus-color: transparent;
 }
 
-.modern-text-field-disabled-small {
-    -fx-background-color: #f1f5f9;
-    -fx-text-fill: #94a3b8;
-    -fx-border-color: #e2e8f0;
-    -fx-border-radius: 4;
-    -fx-padding: 5;
+.provider-combobox:focused {
+    -fx-border-color: #0c8570;
+    -fx-border-width: 1.5;
 }
+.provider-combobox:hover {
+    -fx-border-color: #0c8570;
+    -fx-cursor: hand;
+}
+
+.provider-combobox .arrow {
+    -fx-background-color: #64748b;
+    -fx-shape: "M 0 0 L 4 4 L 8 0 Z";
+}
+
+.provider-combobox .list-cell {
+    -fx-text-fill: #0c8570;
+    -fx-font-weight: bold;
+    -fx-padding: 0 15 0 20;
+    -fx-cursor: hand;
+}
+
+.provider-combobox .list-view {
+    -fx-background-color: white;
+    -fx-border-color: #e2e8f0;
+    -fx-background-radius: 12;
+    -fx-border-radius: 12;
+    -fx-translate-y: 5;
+    -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.1), 10, 0, 0, 5);
+}
+
+.provider-combobox .list-view .list-cell {
+    -fx-padding: 10 20;
+    -fx-background-radius: 12;
+    -fx-text-fill: #334155;
+    -fx-font-weight: normal;
+}
+
+.provider-combobox .list-view .list-cell:filled:hover {
+    -fx-background-color: #f0fdfa;
+    -fx-text-fill: #0c8570;
+}
+.provider-combobox .list-view .list-cell:filled:selected {
+    -fx-background-color: #0c8570 !important;
+    -fx-text-fill: white !important;
+}
+
+/* Checkbox container with text */
+.custom-checkbox-inline {
+    -fx-background-color: #f0fdfa;
+    -fx-background-radius: 8;
+    -fx-border-color: #ccf2ed;
+    -fx-border-radius: 8;
+    -fx-padding: 3 8 3 6;
+    -fx-text-fill: #0c8570;
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-cursor: hand;
+    -fx-transition: all 0.2s;
+}
+
+.custom-checkbox-inline:hover {
+    -fx-background-color: #e6fffa;
+    -fx-border-color: #0c8570;
+}
+
+.custom-checkbox-inline > .box {
+    -fx-background-color: white;
+    -fx-border-color: #0c8570;
+    -fx-background-radius: 10;
+    -fx-border-radius: 10;
+}
+
+.custom-checkbox-inline:selected {
+    -fx-background-color: #0c8570;
+    -fx-text-fill: white;
+}
+
+.custom-checkbox-inline:selected > .box {
+    -fx-background-color: white;
+}
+
+.custom-checkbox-inline:selected > .box > .mark {
+    -fx-background-color: #0c8570;
+}
+
+/* --- ProviderNoteView styles - END --- */

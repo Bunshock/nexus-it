@@ -33,7 +33,7 @@ public class NoteGeneratorController {
 
     // Profile selection buttons
     @FXML private ToggleButton btnUserNote, btnProviderNote;
-    @FXML private ToggleGroup entityGroup;
+    @FXML private ToggleGroup typeGroup;
     
     // Specific note profile content area
     @FXML private StackPane dynamicContentArea;
@@ -69,7 +69,7 @@ public class NoteGeneratorController {
         btnProviderNote.setOnAction(e -> showProviderNoteView());
 
         // Ensure one profile is always selected
-        entityGroup.selectedToggleProperty().addListener((obs, oldToggle, newToggle) -> {
+        typeGroup.selectedToggleProperty().addListener((obs, oldToggle, newToggle) -> {
             if (newToggle == null) {
                 oldToggle.setSelected(true);
             }
@@ -155,15 +155,14 @@ public class NoteGeneratorController {
     private void populateMockTableData() {
         // Mock Assets (The top table)
         assetList.addAll(
-            new AssetItem("Notebook", "HP", "ProBook 450 G9", "Cargador original, Mouse USB", "SN123456", "AF789012"),
-            new AssetItem("Monitor", "Samsung", "F24T35", "Cable HDMI, Cable de poder", "SN789012", "AF345678"),
-            new AssetItem("Teclado", "Logitech", "K120", "Nuevo en caja", "SN345678", "IT-00000008")
+            new AssetItem("Notebook", "MP", "PB G9", "Cargador original, Mouse USB", "SN123456789", "AF789012"),
+            new AssetItem("Monitor", "Pamsung", "F24T35", "Cable HDMI, Cable de poder", "SN111111111", "AF345678")
         );
 
         // Mock Countables (The bottom table)
         countableList.addAll(
             new CountableItem("Cable UTP 2mts", "Generic", "CAT6", 1, "Gris"),
-            new CountableItem("Adaptador HDMI a VGA", "Nisuta", "NS-ADHV", 10, "Blanco"),
+            new CountableItem("Adaptador HDMI a VGA", "Marca inventada", "Modelo inv.", 10, "Blanco"),
             new CountableItem("Mouse Pad", "Generic", "Standard", 1, "Negro - Siglo 21")
         );
     }
