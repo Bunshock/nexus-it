@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?import javafx.scene.layout.*?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.web.WebView?>
+
+<HBox spacing="0" prefWidth="1100" prefHeight="700"
+      xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1"
+      fx:controller="com.bunshock.note_app_for_it_frontend.controllers.NotePreviewController">
+    <children>
+
+        <!-- Note preview (left) -->
+        <WebView fx:id="webPreview" HBox.hgrow="ALWAYS" minWidth="700"/>
+
+        <!-- Options panel (right) -->
+        <VBox spacing="20" prefWidth="280"
+              style="-fx-padding: 30; -fx-background-color: #f8fafc; -fx-border-color: #e2e8f0; -fx-border-width: 0 0 0 1;">
+            <children>
+                <Label text="OPCIONES DE GENERACIÓN"
+                       style="-fx-font-weight: bold; -fx-font-size: 13px; -fx-text-fill: #0c8570;"/>
+
+                <CheckBox fx:id="chkPrint" text="Imprimir nota"/>
+                <CheckBox fx:id="chkEmail" text="Enviar por correo" onAction="#handleEmailToggle"/>
+                <VBox fx:id="vboxEmailField" spacing="4" managed="false" visible="false">
+                    <Label text="DESTINATARIO" styleClass="input-label-small"/>
+                    <TextField fx:id="txtEmailRecipient" styleClass="form-input-main"
+                               promptText="email@ues21.edu.ar"/>
+                </VBox>
+
+                <CheckBox fx:id="chkGlpi" text="Sincronizar con GLPI" disable="true"/>
+                <Label text="(GLPI desconectado)" fx:id="lblGlpiStatus"
+                       style="-fx-font-size: 10px; -fx-text-fill: #94a3b8;"/>
+
+                <Region VBox.vgrow="ALWAYS"/>
+
+                <Label fx:id="lblStatus" text="" wrapText="true"
+                       style="-fx-font-size: 11px;"/>
+
+                <HBox spacing="10" alignment="CENTER_RIGHT">
+                    <Button text="Cancelar" onAction="#handleCancel" styleClass="button-secondary"/>
+                    <Button fx:id="btnGenerate" text="Generar" onAction="#handleGenerate"
+                            styleClass="button-primary-large" disable="true"/>
+                </HBox>
+            </children>
+        </VBox>
+
+    </children>
+</HBox>

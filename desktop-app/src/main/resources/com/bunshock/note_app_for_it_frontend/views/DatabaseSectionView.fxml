@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?import javafx.scene.layout.*?>
+<?import javafx.scene.control.*?>
+
+<VBox spacing="20" style="-fx-padding: 30; -fx-background-color: #f4f4f4;"
+      xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1"
+      fx:controller="com.bunshock.note_app_for_it_frontend.controllers.DatabaseSectionController">
+    <children>
+
+        <Label text="BASE DE DATOS" styleClass="section-label"/>
+
+        <!-- DB connection config -->
+        <VBox spacing="10" style="-fx-background-color: white; -fx-background-radius: 10; -fx-padding: 15 20 20 20;">
+            <children>
+                <Label text="CONEXIÓN" styleClass="section-label"/>
+                <HBox spacing="10" alignment="CENTER_LEFT">
+                    <TextField fx:id="txtDbUrl" promptText="URL de la base de datos remota..."
+                               HBox.hgrow="ALWAYS" styleClass="form-input-main"/>
+                    <Button text="Conectar" onAction="#handleConnect" styleClass="button-primary"/>
+                </HBox>
+                <Label fx:id="lblConnectionStatus" text="" style="-fx-font-size: 11px;"/>
+            </children>
+        </VBox>
+
+        <!-- Equipment catalog -->
+        <HBox spacing="15" VBox.vgrow="ALWAYS">
+
+            <!-- Types -->
+            <VBox spacing="10" HBox.hgrow="ALWAYS"
+                  style="-fx-background-color: white; -fx-background-radius: 10; -fx-padding: 15 20 20 20;">
+                <children>
+                    <HBox alignment="CENTER_LEFT">
+                        <Label text="TIPOS" styleClass="section-label"/>
+                        <Region HBox.hgrow="ALWAYS"/>
+                        <Button text="+ Agregar" onAction="#handleAddType" styleClass="button-primary"/>
+                    </HBox>
+                    <ListView fx:id="listTypes" VBox.vgrow="ALWAYS"/>
+                    <Button text="Eliminar seleccionado" onAction="#handleRemoveType" styleClass="button-secondary"/>
+                </children>
+            </VBox>
+
+            <!-- Brands -->
+            <VBox spacing="10" HBox.hgrow="ALWAYS"
+                  style="-fx-background-color: white; -fx-background-radius: 10; -fx-padding: 15 20 20 20;">
+                <children>
+                    <HBox alignment="CENTER_LEFT">
+                        <Label text="MARCAS" styleClass="section-label"/>
+                        <Region HBox.hgrow="ALWAYS"/>
+                        <Button text="+ Agregar" onAction="#handleAddBrand" styleClass="button-primary"/>
+                    </HBox>
+                    <ListView fx:id="listBrands" VBox.vgrow="ALWAYS"/>
+                    <Button text="Eliminar seleccionado" onAction="#handleRemoveBrand" styleClass="button-secondary"/>
+                </children>
+            </VBox>
+
+            <!-- Models -->
+            <VBox spacing="10" HBox.hgrow="ALWAYS"
+                  style="-fx-background-color: white; -fx-background-radius: 10; -fx-padding: 15 20 20 20;">
+                <children>
+                    <HBox alignment="CENTER_LEFT">
+                        <Label text="MODELOS" styleClass="section-label"/>
+                        <Region HBox.hgrow="ALWAYS"/>
+                        <Button text="+ Agregar" onAction="#handleAddModel" styleClass="button-primary"/>
+                    </HBox>
+                    <ListView fx:id="listModels" VBox.vgrow="ALWAYS"/>
+                    <Button text="Eliminar seleccionado" onAction="#handleRemoveModel" styleClass="button-secondary"/>
+                </children>
+            </VBox>
+
+        </HBox>
+
+    </children>
+</VBox>

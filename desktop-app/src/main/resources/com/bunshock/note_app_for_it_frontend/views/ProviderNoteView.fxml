@@ -5,53 +5,72 @@
 <VBox spacing="20" xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1"
       fx:controller="com.bunshock.note_app_for_it_frontend.controllers.ProviderNoteController">
     <children>
-        
+
+        <!-- Provider selection -->
         <VBox spacing="10">
             <children>
                 <Label text="DATOS DEL PROVEEDOR" styleClass="section-label"/>
-                <HBox spacing="20" alignment="CENTER_LEFT">
+
+                <VBox spacing="2">
                     <children>
-                        <ComboBox fx:id="cmbProviderSearch" promptText="Seleccionar proveedor..." styleClass="provider-combobox"
-                            prefWidth="400" maxWidth="500"/>
-                        <Button fx:id="btnNewProvider" text="Nuevo Proveedor" styleClass="button-primary"/>
+                        <Label text="PROVEEDOR" styleClass="input-label-small"/>
+                        <ComboBox fx:id="cmbProviderSearch" promptText="Seleccionar proveedor..."
+                                  maxWidth="Infinity" styleClass="form-input-main"/>
                     </children>
-                </HBox>
+                </VBox>
+
+                <VBox spacing="2">
+                    <children>
+                        <Label text="CUIT" styleClass="input-label-small"/>
+                        <TextField fx:id="txtCuit" promptText="XX-XXXXXXXX-X" styleClass="form-input-main"/>
+                    </children>
+                </VBox>
             </children>
         </VBox>
 
         <Separator style="-fx-opacity: 0.5;"/>
 
-        <VBox spacing="10">
+        <!-- Motivo (mandatory) -->
+        <VBox spacing="4">
             <children>
-                <HBox alignment="CENTER_LEFT" spacing="15">
-                    <children>
-                        <Label text="RECIBE EN REPRESENTACIÓN" styleClass="section-label"/>
-                        <CheckBox fx:id="chkEnableResponsible" 
-                                text="Incluir detalles del responsable" 
-                                styleClass="custom-checkbox-inline"/>
-                    </children>
-                </HBox>
-
-                <GridPane fx:id="gridResponsibleDetails" disable="true" hgap="15" vgap="10">
-                    <columnConstraints>
-                        <ColumnConstraints percentWidth="35"/>
-                        <ColumnConstraints percentWidth="25"/>
-                    </columnConstraints>
-                    <children>
-                        <VBox spacing="2" GridPane.columnIndex="0">
-                            <Label text="NOMBRE COMPLETO" styleClass="input-label-small"/>
-                            <TextField fx:id="txtProviderResponsibleName" styleClass="form-input-main"/>
-                        </VBox>
-
-                        <VBox spacing="2" GridPane.columnIndex="1">
-                            <Label text="DNI" styleClass="input-label-small"/>
-                            <TextField fx:id="txtProviderResponsibleDni" styleClass="form-input-main"/>
-                        </VBox>
-                    </children>
-                </GridPane>
-
+                <Label text="MOTIVO" styleClass="input-label-small"/>
+                <ComboBox fx:id="cmbMotivo" promptText="Seleccionar motivo..."
+                          maxWidth="Infinity" styleClass="form-input-main"/>
             </children>
         </VBox>
-        
+
+        <Separator style="-fx-opacity: 0.5;"/>
+
+        <!-- Responsible person -->
+        <VBox spacing="18">
+            <children>
+                <VBox spacing="10">
+                    <children>
+                        <Label text="RECIBE EN REPRESENTACIÓN" styleClass="section-label"/>
+                        <CheckBox fx:id="chkEnableResponsible"
+                                  text="Incluir datos del responsable"
+                                  styleClass="custom-checkbox-inline"/>
+                    </children>
+                </VBox>
+
+                <VBox fx:id="gridResponsibleDetails" disable="true" spacing="14">
+                    <children>
+                        <VBox spacing="2">
+                            <children>
+                                <Label text="NOMBRE COMPLETO" styleClass="input-label-small"/>
+                                <TextField fx:id="txtProviderResponsibleName" styleClass="form-input-main"/>
+                            </children>
+                        </VBox>
+                        <VBox spacing="2">
+                            <children>
+                                <Label text="DNI" styleClass="input-label-small"/>
+                                <TextField fx:id="txtProviderResponsibleDni" styleClass="form-input-main"/>
+                            </children>
+                        </VBox>
+                    </children>
+                </VBox>
+            </children>
+        </VBox>
+
     </children>
 </VBox>

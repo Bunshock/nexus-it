@@ -1,0 +1,322 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?import javafx.scene.layout.*?>
+<?import javafx.scene.control.*?>
+
+<StackPane style="-fx-background-color: #f4f4f4;"
+           xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1"
+           fx:controller="com.bunshock.note_app_for_it_frontend.controllers.AboutController">
+
+    <!-- ── Panel: Acerca de ──────────────────────────────────────────── -->
+    <VBox fx:id="panelAbout" spacing="20" alignment="CENTER" style="-fx-padding: 60;">
+        <VBox spacing="8" alignment="CENTER"
+              style="-fx-background-color: white; -fx-background-radius: 12; -fx-padding: 40;">
+            <Label text="Generador de Notas IT"
+                   style="-fx-font-size: 22px; -fx-font-weight: bold; -fx-text-fill: #0c8570;"/>
+            <Label fx:id="lblVersion" text="Versión 1.0.0"
+                   style="-fx-font-size: 13px; -fx-text-fill: #64748b;"/>
+            <Separator style="-fx-padding: 10 0;"/>
+            <Label text="Oficina de Soporte IT"
+                   style="-fx-font-size: 14px; -fx-font-weight: bold;"/>
+            <Label text="Universidad Siglo 21 — SITA"
+                   style="-fx-font-size: 13px; -fx-text-fill: #64748b;"/>
+            <Separator style="-fx-padding: 10 0;"/>
+            <Label text="Autor: Leandro Mantovani"
+                   style="-fx-font-size: 12px; -fx-text-fill: #64748b;"/>
+            <Label text="Contacto: soporteit@ues21.edu.ar"
+                   style="-fx-font-size: 12px; -fx-text-fill: #64748b;"/>
+            <Separator style="-fx-padding: 10 0;"/>
+            <Button text="Manual de Usuario" onAction="#onOpenManual" styleClass="button-primary"/>
+        </VBox>
+    </VBox>
+
+    <!-- ── Panel: Manual de Usuario ─────────────────────────────────── -->
+    <VBox fx:id="panelManual" visible="false" managed="false"
+          maxWidth="Infinity" maxHeight="Infinity"
+          style="-fx-padding: 28 40 20 40; -fx-background-color: #f4f4f4;">
+
+        <ScrollPane fitToWidth="true" VBox.vgrow="ALWAYS" hbarPolicy="NEVER"
+                    style="-fx-background: white; -fx-background-color: white;
+                           -fx-border-color: #e2e8f0; -fx-border-radius: 10; -fx-background-radius: 10;">
+
+            <VBox spacing="10" style="-fx-padding: 36 44; -fx-background-color: white;">
+
+                <!-- PORTADA ───────────────────────────────────────────────── -->
+                <Label text="Manual de Usuario"
+                       style="-fx-font-size: 22px; -fx-font-weight: bold; -fx-text-fill: #0c8570;"/>
+                <Label text="Generador de Notas IT — Oficina de Soporte IT · SITA"
+                       style="-fx-font-size: 13px; -fx-text-fill: #64748b;"/>
+
+                <VBox spacing="3" style="-fx-padding: 6 0 0 0;">
+                    <Label text="Versión:            1.0.0"
+                           style="-fx-font-size: 12px; -fx-font-family: monospace; -fx-text-fill: #64748b;"/>
+                    <Label text="Autor:              Leandro Mantovani"
+                           style="-fx-font-size: 12px; -fx-font-family: monospace; -fx-text-fill: #64748b;"/>
+                    <Label text="Fecha de creación:  Junio 2026"
+                           style="-fx-font-size: 12px; -fx-font-family: monospace; -fx-text-fill: #64748b;"/>
+                    <Label text="Área:               Soporte IT — Universidad Siglo 21"
+                           style="-fx-font-size: 12px; -fx-font-family: monospace; -fx-text-fill: #64748b;"/>
+                    <Label text="Contacto:           soporteit@ues21.edu.ar"
+                           style="-fx-font-size: 12px; -fx-font-family: monospace; -fx-text-fill: #64748b;"/>
+                </VBox>
+
+                <Separator/>
+
+                <Label wrapText="true"
+                       text="El Generador de Notas IT permite al personal de soporte técnico crear notas de entrega, devolución, recambio y proveedor de equipamiento informático. Las notas pueden previsualizarse, imprimirse y enviarse por correo electrónico directamente desde la aplicación."
+                       style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
+
+                <Separator/>
+
+                <!-- ÍNDICE ────────────────────────────────────────────────── -->
+                <Label text="Índice"
+                       style="-fx-font-size: 15px; -fx-font-weight: bold; -fx-text-fill: #0c8570;"/>
+
+                <VBox spacing="2" style="-fx-padding: 2 0 0 0;">
+                    <Label text="1.   Pantalla principal"
+                           style="-fx-font-size: 12px; -fx-text-fill: #334155;"/>
+                    <Label text="2.   Generación de notas"
+                           style="-fx-font-size: 12px; -fx-text-fill: #334155;"/>
+                    <Label text="     2.1  Nota de usuario"
+                           style="-fx-font-size: 12px; -fx-text-fill: #64748b;"/>
+                    <Label text="     2.2  Nota de proveedor"
+                           style="-fx-font-size: 12px; -fx-text-fill: #64748b;"/>
+                    <Label text="3.   Tipos de nota"
+                           style="-fx-font-size: 12px; -fx-text-fill: #334155;"/>
+                    <Label text="     3.1  Entrega"
+                           style="-fx-font-size: 12px; -fx-text-fill: #64748b;"/>
+                    <Label text="     3.2  Devolución"
+                           style="-fx-font-size: 12px; -fx-text-fill: #64748b;"/>
+                    <Label text="     3.3  Fin de Contrato"
+                           style="-fx-font-size: 12px; -fx-text-fill: #64748b;"/>
+                    <Label text="     3.4  Recambio"
+                           style="-fx-font-size: 12px; -fx-text-fill: #64748b;"/>
+                    <Label text="     3.5  Entrega — Proveedor"
+                           style="-fx-font-size: 12px; -fx-text-fill: #64748b;"/>
+                    <Label text="4.   Gestión de equipamiento"
+                           style="-fx-font-size: 12px; -fx-text-fill: #334155;"/>
+                    <Label text="     4.1  Agregar y editar ítems"
+                           style="-fx-font-size: 12px; -fx-text-fill: #64748b;"/>
+                    <Label text="     4.2  Número de serie (S/N)"
+                           style="-fx-font-size: 12px; -fx-text-fill: #64748b;"/>
+                    <Label text="     4.3  Activo Fijo (A/F)"
+                           style="-fx-font-size: 12px; -fx-text-fill: #64748b;"/>
+                    <Label text="5.   Previsualización y exportación"
+                           style="-fx-font-size: 12px; -fx-text-fill: #334155;"/>
+                    <Label text="6.   Búsqueda de usuarios"
+                           style="-fx-font-size: 12px; -fx-text-fill: #334155;"/>
+                    <Label text="7.   Historial de notas"
+                           style="-fx-font-size: 12px; -fx-text-fill: #334155;"/>
+                    <Label text="8.   Ajustes"
+                           style="-fx-font-size: 12px; -fx-text-fill: #334155;"/>
+                    <Label text="     8.1  Formato del Activo Fijo"
+                           style="-fx-font-size: 12px; -fx-text-fill: #64748b;"/>
+                    <Label text="     8.2  Correo electrónico"
+                           style="-fx-font-size: 12px; -fx-text-fill: #64748b;"/>
+                </VBox>
+
+                <Separator/>
+
+                <!-- 1. PANTALLA PRINCIPAL ─────────────────────────────────── -->
+                <Label text="1.  Pantalla principal"
+                       style="-fx-font-size: 15px; -fx-font-weight: bold; -fx-text-fill: #0c8570;"/>
+
+                <Label wrapText="true"
+                       text="La aplicación se organiza en cuatro secciones accesibles desde el menú lateral izquierdo:"
+                       style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
+                <VBox spacing="3" style="-fx-padding: 0 0 0 12;">
+                    <Label text="•  Generador — pantalla principal para crear notas de equipamiento"
+                           style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
+                    <Label text="•  Historial — registro de todas las notas generadas en la aplicación"
+                           style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
+                    <Label text="•  Ajustes — configuración del correo y del formato de Activo Fijo"
+                           style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
+                    <Label text="•  Acerca de — información sobre la aplicación y este manual"
+                           style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
+                </VBox>
+                <Label wrapText="true"
+                       text="La pantalla del Generador presenta dos pestañas en la parte superior (Nota de Usuario y Nota de Proveedor), el formulario del destinatario o proveedor, las tablas de equipamiento agregado, el campo de observaciones generales de la nota y los botones &quot;Generar Nota&quot; y &quot;Limpiar&quot;."
+                       style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
+
+                <Separator/>
+
+                <!-- 2. GENERACIÓN DE NOTAS ─────────────────────────────────── -->
+                <Label text="2.  Generación de notas"
+                       style="-fx-font-size: 15px; -fx-font-weight: bold; -fx-text-fill: #0c8570;"/>
+
+                <Label text="2.1  Nota de usuario"
+                       style="-fx-font-size: 13px; -fx-font-weight: bold; -fx-text-fill: #334155;"/>
+                <Label wrapText="true"
+                       text="Verificar que esté seleccionada la pestaña &quot;Nota de Usuario&quot;. Completar los datos del destinatario (nombre, DNI y correo electrónico) usando la búsqueda en Active Directory o ingresándolos manualmente. Seleccionar el tipo de nota y el Motivo cuando el tipo lo requiera. Agregar los equipos con el botón &quot;+ Agregar Ítem&quot;. Completar las observaciones generales de la nota si fuera necesario y presionar &quot;Generar Nota&quot;."
+                       style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
+
+                <Label text="2.2  Nota de proveedor"
+                       style="-fx-font-size: 13px; -fx-font-weight: bold; -fx-text-fill: #334155;"/>
+                <Label wrapText="true"
+                       text="Seleccionar la pestaña &quot;Nota de Proveedor&quot;. Completar los datos del proveedor (razón social, CUIT, nombre del responsable y DNI). Seleccionar el Motivo. Agregar los equipos recibidos y presionar &quot;Generar Nota&quot;."
+                       style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
+
+                <Label wrapText="true"
+                       text="El botón &quot;Limpiar&quot; restablece todos los campos del formulario y vacía las tablas de equipamiento. Los datos no se pueden recuperar una vez limpiados."
+                       style="-fx-font-size: 12px; -fx-text-fill: #94a3b8; -fx-font-style: italic;"/>
+
+                <Separator/>
+
+                <!-- 3. TIPOS DE NOTA ───────────────────────────────────────── -->
+                <Label text="3.  Tipos de nota"
+                       style="-fx-font-size: 15px; -fx-font-weight: bold; -fx-text-fill: #0c8570;"/>
+
+                <Label text="3.1  Entrega"
+                       style="-fx-font-size: 13px; -fx-font-weight: bold; -fx-text-fill: #334155;"/>
+                <Label wrapText="true"
+                       text="Se utiliza cuando se entrega equipamiento a un usuario. Requiere seleccionar un Motivo (Ingreso, Reposición, Préstamo u Otro). El número de serie es obligatorio para activos individuales; el Activo Fijo es opcional."
+                       style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
+
+                <Label text="3.2  Devolución"
+                       style="-fx-font-size: 13px; -fx-font-weight: bold; -fx-text-fill: #334155;"/>
+                <Label wrapText="true"
+                       text="Se utiliza cuando un usuario devuelve equipamiento. No requiere Motivo. La aplicación verifica que los activos ingresados estén efectivamente asignados al usuario indicado antes de permitir la generación de la nota."
+                       style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
+
+                <Label text="3.3  Fin de Contrato"
+                       style="-fx-font-size: 13px; -fx-font-weight: bold; -fx-text-fill: #334155;"/>
+                <Label wrapText="true"
+                       text="Variante de la devolución que indica explícitamente la finalización de la relación laboral del usuario con la institución. Se usa cuando el motivo de devolución es el egreso del empleado."
+                       style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
+
+                <Label text="3.4  Recambio"
+                       style="-fx-font-size: 13px; -fx-font-weight: bold; -fx-text-fill: #334155;"/>
+                <Label wrapText="true"
+                       text="Genera automáticamente dos notas a partir de un único formulario: una nota de Entrega (el equipo nuevo que se le da al usuario) y una nota de Devolución (el equipo viejo que se retira). Requiere Motivo (Falla, Obsolescencia, Actualización u Otro). Permite gestionar un cambio de equipo completo en una sola operación."
+                       style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
+
+                <Label text="3.5  Entrega — Proveedor"
+                       style="-fx-font-size: 13px; -fx-font-weight: bold; -fx-text-fill: #334155;"/>
+                <Label wrapText="true"
+                       text="Nota de recepción de equipamiento proveniente de un proveedor externo. Requiere CUIT del proveedor y Motivo (Compra, Garantía, Reparación u Otro). Disponible únicamente desde la pestaña &quot;Nota de Proveedor&quot;."
+                       style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
+
+                <Separator/>
+
+                <!-- 4. GESTIÓN DE EQUIPAMIENTO ─────────────────────────────── -->
+                <Label text="4.  Gestión de equipamiento"
+                       style="-fx-font-size: 15px; -fx-font-weight: bold; -fx-text-fill: #0c8570;"/>
+
+                <Label text="4.1  Agregar y editar ítems"
+                       style="-fx-font-size: 13px; -fx-font-weight: bold; -fx-text-fill: #334155;"/>
+                <Label wrapText="true"
+                       text="El botón &quot;+ Agregar Ítem&quot; abre un diálogo emergente. Seleccionar Tipo → Marca → Modelo en cascada. El tipo determina si el ítem es un activo (requiere número de serie) o un contable (requiere cantidad). Cada ítem tiene un campo de observaciones propio para detalles específicos del equipo (estado, observaciones particulares, etc.). Los ítems agregados aparecen en las tablas de la pantalla principal, donde pueden editarse con ✏ o eliminarse con 🗑. Al alcanzar el límite de ítems por nota, el botón de agregar muestra una advertencia y queda deshabilitado."
+                       style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
+
+                <Label text="4.2  Número de serie (S/N)"
+                       style="-fx-font-size: 13px; -fx-font-weight: bold; -fx-text-fill: #334155;"/>
+                <Label wrapText="true"
+                       text="Campo obligatorio para ítems de tipo activo. Cuando el modelo seleccionado tiene un formato de S/N definido, el diálogo muestra debajo del campo la longitud esperada y un ejemplo visual del patrón (los caracteres fijos aparecen en negrita y las posiciones variables en cursiva gris). El botón &quot;Agregar&quot; permanece deshabilitado hasta que el S/N ingresado cumpla con la longitud y el formato requeridos."
+                       style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
+                <VBox spacing="3" style="-fx-padding: 0 0 0 12;">
+                    <Label wrapText="true" text="•  Sin S/N: permite agregar el ítem sin número de serie en casos excepcionales. No está disponible para Notebooks, que siempre requieren S/N."
+                           style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
+                    <Label wrapText="true" text="•  Mayúsculas: convierte automáticamente el texto ingresado a mayúsculas al salir del campo."
+                           style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
+                </VBox>
+
+                <Label text="4.3  Activo Fijo (A/F)"
+                       style="-fx-font-size: 13px; -fx-font-weight: bold; -fx-text-fill: #334155;"/>
+                <Label wrapText="true"
+                       text="Campo opcional que se habilita marcando el checkbox &quot;N° Activo Fijo (A/F)&quot;. Se deben ingresar únicamente los dígitos significativos del número; la aplicación completa y formatea el valor automáticamente al guardar (por ejemplo: 435 → IT-00000435). Mientras se escribe, se muestra una previsualización del resultado final. El formato completo del Activo Fijo (prefijo, longitud y separadores) se configura desde la pantalla de Ajustes."
+                       style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
+
+                <Separator/>
+
+                <!-- 5. PREVISUALIZACIÓN Y EXPORTACIÓN ──────────────────────── -->
+                <Label text="5.  Previsualización y exportación"
+                       style="-fx-font-size: 15px; -fx-font-weight: bold; -fx-text-fill: #0c8570;"/>
+
+                <Label wrapText="true"
+                       text="Al presionar &quot;Generar Nota&quot;, se abre una ventana de previsualización con la nota formateada lista para su uso. Desde esta ventana se puede:"
+                       style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
+                <VBox spacing="3" style="-fx-padding: 0 0 0 12;">
+                    <Label wrapText="true" text="•  Imprimir: abre el diálogo de impresión del sistema para imprimir la nota en papel."
+                           style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
+                    <Label wrapText="true" text="•  Enviar por correo: envía la nota al correo del destinatario. Requiere tener el correo configurado en Ajustes."
+                           style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
+                    <Label wrapText="true" text="•  Sincronizar con GLPI: registra la operación en el sistema de gestión de activos GLPI."
+                           style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
+                </VBox>
+                <Label wrapText="true"
+                       text="Independientemente de la acción elegida, cada nota generada queda registrada automáticamente en el Historial de la aplicación."
+                       style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
+
+                <Separator/>
+
+                <!-- 6. BÚSQUEDA DE USUARIOS ────────────────────────────────── -->
+                <Label text="6.  Búsqueda de usuarios"
+                       style="-fx-font-size: 15px; -fx-font-weight: bold; -fx-text-fill: #0c8570;"/>
+
+                <Label wrapText="true"
+                       text="Desde el panel del destinatario en Notas de Usuario, el campo de búsqueda permite encontrar usuarios del directorio institucional por DNI, nombre completo o nombre de usuario. Comportamientos automáticos:"
+                       style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
+                <VBox spacing="3" style="-fx-padding: 0 0 0 12;">
+                    <Label wrapText="true" text="•  DNI con puntos: el formato 35.123.456 se reconoce igual que 35123456."
+                           style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
+                    <Label wrapText="true" text="•  Nombre de usuario: se prueban automáticamente variantes de separador (juan.perez y juan-perez)."
+                           style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
+                    <Label wrapText="true" text="•  Resultados múltiples: si la búsqueda devuelve más de un usuario, se muestra un selector para elegir el correcto."
+                           style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
+                </VBox>
+                <Label wrapText="true"
+                       text="Al abrir la aplicación, el usuario de Windows con sesión activa se busca automáticamente en segundo plano y se precarga en el campo de técnico responsable."
+                       style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
+
+                <Separator/>
+
+                <!-- 7. HISTORIAL DE NOTAS ──────────────────────────────────── -->
+                <Label text="7.  Historial de notas"
+                       style="-fx-font-size: 15px; -fx-font-weight: bold; -fx-text-fill: #0c8570;"/>
+                <Label wrapText="true"
+                       text="Cada nota generada queda registrada automáticamente. La sección Historial muestra el listado completo con fecha y hora de generación, tipo de nota, destinatario o proveedor, y estado de sincronización con GLPI. El botón &quot;Actualizar&quot; recarga el listado para reflejar los cambios más recientes. El historial se conserva entre sesiones y no se elimina al cerrar la aplicación."
+                       style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
+
+                <Separator/>
+
+                <!-- 8. AJUSTES ──────────────────────────────────────────────── -->
+                <Label text="8.  Ajustes"
+                       style="-fx-font-size: 15px; -fx-font-weight: bold; -fx-text-fill: #0c8570;"/>
+
+                <Label text="8.1  Formato del Activo Fijo"
+                       style="-fx-font-size: 13px; -fx-font-weight: bold; -fx-text-fill: #334155;"/>
+                <Label wrapText="true"
+                       text="Permite definir cómo se muestra y guarda el número de Activo Fijo en las notas. Los campos configurables son:"
+                       style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
+                <VBox spacing="3" style="-fx-padding: 0 0 0 12;">
+                    <Label text="•  Prefijo: texto que precede al número (ej: IT)"
+                           style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
+                    <Label text="•  Separador: carácter entre el prefijo y el número (ej: -)"
+                           style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
+                    <Label text="•  Longitud: cantidad de dígitos de la parte numérica (ej: 8)"
+                           style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
+                    <Label text="•  Relleno: carácter para completar a la izquierda cuando el número es corto (ej: 0)"
+                           style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
+                </VBox>
+                <Label wrapText="true"
+                       text="Una previsualización en tiempo real muestra el resultado del formato configurado con un número de ejemplo."
+                       style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
+
+                <Label text="8.2  Correo electrónico"
+                       style="-fx-font-size: 13px; -fx-font-weight: bold; -fx-text-fill: #334155;"/>
+                <Label wrapText="true"
+                       text="Para habilitar el envío de notas por correo, completar los campos de configuración SMTP: servidor, puerto y dirección del remitente. La contraseña se ingresa una sola vez y queda almacenada de forma segura en el equipo; no es necesario volver a ingresarla en sesiones posteriores. Una vez configurado, el botón &quot;Enviar por correo&quot; en la previsualización quedará habilitado."
+                       style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
+
+                <!-- Espacio final -->
+                <Label text="" style="-fx-padding: 4 0;"/>
+
+            </VBox>
+        </ScrollPane>
+
+        <HBox style="-fx-padding: 14 0 0 0;">
+            <Button text="← Volver" onAction="#onBack" styleClass="button-secondary"/>
+        </HBox>
+
+    </VBox>
+
+</StackPane>

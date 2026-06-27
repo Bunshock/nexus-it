@@ -14,7 +14,7 @@
    </fx:define>
    
    <left>
-      <VBox styleClass="sidebar">
+      <VBox styleClass="sidebar" prefWidth="235">
          <children>
 
             <!-- Logo -->
@@ -22,9 +22,9 @@
                <children>
                   <StackPane styleClass="logo-frame">
                      <children>
-                        <ImageView fx:id="imgLogo" fitWidth="120.0" preserveRatio="true">
+                        <ImageView fx:id="imgLogo" fitWidth="180" preserveRatio="true">
                            <image>
-                              <Image url="/com/bunshock/note_app_for_it_frontend/images/logo.jpg" />
+                              <Image url="/com/bunshock/note_app_for_it_frontend/images/logo.png" />
                            </image>
                         </ImageView>
                      </children>
@@ -58,19 +58,19 @@
             <ToggleButton text="Generar Nota" fx:id="btnGenerator" toggleGroup="$navigationGroup"
                   maxWidth="Infinity" styleClass="nav-button" selected="true" onAction="#handleShowGenerator"/>
             <ToggleButton text="Historial" fx:id="btnHistory" toggleGroup="$navigationGroup"
-                  maxWidth="Infinity" styleClass="nav-button"/>
-            <ToggleButton text="Datos" fx:id="btnData" toggleGroup="$navigationGroup"
-                  maxWidth="Infinity" styleClass="nav-button"/>
+                  maxWidth="Infinity" styleClass="nav-button" onAction="#handleShowHistory"/>
+            <ToggleButton text="Base de Datos" fx:id="btnData" toggleGroup="$navigationGroup"
+                  maxWidth="Infinity" styleClass="nav-button" onAction="#handleShowDatabase"/>
 
             <Region VBox.vgrow="ALWAYS" />
 
             <!-- Bottom navigation buttons -->
             <ToggleButton text="Mi Perfil" fx:id="btnProfile" toggleGroup="$navigationGroup"
-                  maxWidth="Infinity" styleClass="nav-button"/>
+                  maxWidth="Infinity" styleClass="nav-button" onAction="#handleShowProfile"/>
             <ToggleButton text="Configuración" fx:id="btnSettings" toggleGroup="$navigationGroup"
-                  maxWidth="Infinity" styleClass="nav-button"/>
+                  maxWidth="Infinity" styleClass="nav-button" onAction="#handleShowSettings"/>
             <ToggleButton text="Acerca de" fx:id="btnAbout" toggleGroup="$navigationGroup"
-                  maxWidth="Infinity" styleClass="nav-button"/>
+                  maxWidth="Infinity" styleClass="nav-button" onAction="#handleShowAbout"/>
 
             <!-- Server status -->
             <VBox spacing="8" style="-fx-padding: 15 0 0 0;">

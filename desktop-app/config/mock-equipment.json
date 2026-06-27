@@ -1,0 +1,51 @@
+{
+  "types": [
+    { "id": 1, "name": "Notebook",   "isAsset": true  },
+    { "id": 2, "name": "Monitor",    "isAsset": true  },
+    { "id": 3, "name": "Teclado",    "isAsset": false },
+    { "id": 4, "name": "Mouse",      "isAsset": false },
+    { "id": 5, "name": "Headset",    "isAsset": false },
+    { "id": 6, "name": "Cable",      "isAsset": false }
+  ],
+  "brands": [
+    { "id": 1,  "name": "Dell"     },
+    { "id": 2,  "name": "HP"       },
+    { "id": 3,  "name": "Lenovo"   },
+    { "id": 4,  "name": "Samsung"  },
+    { "id": 5,  "name": "LG"       },
+    { "id": 99, "name": "Generic"  }
+  ],
+  "typeBrands": [
+    { "id": 1,  "typeId": 1, "brandId": 1  },
+    { "id": 2,  "typeId": 1, "brandId": 2  },
+    { "id": 3,  "typeId": 1, "brandId": 3  },
+    { "id": 4,  "typeId": 2, "brandId": 1  },
+    { "id": 5,  "typeId": 2, "brandId": 4  },
+    { "id": 6,  "typeId": 2, "brandId": 5  },
+    { "id": 7,  "typeId": 3, "brandId": 99 },
+    { "id": 8,  "typeId": 4, "brandId": 99 },
+    { "id": 9,  "typeId": 5, "brandId": 99 },
+    { "id": 10, "typeId": 6, "brandId": 99 }
+  ],
+  "models": [
+    { "id": 1,  "brandTypeId": 1, "name": "Latitude 5420"  },
+    { "id": 2,  "brandTypeId": 1, "name": "Latitude 7420"  },
+    { "id": 3,  "brandTypeId": 2, "name": "EliteBook 840"  },
+    { "id": 4,  "brandTypeId": 3, "name": "ThinkPad E14"   },
+    { "id": 5,  "brandTypeId": 4, "name": "U2422H"         },
+    { "id": 6,  "brandTypeId": 5, "name": "F24T35"         },
+    { "id": 7,  "brandTypeId": 6, "name": "27UK850"        },
+    { "id": 8,  "brandTypeId": 7, "name": "Estándar"       },
+    { "id": 9,  "brandTypeId": 8, "name": "Estándar"       },
+    { "id": 10, "brandTypeId": 9, "name": "Estándar"       },
+    { "id": 11, "brandTypeId": 10,"name": "UTP CAT6"            },
+    { "id": 12, "brandTypeId": 3, "name": "ThinkBook 16 G7 ARP" }
+  ],
+  "snValidations": [
+    { "modelId": 1, "regexPattern": "^[A-Z0-9]{11}$", "description": "11 caracteres, letras mayúsculas y números", "isActive": true },
+    { "modelId": 2, "regexPattern": "^[A-Z0-9]{11}$", "description": "11 caracteres, letras mayúsculas y números", "isActive": true },
+    { "modelId": 3, "regexPattern": "^[A-Z0-9]{10}$", "description": "10 caracteres, letras mayúsculas y números", "isActive": true },
+    { "modelId": 4,  "regexPattern": "^[A-Z0-9]{12}$",      "description": null, "isActive": true },
+    { "modelId": 12, "regexPattern": "^PW0[A-Z0-9]{5}$",   "description": null, "isActive": true }
+  ]
+}

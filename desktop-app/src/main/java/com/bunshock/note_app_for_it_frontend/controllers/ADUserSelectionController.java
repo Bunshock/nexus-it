@@ -96,12 +96,7 @@ public class ADUserSelectionController {
     private void handleSelection() {
         selectedUser = lstResults.getSelectionModel().getSelectedItem();
         if (selectedUser != null) {
-            parentController.updateUserData(
-                selectedUser.getDni(),
-                selectedUser.getFullName(),
-                selectedUser.getUsername(),
-                selectedUser.getEmail()
-            );
+            parentController.fillUserData(selectedUser);
             closeWindow();
         }
     }

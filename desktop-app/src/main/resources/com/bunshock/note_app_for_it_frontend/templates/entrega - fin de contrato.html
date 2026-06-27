@@ -1,0 +1,289 @@
+<!doctype html>
+
+<html lang="es">
+    <head>
+        <meta charset="UTF-8" />
+
+        <title>Nota de Entrega</title>
+
+        <style>
+            /* A4 Paper Setup */
+
+            @page {
+                size: A4;
+                margin: 10mm;
+            }
+
+            * {
+                box-sizing: border-box;
+            }
+
+            body {
+                font-family: "Calibri", Helvetica, Arial, sans-serif;
+                margin: 0;
+                padding: 0;
+                color: #000;
+                background-color: #fff;
+
+                width: 210mm;
+                height: 297mm;
+                display: flex;
+                justify-content: center; /* Centers horizontally */
+                align-items: center;     /* Centers vertically */
+            }
+
+            /* The Physical A4 Sheet */
+
+            .page-container {
+                display: contents;
+            }
+
+            /* Main Frame: Now a FLEX container */
+
+            .main-frame {
+                /* A4 total height is 297mm.
+
+                /* --- SIZE ADJUSTMENTS --- */
+                height: 275mm;
+                width: 190mm;
+
+                /* --- LAYOUT & BORDER --- */
+                border: 2px solid black;
+                padding: 20px;
+                box-sizing: border-box; /* Ensures padding doesn't expand the width */
+
+                /* --- FLEX SETTINGS (For the footer) --- */
+                display: flex;
+                flex-direction: column;
+                justify-content: space-between;
+            }
+
+            /* This wrapper holds Header, Intro, and Items */
+
+            .content-wrapper {
+                /* Push footer down */
+                flex: 1;
+                overflow: hidden;
+            }
+
+            /* --- Standard Styles (Header, Logo, etc.) --- */
+
+            .header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                border: 2px solid black;
+                border-radius: 15px;
+                padding: 15px;
+                margin-bottom: 10px;
+                height: 25mm;
+            }
+
+            .header-left {
+                width: 15%;
+                text-align: center;
+            }
+
+            .logo-img {
+                width: 100%;
+                max-width: 60px;
+                height: auto;
+                object-fit: contain;
+            }
+
+            .header-center {
+                text-align: center;
+                flex-grow: 1;
+            }
+
+            .area-name {
+                font-size: 16pt;
+                font-weight: bold;
+            }
+
+            .template-name {
+                font-size: 12pt;
+                font-style: italic;
+                margin-top: 5px;
+            }
+
+            .header-right {
+                width: 100px;
+                text-align: right;
+                font-size: 12pt;
+                font-weight: bold;
+            }
+
+            .intro-text,
+            .outro-text {
+                font-size: 11pt;
+                line-height: 1.6;
+                margin-bottom: 20px;
+                text-align: justify;
+            }
+
+            /* --- Item List Styles (Black Box) --- */
+
+            .items-list-container {
+                width: 100%;
+                margin-top: 20px;
+                margin-bottom: 20px;
+                border: 2px solid black;
+                border-radius: 5px;
+                page-break-inside: avoid;
+            }
+
+            .item-entry {
+                padding-left: 15px;
+                padding-top: 10px;
+                padding-bottom: 10px;
+                border-bottom: 0.5px solid black;
+                page-break-inside: avoid;
+            }
+
+            .item-entry:last-child {
+                border-bottom: none;
+            }
+
+            .item-property {
+                font-size: 11pt;
+                margin-bottom: 1px;
+                line-height: 1.3;
+            }
+
+            .item-label {
+                font-weight: bold;
+                margin-right: 5px;
+                display: inline-block;
+                min-width: 130px;
+            }
+
+            /* --- Separator Line below text --- */
+
+            .section-separator {
+                border-bottom: 1px solid black;
+                margin-bottom: 10px;
+                width: 100%;
+            }
+
+            /* --- Signature Section (Fixed at Bottom) --- */
+
+            .signature-section {
+                margin-top: 10px;
+            }
+
+            .signature-box {
+                width: 100%;
+            }
+
+            /* The "Sign Here" line */
+
+            .sign-line-graphic {
+                border-top: 1px solid black;
+                width: 40%; /* Length of the signature line */
+                margin-bottom: 10px;
+            }
+
+            .sign-data {
+                font-size: 11pt;
+                line-height: 1.5;
+            }
+
+            @media print {
+                html, body {
+                    height: 100%; /* Limit height to 1 page */
+                    margin: 0 !important; 
+                    padding: 0 !important;
+                    overflow: hidden; /* Cut off anything that spills to page 2 */
+                }
+                
+                /* Scale down slightly to ensure fit */
+                /* If the content is slightly too big, this shrinks it to 95% */
+                body {
+                    zoom: 0.95; 
+                }
+            }
+        </style>
+    </head>
+
+    <body>
+        <div class="main-frame">
+            <div class="content-wrapper">
+                <div class="header">
+                    <div class="header-left">
+                        <img src="logo.jpg" alt="Logo" class="logo-img" />
+                    </div>
+
+                    <div class="header-center">
+                        <div class="area-name">Oficina de Soporte IT</div>
+
+                        <div class="template-name">{{TEMPLATE_NAME}}</div>
+                    </div>
+
+                    <div class="header-right">{{FECHA}}</div>
+                </div>
+
+                <div class="intro-text">
+                    <p>
+                        En la sede Campus de la Universidad Siglo 21, en el día de la fecha, el área de Soporte IT
+                        realiza la entrega a <strong>{{NOMBRE}}</strong>, DNI: <strong>{{DNI}}</strong> el siguiente equipamiento:
+                    </p>
+                </div>
+
+                <div class="items-list-container">
+                    {{#ITEMS}}
+
+                    <div class="item-entry">
+                        <div class="item-property"><span class="item-label">Tipo:</span> {{TYPE}}</div>
+
+                        <div class="item-property">
+                            <span class="item-label">Marca | Modelo:</span> {{BRAND}} | {{MODEL}}
+                        </div>
+
+                        <div class="item-property"><span class="item-label">N° Serie:</span> {{SERIAL}}</div>
+
+                        <div class="item-property"><span class="item-label">N° Activo Fijo:</span> {{ACTIVOFIJO}}</div>
+
+                        <div class="item-property"><span class="item-label">Detalles:</span> {{DETAILS}}</div>
+                    </div>
+
+                    {{/ITEMS}}
+                </div>
+
+                <div class="outro-text">
+                    <p>
+                        <strong>Observaciones</strong> : {{OBSERVACIONES}}
+                    </p>
+                </div>
+
+                <div class="section-separator"></div>
+
+                <div class="outro-text">
+                    <p>
+                        Así como fue establecido, la persona podrá gozar de dicho equipamiento finalizado el contrato que la vincula con la Universidad. De esta manera, cualquier
+                        inconveniente por falla, rotura, o cualquier otro tipo de incidencia que pudiera ocasionar el mal funcionamiento parcial o total del equipamiento es, a partir de 
+                        este momento, responsabilidad de quien recibe.
+                    </p>
+                    <p>
+                        No siendo para más se da por finalizada la nota, firmando al pie la recepción conforme de los
+                        componentes. Se confeccionan dos copias, una para el empleado y otra para el área responsable.
+                        Para consultas generales, por favor comunicarse vía mail: <strong>soporteit@ues21.edu.ar</strong>
+                    </p>
+                </div>
+
+                <div class="section-separator"></div>
+            </div>
+
+            <div class="signature-section">
+                <div class="signature-box">
+                    <div class="sign-data">
+                        <strong>Firma:</strong> __________________________<br />
+                        <strong>Nombre:</strong> {{NOMBRE}}<br />
+                        <strong>DNI:</strong> {{DNI}}<br />
+                        <strong>Fecha:</strong> {{FECHA}}<br />
+                    </div>
+                </div>
+            </div>
+        </div>
+    </body>
+</html>

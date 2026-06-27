@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?import javafx.scene.layout.*?>
+<?import javafx.scene.control.*?>
+
+<VBox spacing="20" style="-fx-padding: 30; -fx-background-color: #f4f4f4;"
+      xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1"
+      fx:controller="com.bunshock.note_app_for_it_frontend.controllers.HistoryController">
+    <children>
+
+        <HBox alignment="CENTER_LEFT" spacing="15">
+            <Label text="HISTORIAL DE NOTAS" styleClass="section-label"/>
+            <Region HBox.hgrow="ALWAYS"/>
+            <Button text="Actualizar" onAction="#handleRefresh" styleClass="button-secondary"/>
+        </HBox>
+
+        <VBox VBox.vgrow="ALWAYS"
+              style="-fx-background-color: white; -fx-background-radius: 10; -fx-padding: 15 20 20 20;">
+            <children>
+                <TableView fx:id="tblHistory" VBox.vgrow="ALWAYS" styleClass="modern-table">
+                    <placeholder>
+                        <Label text="No hay registros de notas generadas." />
+                    </placeholder>
+                    <columnResizePolicy>
+                        <TableView fx:constant="CONSTRAINED_RESIZE_POLICY"/>
+                    </columnResizePolicy>
+                    <columns>
+                        <TableColumn fx:id="colId" text="ID" prefWidth="50" maxWidth="50"/>
+                        <TableColumn fx:id="colDate" text="FECHA" prefWidth="160" maxWidth="160"/>
+                        <TableColumn fx:id="colProfile" text="PERFIL" prefWidth="180" maxWidth="180"/>
+                        <TableColumn fx:id="colRecipient" text="DESTINATARIO"/>
+                        <TableColumn fx:id="colGlpi" text="GLPI" prefWidth="70" maxWidth="70"/>
+                    </columns>
+                </TableView>
+            </children>
+        </VBox>
+
+    </children>
+</VBox>

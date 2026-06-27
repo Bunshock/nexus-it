@@ -1,14 +1,15 @@
 package com.bunshock.note_app_for_it_frontend.controllers;
 
-import java.io.IOException;
+import java.util.List;
 
+import com.bunshock.note_app_for_it_frontend.models.ADUser;
+import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;
 import com.bunshock.note_app_for_it_frontend.utils.ViewFactory;
 
 import javafx.application.Platform;
 import javafx.concurrent.ScheduledService;
 import javafx.concurrent.Task;
 import javafx.fxml.FXML;
-import javafx.fxml.FXMLLoader;
 import javafx.scene.Parent;
 import javafx.scene.control.Label;
 import javafx.scene.control.Tooltip;
@@ -19,97 +20,110 @@ import javafx.util.Duration;
 
 public class MainController {
 
-    // User info labels
     @FXML private Label lblWelcome;
     @FXML private Label lblUsername;
 
-    // Server status indicators
-    @FXML private Circle circleAD, circleGLPI;
-    @FXML private Tooltip tooltipAD, tooltipGLPI;
+    @FXML private Circle circleAD;
+    @FXML private Circle circleGLPI;
+    @FXML private Tooltip tooltipAD;
+    @FXML private Tooltip tooltipGLPI;
 
-    // Main content area where views will be swapped
     @FXML private StackPane contentArea;
 
-    // Factory for persisting data across views
     private final ViewFactory viewFactory = new ViewFactory();
 
-    // When a user clicks the "Generar Nota" button, we load the NoteGeneratorView into the content area
-    @FXML
-    private void handleShowGenerator() {
-        try {
-            FXMLLoader loader = new FXMLLoader(getClass().getResource("/com/bunshock/note_app_for_it_frontend/views/NoteGeneratorView.fxml"));
-            Parent view = loader.load();
-            
-            // Get the controller of the view we just loaded
-            NoteGeneratorController controller = loader.getController();
-            // Inject the view factory instance
-            controller.setViewFactory(this.viewFactory); 
-            
-            contentArea.getChildren().setAll(view);
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+    public void initialize() {
+        String windowsUser = System.getProperty("user.name");
+        lblUsername.setText("Usuario: " + windowsUser);
+        lblWelcome.setText("Hola, " + extractFirstName(windowsUser) + "!");
+
+        lookupCurrentUserAsync(windowsUser);
+        startStatusMonitor();
+        showSection(viewFactory.getGeneratorView());
     }
 
-    // TODO: Add server configuration and management UI in the future, but for now we'll hardcode the checks in the status monitor
+    private void lookupCurrentUserAsync(String windowsUser) {
+        Thread t = new Thread(() -> {
+            try {
+                List<ADUser> results = ServiceLocator.getInstance().getAdService()
+                    .search(null, null, windowsUser);
+                if (!results.isEmpty()) {
+                    String firstName = extractFirstName(results.get(0).getFullName());
+                    Platform.runLater(() -> lblWelcome.setText("Hola, " + firstName + "!"));
+                }
+            } catch (Exception ignored) {}
+        }, "ad-startup-lookup");
+        t.setDaemon(true);
+        t.start();
+    }
+
     private void startStatusMonitor() {
-        ScheduledService<Void> statusService = new ScheduledService<>() {
+        ScheduledService<boolean[]> service = new ScheduledService<>() {
             @Override
-            protected Task<Void> createTask() {
+            protected Task<boolean[]> createTask() {
                 return new Task<>() {
                     @Override
-                    protected Void call() {
-                        // Ping checks
-                        // boolean adUp = pingServer(<AD_SERVER>); 
-                        boolean adUp = true; // Mocking: AD is up
-                        boolean adHasPerms = false; // Mocking: No permissions
-
-                        // boolean glpiUp = pingServer(<GLPI_API>);
-                        boolean glpiUp = false; // Mocking: GLPI is down
-                        
-                        // Update UI
-                        Platform.runLater(() -> {
-                            updateADStatus(adUp, adHasPerms);
-                            updateGLPIStatus(glpiUp);
-                        });
-                        return null;
+                    protected boolean[] call() {
+                        boolean adUp = checkAdReachable();
+                        boolean glpiUp = ServiceLocator.getInstance().getGlpiService().isReachable();
+                        return new boolean[]{adUp, glpiUp};
                     }
                 };
             }
         };
-        // Refresh every 60 seconds
-        statusService.setPeriod(Duration.seconds(60));
-        statusService.start();
+        service.setPeriod(Duration.seconds(60));
+        service.setOnSucceeded(e -> {
+            boolean[] r = service.getValue();
+            updateADStatus(r[0]);
+            updateGLPIStatus(r[1]);
+        });
+        service.start();
+
+        Thread initial = new Thread(() -> {
+            boolean adUp = checkAdReachable();
+            boolean glpiUp = ServiceLocator.getInstance().getGlpiService().isReachable();
+            Platform.runLater(() -> {
+                updateADStatus(adUp);
+                updateGLPIStatus(glpiUp);
+            });
+        }, "status-initial-check");
+        initial.setDaemon(true);
+        initial.start();
     }
 
-    private void updateADStatus(boolean online, boolean hasPerms) {
-        if (!online) {
-            circleAD.setFill(Color.RED);
-            tooltipAD.setText("Estado: Desconectado");
-        } else if (!hasPerms) {
-            circleAD.setFill(Color.ORANGE);
-            tooltipAD.setText("Estado: En línea - Sin permisos de lectura");
-        } else {
-            circleAD.setFill(Color.GREEN);
-            tooltipAD.setText("Estado: En línea - Con permisos de lectura");
+    private boolean checkAdReachable() {
+        try {
+            ServiceLocator.getInstance().getAdService().search(null, "ping", null);
+            return true;
+        } catch (Exception e) {
+            return false;
         }
     }
 
+    private void updateADStatus(boolean online) {
+        circleAD.setFill(online ? Color.web("#22c55e") : Color.web("#ef4444"));
+        tooltipAD.setText("Active Directory: " + (online ? "En línea" : "Desconectado"));
+    }
+
     private void updateGLPIStatus(boolean online) {
-        circleGLPI.setFill(online ? Color.GREEN : Color.RED);
-        tooltipGLPI.setText(online ? "Estado: En línea" : "Estado: Desconectado");
+        circleGLPI.setFill(online ? Color.web("#22c55e") : Color.web("#ef4444"));
+        tooltipGLPI.setText("GLPI API: " + (online ? "En línea" : "Desconectado"));
     }
 
-    public void initialize() {
-        // Start the status monitor for AD and GLPI
-        startStatusMonitor();
-        
-        // Welcome info: Hardcoded for now until implementing AD integration
-        lblWelcome.setText("Hola, Leandro!");
-        lblUsername.setText("Usuario: leandro.mantovani");
-
-        // On startup, show the note generator view by default
-        handleShowGenerator();
+    private void showSection(Parent view) {
+        contentArea.getChildren().setAll(view);
     }
 
+    private String extractFirstName(String input) {
+        if (input == null || input.isBlank()) return input;
+        String first = input.trim().split("[._ ]+")[0];
+        return first.isEmpty() ? input : Character.toUpperCase(first.charAt(0)) + first.substring(1).toLowerCase();
+    }
+
+    @FXML private void handleShowGenerator() { showSection(viewFactory.getGeneratorView()); }
+    @FXML private void handleShowHistory()   { showSection(viewFactory.getHistoryView()); }
+    @FXML private void handleShowDatabase()  { showSection(viewFactory.getDatabaseView()); }
+    @FXML private void handleShowSettings()  { showSection(viewFactory.getSettingsView()); }
+    @FXML private void handleShowAbout()     { showSection(viewFactory.getAboutView()); }
+    @FXML private void handleShowProfile()   { showSection(viewFactory.getProfileView()); }
 }

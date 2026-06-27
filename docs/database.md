@@ -1,6 +1,8 @@
 ## Database Schema (ERD)
 
-#### Note generation tables
+The local SQLite database lives at `data/noteapp.db` (created at first run). The schema mirrors the planned PostgreSQL structure so migrating requires only a JDBC driver swap and connection string change.
+
+#### Equipment catalog tables
 
 ```mermaid
 
@@ -16,17 +18,19 @@ erDiagram
     TYPE {
         int id PK
         string name
+        int is_asset "1 = asset (S/N + A/F); 0 = countable (quantity)"
     }
 
     BRAND {
         int id PK
-        string name
+        string name "UNIQUE; 'Generic' is protected from deletion"
     }
 
     BRAND_TYPE_LINK {
         int id PK
         int type_id FK
         int brand_id FK
+        "UNIQUE(type_id, brand_id)"
     }
 
     MODEL {
@@ -39,8 +43,8 @@ erDiagram
         int id PK
         int model_id FK
         int expected_length
-        string regex_pattern
-        boolean is_active
+        string regex_pattern "optional"
+        int is_active "1 = enforce; 0 = skip"
     }
 ```
 
@@ -61,21 +65,25 @@ erDiagram
     
     NOTE_REPORT {
         int id PK
-        timestamp created_at
-        string profile_type
-        boolean glpi_synced
+        string created_at "ISO-8601 timestamp"
+        string profile_type "ENTREGA / DEVOLUCION / FIN_DE_CONTRATO / RECAMBIO / PROVEEDOR"
+        int glpi_synced "0 = not synced"
+        int technician_id FK
     }
 
     NOTE_ENTREGA_DEVOLUCION {
-        int note_report_id PK, FK
-        str user_name
-        str user_dni
-        str user_email
+        int note_report_id PK_FK
+        string user_name
+        string user_dni
+        string user_email
+        string motivo "mandatory for ENTREGA and RECAMBIO"
     }
 
     NOTE_PROVEEDOR {
-        int note_report_id PK, FK
-        str provider_name
+        int note_report_id PK_FK
+        string provider_name
+        string cuit
+        string motivo "mandatory"
     }
 
     NOTE_ITEM {
@@ -84,15 +92,41 @@ erDiagram
         string type_name
         string brand_name
         string model_name
-        string serial_number
-        string a_f
-        int quantity
+        string serial_number "null for countable items"
+        string a_f "null for countable items"
+        int quantity "default 1"
+        string observations
     }
 
     TECHNICIAN_PROFILE {
         int id PK
+        string windows_username "UNIQUE; from System.getProperty(user.name)"
         string name
         string dni
         string email
     }
 ```
+
+---
+
+#### Settings table
+
+| Key | Value | Description |
+|-----|-------|-------------|
+| `smtp_password` | Base64-encoded DPAPI ciphertext | SMTP password, encrypted via Windows DPAPI |
+
+```sql
+APP_SETTINGS (
+    key   TEXT PRIMARY KEY,
+    value TEXT
+)
+```
+
+---
+
+#### Notes
+
+- `Generic` brand row is inserted on first run and is protected from deletion in `SqliteEquipmentService`.
+- `NOTE_ENTREGA_DEVOLUCION` and `NOTE_PROVEEDOR` are optional one-to-one extensions of `NOTE_REPORT`, populated based on `profile_type`.
+- `TECHNICIAN_PROFILE` is keyed by `windows_username` so each Windows account on the machine has its own profile.
+- All encrypted values use Windows DPAPI via `WindowsDPAPIService` — decryption fails on a different Windows user account by design.

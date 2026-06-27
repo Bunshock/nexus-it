@@ -1,0 +1,316 @@
+<!doctype html>
+
+<html lang="es">
+    <head>
+        <meta charset="UTF-8" />
+
+        <title>Nota de devolución</title>
+
+        <style>
+            /* A4 Paper Setup */
+
+            @page {
+                size: A4;
+                margin: 10mm;
+            }
+
+            * {
+                box-sizing: border-box;
+            }
+
+            body {
+                font-family: "Calibri", Helvetica, Arial, sans-serif;
+                margin: 0;
+                padding: 0;
+                color: #000;
+                background-color: #fff;
+
+                width: 210mm;
+                height: 297mm;
+                display: flex;
+                justify-content: center; /* Centers horizontally */
+                align-items: center;     /* Centers vertically */
+            }
+
+            /* The Physical A4 Sheet */
+
+            .page-container {
+                display: contents;
+            }
+
+            /* Main Frame: Now a FLEX container */
+
+            .main-frame {
+                /* A4 total height is 297mm.
+
+                /* --- SIZE ADJUSTMENTS --- */
+                height: 275mm;
+                width: 190mm;
+
+                /* --- LAYOUT & BORDER --- */
+                border: 2px solid black;
+                padding: 20px;
+                box-sizing: border-box; /* Ensures padding doesn't expand the width */
+
+                /* --- FLEX SETTINGS (For the footer) --- */
+                display: flex;
+                flex-direction: column;
+                justify-content: space-between;
+            }
+
+            /* This wrapper holds Header, Intro, and Items */
+
+            .content-wrapper {
+                flex: 1;
+                display: flex;
+                flex-direction: column;
+                overflow: hidden;
+            }
+
+            /* This pushes content away from itself */
+            .spacer-top {
+                flex: 0.5; 
+            }
+
+            .spacer-bottom {
+                flex: 1.5;
+            }
+
+            /* --- Standard Styles (Header, Logo, etc.) --- */
+
+            .header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                border: 2px solid black;
+                border-radius: 15px;
+                padding: 15px;
+                margin-bottom: 10px;
+                height: 25mm;
+            }
+
+            .header-left {
+                width: 15%;
+                text-align: center;
+            }
+
+            .logo-img {
+                width: 100%;
+                max-width: 60px;
+                height: auto;
+                object-fit: contain;
+            }
+
+            .header-center {
+                text-align: center;
+                flex-grow: 1;
+            }
+
+            .area-name {
+                font-size: 16pt;
+                font-weight: bold;
+            }
+
+            .template-name {
+                font-size: 12pt;
+                font-style: italic;
+                margin-top: 5px;
+            }
+
+            .header-right {
+                width: 100px;
+                text-align: right;
+                font-size: 12pt;
+                font-weight: bold;
+            }
+
+            .intro-text,
+            .outro-text {
+                font-size: 11pt;
+                line-height: 1.6;
+                margin-bottom: 20px;
+                text-align: justify;
+            }
+
+            /* --- Item List Styles (Black Box) --- */
+
+            .items-list-container {
+                width: 100%;
+                margin: 0 auto; /* Removed vertical margin to let spacers handle it */
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+            }
+
+            .item-entry {
+                width: 70%;
+                border: 1.5pt solid black; /* Use pt instead of px for print consistency */
+                display: grid;
+                grid-template-columns: 160px 1fr;
+                overflow: hidden;
+                /* This prevents the grid from splitting across pages which also causes blur */
+                page-break-inside: avoid; 
+            }
+
+            .item-property {
+                font-size: 11pt;
+                line-height: 1.5;
+                border-bottom: 1px solid black; /* Horizontal Line */
+                padding: 8px 12px;
+                display: flex;
+                align-items: center;
+            }
+
+            .item-property:nth-last-child(-n+2) {
+                border-bottom: none;
+            }
+
+            .item-label {
+                grid-column: 1;
+                font-weight: bold;
+                border-right: 1px solid black; /* Vertical Line */
+                margin: 0;
+                padding: 8px 12px;
+            }
+            
+            .item-value {
+                grid-column: 2;
+                padding: 8px 12px;
+            }
+
+            /* --- Separator Line below text --- */
+
+            .section-separator {
+                border-bottom: 1px solid black;
+                margin-bottom: 10px;
+                width: 100%;
+            }
+
+            /* --- Signature Section (Fixed at Bottom) --- */
+
+            .signature-section {
+                margin-top: 10px;
+                margin-bottom: 15px;
+            }
+
+            .signature-box {
+                width: 100%;
+            }
+
+            /* The "Sign Here" line */
+
+            .sign-line-graphic {
+                border-top: 1px solid black;
+                width: 40%; /* Length of the signature line */
+                margin-bottom: 10px;
+            }
+
+            .sign-data {
+                font-size: 11pt;
+                line-height: 1.5;
+            }
+
+            .footer-date-section {
+                margin-top: 20px;      /* Creates the vertical space you need */
+                font-size: 11pt;
+                display: flex;         /* Puts label and date on the same line */
+                gap: 10px;             /* Space between "Fecha:" and the actual date */
+            }
+
+            @media print {
+                html, body {
+                    /* Remove the zoom: 0.95; as it causes blurring */
+                    zoom: 1.0; 
+                    -webkit-print-color-adjust: exact;
+                }
+
+                /* Force borders to stay sharp */
+                .item-entry, .item-label, .item-value {
+                    border-width: 1pt !important; /* Use points (pt) for printing */
+                    image-rendering: pixelated;
+                    -webkit-font-smoothing: antialiased;
+                }
+            }
+        </style>
+    </head>
+
+    <body>
+        <div class="main-frame">
+            <div class="content-wrapper">
+                <div class="header">
+                    <div class="header-left">
+                        <img src="logo.jpg" alt="Logo" class="logo-img" />
+                    </div>
+
+                    <div class="header-center">
+                        <div class="area-name">Oficina de Soporte IT</div>
+
+                        <div class="template-name">{{TEMPLATE_NAME}}</div>
+                    </div>
+
+                    <div class="header-right">{{FECHA}}</div>
+                </div>
+
+                <div class="spacer-top"></div>
+
+                <div class="items-list-container">
+                    {{#ITEMS}}
+                    <div class="item-entry">
+                        <div class="item-label">Tipo:</div>
+                        <div class="item-value">{{TYPE}}</div>
+
+                        <div class="item-label">Marca | Modelo:</div>
+                        <div class="item-value">{{BRAND}} | {{MODEL}}</div>
+
+                        <div class="item-label">N° Serie:</div>
+                        <div class="item-value">{{SERIAL}}</div>
+
+                        <div class="item-label">N° Activo Fijo:</div>
+                        <div class="item-value">{{ACTIVOFIJO}}</div>
+
+                        <div class="item-label">Detalles:</div>
+                        <div class="item-value">{{DETAILS}}</div>
+                    </div>
+                    {{/ITEMS}}
+                </div>
+
+                <div class="spacer-bottom"></div>
+
+                <div class="outro-text">
+                    <p>
+                        <strong>Observaciones</strong> : {{OBSERVACIONES}}
+                    </p>
+                </div>
+
+                <div class="section-separator"></div>
+
+                <div class="spacer-bottom"></div>
+            </div>
+
+            <div class="signature-section">
+                <div class="signature-box">
+                    <div class="sign-data">
+                        <strong>Firma de quien devuelve:</strong> __________________________<br />
+                        <strong>Nombre:</strong> {{NOMBRE_DEV}}<br />
+                        <strong>DNI:</strong> {{DNI_DEV}}<br />
+                    </div>
+                </div>
+            </div>
+
+            <div class="signature-section">
+                <div class="signature-box">
+                    <div class="sign-data">
+                        <strong>Firma de quien recibe:</strong> __________________________<br />
+                        <strong>Nombre:</strong> {{NOMBRE_REC}}<br />
+                        <strong>DNI:</strong> {{DNI_REC}}<br />
+                    </div>
+                </div>
+            </div>
+
+            <div class="footer-date-section">
+                <strong>Fecha:</strong> <span>{{FECHA}}</span>
+            </div>
+        
+        </div>
+    </body>
+</html>

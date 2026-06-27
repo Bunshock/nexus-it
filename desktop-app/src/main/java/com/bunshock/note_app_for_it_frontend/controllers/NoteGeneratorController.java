@@ -1,18 +1,27 @@
 package com.bunshock.note_app_for_it_frontend.controllers;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.function.Consumer;
 
 import com.bunshock.note_app_for_it_frontend.models.AssetItem;
 import com.bunshock.note_app_for_it_frontend.models.CountableItem;
+import com.bunshock.note_app_for_it_frontend.models.NoteReport;
+import com.bunshock.note_app_for_it_frontend.services.ConfigService;
+import com.bunshock.note_app_for_it_frontend.services.NoteGenerationService;
+import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;
 import com.bunshock.note_app_for_it_frontend.utils.ViewFactory;
 
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.fxml.FXML;
 import javafx.fxml.FXMLLoader;
+import javafx.geometry.Pos;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
+import javafx.scene.control.Alert;
+import javafx.scene.control.Alert.AlertType;
 import javafx.scene.control.Button;
 import javafx.scene.control.TableCell;
 import javafx.scene.control.TableColumn;
@@ -20,47 +29,49 @@ import javafx.scene.control.TableView;
 import javafx.scene.control.TextField;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.ToggleGroup;
+import javafx.scene.control.Tooltip;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.StackPane;
 import javafx.stage.Modality;
 import javafx.stage.Stage;
+import javafx.stage.StageStyle;
 import javafx.util.Callback;
 
 public class NoteGeneratorController {
 
-    // Factory to load views for different profiles
-    private ViewFactory viewFactory;
-
-    // Profile selection buttons
-    @FXML private ToggleButton btnUserNote, btnProviderNote;
+    @FXML private ToggleButton btnUserNote;
+    @FXML private ToggleButton btnProviderNote;
     @FXML private ToggleGroup typeGroup;
-    
-    // Specific note profile content area
     @FXML private StackPane dynamicContentArea;
 
-    // Equipment tables
-    // Assets Table (S/N)
     @FXML private TableView<AssetItem> tblAssets;
-    @FXML private TableColumn<AssetItem, String> colAssetType, colAssetBrand, colAssetModel, colAssetSerial, colAssetAF;
+    @FXML private TableColumn<AssetItem, String> colAssetType;
+    @FXML private TableColumn<AssetItem, String> colAssetBrand;
+    @FXML private TableColumn<AssetItem, String> colAssetModel;
+    @FXML private TableColumn<AssetItem, String> colAssetSerial;
+    @FXML private TableColumn<AssetItem, String> colAssetAF;
     @FXML private TableColumn<AssetItem, String> colAssetObs;
     @FXML private TableColumn<AssetItem, Void> colAssetActions;
 
-    // Countables Table (Quantity)
     @FXML private TableView<CountableItem> tblCountables;
-    @FXML private TableColumn<CountableItem, String> colCountType, colCountBrand, colCountModel;
+    @FXML private TableColumn<CountableItem, String> colCountType;
+    @FXML private TableColumn<CountableItem, String> colCountBrand;
+    @FXML private TableColumn<CountableItem, String> colCountModel;
     @FXML private TableColumn<CountableItem, Integer> colCountQty;
     @FXML private TableColumn<CountableItem, String> colCountObs;
     @FXML private TableColumn<CountableItem, Void> colCountActions;
 
-    private ObservableList<AssetItem> assetList = FXCollections.observableArrayList();
-    private ObservableList<CountableItem> countableList = FXCollections.observableArrayList();
-
-    // Observations field common to all profiles
     @FXML private TextField txtObservations;
+    @FXML private Button btnAddItem;
+
+    private final ObservableList<AssetItem> assetList = FXCollections.observableArrayList();
+    private final ObservableList<CountableItem> countableList = FXCollections.observableArrayList();
+
+    private ViewFactory viewFactory;
+    private Tooltip limitTooltip;
 
     public void setViewFactory(ViewFactory viewFactory) {
         this.viewFactory = viewFactory;
-        // Default profile selection: user note
         showUserNoteView();
     }
 
@@ -68,61 +79,46 @@ public class NoteGeneratorController {
         btnUserNote.setOnAction(e -> showUserNoteView());
         btnProviderNote.setOnAction(e -> showProviderNoteView());
 
-        // Ensure one profile is always selected
-        typeGroup.selectedToggleProperty().addListener((obs, oldToggle, newToggle) -> {
-            if (newToggle == null) {
-                oldToggle.setSelected(true);
-            }
+        typeGroup.selectedToggleProperty().addListener((obs, old, next) -> {
+            if (next == null) old.setSelected(true);
         });
 
-        // Set up empty tables
         setupAssetTable();
         setupCountableTable();
 
-        // Set up action columns
         colAssetActions.setCellFactory(createActionCellFactory(
-            this::handleEditAsset,
-            asset -> assetList.remove(asset)
-        ));
+            this::handleEditAsset, asset -> { assetList.remove(asset); updateAddButtonState(); }));
 
         colCountActions.setCellFactory(createActionCellFactory(
-            this::handleEditCountable, 
-            countable -> countableList.remove(countable)
-        ));
+            this::handleEditCountable, countable -> { countableList.remove(countable); updateAddButtonState(); }));
 
-        // Populate with mock data for testing
-        populateMockTableData();
+        updateAddButtonState();
     }
 
     private void showUserNoteView() {
-        dynamicContentArea.getChildren().setAll(viewFactory.getUserNoteView());
+        if (viewFactory != null) dynamicContentArea.getChildren().setAll(viewFactory.getUserNoteView());
     }
 
     private void showProviderNoteView() {
-        dynamicContentArea.getChildren().setAll(viewFactory.getProviderNoteView());
+        if (viewFactory != null) dynamicContentArea.getChildren().setAll(viewFactory.getProviderNoteView());
     }
 
-    // Generalized cell factory method for action columns
     private <T> Callback<TableColumn<T, Void>, TableCell<T, Void>> createActionCellFactory(
-            Consumer<T> editAction, 
-            Consumer<T> deleteAction) {
-        
-        return param -> new TableCell<T, Void>() {
-            private final Button btnEdit = new Button("🖉");
-            private final Button btnDelete = new Button("❌");
-            private final HBox container = new HBox(btnEdit, btnDelete);
+            Consumer<T> editAction, Consumer<T> deleteAction) {
+        return param -> new TableCell<>() {
+            private final Button btnEdit = new Button("✏");
+            private final Button btnDelete = new Button("🗑");
+            private final HBox container = new HBox(14, btnEdit, btnDelete);
 
             {
+                container.setAlignment(Pos.CENTER);
                 btnEdit.getStyleClass().add("button-icon-edit");
                 btnDelete.getStyleClass().add("button-icon-delete");
-                container.getStyleClass().add("action-container");
-
-                btnEdit.setOnAction(event -> {
+                btnEdit.setOnAction(e -> {
                     T item = getTableView().getItems().get(getIndex());
                     if (item != null) editAction.accept(item);
                 });
-
-                btnDelete.setOnAction(event -> {
+                btnDelete.setOnAction(e -> {
                     T item = getTableView().getItems().get(getIndex());
                     if (item != null) deleteAction.accept(item);
                 });
@@ -131,59 +127,80 @@ public class NoteGeneratorController {
             @Override
             protected void updateItem(Void item, boolean empty) {
                 super.updateItem(item, empty);
-                if (empty) {
-                    setGraphic(null);
-                } else {
-                    setGraphic(container);
-                }
+                setAlignment(Pos.CENTER);
+                setGraphic(empty ? null : container);
             }
         };
     }
 
-    // TODO: Generalize handleEdit methods
     private void handleEditAsset(AssetItem asset) {
-        System.out.println("Editing asset: " + asset.getModel());
-        // TODO: Call item dialog pre-filled with item data for editing
+        openItemDialog(ctrl -> ctrl.prefillAsset(asset), true);
     }
 
     private void handleEditCountable(CountableItem countable) {
-        System.out.println("Editing countable: " + countable.getType());
-        // TODO: Call item dialog pre-filled with item data for editing
-    }
-
-    // Mock equipment tables for testing UI
-    private void populateMockTableData() {
-        // Mock Assets (The top table)
-        assetList.addAll(
-            new AssetItem("Notebook", "MP", "PB G9", "Cargador original, Mouse USB", "SN123456789", "AF789012"),
-            new AssetItem("Monitor", "Pamsung", "F24T35", "Cable HDMI, Cable de poder", "SN111111111", "AF345678")
-        );
-
-        // Mock Countables (The bottom table)
-        countableList.addAll(
-            new CountableItem("Cable UTP 2mts", "Generic", "CAT6", 1, "Gris"),
-            new CountableItem("Adaptador HDMI a VGA", "Marca inventada", "Modelo inv.", 10, "Blanco"),
-            new CountableItem("Mouse Pad", "Generic", "Standard", 1, "Negro - Siglo 21")
-        );
+        openItemDialog(ctrl -> ctrl.prefillCountable(countable), true);
     }
 
     @FXML
     private void handleAddItem() {
-        try {
-            FXMLLoader loader = new FXMLLoader(getClass().getResource("/com/bunshock/note_app_for_it_frontend/views/ItemDialogView.fxml"));
-            Parent root = loader.load();
+        if (isAtItemLimit()) return;
+        openItemDialog(ctrl -> {}, false);
+    }
 
-            ItemDialogController controller = loader.getController();
-            controller.setParentController(this); 
+    private void openItemDialog(Consumer<ItemDialogController> setup, boolean editMode) {
+        try {
+            FXMLLoader loader = new FXMLLoader(getClass().getResource(
+                "/com/bunshock/note_app_for_it_frontend/views/ItemDialogView.fxml"));
+            Parent root = loader.load();
+            ItemDialogController ctrl = loader.getController();
+            ctrl.setParentController(this);
+            setup.accept(ctrl);
 
             Stage stage = new Stage();
+            stage.initStyle(StageStyle.TRANSPARENT);
             stage.initModality(Modality.APPLICATION_MODAL);
-            stage.setTitle("Agregar Equipamiento");
-            stage.setScene(new Scene(root));
-            stage.showAndWait();
+            Scene dialogScene = new Scene(root, 544, 580);
+            dialogScene.setFill(javafx.scene.paint.Color.TRANSPARENT);
+            dialogScene.getStylesheets().add(getClass().getResource(
+                "/com/bunshock/note_app_for_it_frontend/css/styles.css").toExternalForm());
+            stage.setScene(dialogScene);
+            stage.setOnHidden(e -> updateAddButtonState());
+            stage.show();
+
+            javafx.geometry.Bounds btn = btnAddItem.localToScreen(btnAddItem.getBoundsInLocal());
+            javafx.geometry.Rectangle2D screen = javafx.stage.Screen.getPrimary().getVisualBounds();
+            double x = Math.min(btn.getMaxX() - stage.getWidth(), screen.getMaxX() - stage.getWidth());
+            double y = Math.min(btn.getMaxY() + 6, screen.getMaxY() - stage.getHeight());
+            stage.setX(Math.max(screen.getMinX(), x));
+            stage.setY(Math.max(screen.getMinY(), y));
         } catch (IOException e) {
-            System.err.println("Error loading ItemDialogView: " + e.getMessage());
             e.printStackTrace();
+        }
+    }
+
+    private boolean isAtItemLimit() {
+        int limit = ConfigService.getInstance().getConfig().noteItemLimit;
+        return (assetList.size() + countableList.size()) >= limit;
+    }
+
+    private void updateAddButtonState() {
+        boolean atLimit = isAtItemLimit();
+        if (atLimit) {
+            int limit = ConfigService.getInstance().getConfig().noteItemLimit;
+            btnAddItem.getStyleClass().removeAll("button-primary");
+            if (!btnAddItem.getStyleClass().contains("button-limit-reached")) {
+                btnAddItem.getStyleClass().add("button-limit-reached");
+            }
+            if (limitTooltip == null) {
+                limitTooltip = new Tooltip("Límite de " + limit + " ítems por nota alcanzado");
+            }
+            btnAddItem.setTooltip(limitTooltip);
+        } else {
+            btnAddItem.getStyleClass().removeAll("button-limit-reached");
+            if (!btnAddItem.getStyleClass().contains("button-primary")) {
+                btnAddItem.getStyleClass().add("button-primary");
+            }
+            btnAddItem.setTooltip(null);
         }
     }
 
@@ -195,7 +212,6 @@ public class NoteGeneratorController {
         colAssetAF.setCellValueFactory(d -> d.getValue().getAf());
         colAssetObs.setCellValueFactory(d -> d.getValue().getObservations());
         tblAssets.setItems(assetList);
-        // setupActionsColumn(colAssetActions);
     }
 
     private void setupCountableTable() {
@@ -205,32 +221,117 @@ public class NoteGeneratorController {
         colCountQty.setCellValueFactory(d -> d.getValue().getQuantity().asObject());
         colCountObs.setCellValueFactory(d -> d.getValue().getObservations());
         tblCountables.setItems(countableList);
-        // setupActionsColumn(colCountActions);
     }
 
-    // Methods for the ItemDialogView to call
     public void addAsset(AssetItem item) { assetList.add(item); }
     public void addCountable(CountableItem item) { countableList.add(item); }
+
+    public ObservableList<AssetItem> getAssetList() { return assetList; }
+    public ObservableList<CountableItem> getCountableList() { return countableList; }
+    public String getObservations() { return txtObservations.getText().trim(); }
+
+    public boolean isUserNote() {
+        return typeGroup.getSelectedToggle() == btnUserNote;
+    }
 
     @FXML
     private void handleClearForm() {
         txtObservations.clear();
         assetList.clear();
         countableList.clear();
+        updateAddButtonState();
 
-        // Clear fields in the currently loaded profile view
-        if (viewFactory.getUserNoteView() != null) {
+        if (isUserNote() && viewFactory != null && viewFactory.getUserNoteController() != null) {
             viewFactory.getUserNoteController().clearAllFields();
-        }
-
-        if (viewFactory.getProviderNoteView() != null) {
+        } else if (!isUserNote() && viewFactory != null && viewFactory.getProviderNoteController() != null) {
             viewFactory.getProviderNoteController().clearAllFields();
         }
     }
 
     @FXML
     private void handleGenerateNote() {
-        System.out.println("Generando nota ...");
+        try {
+            if (isUserNote() && !checkGlpiAssignments()) return;
+
+            NoteGenerationService generator = new NoteGenerationService();
+            String html;
+            NoteReport report = new NoteReport();
+
+            if (isUserNote()) {
+                UserNoteController unc = viewFactory.getUserNoteController();
+                String profileType = unc.getSelectedNoteType();
+                html = generator.generateUserNote(
+                    profileType,
+                    unc.getUserName(), unc.getUserDni(), unc.getUserEmail(),
+                    unc.getMotivo(),
+                    assetList, countableList, getObservations()
+                );
+                report.setUserName(unc.getUserName());
+                report.setUserDni(unc.getUserDni());
+                report.setUserEmail(unc.getUserEmail());
+                report.setMotivo(unc.getMotivo());
+                report.setProfileType(profileType);
+            } else {
+                ProviderNoteController pnc = viewFactory.getProviderNoteController();
+                html = generator.generateProviderNote(
+                    pnc.getProviderName(), pnc.getCuit(),
+                    pnc.getResponsibleName(), pnc.getResponsibleDni(),
+                    pnc.getMotivo(),
+                    assetList, countableList, getObservations()
+                );
+                report.setProviderName(pnc.getProviderName());
+                report.setCuit(pnc.getCuit());
+                report.setMotivo(pnc.getMotivo());
+                report.setProfileType("Entrega - Proveedor");
+            }
+
+            report.setCreatedAt(java.time.LocalDateTime.now());
+            openPreview(html, report.getProfileType(), report);
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 
+    private boolean checkGlpiAssignments() {
+        UserNoteController unc = viewFactory != null ? viewFactory.getUserNoteController() : null;
+        if (unc == null) return true;
+        if (!"DEVOLUCIÓN".equals(unc.getSelectedNoteType())) return true;
+
+        String userAccount = unc.getUserAccount();
+        List<String> conflicts = new ArrayList<>();
+
+        for (AssetItem asset : assetList) {
+            String sn = asset.getSerial().get();
+            if (sn == null || sn.isEmpty()) continue;
+            String assigned = ServiceLocator.getInstance().getGlpiService().getAssignedUserInGlpi(sn);
+            if (assigned != null && !assigned.equalsIgnoreCase(userAccount)) {
+                conflicts.add(asset.getType().get() + " S/N: " + sn + " (asignado a: " + assigned + ")");
+            }
+        }
+
+        if (conflicts.isEmpty()) return true;
+
+        Alert alert = new Alert(AlertType.ERROR);
+        alert.setTitle("Conflicto de Asignación en GLPI");
+        alert.setHeaderText("No se puede generar la nota de devolución");
+        alert.setContentText("Los siguientes activos no están asignados al usuario seleccionado:\n\n"
+            + String.join("\n", conflicts));
+        alert.showAndWait();
+        return false;
+    }
+
+    private void openPreview(String html, String profileType, NoteReport report) throws IOException {
+        FXMLLoader loader = new FXMLLoader(getClass().getResource(
+            "/com/bunshock/note_app_for_it_frontend/views/NotePreviewView.fxml"));
+        Parent root = loader.load();
+        NotePreviewController ctrl = loader.getController();
+        ctrl.loadPreview(html, profileType, report, assetList, countableList);
+
+        Stage stage = new Stage();
+        stage.initModality(Modality.APPLICATION_MODAL);
+        stage.setTitle("Previsualización de Nota");
+        stage.setScene(new Scene(root));
+        stage.show();
+    }
 }

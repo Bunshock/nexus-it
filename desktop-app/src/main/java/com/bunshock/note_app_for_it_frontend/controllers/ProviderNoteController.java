@@ -1,51 +1,62 @@
 package com.bunshock.note_app_for_it_frontend.controllers;
 
+import java.util.List;
+
+import com.bunshock.note_app_for_it_frontend.services.ConfigService;
+
 import javafx.collections.FXCollections;
-import javafx.collections.ObservableList;
 import javafx.fxml.FXML;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.TextField;
-import javafx.scene.layout.GridPane;
+import javafx.scene.layout.VBox;
 
 public class ProviderNoteController {
 
-    // Provider name
     @FXML private ComboBox<String> cmbProviderSearch;
+    @FXML private TextField txtCuit;
+    @FXML private ComboBox<String> cmbMotivo;
 
-    // Responsible person info
     @FXML private CheckBox chkEnableResponsible;
-    @FXML private GridPane gridResponsibleDetails;
+    @FXML private VBox gridResponsibleDetails;
     @FXML private TextField txtProviderResponsibleName;
     @FXML private TextField txtProviderResponsibleDni;
 
     public void initialize() {
-        // Mock provider list
-        ObservableList<String> mockProviders = FXCollections.observableArrayList(
-            "Trendit",
-            "Procom IT Solutions S.A.",
-            "Veneta",
-            "Personal",
-            "Lenovo"
-        );
+        List<String> motivoOptions = ConfigService.getInstance().getConfig()
+            .motivoOptions.getOrDefault("proveedor", List.of());
+        cmbMotivo.setItems(FXCollections.observableArrayList(motivoOptions));
 
-        // Set provider combobox items
-        cmbProviderSearch.setItems(mockProviders.sorted());
+        chkEnableResponsible.selectedProperty().addListener((obs, was, now) ->
+            gridResponsibleDetails.setDisable(!now));
+    }
 
-        // Enable/disable responsible details based on checkbox
-        chkEnableResponsible.selectedProperty().addListener((obs, wasSelected, isNowSelected) -> {
-            gridResponsibleDetails.setDisable(!isNowSelected);
-        });
-        }
+    public String getProviderName() {
+        return cmbProviderSearch.getValue() != null
+            ? cmbProviderSearch.getValue().trim() : "";
+    }
+
+    public String getCuit() { return txtCuit.getText().trim(); }
+
+    public String getMotivo() { return cmbMotivo.getValue(); }
+
+    public String getResponsibleName() {
+        return chkEnableResponsible.isSelected()
+            ? txtProviderResponsibleName.getText().trim() : "";
+    }
+
+    public String getResponsibleDni() {
+        return chkEnableResponsible.isSelected()
+            ? txtProviderResponsibleDni.getText().trim() : "";
+    }
 
     public void clearAllFields() {
-        // Clear combobox
         cmbProviderSearch.getSelectionModel().clearSelection();
         cmbProviderSearch.setValue(null);
-        
-        // Clear responsible details
+        txtCuit.clear();
+        cmbMotivo.getSelectionModel().clearSelection();
+        chkEnableResponsible.setSelected(false);
         txtProviderResponsibleName.clear();
         txtProviderResponsibleDni.clear();
     }
-
 }

@@ -1,82 +1,96 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <?import javafx.scene.layout.*?>
 <?import javafx.scene.control.*?>
-<?import org.controlsfx.control.SearchableComboBox?>
+<?import javafx.geometry.Insets?>
 
-<VBox spacing="20" xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1"
+<VBox spacing="20" maxHeight="Infinity"
+      xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1"
       fx:controller="com.bunshock.note_app_for_it_frontend.controllers.UserNoteController">
     <children>
 
-        <!-- User Note Type Selection -->
-        <VBox spacing="0" style="-fx-padding: 0 0 -5 0;">
+        <!-- Note type selection -->
+        <VBox spacing="8">
             <children>
                 <Label text="TIPO DE MOVIMIENTO" styleClass="section-label"/>
-                <HBox spacing="0" style="-fx-padding: 5 0 0 0;">
-                    <fx:define>
-                        <ToggleGroup fx:id="userNoteTypeGroup" />
-                    </fx:define>
+                <VBox spacing="0" style="-fx-border-color: #e2e8f0; -fx-border-radius: 8; -fx-border-width: 1; -fx-background-color: white; -fx-background-radius: 8;">
                     <children>
                         <ToggleButton fx:id="btnTypeEntrega" text="ENTREGA" selected="true"
-                                    maxWidth="Infinity" HBox.hgrow="ALWAYS" styleClass="small-toggle-button-left" toggleGroup="$userNoteTypeGroup"/>
-                        <ToggleButton fx:id="btnTypeDevolucion" text="DEVOLUCIÓN" 
-                                    maxWidth="Infinity" HBox.hgrow="ALWAYS" styleClass="small-toggle-button-middle" toggleGroup="$userNoteTypeGroup"/>
-                        <ToggleButton fx:id="btnTypePrestamo" text="PRÉSTAMO" 
-                                    maxWidth="Infinity" HBox.hgrow="ALWAYS" styleClass="small-toggle-button-middle" toggleGroup="$userNoteTypeGroup"/>
-                        <ToggleButton fx:id="btnTypeFinContrato" text="FIN DE CONTRATO (ENTREGA)" 
-                                    maxWidth="Infinity" HBox.hgrow="ALWAYS" styleClass="small-toggle-button-right" toggleGroup="$userNoteTypeGroup"/>
+                                      maxWidth="Infinity" styleClass="small-toggle-button-vtop">
+                            <toggleGroup>
+                                <ToggleGroup fx:id="userNoteTypeGroup"/>
+                            </toggleGroup>
+                        </ToggleButton>
+                        <ToggleButton fx:id="btnTypeDevolucion" text="DEVOLUCIÓN"
+                                      maxWidth="Infinity" styleClass="small-toggle-button-vmiddle"
+                                      toggleGroup="$userNoteTypeGroup"/>
+                        <ToggleButton fx:id="btnTypeRecambio" text="RECAMBIO"
+                                      maxWidth="Infinity" styleClass="small-toggle-button-vmiddle"
+                                      toggleGroup="$userNoteTypeGroup"/>
+                        <ToggleButton fx:id="btnTypeFinContrato" text="ENTREGA PERMANENTE"
+                                      maxWidth="Infinity" styleClass="small-toggle-button-vbottom"
+                                      toggleGroup="$userNoteTypeGroup"/>
                     </children>
-                </HBox>
+                </VBox>
             </children>
         </VBox>
 
-        <Separator style="-fx-opacity: 0.5;"/>
-
-        <!-- User details -->
-        <VBox spacing="10">
+        <!-- Motivo: directly below movement type -->
+        <VBox fx:id="vboxMotivo" spacing="4" managed="false" visible="false">
             <children>
-                <HBox alignment="CENTER_LEFT" spacing="10">
+                <Label text="MOTIVO" styleClass="input-label-small"/>
+                <ComboBox fx:id="cmbMotivo" promptText="Seleccionar motivo..."
+                          maxWidth="Infinity" styleClass="form-input-main"/>
+            </children>
+        </VBox>
+
+        <Separator style="-fx-opacity: 0.5;">
+            <VBox.margin><Insets top="6" bottom="6"/></VBox.margin>
+        </Separator>
+
+        <!-- User details header + action buttons -->
+        <VBox spacing="8">
+            <children>
+                <HBox alignment="CENTER_LEFT" spacing="8">
                     <children>
                         <Label text="DATOS DEL USUARIO" styleClass="section-label"/>
-                        <Region HBox.hgrow="ALWAYS" />
-
-                        <Label fx:id="lblADStatus" text="" style="-fx-font-size: 11px; -fx-font-weight: bold;" />
-
-                        <HBox spacing="8">
-                            <children>
-                                <Button text="Limpiar" onAction="#handleClearUserFields" styleClass="button-secondary"/>
-                                <Button text="🔍 Buscar en AD" onAction="#handleADSearch" styleClass="button-primary"/>
-                            </children>
-                        </HBox>
+                        <Region HBox.hgrow="ALWAYS"/>
+                        <Label fx:id="lblADStatus" text="" style="-fx-font-size: 10px; -fx-font-weight: bold;"/>
                     </children>
                 </HBox>
-
-                <GridPane hgap="15" vgap="10">
-                    <columnConstraints>
-                        <ColumnConstraints percentWidth="25"/>
-                        <ColumnConstraints percentWidth="35"/>
-                        <ColumnConstraints percentWidth="40"/>
-                    </columnConstraints>
+                <HBox spacing="6" alignment="CENTER_LEFT" style="-fx-padding: 2 0 6 0;">
                     <children>
-                        <VBox spacing="2" GridPane.columnIndex="0">
-                            <Label text="DNI" styleClass="input-label-small"/>
-                            <TextField fx:id="txtUserDni" styleClass="form-input-main"/>
-                        </VBox>
-
-                        <VBox spacing="2" GridPane.columnIndex="1">
-                            <Label text="NOMBRE COMPLETO" styleClass="input-label-small"/>
-                            <TextField fx:id="txtUserName" styleClass="form-input-main"/>
-                        </VBox>
-
-                        <VBox spacing="2" GridPane.columnIndex="2">
-                            <Label text="USERNAME" styleClass="input-label-small"/>
-                            <TextField fx:id="txtUserAccount" styleClass="form-input-main"/>
-                            <Label fx:id="lblUserEmail" text="email: " 
-                                style="-fx-text-fill: #94a3b8; -fx-font-size: 11px; -fx-font-style: italic; -fx-padding: 0 0 0 5;"/>
-                        </VBox>
+                        <Button text="Buscar en AD" onAction="#handleADSearch" styleClass="button-primary"/>
+                        <Button text="Limpiar" onAction="#handleClearUserFields" styleClass="button-secondary"/>
                     </children>
-                </GridPane>
+                </HBox>
             </children>
         </VBox>
-        
+
+        <!-- DNI -->
+        <VBox spacing="2">
+            <children>
+                <Label text="DNI" styleClass="input-label-small"/>
+                <TextField fx:id="txtUserDni" styleClass="form-input-main"/>
+            </children>
+        </VBox>
+
+        <!-- Nombre completo -->
+        <VBox spacing="2">
+            <children>
+                <Label text="NOMBRE COMPLETO" styleClass="input-label-small"/>
+                <TextField fx:id="txtUserName" styleClass="form-input-main"/>
+            </children>
+        </VBox>
+
+        <!-- Username + email -->
+        <VBox spacing="2">
+            <children>
+                <Label text="USERNAME" styleClass="input-label-small"/>
+                <TextField fx:id="txtUserAccount" styleClass="form-input-main"/>
+                <Label fx:id="lblUserEmail" text="email: "
+                       style="-fx-text-fill: #94a3b8; -fx-font-size: 11px; -fx-font-style: italic; -fx-padding: 0 0 0 5;"/>
+            </children>
+        </VBox>
+
     </children>
 </VBox>

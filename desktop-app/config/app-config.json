@@ -1,0 +1,30 @@
+{
+  "afFormat" : {
+    "prefix" : "IT",
+    "separator" : "-",
+    "length" : 8,
+    "filler" : "0",
+    "inputPattern" : "\\d"
+  },
+  "motivoOptions" : {
+    "entrega" : [ "Ingreso", "Reposición", "Préstamo", "Otro" ],
+    "proveedor" : [ "Compra", "Garantía", "Reparación", "Otro" ],
+    "recambio" : [ "Falla", "Obsolescencia", "Actualización", "Otro" ],
+    "devolucion" : [ "Fin de préstamo", "Falla", "Fin de contrato", "Otro" ]
+  },
+  "smtp" : {
+    "host" : "smtp.gmail.com",
+    "port" : 587,
+    "senderAddress" : ""
+  },
+  "adApi" : {
+    "baseUrl" : "http://localhost:8080/api/ad"
+  },
+  "glpiApi" : {
+    "baseUrl" : ""
+  },
+  "database" : {
+    "baseUrl" : ""
+  },
+  "noteItemLimit" : 8
+}
