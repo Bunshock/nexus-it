@@ -87,7 +87,8 @@
             <!-- Countable fields -->
             <VBox fx:id="containerCountableFields" spacing="5" managed="false" visible="false">
                 <Label text="CANTIDAD *" styleClass="input-label-small"/>
-                <Spinner fx:id="spinQty" editable="true" prefWidth="120" min="1" max="999" initialValue="1"/>
+                <TextField fx:id="txtQty" styleClass="form-input-main" text="1" prefWidth="80" maxWidth="80"/>
+                <Label text="1 – 999" style="-fx-font-size: 10px; -fx-text-fill: #64748b;"/>
             </VBox>
 
             <!-- GLPI status -->

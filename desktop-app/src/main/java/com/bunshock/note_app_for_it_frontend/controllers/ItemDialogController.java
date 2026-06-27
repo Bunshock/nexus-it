@@ -27,8 +27,6 @@ import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ProgressIndicator;
-import javafx.scene.control.Spinner;
-import javafx.scene.control.SpinnerValueFactory;
 import javafx.scene.control.TextField;
 import javafx.scene.control.TextFormatter;
 import javafx.scene.control.Tooltip;
@@ -58,7 +56,7 @@ public class ItemDialogController {
     @FXML private javafx.scene.text.TextFlow flowAfPattern;
 
     @FXML private VBox containerCountableFields;
-    @FXML private Spinner<Integer> spinQty;
+    @FXML private TextField txtQty;
 
     @FXML private HBox hboxGlpiStatus;
     @FXML private ProgressIndicator progressGlpi;
@@ -78,7 +76,12 @@ public class ItemDialogController {
 
     public void initialize() {
         equipmentService = ServiceLocator.getInstance().getEquipmentService();
-        spinQty.setValueFactory(new SpinnerValueFactory.IntegerSpinnerValueFactory(1, 999, 1));
+        txtQty.setTextFormatter(new TextFormatter<>(change -> {
+            String newText = change.getControlNewText();
+            if (newText.isEmpty()) return change;
+            if (newText.matches("[1-9][0-9]{0,2}")) return change;
+            return null;
+        }));
 
         cmbType.setItems(FXCollections.observableArrayList(equipmentService.getAllTypes()));
         applyGenericCellFactory(cmbType);
@@ -463,7 +466,7 @@ public class ItemDialogController {
             .filter(m -> m.getName().equals(countable.getModel().get()))
             .findFirst().ifPresent(cmbModel::setValue);
 
-        spinQty.getValueFactory().setValue(countable.getQuantity().get());
+        txtQty.setText(String.valueOf(countable.getQuantity().get()));
         txtObs.setText(countable.getObservations().get());
     }
 
@@ -616,8 +619,8 @@ public class ItemDialogController {
                 parentController.addAsset(new AssetItem(typeName, brandName, modelName, obs, sn, af));
             }
         } else {
-            spinQty.commitValue();
-            int qty = spinQty.getValue() != null ? spinQty.getValue() : 1;
+                String qtyText = txtQty.getText().trim();
+            int qty = qtyText.isEmpty() ? 1 : Integer.parseInt(qtyText);
             if (editingCountable != null) {
                 editingCountable.getType().set(typeName);
                 editingCountable.getBrand().set(brandName);
