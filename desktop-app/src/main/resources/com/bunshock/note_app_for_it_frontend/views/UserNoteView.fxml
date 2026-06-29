@@ -2,6 +2,7 @@
 <?import javafx.scene.layout.*?>
 <?import javafx.scene.control.*?>
 <?import javafx.geometry.Insets?>
+<?import javafx.scene.control.DatePicker?>
 
 <VBox spacing="20" maxHeight="Infinity"
       xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1"
@@ -23,7 +24,7 @@
                         <ToggleButton fx:id="btnTypeDevolucion" text="DEVOLUCIÓN"
                                       maxWidth="Infinity" styleClass="small-toggle-button-vmiddle"
                                       toggleGroup="$userNoteTypeGroup"/>
-                        <ToggleButton fx:id="btnTypeRecambio" text="RECAMBIO"
+                        <ToggleButton fx:id="btnTypePrestamo" text="PRÉSTAMO"
                                       maxWidth="Infinity" styleClass="small-toggle-button-vmiddle"
                                       toggleGroup="$userNoteTypeGroup"/>
                         <ToggleButton fx:id="btnTypeFinContrato" text="ENTREGA PERMANENTE"
@@ -37,9 +38,29 @@
         <!-- Motivo: directly below movement type -->
         <VBox fx:id="vboxMotivo" spacing="4" managed="false" visible="false">
             <children>
-                <Label text="MOTIVO" styleClass="input-label-small"/>
+                <HBox alignment="CENTER_LEFT">
+                    <children>
+                        <Label text="MOTIVO" styleClass="input-label-small"/>
+                        <Region HBox.hgrow="ALWAYS"/>
+                        <Label fx:id="lblMotivoStatus" text="" styleClass="input-label-small"/>
+                    </children>
+                </HBox>
                 <ComboBox fx:id="cmbMotivo" promptText="Seleccionar motivo..."
                           maxWidth="Infinity" styleClass="form-input-main"/>
+            </children>
+        </VBox>
+
+        <!-- Fecha tentativa de devolución: shown only for Préstamo -->
+        <VBox fx:id="vboxFechaTentativa" spacing="4" managed="false" visible="false">
+            <children>
+                <HBox alignment="CENTER_LEFT">
+                    <children>
+                        <Label text="FECHA TENTATIVA DE DEVOLUCIÓN" styleClass="input-label-small"/>
+                        <Region HBox.hgrow="ALWAYS"/>
+                        <Label fx:id="lblFechaTentativaStatus" text="" styleClass="input-label-small"/>
+                    </children>
+                </HBox>
+                <DatePicker fx:id="dtpFechaTentativa" maxWidth="Infinity" styleClass="form-input-main"/>
             </children>
         </VBox>
 

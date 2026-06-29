@@ -10,6 +10,7 @@ import com.bunshock.note_app_for_it_frontend.models.EquipmentBrand;
 import com.bunshock.note_app_for_it_frontend.models.EquipmentModel;
 import com.bunshock.note_app_for_it_frontend.models.EquipmentType;
 import com.bunshock.note_app_for_it_frontend.models.SnValidation;
+import com.bunshock.note_app_for_it_frontend.models.SnValidationRow;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -116,6 +117,34 @@ public class MockEquipmentService implements IEquipmentService {
         return snValidations.stream()
             .filter(v -> v.getModelId() == modelId && v.isActive())
             .findFirst();
+    }
+
+    @Override
+    public List<SnValidationRow> getAllSnValidationRows() {
+        List<SnValidationRow> rows = new ArrayList<>();
+        for (EquipmentType type : getAllTypes()) {
+            if (!type.isAsset()) continue;
+            for (EquipmentBrand brand : getBrandsForType(type.getId())) {
+                for (EquipmentModel model : getModelsForBrandAndType(brand.getId(), type.getId())) {
+                    SnValidation sv = snValidations.stream()
+                        .filter(v -> v.getModelId() == model.getId())
+                        .findFirst().orElse(null);
+                    rows.add(new SnValidationRow(
+                        model.getId(), type.getName(), brand.getName(), model.getName(),
+                        sv != null ? sv.getRegexPattern() : null,
+                        sv != null && sv.isActive()
+                    ));
+                }
+            }
+        }
+        return rows;
+    }
+
+    @Override
+    public void upsertSnValidation(int modelId, String regex, boolean active) {
+        snValidations.removeIf(v -> v.getModelId() == modelId);
+        String r = (regex == null || regex.isBlank()) ? null : regex.trim();
+        snValidations.add(new SnValidation(modelId, r, null, active));
     }
 
     @Override

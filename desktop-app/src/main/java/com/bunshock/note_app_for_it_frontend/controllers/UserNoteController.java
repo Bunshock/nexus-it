@@ -1,6 +1,9 @@
 package com.bunshock.note_app_for_it_frontend.controllers;
 
 import java.io.IOException;
+import java.time.DayOfWeek;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 
 import com.bunshock.note_app_for_it_frontend.models.ADUser;
@@ -16,6 +19,7 @@ import javafx.fxml.FXMLLoader;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
 import javafx.scene.control.ComboBox;
+import javafx.scene.control.DatePicker;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextField;
 import javafx.scene.control.ToggleButton;
@@ -31,10 +35,15 @@ public class UserNoteController {
     @FXML private ToggleButton btnTypeEntrega;
     @FXML private ToggleButton btnTypeDevolucion;
     @FXML private ToggleButton btnTypeFinContrato;
-    @FXML private ToggleButton btnTypeRecambio;
+    @FXML private ToggleButton btnTypePrestamo;
 
     @FXML private VBox vboxMotivo;
     @FXML private ComboBox<String> cmbMotivo;
+    @FXML private Label lblMotivoStatus;
+
+    @FXML private VBox vboxFechaTentativa;
+    @FXML private DatePicker dtpFechaTentativa;
+    @FXML private Label lblFechaTentativaStatus;
 
     @FXML private Label lblADStatus;
     @FXML private TextField txtUserDni;
@@ -58,19 +67,30 @@ public class UserNoteController {
 
     private void updateMotivoVisibility(ToggleButton selected) {
         boolean showMotivo = selected == btnTypeEntrega
-                          || selected == btnTypeRecambio
                           || selected == btnTypeDevolucion
                           || selected == btnTypeFinContrato;
+        boolean showFechaTentativa = selected == btnTypePrestamo;
+
         vboxMotivo.setVisible(showMotivo);
         vboxMotivo.setManaged(showMotivo);
+        vboxFechaTentativa.setVisible(showFechaTentativa);
+        vboxFechaTentativa.setManaged(showFechaTentativa);
 
         if (showMotivo) {
-            String key;
-            if (selected == btnTypeRecambio) key = "recambio";
-            else if (selected == btnTypeDevolucion) key = "devolucion";
-            else key = "entrega";
+            String key = selected == btnTypeDevolucion ? "devolucion" : "entrega";
             loadMotivoOptions(key);
         }
+        if (showFechaTentativa && dtpFechaTentativa.getValue() == null) {
+            dtpFechaTentativa.setValue(nextWorkingDay());
+        }
+    }
+
+    private LocalDate nextWorkingDay() {
+        LocalDate next = LocalDate.now().plusDays(1);
+        while (next.getDayOfWeek() == DayOfWeek.SATURDAY || next.getDayOfWeek() == DayOfWeek.SUNDAY) {
+            next = next.plusDays(1);
+        }
+        return next;
     }
 
     private void loadMotivoOptions(String key) {
@@ -86,6 +106,50 @@ public class UserNoteController {
 
     public String getMotivo() {
         return cmbMotivo.getValue();
+    }
+
+    public String getFechaTentativa() {
+        LocalDate date = dtpFechaTentativa.getValue();
+        return date != null ? date.format(DateTimeFormatter.ofPattern("dd/MM/yyyy")) : "";
+    }
+
+    public boolean validateAndShowErrors() {
+        boolean valid = true;
+        if (getUserName().isEmpty() || getUserDni().isEmpty()) {
+            triggerFeedback("Nombre y DNI son obligatorios", "#ef4444");
+            valid = false;
+        }
+        if (!btnTypePrestamo.isSelected() && (getMotivo() == null || getMotivo().isEmpty())) {
+            triggerLabelFeedback(lblMotivoStatus, "El motivo es obligatorio", "#ef4444");
+            valid = false;
+        }
+        if (btnTypePrestamo.isSelected()) {
+            LocalDate date = dtpFechaTentativa.getValue();
+            if (date == null) {
+                triggerLabelFeedback(lblFechaTentativaStatus, "Ingrese fecha tentativa", "#ef4444");
+                valid = false;
+            } else if (date.isBefore(LocalDate.now())) {
+                triggerLabelFeedback(lblFechaTentativaStatus, "La fecha no puede ser pasada", "#ef4444");
+                valid = false;
+            }
+        }
+        return valid;
+    }
+
+    private void triggerLabelFeedback(Label label, String message, String hexColor) {
+        label.setText(message);
+        label.setStyle("-fx-text-fill: " + hexColor + "; -fx-font-weight: bold;");
+        label.setOpacity(1.0);
+        FadeTransition fade = new FadeTransition(Duration.millis(400), label);
+        fade.setDelay(Duration.millis(2000));
+        fade.setFromValue(1.0);
+        fade.setToValue(0.0);
+        fade.setOnFinished(e -> {
+            label.setText("");
+            label.setStyle("");
+            label.setOpacity(1.0);
+        });
+        fade.play();
     }
 
     public String getUserDni() { return txtUserDni.getText().trim(); }
@@ -190,6 +254,7 @@ public class UserNoteController {
         txtUserAccount.clear();
         lblUserEmail.setText("email: ");
         cmbMotivo.getSelectionModel().clearSelection();
+        dtpFechaTentativa.setValue(nextWorkingDay());
         resetFieldStyles();
         lblADStatus.setText("");
     }

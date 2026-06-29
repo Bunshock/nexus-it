@@ -50,10 +50,12 @@
                     <children>
 
                         <!-- Section title + add button -->
-                        <HBox alignment="CENTER_LEFT">
+                        <HBox alignment="CENTER_LEFT" spacing="10">
                             <children>
                                 <Label text="DETALLES DEL EQUIPAMIENTO" styleClass="section-label"/>
                                 <Region HBox.hgrow="ALWAYS"/>
+                                <Label fx:id="lblTableStatus" text=""
+                                       style="-fx-text-fill: #ef4444; -fx-font-size: 10px; -fx-font-weight: bold;" opacity="0"/>
                                 <Button fx:id="btnAddItem" text="+ Agregar Equipo" onAction="#handleAddItem" styleClass="button-primary"/>
                             </children>
                         </HBox>

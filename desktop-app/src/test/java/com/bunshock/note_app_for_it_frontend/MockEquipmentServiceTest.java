@@ -5,6 +5,7 @@ import java.util.List;
 import com.bunshock.note_app_for_it_frontend.models.EquipmentBrand;
 import com.bunshock.note_app_for_it_frontend.models.EquipmentModel;
 import com.bunshock.note_app_for_it_frontend.models.EquipmentType;
+import com.bunshock.note_app_for_it_frontend.models.SnValidationRow;
 import com.bunshock.note_app_for_it_frontend.services.MockEquipmentService;
 
 import org.junit.jupiter.api.Test;
@@ -66,5 +67,28 @@ class MockEquipmentServiceTest {
         boolean found = service.getAllTypes().stream()
             .anyMatch(t -> t.getName().equals("TestType"));
         assertTrue(found);
+    }
+
+    @Test
+    void getAllSnValidationRowsContainsAllModels() {
+        List<SnValidationRow> rows = service.getAllSnValidationRows();
+        assertFalse(rows.isEmpty());
+        rows.forEach(r -> {
+            assertNotNull(r.getTypeName());
+            assertNotNull(r.getBrandName());
+            assertNotNull(r.getModelName());
+        });
+    }
+
+    @Test
+    void upsertSnValidationUpdatesInMemory() {
+        List<SnValidationRow> rows = service.getAllSnValidationRows();
+        assertFalse(rows.isEmpty());
+        int modelId = rows.get(0).getModelId();
+
+        service.upsertSnValidation(modelId, "[A-Z]{3}\\d{5}", true);
+
+        assertTrue(service.getSnValidation(modelId).isPresent());
+        assertEquals("[A-Z]{3}\\d{5}", service.getSnValidation(modelId).get().getRegexPattern());
     }
 }

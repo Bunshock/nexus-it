@@ -7,6 +7,7 @@ import com.bunshock.note_app_for_it_frontend.models.EquipmentBrand;
 import com.bunshock.note_app_for_it_frontend.models.EquipmentModel;
 import com.bunshock.note_app_for_it_frontend.models.EquipmentType;
 import com.bunshock.note_app_for_it_frontend.models.SnValidation;
+import com.bunshock.note_app_for_it_frontend.models.SnValidationRow;
 
 public interface IEquipmentService {
 
@@ -17,6 +18,10 @@ public interface IEquipmentService {
     List<EquipmentModel> getModelsForBrandAndType(int brandId, int typeId);
 
     Optional<SnValidation> getSnValidation(int modelId);
+
+    List<SnValidationRow> getAllSnValidationRows();
+
+    void upsertSnValidation(int modelId, String regex, boolean active);
 
     void addType(String name, boolean isAsset);
 

@@ -13,6 +13,7 @@ import com.bunshock.note_app_for_it_frontend.services.NoteGenerationService;
 import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;
 import com.bunshock.note_app_for_it_frontend.utils.ViewFactory;
 
+import javafx.animation.FadeTransition;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.fxml.FXML;
@@ -23,6 +24,7 @@ import javafx.scene.Scene;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Alert.AlertType;
 import javafx.scene.control.Button;
+import javafx.scene.control.Label;
 import javafx.scene.control.TableCell;
 import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableView;
@@ -36,6 +38,7 @@ import javafx.stage.Modality;
 import javafx.stage.Stage;
 import javafx.stage.StageStyle;
 import javafx.util.Callback;
+import javafx.util.Duration;
 
 public class NoteGeneratorController {
 
@@ -63,6 +66,7 @@ public class NoteGeneratorController {
 
     @FXML private TextField txtObservations;
     @FXML private Button btnAddItem;
+    @FXML private Label lblTableStatus;
 
     private final ObservableList<AssetItem> assetList = FXCollections.observableArrayList();
     private final ObservableList<CountableItem> countableList = FXCollections.observableArrayList();
@@ -248,9 +252,29 @@ public class NoteGeneratorController {
         }
     }
 
+    private void showTableError(String message) {
+        lblTableStatus.setText(message);
+        lblTableStatus.setOpacity(1.0);
+        FadeTransition fade = new FadeTransition(Duration.millis(400), lblTableStatus);
+        fade.setDelay(Duration.millis(2000));
+        fade.setFromValue(1.0);
+        fade.setToValue(0.0);
+        fade.setOnFinished(e -> lblTableStatus.setText(""));
+        fade.play();
+    }
+
     @FXML
     private void handleGenerateNote() {
         try {
+            boolean canGenerate = true;
+            if (assetList.isEmpty() && countableList.isEmpty()) {
+                showTableError("Agregue al menos un equipo");
+                canGenerate = false;
+            }
+            if (isUserNote() && !viewFactory.getUserNoteController().validateAndShowErrors()) {
+                canGenerate = false;
+            }
+            if (!canGenerate) return;
             if (isUserNote() && !checkGlpiAssignments()) return;
 
             NoteGenerationService generator = new NoteGenerationService();
@@ -260,16 +284,18 @@ public class NoteGeneratorController {
             if (isUserNote()) {
                 UserNoteController unc = viewFactory.getUserNoteController();
                 String profileType = unc.getSelectedNoteType();
+                boolean isPrestamo = "PRÉSTAMO".equals(profileType);
+                String motimoOrFecha = isPrestamo ? unc.getFechaTentativa() : unc.getMotivo();
                 html = generator.generateUserNote(
                     profileType,
                     unc.getUserName(), unc.getUserDni(), unc.getUserEmail(),
-                    unc.getMotivo(),
+                    motimoOrFecha,
                     assetList, countableList, getObservations()
                 );
                 report.setUserName(unc.getUserName());
                 report.setUserDni(unc.getUserDni());
                 report.setUserEmail(unc.getUserEmail());
-                report.setMotivo(unc.getMotivo());
+                report.setMotivo(motimoOrFecha);
                 report.setProfileType(profileType);
             } else {
                 ProviderNoteController pnc = viewFactory.getProviderNoteController();

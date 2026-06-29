@@ -98,7 +98,7 @@ public class NoteGenerationService {
         return switch (profileType.toUpperCase()) {
             case "DEVOLUCIÓN" -> "devolucion.html";
             case "FIN DE CONTRATO" -> "fin_contrato.html";
-            case "RECAMBIO" -> "entrega.html";
+            case "PRÉSTAMO" -> "entrega.html";
             default -> "entrega.html";
         };
     }

@@ -9,7 +9,6 @@
   "motivoOptions" : {
     "entrega" : [ "Ingreso", "Reposición", "Préstamo", "Otro" ],
     "proveedor" : [ "Compra", "Garantía", "Reparación", "Otro" ],
-    "recambio" : [ "Falla", "Obsolescencia", "Actualización", "Otro" ],
     "devolucion" : [ "Fin de préstamo", "Falla", "Fin de contrato", "Otro" ]
   },
   "smtp" : {

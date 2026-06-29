@@ -12,6 +12,7 @@ import com.bunshock.note_app_for_it_frontend.models.EquipmentBrand;
 import com.bunshock.note_app_for_it_frontend.models.EquipmentModel;
 import com.bunshock.note_app_for_it_frontend.models.EquipmentType;
 import com.bunshock.note_app_for_it_frontend.models.SnValidation;
+import com.bunshock.note_app_for_it_frontend.models.SnValidationRow;
 
 public class SqliteEquipmentService implements IEquipmentService {
 
@@ -90,6 +91,62 @@ public class SqliteEquipmentService implements IEquipmentService {
             throw new RuntimeException("Failed to load SN validation", e);
         }
         return Optional.empty();
+    }
+
+    @Override
+    public List<SnValidationRow> getAllSnValidationRows() {
+        String sql = """
+            SELECT t.name AS type_name, b.name AS brand_name,
+                   m.id AS model_id, m.name AS model_name,
+                   sv.regex_pattern, sv.is_active
+            FROM MODEL m
+            JOIN BRAND_TYPE_LINK btl ON btl.id = m.brand_type_id
+            JOIN TYPE t ON t.id = btl.type_id
+            JOIN BRAND b ON b.id = btl.brand_id
+            LEFT JOIN SN_VALIDATION sv ON sv.model_id = m.id
+            WHERE t.is_asset = 1
+            ORDER BY COALESCE(sv.is_active, 0) DESC, t.name, b.name, m.name
+            """;
+        List<SnValidationRow> rows = new ArrayList<>();
+        try (Connection c = db.getConnection();
+             ResultSet rs = c.createStatement().executeQuery(sql)) {
+            while (rs.next()) {
+                rows.add(new SnValidationRow(
+                    rs.getInt("model_id"),
+                    rs.getString("type_name"),
+                    rs.getString("brand_name"),
+                    rs.getString("model_name"),
+                    rs.getString("regex_pattern"),
+                    rs.getInt("is_active") == 1
+                ));
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to load SN validation rows", e);
+        }
+        return rows;
+    }
+
+    @Override
+    public void upsertSnValidation(int modelId, String regex, boolean active) {
+        try (Connection c = db.getConnection()) {
+            c.setAutoCommit(false);
+            try (PreparedStatement del = c.prepareStatement(
+                    "DELETE FROM SN_VALIDATION WHERE model_id = ?")) {
+                del.setInt(1, modelId);
+                del.executeUpdate();
+            }
+            String r = (regex == null || regex.isBlank()) ? null : regex.trim();
+            try (PreparedStatement ins = c.prepareStatement(
+                    "INSERT INTO SN_VALIDATION (model_id, regex_pattern, is_active) VALUES (?, ?, ?)")) {
+                ins.setInt(1, modelId);
+                ins.setString(2, r);
+                ins.setInt(3, active ? 1 : 0);
+                ins.executeUpdate();
+            }
+            c.commit();
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to upsert SN validation", e);
+        }
     }
 
     @Override

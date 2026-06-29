@@ -16,7 +16,7 @@
    <left>
       <VBox styleClass="sidebar" prefWidth="235">
          <children>
-
+            
             <!-- Logo -->
             <StackPane style="-fx-padding: 0 0 0 0;"> 
                <children>
