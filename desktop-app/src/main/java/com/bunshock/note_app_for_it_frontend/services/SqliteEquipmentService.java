@@ -150,6 +150,68 @@ public class SqliteEquipmentService implements IEquipmentService {
     }
 
     @Override
+    public void addBrandForType(String brandName, int typeId) {
+        try (Connection c = db.getConnection()) {
+            try (PreparedStatement ps = c.prepareStatement(
+                    "INSERT OR IGNORE INTO BRAND (name) VALUES (?)")) {
+                ps.setString(1, brandName.trim());
+                ps.executeUpdate();
+            }
+            int brandId;
+            try (PreparedStatement ps = c.prepareStatement(
+                    "SELECT id FROM BRAND WHERE name = ?")) {
+                ps.setString(1, brandName.trim());
+                ResultSet rs = ps.executeQuery();
+                brandId = rs.getInt(1);
+            }
+            try (PreparedStatement ps = c.prepareStatement(
+                    "INSERT OR IGNORE INTO BRAND_TYPE_LINK (type_id, brand_id) VALUES (?, ?)")) {
+                ps.setInt(1, typeId);
+                ps.setInt(2, brandId);
+                ps.executeUpdate();
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to add brand for type", e);
+        }
+    }
+
+    @Override
+    public void renameType(int typeId, String newName) {
+        try (Connection c = db.getConnection();
+             PreparedStatement ps = c.prepareStatement("UPDATE TYPE SET name = ? WHERE id = ?")) {
+            ps.setString(1, newName.trim());
+            ps.setInt(2, typeId);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to rename type", e);
+        }
+    }
+
+    @Override
+    public void renameBrand(int brandId, String newName) {
+        try (Connection c = db.getConnection();
+             PreparedStatement ps = c.prepareStatement("UPDATE BRAND SET name = ? WHERE id = ?")) {
+            ps.setString(1, newName.trim());
+            ps.setInt(2, brandId);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to rename brand", e);
+        }
+    }
+
+    @Override
+    public void renameModel(int modelId, String newName) {
+        try (Connection c = db.getConnection();
+             PreparedStatement ps = c.prepareStatement("UPDATE MODEL SET name = ? WHERE id = ?")) {
+            ps.setString(1, newName.trim());
+            ps.setInt(2, modelId);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to rename model", e);
+        }
+    }
+
+    @Override
     public void addType(String name, boolean isAsset) {
         try (Connection c = db.getConnection();
              PreparedStatement ps = c.prepareStatement("INSERT OR IGNORE INTO TYPE (name, is_asset) VALUES (?, ?)")) {

@@ -27,6 +27,8 @@ public interface IEquipmentService {
 
     void addBrand(String name);
 
+    void addBrandForType(String brandName, int typeId);
+
     void addModel(String name, int brandId, int typeId);
 
     void removeType(int typeId);
@@ -34,4 +36,10 @@ public interface IEquipmentService {
     void removeBrand(int brandId);
 
     void removeModel(int modelId);
+
+    void renameType(int typeId, String newName);
+
+    void renameBrand(int brandId, String newName);
+
+    void renameModel(int modelId, String newName);
 }

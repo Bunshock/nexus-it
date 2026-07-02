@@ -37,7 +37,7 @@ Project-level instructions for Claude Code. These override defaults and apply to
 - Every implemented feature must have tests. Write test files **and run them** before marking a task done.
 - Desktop app: **JUnit 5 + TestFX** (`src/test/java/...`)
 - Run: `mvn test` from `desktop-app/`
-- Current test count: 22 tests, all passing.
+- Current test count: 29 tests, all passing.
 - Test classes: `TemplateEngineTest`, `AfFormatterTest`, `MockADServiceTest`, `MockEquipmentServiceTest`
 
 ---
@@ -111,6 +111,9 @@ Every external dependency has an interface (`IADService`, `IEquipmentService`, `
 ### Windows DPAPI
 `WindowsDPAPIService` wraps JNA `Crypt32Util.cryptProtectData(byte[])` / `cryptUnprotectData(byte[])`. Returns Base64 string for SQLite storage. Decryption is tied to the Windows user account — never portable as plaintext.
 
+### Admin dialog pattern
+`requireAdmin(Runnable)` in `SettingsController` and `DatabaseSectionController` handles the full admin flow: check `AdminAuthService.isConfigured()`, prompt password, verify hash, run action. Each controller also duplicates `buildDialogStage / buildDialogRoot / buildDialogScene / centerOnContent` — this duplication is intentional (no shared utility class, per the no-abstraction rule). Do not extract a base class or helper unless explicitly requested.
+
 ### SQLite schema mirrors PostgreSQL
 `DatabaseService` creates `data/noteapp.db` with the same table names and column types as the planned PostgreSQL schema. Migration = JDBC driver swap + connection string change.
 
@@ -133,7 +136,7 @@ Every external dependency has an interface (`IADService`, `IEquipmentService`, `
 | Interface | Active implementation | Future |
 |-----------|----------------------|--------|
 | `IADService` | `MockADService` (in-memory) | REST API (Spring Boot, URL configurable via `adApi.baseUrl`) |
-| `IEquipmentService` | `MockEquipmentService` (reads mock-equipment.json) | `SqliteEquipmentService` → PostgreSQL |
+| `IEquipmentService` | `SqliteEquipmentService` (SQLite, seeded on first run) | PostgreSQL (JDBC driver swap) |
 | `IHistoryService` | `SqliteHistoryService` | — |
 | `IGLPIService` | `GLPIServiceStub` (no-op) | GLPI REST API (out of scope v1) |
 | `IEmailService` | `GmailEmailService` (Jakarta Mail, STARTTLS port 587) | — |
@@ -152,7 +155,7 @@ Every external dependency has an interface (`IADService`, `IEquipmentService`, `
 **Jackson config**: `AppConfig` and all inner classes are annotated `@JsonIgnoreProperties(ignoreUnknown = true)` — unknown keys in the JSON file do not crash the app.
 
 ### `config/mock-equipment.json`
-Types, brands, `typeBrands` junction entries, models, `snValidations`. Loaded by `MockEquipmentService`.
+Types, brands, `typeBrands` junction entries, models, `snValidations`. Loaded by `MockEquipmentService` — **used only in tests**, not in production.
 
 ---
 
@@ -161,6 +164,21 @@ Types, brands, `typeBrands` junction entries, models, `snValidations`. Loaded by
 `TYPE`, `BRAND`, `BRAND_TYPE_LINK`, `MODEL`, `SN_VALIDATION`, `NOTE_REPORT`, `NOTE_ENTREGA_DEVOLUCION`, `NOTE_PROVEEDOR`, `NOTE_ITEM`, `TECHNICIAN_PROFILE`, `APP_SETTINGS`
 
 See `docs/database.md` for full ERD.
+
+### `APP_SETTINGS` keys in use
+
+| Key | Encrypted | Purpose |
+|-----|-----------|---------|
+| `smtp_password` | DPAPI | SMTP sender password |
+| `db_host` | No | Remote DB hostname |
+| `db_port` | No | Remote DB port (default `5432`) |
+| `db_name` | No | Remote DB database name |
+| `db_username` | DPAPI | Remote DB username |
+| `db_password` | DPAPI | Remote DB password |
+
+### Equipment seed data
+
+`DatabaseService.seedEquipmentData()` runs automatically on first startup when `TYPE` is empty. It inserts all types, brands, type-brand links, and models from the organization's catalog. Every type+brand combination also gets an `Otro / Genérico` model added. Re-running the app on an existing DB skips seeding entirely.
 
 ---
 

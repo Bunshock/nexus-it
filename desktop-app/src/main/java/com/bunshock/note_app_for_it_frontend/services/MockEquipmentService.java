@@ -158,6 +158,26 @@ public class MockEquipmentService implements IEquipmentService {
     }
 
     @Override
+    public void addBrandForType(String brandName, int typeId) {
+        String trimmed = brandName.trim();
+        EquipmentBrand existing = brands.stream()
+            .filter(b -> b.getName().equalsIgnoreCase(trimmed))
+            .findFirst().orElse(null);
+        int brandId;
+        if (existing == null) {
+            brandId = nextBrandId++;
+            brands.add(new EquipmentBrand(brandId, trimmed));
+        } else {
+            brandId = existing.getId();
+        }
+        boolean linkExists = typeBrands.stream()
+            .anyMatch(tb -> tb[1] == typeId && tb[2] == brandId);
+        if (!linkExists) {
+            typeBrands.add(new int[]{nextTypeBrandId++, typeId, brandId});
+        }
+    }
+
+    @Override
     public void addModel(String name, int brandId, int typeId) {
         int brandTypeId = typeBrands.stream()
             .filter(tb -> tb[1] == typeId && tb[2] == brandId)
@@ -184,5 +204,37 @@ public class MockEquipmentService implements IEquipmentService {
     @Override
     public void removeModel(int modelId) {
         models.removeIf(m -> m.getId() == modelId);
+    }
+
+    @Override
+    public void renameType(int typeId, String newName) {
+        for (int i = 0; i < types.size(); i++) {
+            if (types.get(i).getId() == typeId) {
+                EquipmentType old = types.get(i);
+                types.set(i, new EquipmentType(old.getId(), newName.trim(), old.isAsset()));
+                return;
+            }
+        }
+    }
+
+    @Override
+    public void renameBrand(int brandId, String newName) {
+        for (int i = 0; i < brands.size(); i++) {
+            if (brands.get(i).getId() == brandId) {
+                brands.set(i, new EquipmentBrand(brandId, newName.trim()));
+                return;
+            }
+        }
+    }
+
+    @Override
+    public void renameModel(int modelId, String newName) {
+        for (int i = 0; i < models.size(); i++) {
+            if (models.get(i).getId() == modelId) {
+                EquipmentModel old = models.get(i);
+                models.set(i, new EquipmentModel(old.getId(), old.getBrandTypeId(), newName.trim()));
+                return;
+            }
+        }
     }
 }

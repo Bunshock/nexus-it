@@ -22,7 +22,7 @@ public class ServiceLocator {
     }
 
     public void initialize(AppConfig config) {
-        equipmentService = new MockEquipmentService();
+        equipmentService = new SqliteEquipmentService();
         adService = new MockADService();
         glpiService = new GLPIServiceStub();
         historyService = new SqliteHistoryService();

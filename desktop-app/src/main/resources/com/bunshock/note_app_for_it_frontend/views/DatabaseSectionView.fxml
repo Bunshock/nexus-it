@@ -2,7 +2,7 @@
 <?import javafx.scene.layout.*?>
 <?import javafx.scene.control.*?>
 
-<VBox spacing="20" style="-fx-padding: 30; -fx-background-color: #f4f4f4;"
+<VBox fx:id="rootContainer" spacing="20" style="-fx-padding: 30; -fx-background-color: #f4f4f4;"
       xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1"
       fx:controller="com.bunshock.note_app_for_it_frontend.controllers.DatabaseSectionController">
     <children>
@@ -14,9 +14,13 @@
             <children>
                 <Label text="CONEXIÓN" styleClass="section-label"/>
                 <HBox spacing="10" alignment="CENTER_LEFT">
-                    <TextField fx:id="txtDbUrl" promptText="URL de la base de datos remota..."
-                               HBox.hgrow="ALWAYS" styleClass="form-input-main"/>
-                    <Button text="Conectar" onAction="#handleConnect" styleClass="button-primary"/>
+                    <VBox spacing="4" HBox.hgrow="ALWAYS">
+                        <Label text="SERVIDOR" styleClass="input-label-small"/>
+                        <Label fx:id="lblDbServer" text="No configurado"
+                               style="-fx-text-fill: #94a3b8; -fx-font-size: 13px;"/>
+                    </VBox>
+                    <Button text="✏ Editar" onAction="#handleEditConnection" styleClass="button-secondary"/>
+                    <Button text="Probar conexión" onAction="#handleTestConnection" styleClass="button-primary"/>
                 </HBox>
                 <Label fx:id="lblConnectionStatus" text="" style="-fx-font-size: 11px;"/>
             </children>
@@ -34,8 +38,13 @@
                         <Region HBox.hgrow="ALWAYS"/>
                         <Button text="+ Agregar" onAction="#handleAddType" styleClass="button-primary"/>
                     </HBox>
-                    <ListView fx:id="listTypes" VBox.vgrow="ALWAYS"/>
-                    <Button text="Eliminar seleccionado" onAction="#handleRemoveType" styleClass="button-secondary"/>
+                    <ListView fx:id="listTypes" VBox.vgrow="ALWAYS" styleClass="modern-list"/>
+                    <HBox spacing="8">
+                        <Button text="Renombrar" onAction="#handleRenameType" styleClass="button-secondary"
+                                maxWidth="Infinity" HBox.hgrow="ALWAYS"/>
+                        <Button text="Eliminar" onAction="#handleRemoveType" styleClass="button-secondary"
+                                maxWidth="Infinity" HBox.hgrow="ALWAYS"/>
+                    </HBox>
                 </children>
             </VBox>
 
@@ -48,8 +57,13 @@
                         <Region HBox.hgrow="ALWAYS"/>
                         <Button text="+ Agregar" onAction="#handleAddBrand" styleClass="button-primary"/>
                     </HBox>
-                    <ListView fx:id="listBrands" VBox.vgrow="ALWAYS"/>
-                    <Button text="Eliminar seleccionado" onAction="#handleRemoveBrand" styleClass="button-secondary"/>
+                    <ListView fx:id="listBrands" VBox.vgrow="ALWAYS" styleClass="modern-list"/>
+                    <HBox spacing="8">
+                        <Button text="Renombrar" onAction="#handleRenameBrand" styleClass="button-secondary"
+                                maxWidth="Infinity" HBox.hgrow="ALWAYS"/>
+                        <Button text="Eliminar" onAction="#handleRemoveBrand" styleClass="button-secondary"
+                                maxWidth="Infinity" HBox.hgrow="ALWAYS"/>
+                    </HBox>
                 </children>
             </VBox>
 
@@ -62,8 +76,13 @@
                         <Region HBox.hgrow="ALWAYS"/>
                         <Button text="+ Agregar" onAction="#handleAddModel" styleClass="button-primary"/>
                     </HBox>
-                    <ListView fx:id="listModels" VBox.vgrow="ALWAYS"/>
-                    <Button text="Eliminar seleccionado" onAction="#handleRemoveModel" styleClass="button-secondary"/>
+                    <ListView fx:id="listModels" VBox.vgrow="ALWAYS" styleClass="modern-list"/>
+                    <HBox spacing="8">
+                        <Button text="Renombrar" onAction="#handleRenameModel" styleClass="button-secondary"
+                                maxWidth="Infinity" HBox.hgrow="ALWAYS"/>
+                        <Button text="Eliminar" onAction="#handleRemoveModel" styleClass="button-secondary"
+                                maxWidth="Infinity" HBox.hgrow="ALWAYS"/>
+                    </HBox>
                 </children>
             </VBox>
 

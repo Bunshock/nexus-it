@@ -81,6 +81,82 @@ class MockEquipmentServiceTest {
     }
 
     @Test
+    void addBrandForTypeCreatesLinkAndBrand() {
+        EquipmentType notebook = service.getAllTypes().stream()
+            .filter(t -> t.getName().equalsIgnoreCase("Notebook"))
+            .findFirst().orElseThrow();
+        int before = service.getBrandsForType(notebook.getId()).size();
+
+        service.addBrandForType("BRANDTEST", notebook.getId());
+
+        List<EquipmentBrand> after = service.getBrandsForType(notebook.getId());
+        assertEquals(before + 1, after.size());
+        assertTrue(after.stream().anyMatch(b -> b.getName().equals("BRANDTEST")));
+    }
+
+    @Test
+    void addBrandForTypeIsIdempotentForExistingBrand() {
+        EquipmentType notebook = service.getAllTypes().stream()
+            .filter(t -> t.getName().equalsIgnoreCase("Notebook"))
+            .findFirst().orElseThrow();
+        EquipmentBrand existing = service.getBrandsForType(notebook.getId()).get(0);
+
+        service.addBrandForType(existing.getName(), notebook.getId());
+
+        long count = service.getBrandsForType(notebook.getId()).stream()
+            .filter(b -> b.getName().equalsIgnoreCase(existing.getName()))
+            .count();
+        assertEquals(1, count);
+    }
+
+    @Test
+    void renameTypeIsReflectedInGetAllTypes() {
+        service.addType("OldTypeName", true);
+        EquipmentType created = service.getAllTypes().stream()
+            .filter(t -> t.getName().equals("OldTypeName"))
+            .findFirst().orElseThrow();
+
+        service.renameType(created.getId(), "NewTypeName");
+
+        assertTrue(service.getAllTypes().stream().anyMatch(t -> t.getName().equals("NewTypeName")));
+        assertFalse(service.getAllTypes().stream().anyMatch(t -> t.getName().equals("OldTypeName")));
+    }
+
+    @Test
+    void renameBrandIsReflectedAfterRename() {
+        service.addBrand("OldBrand");
+        EquipmentType notebook = service.getAllTypes().stream()
+            .filter(t -> t.getName().equalsIgnoreCase("Notebook"))
+            .findFirst().orElseThrow();
+        service.addBrandForType("OldBrand", notebook.getId());
+        EquipmentBrand brand = service.getBrandsForType(notebook.getId()).stream()
+            .filter(b -> b.getName().equals("OldBrand"))
+            .findFirst().orElseThrow();
+
+        service.renameBrand(brand.getId(), "NewBrand");
+
+        assertTrue(service.getBrandsForType(notebook.getId()).stream()
+            .anyMatch(b -> b.getName().equals("NewBrand")));
+    }
+
+    @Test
+    void renameModelIsReflectedAfterRename() {
+        EquipmentType notebook = service.getAllTypes().stream()
+            .filter(t -> t.getName().equalsIgnoreCase("Notebook"))
+            .findFirst().orElseThrow();
+        EquipmentBrand brand = service.getBrandsForType(notebook.getId()).get(0);
+        service.addModel("OldModel", brand.getId(), notebook.getId());
+        EquipmentModel model = service.getModelsForBrandAndType(brand.getId(), notebook.getId())
+            .stream().filter(m -> m.getName().equals("OldModel"))
+            .findFirst().orElseThrow();
+
+        service.renameModel(model.getId(), "NewModel");
+
+        assertTrue(service.getModelsForBrandAndType(brand.getId(), notebook.getId())
+            .stream().anyMatch(m -> m.getName().equals("NewModel")));
+    }
+
+    @Test
     void upsertSnValidationUpdatesInMemory() {
         List<SnValidationRow> rows = service.getAllSnValidationRows();
         assertFalse(rows.isEmpty());
