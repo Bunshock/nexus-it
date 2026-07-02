@@ -7,17 +7,29 @@ import java.sql.SQLException;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Supplier;
 
 import com.bunshock.note_app_for_it_frontend.models.NoteReport;
 import com.bunshock.note_app_for_it_frontend.models.NoteReportItem;
 
 public class SqliteHistoryService implements IHistoryService {
 
-    private final DatabaseService db = DatabaseService.getInstance();
+    private final Supplier<Connection> connector;
+
+    public SqliteHistoryService() {
+        this.connector = () -> {
+            try { return DatabaseService.getInstance().getConnection(); }
+            catch (java.sql.SQLException e) { throw new RuntimeException(e); }
+        };
+    }
+
+    SqliteHistoryService(Supplier<Connection> connector) {
+        this.connector = connector;
+    }
 
     @Override
     public int save(NoteReport report) {
-        try (Connection c = db.getConnection()) {
+        try (Connection c = connector.get()) {
             c.setAutoCommit(false);
             try {
                 int reportId = insertReport(c, report);
@@ -88,7 +100,7 @@ public class SqliteHistoryService implements IHistoryService {
     public List<NoteReport> getAll() {
         List<NoteReport> result = new ArrayList<>();
         String sql = "SELECT id, created_at, profile_type, glpi_synced FROM NOTE_REPORT ORDER BY created_at DESC";
-        try (Connection c = db.getConnection();
+        try (Connection c = connector.get();
              ResultSet rs = c.createStatement().executeQuery(sql)) {
             while (rs.next()) {
                 NoteReport r = new NoteReport();
@@ -106,7 +118,7 @@ public class SqliteHistoryService implements IHistoryService {
 
     @Override
     public NoteReport getById(int id) {
-        try (Connection c = db.getConnection()) {
+        try (Connection c = connector.get()) {
             PreparedStatement ps = c.prepareStatement(
                 "SELECT id, created_at, profile_type, glpi_synced FROM NOTE_REPORT WHERE id = ?");
             ps.setInt(1, id);
@@ -147,7 +159,7 @@ public class SqliteHistoryService implements IHistoryService {
 
     @Override
     public void markGlpiSynced(int reportId) {
-        try (Connection c = db.getConnection();
+        try (Connection c = connector.get();
              PreparedStatement ps = c.prepareStatement(
                  "UPDATE NOTE_REPORT SET glpi_synced = 1 WHERE id = ?")) {
             ps.setInt(1, reportId);

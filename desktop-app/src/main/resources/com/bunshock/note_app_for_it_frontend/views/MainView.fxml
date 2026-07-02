@@ -80,7 +80,7 @@
                   <HBox alignment="CENTER_LEFT" spacing="10">
                      <children>
                         <Circle fx:id="circleAD" radius="5.0" fill="#ff9800" stroke="#ffffff" strokeWidth="1.0" />
-                        <Label text="Active Directory (AD)" style="-fx-text-fill: white; -fx-font-size: 11px;">
+                        <Label text="Active Directory (AD) API" style="-fx-text-fill: white; -fx-font-size: 11px;">
                               <tooltip>
                                  <Tooltip fx:id="tooltipAD" text="Verificando estado..." />
                               </tooltip>
@@ -94,6 +94,17 @@
                            <Label text="GLPI API" style="-fx-text-fill: white; -fx-font-size: 11px;">
                               <tooltip>
                                  <Tooltip fx:id="tooltipGLPI" text="Verificando estado..." />
+                              </tooltip>
+                           </Label>
+                        </children>
+                  </HBox>
+                  <!-- Remote DB -->
+                  <HBox alignment="CENTER_LEFT" spacing="10">
+                        <children>
+                           <Circle fx:id="circleDB" radius="5.0" fill="#94a3b8" stroke="#ffffff" strokeWidth="1.0" />
+                           <Label text="Base de Datos" style="-fx-text-fill: white; -fx-font-size: 11px;">
+                              <tooltip>
+                                 <Tooltip fx:id="tooltipDB" text="Verificando estado..." />
                               </tooltip>
                            </Label>
                         </children>

@@ -3,6 +3,7 @@ package com.bunshock.note_app_for_it_frontend.controllers;
 import java.util.List;
 
 import com.bunshock.note_app_for_it_frontend.models.ADUser;
+import com.bunshock.note_app_for_it_frontend.services.RemoteDatabaseService;
 import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;
 import com.bunshock.note_app_for_it_frontend.utils.ViewFactory;
 
@@ -25,8 +26,10 @@ public class MainController {
 
     @FXML private Circle circleAD;
     @FXML private Circle circleGLPI;
+    @FXML private Circle circleDB;
     @FXML private Tooltip tooltipAD;
     @FXML private Tooltip tooltipGLPI;
+    @FXML private Tooltip tooltipDB;
 
     @FXML private StackPane contentArea;
 
@@ -64,9 +67,10 @@ public class MainController {
                 return new Task<>() {
                     @Override
                     protected boolean[] call() {
-                        boolean adUp = checkAdReachable();
+                        boolean adUp   = checkAdReachable();
                         boolean glpiUp = ServiceLocator.getInstance().getGlpiService().isReachable();
-                        return new boolean[]{adUp, glpiUp};
+                        boolean dbUp   = RemoteDatabaseService.getInstance().testConnection();
+                        return new boolean[]{adUp, glpiUp, dbUp};
                     }
                 };
             }
@@ -76,15 +80,18 @@ public class MainController {
             boolean[] r = service.getValue();
             updateADStatus(r[0]);
             updateGLPIStatus(r[1]);
+            updateDBStatus(r[2]);
         });
         service.start();
 
         Thread initial = new Thread(() -> {
-            boolean adUp = checkAdReachable();
+            boolean adUp   = checkAdReachable();
             boolean glpiUp = ServiceLocator.getInstance().getGlpiService().isReachable();
+            boolean dbUp   = RemoteDatabaseService.getInstance().testConnection();
             Platform.runLater(() -> {
                 updateADStatus(adUp);
                 updateGLPIStatus(glpiUp);
+                updateDBStatus(dbUp);
             });
         }, "status-initial-check");
         initial.setDaemon(true);
@@ -108,6 +115,16 @@ public class MainController {
     private void updateGLPIStatus(boolean online) {
         circleGLPI.setFill(online ? Color.web("#22c55e") : Color.web("#ef4444"));
         tooltipGLPI.setText("GLPI API: " + (online ? "En línea" : "Desconectado"));
+    }
+
+    private void updateDBStatus(boolean online) {
+        if (!RemoteDatabaseService.getInstance().isConfigured()) {
+            circleDB.setFill(Color.web("#94a3b8"));
+            tooltipDB.setText("Base de datos remota: No configurada");
+        } else {
+            circleDB.setFill(online ? Color.web("#22c55e") : Color.web("#ef4444"));
+            tooltipDB.setText("Base de datos remota: " + (online ? "En línea" : "Desconectada"));
+        }
     }
 
     private void showSection(Parent view) {

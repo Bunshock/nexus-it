@@ -13,6 +13,7 @@ import com.bunshock.note_app_for_it_frontend.models.EquipmentType;
 import com.bunshock.note_app_for_it_frontend.services.AdminAuthService;
 import com.bunshock.note_app_for_it_frontend.services.DatabaseService;
 import com.bunshock.note_app_for_it_frontend.services.IEquipmentService;
+import com.bunshock.note_app_for_it_frontend.services.RemoteDatabaseService;
 import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;
 import com.bunshock.note_app_for_it_frontend.services.WindowsDPAPIService;
 
@@ -91,13 +92,24 @@ public class DatabaseSectionController {
 
     @FXML
     private void handleTestConnection() {
-        try (Connection c = DatabaseService.getInstance().getConnection()) {
-            c.createStatement().execute("SELECT 1");
-            lblConnectionStatus.setStyle("-fx-text-fill: #22c55e; -fx-font-size: 11px;");
-            lblConnectionStatus.setText("✓ Conexión local activa");
-        } catch (Exception e) {
-            lblConnectionStatus.setStyle("-fx-text-fill: #ef4444; -fx-font-size: 11px;");
-            lblConnectionStatus.setText("✗ Error: " + e.getMessage());
+        RemoteDatabaseService remote = RemoteDatabaseService.getInstance();
+        if (remote.isConfigured()) {
+            if (remote.testConnection()) {
+                lblConnectionStatus.setStyle("-fx-text-fill: #22c55e; -fx-font-size: 11px;");
+                lblConnectionStatus.setText("✓ Conexión remota activa");
+            } else {
+                lblConnectionStatus.setStyle("-fx-text-fill: #ef4444; -fx-font-size: 11px;");
+                lblConnectionStatus.setText("✗ No se pudo conectar al servidor remoto");
+            }
+        } else {
+            try (Connection c = DatabaseService.getInstance().getConnection()) {
+                c.createStatement().execute("SELECT 1");
+                lblConnectionStatus.setStyle("-fx-text-fill: #22c55e; -fx-font-size: 11px;");
+                lblConnectionStatus.setText("✓ Base de datos local activa");
+            } catch (Exception e) {
+                lblConnectionStatus.setStyle("-fx-text-fill: #ef4444; -fx-font-size: 11px;");
+                lblConnectionStatus.setText("✗ Error: " + e.getMessage());
+            }
         }
     }
 
@@ -194,7 +206,6 @@ public class DatabaseSectionController {
     @FXML private void handleAddBrand()   { requireAdmin(this::openAddBrandDialog); }
     @FXML private void handleAddModel()   { requireAdmin(this::openAddModelDialog); }
 
-    @FXML
     @FXML
     private void handleRenameType() {
         EquipmentType sel = listTypes.getSelectionModel().getSelectedItem();

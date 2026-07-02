@@ -1,5 +1,9 @@
 package com.bunshock.note_app_for_it_frontend.services;
 
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+
 import com.bunshock.note_app_for_it_frontend.models.AppConfig;
 
 public class ServiceLocator {
@@ -12,6 +16,8 @@ public class ServiceLocator {
     private IEmailService emailService;
     private IHistoryService historyService;
 
+    private boolean remoteConnected = false;
+
     private ServiceLocator() {}
 
     public static ServiceLocator getInstance() {
@@ -22,32 +28,78 @@ public class ServiceLocator {
     }
 
     public void initialize(AppConfig config) {
-        equipmentService = new SqliteEquipmentService();
-        adService = new MockADService();
-        glpiService = new GLPIServiceStub();
-        historyService = new SqliteHistoryService();
+        SqliteEquipmentService localEquipment = new SqliteEquipmentService();
+        SqliteHistoryService localHistory     = new SqliteHistoryService();
+
+        equipmentService = localEquipment;
+        historyService   = localHistory;
+
+        String host = loadSetting("db_host");
+        if (host != null && !host.isBlank()) {
+            try {
+                String portStr  = loadSetting("db_port");
+                int    port     = (portStr != null && !portStr.isBlank()) ? Integer.parseInt(portStr) : 5432;
+                String dbName   = loadSetting("db_name");
+                String username = decryptSetting("db_username");
+                String password = decryptSetting("db_password");
+
+                RemoteDatabaseService remote = RemoteDatabaseService.getInstance();
+                remote.configure(host, port, dbName, username, password);
+                remote.ensureSchema();
+
+                IEquipmentService remoteEquipment = new SqliteEquipmentService(() -> {
+                    try { return remote.getConnection(); } catch (java.sql.SQLException e) { throw new RuntimeException(e); }
+                });
+                IHistoryService remoteHistory = new SqliteHistoryService(() -> {
+                    try { return remote.getConnection(); } catch (java.sql.SQLException e) { throw new RuntimeException(e); }
+                });
+
+                equipmentService   = new CachingEquipmentService(remoteEquipment, localEquipment);
+                historyService     = new CachingHistoryService(remoteHistory, localHistory);
+                remoteConnected    = true;
+            } catch (Exception e) {
+                remoteConnected = false;
+            }
+        }
+
+        adService    = new MockADService();
+        glpiService  = new GLPIServiceStub();
 
         String encryptedPassword = loadSmtpPassword();
         emailService = new GmailEmailService(config.smtp, encryptedPassword);
     }
 
-    private String loadSmtpPassword() {
-        try (java.sql.Connection c = DatabaseService.getInstance().getConnection();
-             java.sql.ResultSet rs = c.createStatement().executeQuery(
-                 "SELECT value FROM APP_SETTINGS WHERE key = 'smtp_password'")) {
-            if (rs.next()) return rs.getString("value");
+    private String loadSetting(String key) {
+        try (Connection c = DatabaseService.getInstance().getConnection();
+             PreparedStatement ps = c.prepareStatement(
+                 "SELECT value FROM APP_SETTINGS WHERE key = ?")) {
+            ps.setString(1, key);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? rs.getString("value") : null;
+            }
         } catch (Exception e) {
-            // No password configured yet — email will report as not configured
+            return null;
         }
-        return null;
+    }
+
+    private String decryptSetting(String key) {
+        String enc = loadSetting(key);
+        if (enc == null || enc.isBlank()) return null;
+        try { return WindowsDPAPIService.getInstance().decrypt(enc); }
+        catch (Exception e) { return null; }
+    }
+
+    private String loadSmtpPassword() {
+        return loadSetting("smtp_password");
     }
 
     public IEquipmentService getEquipmentService() { return equipmentService; }
-    public IADService getAdService() { return adService; }
-    public IGLPIService getGlpiService() { return glpiService; }
-    public IEmailService getEmailService() { return emailService; }
-    public IHistoryService getHistoryService() { return historyService; }
+    public IADService        getAdService()         { return adService; }
+    public IGLPIService      getGlpiService()       { return glpiService; }
+    public IEmailService     getEmailService()      { return emailService; }
+    public IHistoryService   getHistoryService()    { return historyService; }
+    public boolean           isRemoteConnected()    { return remoteConnected; }
 
     public void setEquipmentService(IEquipmentService s) { equipmentService = s; }
-    public void setAdService(IADService s) { adService = s; }
+    public void setAdService(IADService s)               { adService = s; }
 }
