@@ -55,9 +55,12 @@ public class SettingsController {
 
     @FXML private TextField   txtSmtpSender;
     @FXML private PasswordField pfSmtpPassword;
-    @FXML private Label       lblSmtpStatus;
 
-    @FXML private TextField txtGlpiUrl;
+    @FXML private TextField     txtGlpiUrl;
+    @FXML private PasswordField pfGlpiApiKey;
+
+    @FXML private Button btnSave;
+    @FXML private Label  lblSaveStatus;
 
     // ── Admin mode fields ─────────────────────────────────────────────
     @FXML private Button btnToggleAdmin;
@@ -96,9 +99,27 @@ public class SettingsController {
 
         setupSnTable();
 
-        AdminSession.getInstance().addOnActivateListener(this::updateAdminButton);
-        AdminSession.getInstance().addOnDeactivateListener(this::updateAdminButton);
+        AdminSession.getInstance().addOnActivateListener(this::onAdminStateChanged);
+        AdminSession.getInstance().addOnDeactivateListener(this::onAdminStateChanged);
+        onAdminStateChanged();
+    }
+
+    private void onAdminStateChanged() {
         updateAdminButton();
+        updateFieldEditability();
+    }
+
+    private void updateFieldEditability() {
+        boolean adminActive = AdminSession.getInstance().isActive();
+        txtAfPrefix.setDisable(!adminActive);
+        txtAfSeparator.setDisable(!adminActive);
+        txtAfLength.setDisable(!adminActive);
+        txtAfFiller.setDisable(!adminActive);
+        txtSmtpSender.setDisable(!adminActive);
+        pfSmtpPassword.setDisable(!adminActive);
+        txtGlpiUrl.setDisable(!adminActive);
+        pfGlpiApiKey.setDisable(!adminActive);
+        btnSave.setDisable(!adminActive);
     }
 
     // ── A/F preview ───────────────────────────────────────────────────
@@ -132,37 +153,44 @@ public class SettingsController {
         try {
             config.afFormat.length = Integer.parseInt(txtAfLength.getText().trim());
         } catch (NumberFormatException e) {
-            lblSmtpStatus.setStyle("-fx-text-fill: #ef4444;");
-            lblSmtpStatus.setText("La longitud de A/F debe ser un número");
+            lblSaveStatus.setStyle("-fx-text-fill: #ef4444;");
+            lblSaveStatus.setText("La longitud de A/F debe ser un número");
             return;
         }
 
-        String password = pfSmtpPassword.getText();
-        if (!password.isBlank()) {
-            saveSmtpPassword(password);
+        String smtpPassword = pfSmtpPassword.getText();
+        if (!smtpPassword.isBlank()) {
+            saveEncryptedSetting("smtp_password", smtpPassword);
+            pfSmtpPassword.clear();
+        }
+
+        String glpiApiKey = pfGlpiApiKey.getText();
+        if (!glpiApiKey.isBlank()) {
+            saveEncryptedSetting("glpi_api_key", glpiApiKey);
+            pfGlpiApiKey.clear();
         }
 
         try {
             ConfigService.getInstance().save();
-            lblSmtpStatus.setStyle("-fx-text-fill: #0c8570;");
-            lblSmtpStatus.setText("Configuración guardada");
+            lblSaveStatus.setStyle("-fx-text-fill: #0c8570;");
+            lblSaveStatus.setText("Configuración guardada");
         } catch (Exception e) {
-            lblSmtpStatus.setStyle("-fx-text-fill: #ef4444;");
-            lblSmtpStatus.setText("Error al guardar la configuración");
+            lblSaveStatus.setStyle("-fx-text-fill: #ef4444;");
+            lblSaveStatus.setText("Error al guardar la configuración");
         }
     }
 
-    private void saveSmtpPassword(String plainPassword) {
-        String encrypted = WindowsDPAPIService.getInstance().encrypt(plainPassword);
+    private void saveEncryptedSetting(String key, String plainValue) {
+        String encrypted = WindowsDPAPIService.getInstance().encrypt(plainValue);
         try (Connection c = DatabaseService.getInstance().getConnection();
              PreparedStatement ps = c.prepareStatement(
-                 "INSERT INTO APP_SETTINGS (key, value) VALUES ('smtp_password', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value")) {
-            ps.setString(1, encrypted);
+                 "INSERT INTO APP_SETTINGS (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value")) {
+            ps.setString(1, key);
+            ps.setString(2, encrypted);
             ps.executeUpdate();
-            pfSmtpPassword.clear();
         } catch (Exception e) {
-            lblSmtpStatus.setStyle("-fx-text-fill: #ef4444;");
-            lblSmtpStatus.setText("Error al guardar la contraseña");
+            lblSaveStatus.setStyle("-fx-text-fill: #ef4444;");
+            lblSaveStatus.setText("Error al guardar la configuración");
         }
     }
 

@@ -21,27 +21,27 @@
                     <Label text="FORMATO DE ACTIVO FIJO (A/F)" styleClass="section-label"/>
                     <GridPane hgap="15" vgap="10">
                         <columnConstraints>
-                            <ColumnConstraints percentWidth="25"/>
-                            <ColumnConstraints percentWidth="25"/>
-                            <ColumnConstraints percentWidth="25"/>
-                            <ColumnConstraints percentWidth="25"/>
+                            <ColumnConstraints percentWidth="12.5"/>
+                            <ColumnConstraints percentWidth="12.5"/>
+                            <ColumnConstraints percentWidth="12.5"/>
+                            <ColumnConstraints percentWidth="12.5"/>
                         </columnConstraints>
                         <children>
                             <VBox spacing="2" GridPane.columnIndex="0">
                                 <Label text="PREFIJO" styleClass="input-label-small"/>
-                                <TextField fx:id="txtAfPrefix" styleClass="form-input-main"/>
+                                <TextField fx:id="txtAfPrefix" styleClass="form-input-main" disable="true"/>
                             </VBox>
                             <VBox spacing="2" GridPane.columnIndex="1">
                                 <Label text="SEPARADOR" styleClass="input-label-small"/>
-                                <TextField fx:id="txtAfSeparator" styleClass="form-input-main"/>
+                                <TextField fx:id="txtAfSeparator" styleClass="form-input-main" disable="true"/>
                             </VBox>
                             <VBox spacing="2" GridPane.columnIndex="2">
                                 <Label text="LONGITUD" styleClass="input-label-small"/>
-                                <TextField fx:id="txtAfLength" styleClass="form-input-main"/>
+                                <TextField fx:id="txtAfLength" styleClass="form-input-main" disable="true"/>
                             </VBox>
                             <VBox spacing="2" GridPane.columnIndex="3">
                                 <Label text="RELLENO" styleClass="input-label-small"/>
-                                <TextField fx:id="txtAfFiller" styleClass="form-input-main"/>
+                                <TextField fx:id="txtAfFiller" styleClass="form-input-main" disable="true"/>
                             </VBox>
                         </children>
                     </GridPane>
@@ -56,21 +56,20 @@
                     <Label text="CORREO ELECTRÓNICO (SMTP)" styleClass="section-label"/>
                     <GridPane hgap="15" vgap="10">
                         <columnConstraints>
-                            <ColumnConstraints percentWidth="50"/>
-                            <ColumnConstraints percentWidth="50"/>
+                            <ColumnConstraints percentWidth="25"/>
+                            <ColumnConstraints percentWidth="25"/>
                         </columnConstraints>
                         <children>
                             <VBox spacing="2" GridPane.columnIndex="0">
                                 <Label text="DIRECCIÓN DE ENVÍO" styleClass="input-label-small"/>
-                                <TextField fx:id="txtSmtpSender" styleClass="form-input-main"/>
+                                <TextField fx:id="txtSmtpSender" styleClass="form-input-main" disable="true"/>
                             </VBox>
                             <VBox spacing="2" GridPane.columnIndex="1">
                                 <Label text="CONTRASEÑA" styleClass="input-label-small"/>
-                                <PasswordField fx:id="pfSmtpPassword" styleClass="form-input-main"/>
+                                <PasswordField fx:id="pfSmtpPassword" styleClass="form-input-main" disable="true"/>
                             </VBox>
                         </children>
                     </GridPane>
-                    <Label fx:id="lblSmtpStatus" text="" style="-fx-font-size: 11px;"/>
                 </children>
             </VBox>
 
@@ -78,10 +77,24 @@
             <VBox spacing="10" style="-fx-background-color: white; -fx-background-radius: 10; -fx-padding: 15 20 20 20;">
                 <children>
                     <Label text="GLPI API" styleClass="section-label"/>
-                    <HBox spacing="10" alignment="CENTER_LEFT">
-                        <TextField fx:id="txtGlpiUrl" promptText="http://glpi-server/apirest.php"
-                                   HBox.hgrow="ALWAYS" styleClass="form-input-main"/>
-                    </HBox>
+                    <GridPane hgap="15" vgap="10">
+                        <columnConstraints>
+                            <ColumnConstraints percentWidth="25"/>
+                            <ColumnConstraints percentWidth="25"/>
+                        </columnConstraints>
+                        <children>
+                            <VBox spacing="2" GridPane.columnIndex="0">
+                                <Label text="API URL" styleClass="input-label-small"/>
+                                <TextField fx:id="txtGlpiUrl" promptText="http://glpi-server/apirest.php"
+                                           styleClass="form-input-main" disable="true"/>
+                            </VBox>
+                            <VBox spacing="2" GridPane.columnIndex="1">
+                                <Label text="API KEY" styleClass="input-label-small"/>
+                                <PasswordField fx:id="pfGlpiApiKey" promptText="Clave de API de GLPI"
+                                               styleClass="form-input-main" disable="true"/>
+                            </VBox>
+                        </children>
+                    </GridPane>
                 </children>
             </VBox>
 
@@ -101,7 +114,7 @@
             <VBox spacing="10" style="-fx-background-color: white; -fx-background-radius: 10; -fx-padding: 15 20 20 20;">
                 <children>
                     <Label text="MODO ADMINISTRADOR" styleClass="section-label"/>
-                    <Label text="Habilita la sincronización GLPI en el historial y permite editar configuraciones protegidas. La sesión expira tras 15 minutos de inactividad."
+                    <Label text="Habilita la sincronización GLPI en el historial y permite editar la configuración general (A/F, SMTP, GLPI) y guardar los cambios. La sesión expira tras 15 minutos de inactividad."
                            style="-fx-text-fill: #64748b; -fx-font-size: 12px;" wrapText="true"/>
                     <HBox spacing="12" alignment="CENTER_LEFT">
                         <Button fx:id="btnToggleAdmin" text="Activar modo administrador"
@@ -113,8 +126,10 @@
             </VBox>
 
             <!-- Save button -->
-            <HBox alignment="CENTER_RIGHT">
-                <Button text="Guardar Configuración" onAction="#handleSave" styleClass="button-primary-large"/>
+            <HBox spacing="15" alignment="CENTER_RIGHT">
+                <Label fx:id="lblSaveStatus" text="" style="-fx-font-size: 11px;"/>
+                <Button fx:id="btnSave" text="Guardar Configuración" onAction="#handleSave"
+                        styleClass="button-primary-large" disable="true"/>
             </HBox>
 
         </children>
