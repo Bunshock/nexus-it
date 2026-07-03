@@ -64,7 +64,7 @@
                         <VBox spacing="5" VBox.vgrow="ALWAYS">
                             <children>
                                 <Label text="Equipos con S/N (Notebooks, Monitores, etc.)" styleClass="table-section-caption"/>
-                                <TableView fx:id="tblAssets" styleClass="modern-table" VBox.vgrow="ALWAYS">
+                                <TableView fx:id="tblAssets" styleClass="modern-table, equipment-table" VBox.vgrow="ALWAYS">
                                     <placeholder>
                                         <Label text="No hay ítems cargados. Haga click en '+ Agregar Equipo'."/>
                                     </placeholder>
@@ -88,7 +88,7 @@
                         <VBox spacing="5" VBox.vgrow="ALWAYS">
                             <children>
                                 <Label text="Periféricos y otros (Por Cantidad)" styleClass="table-section-caption"/>
-                                <TableView fx:id="tblCountables" styleClass="modern-table" VBox.vgrow="ALWAYS">
+                                <TableView fx:id="tblCountables" styleClass="modern-table, equipment-table" VBox.vgrow="ALWAYS">
                                     <placeholder>
                                         <Label text="No hay ítems cargados. Haga click en '+ Agregar Equipo'."/>
                                     </placeholder>

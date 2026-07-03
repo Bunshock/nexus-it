@@ -140,7 +140,7 @@
                                styleClass="form-input-main" maxWidth="Infinity"/>
 
                     <!-- Table -->
-                    <TableView fx:id="tblSnValidation" VBox.vgrow="ALWAYS" styleClass="modern-table">
+                    <TableView fx:id="tblSnValidation" VBox.vgrow="ALWAYS" styleClass="modern-table, equipment-table">
                         <columnResizePolicy>
                             <TableView fx:constant="CONSTRAINED_RESIZE_POLICY"/>
                         </columnResizePolicy>

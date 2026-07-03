@@ -590,6 +590,12 @@
     -fx-border-color: transparent;
 }
 
+/* S/N Validation table only — keep the original light selected-row text.
+   History's table intentionally kept the darker text from 349c9e0; this table did not. */
+.equipment-table .table-row-cell:selected .table-cell {
+    -fx-text-fill: #f4f8f7;
+}
+
 /* Table action buttons column */
 .button-icon-delete, .button-icon-edit {
     -fx-background-color: transparent;
