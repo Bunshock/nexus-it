@@ -108,6 +108,7 @@ public class ADUserSelectionController {
 
     private void closeWindow() {
         ((Stage) btnSelect.getScene().getWindow()).close();
+        parentController.highlightFields("#0c8570");
         parentController.triggerFeedback("✔ Usuario cargado", "#0c8570");
     }
 

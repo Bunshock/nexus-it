@@ -2,41 +2,40 @@
 <?import javafx.scene.layout.*?>
 <?import javafx.scene.control.*?>
 
-<VBox prefWidth="500.0" spacing="0" style="-fx-background-color: white; -fx-border-color: #cbd5e1; -fx-border-width: 1;"
-      stylesheets="/com/bunshock/note_app_for_it_frontend/css/styles.css"
-      xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1" 
-      fx:controller="com.bunshock.note_app_for_it_frontend.controllers.ADUserSelectionController">
-    
-    <children>
-        <VBox alignment="CENTER_LEFT" prefHeight="70.0" styleClass="ad-header-gradient">
-            <children>
-                <HBox alignment="CENTER_LEFT" spacing="12">
-                    <children>
-                        <Label text="👥" style="-fx-font-size: 24px;"/> 
-                        <VBox alignment="CENTER_LEFT">
-                            <children>
-                                <Label text="ACTIVE DIRECTORY (AD)" styleClass="ad-header-subtitle"/>
-                                <Label text="Coincidencias Encontradas" styleClass="ad-header-title"/>
-                            </children>
-                        </VBox>
-                    </children>
-                </HBox>
-            </children>
-        </VBox>
+<StackPane style="-fx-background-color: transparent; -fx-padding: 12;"
+           xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1"
+           fx:controller="com.bunshock.note_app_for_it_frontend.controllers.ADUserSelectionController">
 
-        <VBox spacing="15" style="-fx-padding: 20;">
-            <children>
-                <Label text="Se han detectado múltiples usuarios en Active Directory en la búsqueda:" style="-fx-text-fill: #64748b; -fx-font-size: 12px;"/>
-                
-                <ListView fx:id="lstResults" prefHeight="250.0" styleClass="ad-selection-list"/>
+    <VBox prefWidth="500.0" spacing="0"
+          style="-fx-background-color: #1a1a1a, white; -fx-background-radius: 12, 10; -fx-background-insets: 0, 2; -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.6), 20, 0, 0, 5);">
+        <children>
 
-                <HBox alignment="CENTER_RIGHT" spacing="12">
-                    <children>
-                        <Button fx:id="btnCancel" text="Cancelar" onAction="#handleCancel" styleClass="button-secondary"/>
-                        <Button fx:id="btnSelect" text="Cargar Usuario" onAction="#handleSelection" styleClass="button-primary"/>
-                    </children>
-                </HBox>
-            </children>
-        </VBox>
-    </children>
-</VBox>
+            <!-- Header -->
+            <HBox alignment="CENTER_LEFT"
+                  style="-fx-background-color: linear-gradient(to bottom right, #0e9a82, #0a6b5a); -fx-padding: 20 25; -fx-background-radius: 10 10 0 0;">
+                <VBox spacing="3">
+                    <Label text="ACTIVE DIRECTORY (AD)"
+                           style="-fx-text-fill: rgba(255,255,255,0.6); -fx-font-size: 9px; -fx-font-weight: bold; -fx-letter-spacing: 1.5;"/>
+                    <Label text="Coincidencias Encontradas" styleClass="dialog-title"/>
+                </VBox>
+            </HBox>
+
+            <!-- Content -->
+            <VBox spacing="15" style="-fx-padding: 20; -fx-background-color: white; -fx-background-radius: 0 0 10 10;">
+                <children>
+                    <Label text="Se han detectado múltiples usuarios en Active Directory en la búsqueda:" style="-fx-text-fill: #64748b; -fx-font-size: 12px;"/>
+
+                    <ListView fx:id="lstResults" prefHeight="250.0" styleClass="ad-selection-list"/>
+
+                    <HBox alignment="CENTER_RIGHT" spacing="12">
+                        <children>
+                            <Button fx:id="btnCancel" text="Cancelar" onAction="#handleCancel" styleClass="button-secondary"/>
+                            <Button fx:id="btnSelect" text="Cargar Usuario" onAction="#handleSelection" styleClass="button-primary"/>
+                        </children>
+                    </HBox>
+                </children>
+            </VBox>
+
+        </children>
+    </VBox>
+</StackPane>
