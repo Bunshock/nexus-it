@@ -16,6 +16,14 @@ public class NoteReport {
     private String motivo;
     private List<NoteReportItem> items;
 
+    // Populated from JOIN queries — not stored directly in NOTE_REPORT
+    private String authorName;
+    private String recipientDisplay;
+    private int assetItemCount;
+    private int pendingItemCount;
+    private int syncedItemCount;
+    private int rejectedItemCount;
+
     public NoteReport() {}
 
     public int getId() { return id; }
@@ -50,4 +58,22 @@ public class NoteReport {
 
     public List<NoteReportItem> getItems() { return items; }
     public void setItems(List<NoteReportItem> items) { this.items = items; }
+
+    public String getAuthorName() { return authorName; }
+    public void setAuthorName(String authorName) { this.authorName = authorName; }
+
+    public String getRecipientDisplay() { return recipientDisplay; }
+    public void setRecipientDisplay(String recipientDisplay) { this.recipientDisplay = recipientDisplay; }
+
+    public int getAssetItemCount() { return assetItemCount; }
+    public void setAssetItemCount(int assetItemCount) { this.assetItemCount = assetItemCount; }
+
+    public int getPendingItemCount() { return pendingItemCount; }
+    public void setPendingItemCount(int pendingItemCount) { this.pendingItemCount = pendingItemCount; }
+
+    public int getSyncedItemCount() { return syncedItemCount; }
+    public void setSyncedItemCount(int syncedItemCount) { this.syncedItemCount = syncedItemCount; }
+
+    public int getRejectedItemCount() { return rejectedItemCount; }
+    public void setRejectedItemCount(int rejectedItemCount) { this.rejectedItemCount = rejectedItemCount; }
 }

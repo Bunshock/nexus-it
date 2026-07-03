@@ -39,6 +39,7 @@ public class DatabaseService {
             createSettingsTable(stmt);
             insertDefaultData(stmt);
             seedEquipmentData(conn);
+            seedHistoryData(conn);
         }
     }
 
@@ -84,10 +85,9 @@ public class DatabaseService {
     private void createHistoryTables(Statement stmt) throws SQLException {
         stmt.executeUpdate("""
             CREATE TABLE IF NOT EXISTS NOTE_REPORT (
-                id           INTEGER PRIMARY KEY AUTOINCREMENT,
-                created_at   TEXT NOT NULL,
-                profile_type TEXT NOT NULL,
-                glpi_synced  INTEGER NOT NULL DEFAULT 0,
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at    TEXT NOT NULL,
+                profile_type  TEXT NOT NULL,
                 technician_id INTEGER REFERENCES TECHNICIAN_PROFILE(id)
             )""");
 
@@ -110,15 +110,19 @@ public class DatabaseService {
 
         stmt.executeUpdate("""
             CREATE TABLE IF NOT EXISTS NOTE_ITEM (
-                id            INTEGER PRIMARY KEY AUTOINCREMENT,
-                note_id       INTEGER NOT NULL REFERENCES NOTE_REPORT(id),
-                type_name     TEXT NOT NULL,
-                brand_name    TEXT,
-                model_name    TEXT,
-                serial_number TEXT,
-                a_f           TEXT,
-                quantity      INTEGER NOT NULL DEFAULT 1,
-                observations  TEXT
+                id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+                note_id                 INTEGER NOT NULL REFERENCES NOTE_REPORT(id),
+                type_name               TEXT NOT NULL,
+                brand_name              TEXT,
+                model_name              TEXT,
+                serial_number           TEXT,
+                a_f                     TEXT,
+                quantity                INTEGER NOT NULL DEFAULT 1,
+                observations            TEXT,
+                is_asset                INTEGER NOT NULL DEFAULT 0,
+                glpi_status             TEXT NOT NULL DEFAULT 'N_A',
+                glpi_rejection_reason   TEXT,
+                glpi_status_updated_at  TEXT
             )""");
     }
 
@@ -373,5 +377,112 @@ public class DatabaseService {
                 WHERE m.brand_type_id = btl.id AND m.name = 'Otro / Genérico'
             )
             """);
+    }
+
+    private void seedHistoryData(Connection conn) throws SQLException {
+        try (ResultSet check = conn.createStatement()
+                .executeQuery("SELECT COUNT(*) FROM NOTE_REPORT")) {
+            if (check.next() && check.getInt(1) > 0) return;
+        }
+
+        // Each entry: {profile_type, created_at}
+        // Returns the generated report ID
+        try (PreparedStatement psR = conn.prepareStatement(
+                 "INSERT INTO NOTE_REPORT (created_at, profile_type) VALUES (?, ?)",
+                 Statement.RETURN_GENERATED_KEYS);
+             PreparedStatement psE = conn.prepareStatement(
+                 "INSERT INTO NOTE_ENTREGA_DEVOLUCION (note_report_id, user_name, user_dni, user_email, motivo) VALUES (?, ?, ?, ?, ?)");
+             PreparedStatement psP = conn.prepareStatement(
+                 "INSERT INTO NOTE_PROVEEDOR (note_report_id, provider_name, cuit, motivo) VALUES (?, ?, ?, ?)");
+             PreparedStatement psI = conn.prepareStatement(
+                 "INSERT INTO NOTE_ITEM (note_id, type_name, brand_name, model_name, serial_number, a_f, quantity, observations, is_asset, glpi_status, glpi_rejection_reason, glpi_status_updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
+
+            // 1. Entrega — laptop + headset — all assets PENDING
+            int id1 = insertReport(psR, "2026-06-10T09:15:00", "Entrega");
+            psE.setInt(1, id1); psE.setString(2, "María López"); psE.setString(3, "28471923");
+            psE.setString(4, "mlopez@ues21.edu.ar"); psE.setString(5, "Incorporación"); psE.executeUpdate();
+            insertItem(psI, id1, "NOTEBOOK", "LENOVO", "E14 GEN 5", "R9XK2048", "0001", 1, null, 1, "PENDING", null, null);
+            insertItem(psI, id1, "MOUSE",    "GENIUS", "NX-7000",   null,       null,   1, null, 0, "N_A",     null, null);
+            insertItem(psI, id1, "HEADSET",  "TRUST",  "AYDA",      null,       null,   1, null, 0, "N_A",     null, null);
+
+            // 2. Devolución — laptop + monitor — all assets SYNCED
+            int id2 = insertReport(psR, "2026-06-12T14:30:00", "Devolución");
+            psE.setInt(1, id2); psE.setString(2, "Juan Pérez"); psE.setString(3, "35102847");
+            psE.setString(4, "jperez@ues21.edu.ar"); psE.setString(5, null); psE.executeUpdate();
+            insertItem(psI, id2, "NOTEBOOK", "LENOVO",  "X1 CARBON",     "PF3G9012", "0084", 1, null, 1, "SYNCED", null, "2026-06-13T10:00:00");
+            insertItem(psI, id2, "MONITOR",  "SAMSUNG", "S22F350FHL (22\")", "M22FE001", "0201", 1, null, 1, "SYNCED", null, "2026-06-13T10:00:00");
+            insertItem(psI, id2, "MOUSE",    "LENOVO",  "AB1AS3Z",       null,       null,   1, null, 0, "N_A",    null, null);
+
+            // 3. Fin de Contrato — laptop SYNCED, celular REJECTED — mixed
+            int id3 = insertReport(psR, "2026-06-18T11:00:00", "Fin de Contrato");
+            psE.setInt(1, id3); psE.setString(2, "Carlos Gómez"); psE.setString(3, "20384756");
+            psE.setString(4, "cgomez@ues21.edu.ar"); psE.setString(5, null); psE.executeUpdate();
+            insertItem(psI, id3, "NOTEBOOK", "LENOVO",  "V330-15IKB",       "MP4R1199", "0037", 1, null, 1, "SYNCED",   null,                   "2026-06-19T08:30:00");
+            insertItem(psI, id3, "CELULAR",  "SAMSUNG", "GALAXY A54",        "RF8N4400", "0112", 1, null, 1, "REJECTED", "Número de serie inválido en GLPI", "2026-06-19T08:35:00");
+            insertItem(psI, id3, "HEADSET",  "LOGITECH","H390",              null,       null,   1, null, 0, "N_A",      null,                   null);
+
+            // 4. Entrega - Proveedor — 2 notebooks PENDING
+            int id4 = insertReport(psR, "2026-06-20T10:00:00", "Entrega - Proveedor");
+            psP.setInt(1, id4); psP.setString(2, "TechCorp S.A."); psP.setString(3, "30-71234567-8");
+            psP.setString(4, "Garantía"); psP.executeUpdate();
+            insertItem(psI, id4, "NOTEBOOK", "LENOVO", "E14 GEN 6", "PF4A0011", "0210", 1, null, 1, "PENDING", null, null);
+            insertItem(psI, id4, "NOTEBOOK", "LENOVO", "E14 GEN 6", "PF4A0012", "0211", 1, null, 1, "PENDING", null, null);
+
+            // 5. Entrega — celulares — all REJECTED
+            int id5 = insertReport(psR, "2026-06-22T16:45:00", "Entrega");
+            psE.setInt(1, id5); psE.setString(2, "Ana García"); psE.setString(3, "41829374");
+            psE.setString(4, "agarcia@ues21.edu.ar"); psE.setString(5, "Incorporación"); psE.executeUpdate();
+            insertItem(psI, id5, "CELULAR", "SAMSUNG", "GALAXY A13", "RZ9K3301", "0155", 1, null, 1, "REJECTED", "Activo ya registrado en GLPI con otro usuario", "2026-06-23T09:00:00");
+            insertItem(psI, id5, "CELULAR", "SAMSUNG", "GALAXY A14", "RZ9K4402", "0156", 1, null, 1, "REJECTED", "Activo ya registrado en GLPI con otro usuario", "2026-06-23T09:00:00");
+
+            // 6. Devolución — only non-asset items — GLPI "—"
+            int id6 = insertReport(psR, "2026-06-25T09:30:00", "Devolución");
+            psE.setInt(1, id6); psE.setString(2, "Pedro Silva"); psE.setString(3, "29384756");
+            psE.setString(4, "psilva@ues21.edu.ar"); psE.setString(5, null); psE.executeUpdate();
+            insertItem(psI, id6, "HEADSET", "TRUST", "CARUS GXT493", null, null, 2, null, 0, "N_A", null, null);
+            insertItem(psI, id6, "MOUSE",   "GENIUS","DX-120",       null, null, 1, null, 0, "N_A", null, null);
+            insertItem(psI, id6, "CABLE HDMI", "Genérico", "1.5 MTS", null, null, 1, null, 0, "N_A", null, null);
+
+            // 7. Préstamo — tablet PENDING
+            int id7 = insertReport(psR, "2026-06-28T13:00:00", "Préstamo");
+            psE.setInt(1, id7); psE.setString(2, "Lucía Torres"); psE.setString(3, "38201934");
+            psE.setString(4, "ltorres@ues21.edu.ar"); psE.setString(5, "Capacitación"); psE.executeUpdate();
+            insertItem(psI, id7, "TABLET", "LENOVO", "TAB M8", "TP3A0011", "0099", 1, "Uso temporal sala de capacitación", 1, "PENDING", null, null);
+
+            // 8. Entrega - Proveedor — monitor SYNCED
+            int id8 = insertReport(psR, "2026-07-01T08:00:00", "Entrega - Proveedor");
+            psP.setInt(1, id8); psP.setString(2, "Distribuidora IT Sur"); psP.setString(3, "20-98765432-1");
+            psP.setString(4, "Reposición"); psP.executeUpdate();
+            insertItem(psI, id8, "MONITOR", "SAMSUNG", "ESSENTIAL MONITOR", "LSEM2200", "0312", 1, null, 1, "SYNCED", null, "2026-07-01T12:00:00");
+            insertItem(psI, id8, "TECLADO", "ACER",    "PR1101V",           null,       null,   2, null, 0, "N_A",    null, null);
+        }
+    }
+
+    private int insertReport(PreparedStatement ps, String createdAt, String profileType) throws SQLException {
+        ps.setString(1, createdAt);
+        ps.setString(2, profileType);
+        ps.executeUpdate();
+        try (ResultSet keys = ps.getGeneratedKeys()) {
+            return keys.getInt(1);
+        }
+    }
+
+    private void insertItem(PreparedStatement ps, int noteId, String typeName, String brandName,
+                            String modelName, String sn, String af, int qty, String obs,
+                            int isAsset, String glpiStatus, String rejectionReason,
+                            String updatedAt) throws SQLException {
+        ps.setInt(1, noteId);
+        ps.setString(2, typeName);
+        ps.setString(3, brandName);
+        ps.setString(4, modelName);
+        ps.setString(5, sn);
+        ps.setString(6, af);
+        ps.setInt(7, qty);
+        ps.setString(8, obs);
+        ps.setInt(9, isAsset);
+        ps.setString(10, glpiStatus);
+        ps.setString(11, rejectionReason);
+        ps.setString(12, updatedAt);
+        ps.executeUpdate();
     }
 }
