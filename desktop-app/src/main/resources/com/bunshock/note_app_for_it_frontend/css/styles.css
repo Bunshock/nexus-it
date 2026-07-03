@@ -1,11 +1,28 @@
 /* --- Common styles - START --- */
 
-/* Section label*/
+/* Section label (used for sub-section headings inside content cards) */
 .section-label {
     -fx-font-weight: bold;
     -fx-text-fill: #0c8570;
     -fx-font-size: 15px;
     -fx-letter-spacing: 0.5px;
+}
+
+/* White card that wraps the page title — carries the left teal accent bar */
+.page-title-card {
+    -fx-background-color: white;
+    -fx-background-radius: 10;
+    -fx-border-color: transparent transparent transparent #0c8570;
+    -fx-border-width: 0 0 0 4;
+    -fx-border-radius: 10;
+    -fx-padding: 12 20;
+}
+
+/* Text inside .page-title-card */
+.page-title {
+    -fx-font-size: 17px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #1e293b;
 }
 
 /* Primary action button */
@@ -23,6 +40,29 @@
 .button-primary:hover {
     -fx-background-color: #0e9a82; 
     -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.1), 5, 0, 0, 2);
+}
+
+/* MenuButton styled as primary (e.g. Exportar) */
+.menu-button.button-primary {
+    -fx-padding: 0;
+}
+.menu-button.button-primary > .label {
+    -fx-text-fill: white;
+    -fx-font-weight: bold;
+    -fx-padding: 4 8 4 14;
+}
+.menu-button.button-primary > .arrow-button {
+    -fx-background-color: rgba(0,0,0,0.12);
+    -fx-padding: 0 10;
+}
+.menu-button.button-primary > .arrow-button > .arrow {
+    -fx-background-color: white;
+}
+.menu-button.button-primary:hover > .arrow-button {
+    -fx-background-color: transparent;
+}
+.menu-button.button-primary:showing > .arrow-button {
+    -fx-background-color: rgba(0,0,0,0.22);
 }
 
 /* Secondary action button */
@@ -76,6 +116,158 @@
     -fx-border-color: #0c8570;
 }
 
+/* Compact input for filter bars (date pickers + combo boxes) */
+.form-input-filter {
+    -fx-background-color: white;
+    -fx-border-color: #cbd5e1;
+    -fx-border-width: 1.5;
+    -fx-border-radius: 4;
+    -fx-background-radius: 4;
+}
+.form-input-filter:focused {
+    -fx-border-color: #0c8570;
+}
+.combo-box.form-input-filter {
+    -fx-padding: 0;
+}
+.combo-box.form-input-filter > .list-cell {
+    -fx-padding: 5 10;
+    -fx-background-color: transparent;
+    -fx-text-fill: #334155;
+}
+.combo-box.form-input-filter > .arrow-button {
+    -fx-background-color: transparent;
+    -fx-padding: 0 8;
+}
+.combo-box.form-input-filter > .arrow-button .arrow {
+    -fx-background-color: #475569;
+}
+.date-picker.form-input-filter {
+    -fx-padding: 3 0;
+}
+.date-picker.form-input-filter > .text-field {
+    -fx-background-color: transparent;
+    -fx-background-insets: 0;
+    -fx-border-color: transparent;
+    -fx-border-width: 0;
+    -fx-focus-color: transparent;
+    -fx-faint-focus-color: transparent;
+    -fx-padding: 0 0 0 8;
+}
+.date-picker.form-input-filter > .arrow-button {
+    -fx-background-color: transparent;
+    -fx-padding: 0 6;
+}
+.date-picker.form-input-filter > .arrow-button .arrow {
+    -fx-background-color: #475569;
+}
+
+/* Multi-select MenuButton for filter bars */
+.filter-menu-button {
+    -fx-background-color: white;
+    -fx-border-color: #cbd5e1;
+    -fx-border-width: 1.5;
+    -fx-border-radius: 4;
+    -fx-background-radius: 4;
+    -fx-text-fill: #334155;
+    -fx-font-size: 13px;
+    -fx-alignment: CENTER_LEFT;
+    -fx-cursor: hand;
+    -fx-padding: 0;
+}
+.filter-menu-button:hover,
+.filter-menu-button:showing {
+    -fx-border-color: #0c8570;
+}
+.filter-menu-button > .label {
+    -fx-padding: 0 4 0 10;
+    -fx-text-overrun: ELLIPSIS;
+}
+.filter-menu-button > .arrow-button {
+    -fx-background-color: transparent;
+    -fx-padding: 0 8 0 6;
+}
+.filter-menu-button > .arrow-button > .arrow {
+    -fx-background-color: #475569;
+}
+
+/* TextField variant for filter bars (compact padding, same height as other inputs) */
+.text-field.form-input-filter {
+    -fx-padding: 5 10;
+    -fx-font-size: 13px;
+    -fx-text-fill: #334155;
+    -fx-prompt-text-fill: #94a3b8;
+}
+
+/* Subtitle label for filter sections */
+.filter-section-label {
+    -fx-text-fill: #0c8570;
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+    -fx-padding: 4 0 4 0;
+}
+
+/* Popup context menu styling (applies to MenuButton dropdowns) */
+.context-menu {
+    -fx-background-color: white;
+    -fx-border-color: #e2e8f0;
+    -fx-border-width: 1;
+    -fx-border-radius: 6;
+    -fx-background-radius: 6;
+    -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.12), 8, 0, 2, 3);
+    -fx-padding: 4 0;
+}
+.menu-item {
+    -fx-background-color: transparent;
+    -fx-padding: 0;
+}
+.menu-item > .label {
+    -fx-padding: 9 16;
+    -fx-font-size: 13px;
+    -fx-text-fill: #334155;
+}
+.menu-item:focused,
+.menu-item:hover {
+    -fx-background-color: #0c8570;
+    -fx-cursor: hand;
+}
+.menu-item:focused > .label,
+.menu-item:hover > .label {
+    -fx-text-fill: white;
+}
+.menu-item:focused .menu-filter-checkbox,
+.menu-item:hover .menu-filter-checkbox {
+    -fx-text-fill: white;
+}
+.separator.menu-item > .container > .line {
+    -fx-border-color: #e2e8f0;
+    -fx-border-width: 1 0 0 0;
+    -fx-padding: 0;
+}
+/* CheckBox inside filter menu items */
+.menu-filter-checkbox {
+    -fx-padding: 6 16;
+    -fx-font-size: 13px;
+    -fx-text-fill: #334155;
+    -fx-cursor: hand;
+    -fx-focus-color: transparent;
+    -fx-faint-focus-color: transparent;
+}
+.menu-filter-checkbox > .box {
+    -fx-background-color: white;
+    -fx-background-insets: 0;
+    -fx-border-color: #94a3b8;
+    -fx-border-radius: 3;
+    -fx-background-radius: 3;
+}
+.menu-filter-checkbox:selected > .box {
+    -fx-background-color: #0c8570;
+    -fx-border-color: #0c8570;
+}
+.menu-filter-checkbox:selected > .box > .mark {
+    -fx-background-color: white;
+}
+
 /* Disabled text field */
 .text-field:disabled {
     -fx-opacity: 0.5;
@@ -96,6 +288,7 @@
 
 .check-box > .box {
     -fx-background-color: white;
+    -fx-background-insets: 0;
     -fx-border-color: #cbd5e1;
     -fx-border-width: 1.5;
     -fx-border-radius: 3;
@@ -379,7 +572,7 @@
 }
 
 .modern-table .table-row-cell:selected .table-cell {
-    -fx-text-fill: #f4f8f7;
+    -fx-text-fill: #0c2620;
     -fx-font-weight: bold;
     -fx-border-color: #0c8570;
     -fx-border-width: 1 0 1 0;
@@ -618,6 +811,13 @@
     -fx-border-radius: 0 0 7 7 !important;
     -fx-focus-color: transparent;
     -fx-faint-focus-color: transparent;
+}
+
+/* TextArea inner content pane - suppress Modena's inner focus ring */
+.text-area.form-input-main .content {
+    -fx-focus-color: transparent;
+    -fx-faint-focus-color: transparent;
+    -fx-background-color: white;
 }
 
 /* DatePicker inner text-field - suppress Modena's default grey border */

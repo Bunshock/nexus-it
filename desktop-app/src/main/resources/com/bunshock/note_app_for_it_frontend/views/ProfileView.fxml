@@ -7,7 +7,9 @@
       fx:controller="com.bunshock.note_app_for_it_frontend.controllers.ProfileController">
     <children>
 
-        <Label text="MI PERFIL" styleClass="section-label"/>
+        <HBox styleClass="page-title-card" alignment="CENTER_LEFT">
+            <Label text="MI PERFIL" styleClass="page-title"/>
+        </HBox>
 
         <VBox spacing="10" style="-fx-background-color: white; -fx-background-radius: 10; -fx-padding: 15 20 20 20;">
             <children>
