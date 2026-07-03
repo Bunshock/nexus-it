@@ -21,9 +21,10 @@ desktop-app/src/main/java/com/bunshock/note_app_for_it_frontend/
 │   ├── ProviderNoteController.java   — Provider note fields: name, CUIT, Motivo, responsible
 │   ├── ItemDialogController.java     — Add/edit item: cascading dropdowns, S/N, A/F, quantity
 │   ├── NotePreviewController.java    — Preview popup: rendered HTML, print/email/GLPI options
-│   ├── HistoryController.java        — History table view
+│   ├── NoteDetailController.java     — History detail popup: HTML preview + item list with admin GLPI actions
+│   ├── HistoryController.java        — History table with multi-select filters and CSV/xlsx export
 │   ├── DatabaseSectionController.java — Equipment catalog CRUD, DB IP config
-│   ├── SettingsController.java       — A/F format, SMTP, GLPI URL settings
+│   ├── SettingsController.java       — A/F format, SMTP, GLPI URL, S/N validation table, admin toggle
 │   ├── ProfileController.java        — Technician personal profile (read from DB)
 │   ├── AboutController.java          — App info
 │   └── ADUserSelectionController.java — Multi-result AD user picker dialog
@@ -36,13 +37,19 @@ desktop-app/src/main/java/com/bunshock/note_app_for_it_frontend/
 │   ├── EquipmentModel.java           — Model entity (belongs to a BRAND_TYPE_LINK)
 │   ├── EquipmentType.java            — Type entity with isAsset flag
 │   ├── EquipmentItem.java            — Base class for AssetItem and CountableItem
-│   ├── NoteReport.java               — Saved note report (history entry)
-│   ├── NoteReportItem.java           — Individual item row in a saved report
-│   ├── SnValidation.java             — S/N length rule for a specific model
+│   ├── GlpiStatus.java               — Enum: N_A, PENDING, SYNCED, REJECTED
+│   ├── HistoryFilter.java            — Filter params for history queries (dates, multi-select lists)
+│   ├── NoteReport.java               — Saved note report (history entry) with aggregated GLPI counts
+│   ├── NoteReportItem.java           — Individual item row in a saved report with GlpiStatus
+│   ├── SnValidation.java             — S/N regex rule for a specific model
+│   ├── SnValidationRow.java          — Display row for S/N validation admin table
 │   └── TechnicianProfile.java        — Current user's personal profile
 ├── services/
+│   ├── AdminAuthService.java         — Admin password verification (SHA-256 hash stored in APP_SETTINGS)
+│   ├── AdminSession.java             — Singleton: tracks active admin session; fires activate/deactivate listeners
 │   ├── ConfigService.java            — Singleton: loads/saves app-config.json
 │   ├── DatabaseService.java          — SQLite connection pool and schema initialization
+│   ├── RemoteDatabaseService.java    — PostgreSQL connection and DDL; used by Caching* wrappers
 │   ├── ServiceLocator.java           — Single wiring point for all service implementations
 │   ├── IADService.java               — AD lookup interface
 │   ├── MockADService.java            — In-memory AD mock (used until REST API is ready)
@@ -50,8 +57,10 @@ desktop-app/src/main/java/com/bunshock/note_app_for_it_frontend/
 │   ├── IEquipmentService.java        — Equipment catalog interface (types, brands, models)
 │   ├── MockEquipmentService.java     — JSON-backed equipment catalog (reads mock-equipment.json)
 │   ├── SqliteEquipmentService.java   — SQLite-backed equipment catalog
-│   ├── IHistoryService.java          — Note history persistence interface
-│   ├── SqliteHistoryService.java     — SQLite-backed history implementation
+│   ├── CachingEquipmentService.java  — Remote-first wrapper: tries PostgreSQL, falls back to SQLite
+│   ├── IHistoryService.java          — Note history persistence interface + distinct-value query methods
+│   ├── SqliteHistoryService.java     — SQLite-backed history: filtered queries, GLPI status updates, distinct catalog values
+│   ├── CachingHistoryService.java    — Remote-first wrapper: tries PostgreSQL, falls back to SQLite
 │   ├── IGLPIService.java             — GLPI API interface
 │   ├── GLPIServiceStub.java          — No-op stub (GLPI out of scope for v1)
 │   ├── IEmailService.java            — Email sending interface
@@ -60,6 +69,7 @@ desktop-app/src/main/java/com/bunshock/note_app_for_it_frontend/
 │   ├── TemplateEngine.java           — {{TOKEN}} and {{#LOOP}} HTML template renderer
 │   └── NoteGenerationService.java    — Builds rendered HTML notes from form data + templates
 └── utils/
+    ├── AdminPasswordHashGenerator.java — CLI utility to generate admin password SHA-256 hash
     └── ViewFactory.java              — View cache: loads each FXML once, reuses across nav switches
 ```
 
@@ -85,6 +95,15 @@ Templates live in `src/main/resources/.../templates/`. `NoteGenerationService` s
 
 ### SQLite Local Database
 `DatabaseService` initializes a local `data/noteapp.db` on first run. The schema mirrors the planned PostgreSQL structure exactly (same table names and column types), so migration will require only a JDBC driver swap and connection string change. The `Generic` brand is inserted as protected default data on initialization.
+
+### Admin Mode (AdminSession)
+`AdminSession` is a singleton that tracks whether an admin session is currently active. Controllers register listeners via `addOnActivateListener` / `addOnDeactivateListener`. Activation is done via `SettingsController.handleToggleAdmin()` which calls `requireAdmin(Runnable)` — this checks if a password is configured (`AdminAuthService.isConfigured()`), prompts for it, verifies against the stored SHA-256 hash, then fires the callback. Sessions auto-expire after 15 minutes of inactivity.
+
+### Note Detail Popup (admin-integrated GLPI actions)
+`NoteDetailController.open(NoteReport, boolean adminMode, Window owner, Runnable onUpdate)` opens a floating stage showing the rendered HTML note alongside a scrollable item card list. When `adminMode` is true and `AdminSession.getInstance().isActive()`, each PENDING item's card includes Sync and Reject buttons. The `adminMode` flag is set from the caller by reading `AdminSession.getInstance().isActive()` at open time. No separate admin tab or view — actions are embedded directly in the popup.
+
+### History Filtering
+`HistoryController` uses `MenuButton` with `CustomMenuItem(CheckBox, false)` to build non-closing multi-select dropdowns for note type, GLPI status, and equipment type/brand/model. Equipment dropdowns cascade: tipo → refreshBrandMenu() → refreshModelMenu() each time a selection changes. Distinct values for type/brand/model are read from `NOTE_ITEM` historical data (not the current catalog) via `IHistoryService.getDistinctItemTypes/Brands/Models()`. Filter state is assembled into a `HistoryFilter` and passed to `IHistoryService.getFiltered()`.
 
 ---
 
@@ -147,11 +166,17 @@ NoteGeneratorController → NoteGenerationService → TemplateEngine
 NotePreviewController   → ServiceLocator → IEmailService
                                          → IHistoryService
                                          → IGLPIService
+NoteDetailController    → ServiceLocator → IHistoryService (GLPI status updates)
+                        → AdminSession   (gates Sync/Reject buttons per item)
 ItemDialogController    → ServiceLocator → IEquipmentService
+HistoryController       → ServiceLocator → IHistoryService (filtered queries + distinct values)
+                        → AdminSession   (adminMode flag passed to NoteDetailController)
 DatabaseSectionController → ServiceLocator → IEquipmentService
+                          → RemoteDatabaseService
 SettingsController      → ConfigService
                         → WindowsDPAPIService
                         → DatabaseService
+                        → AdminSession / AdminAuthService
 ProfileController       → DatabaseService
 UserNoteController      → ServiceLocator → IADService
                         → ConfigService  (Motivo options)

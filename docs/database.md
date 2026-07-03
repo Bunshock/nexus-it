@@ -96,6 +96,10 @@ erDiagram
         string a_f "null for countable items"
         int quantity "default 1"
         string observations
+        int is_asset "1 = asset (tracked in GLPI); 0 = countable"
+        string glpi_status "N_A | PENDING | SYNCED | REJECTED; default N_A"
+        string glpi_rejection_reason "null unless REJECTED"
+        string glpi_status_updated_at "ISO-8601 timestamp; null until first sync attempt"
     }
 
     TECHNICIAN_PROFILE {
@@ -130,3 +134,5 @@ APP_SETTINGS (
 - `NOTE_ENTREGA_DEVOLUCION` and `NOTE_PROVEEDOR` are optional one-to-one extensions of `NOTE_REPORT`, populated based on `profile_type`.
 - `TECHNICIAN_PROFILE` is keyed by `windows_username` so each Windows account on the machine has its own profile.
 - All encrypted values use Windows DPAPI via `WindowsDPAPIService` — decryption fails on a different Windows user account by design.
+- `NOTE_ITEM.glpi_status` tracks GLPI sync state per asset item. Only rows where `is_asset = 1` are eligible for GLPI sync; countable items always remain `N_A`. `NoteReport` aggregates these counts into `getPendingItemCount()`, `getSyncedItemCount()`, `getRejectedItemCount()` for display in the history table.
+- `GlpiStatus` enum values: `N_A` (no GLPI tracking), `PENDING` (queued for sync), `SYNCED` (successfully pushed to GLPI), `REJECTED` (sync attempted but rejected, reason stored in `glpi_rejection_reason`).

@@ -114,7 +114,7 @@ cd desktop-app
 mvn test
 ```
 
-22 unit tests covering: template engine, A/F formatting, AD search, and equipment cascade logic.
+35 unit tests covering: template engine, A/F formatting, AD search, equipment cascade logic, and caching service fallback behavior.
 
 ---
 
@@ -161,14 +161,19 @@ mvn test
 ### History
 
 - Every generated note saved to local SQLite
-- History view with date, profile type, recipient, GLPI sync status
-- Refresh button to reload from database
+- History table with date, profile type, recipient, author, equipment count, and GLPI sync status
+- **Advanced multi-select filters**: date range, note type, GLPI status (Pendiente/Sincronizado/Rechazado/Sin GLPI), recipient/provider text, and cascading equipment type → brand → model; partial/hybrid GLPI states are included in filtered results
+- **Export**: filtered results exportable to CSV (UTF-8 with BOM) or Excel (.xlsx) with bold headers and auto-sized columns
+- **Note detail popup**: double-click any row to open a floating popup with the rendered note preview (left) and a scrollable item card list (right) showing per-item GLPI status badges
+- **Admin GLPI actions**: in admin mode, PENDING item cards in the popup show Sync and Reject buttons; rejection requires entering a reason; the history table refreshes after each action
 
 ### Settings
 
 - A/F format configuration with live preview
 - SMTP credentials (password encrypted via Windows DPAPI — never stored in plaintext)
 - GLPI API URL
+- **S/N Validation table** (admin-protected): view all asset-type models with their regex pattern and active toggle; active rules sort to the top; filterable by type, brand, or model
+- **Admin mode**: password-protected session (SHA-256 hash in SQLite); unlocks S/N validation edits, GLPI sync actions, and DB connection changes; auto-expires after 15 minutes of inactivity
 
 ### Security
 

@@ -36,6 +36,20 @@
 
 - **FR-14**: The system shall protect the "Generic" brand entry from deletion.
 
+- **FR-15**: The system shall allow administrators to activate a timed admin session (15-minute inactivity expiry) via a password-protected toggle in Settings.
+
+- **FR-16**: The system shall allow administrators to manage per-model S/N regex validation rules (enable/disable, view pattern) from an admin-protected table in Settings.
+
+##### 5. History & Export
+
+- **FR-17**: The history view shall provide multi-select filters for note type, GLPI status, equipment type, brand, and model, as well as date range and recipient text search.
+
+- **FR-18**: Equipment filter values (type, brand, model) in the history view shall be populated from historical NOTE_ITEM data, not from the current live catalog.
+
+- **FR-19**: The system shall support exporting the current filtered history to CSV (UTF-8 with BOM) and Excel (.xlsx) formats via a file-save dialog.
+
+- **FR-20**: In admin mode, the note detail popup shall display Sync and Reject action buttons for each PENDING asset item, allowing per-item GLPI status management without leaving the history view.
+
 ### Non-Functional Requirements (NFR)
 
 - **NFR-01 (UX)**: The application shall run as a windowed JavaFX desktop application with a sidebar-based dashboard layout.
@@ -131,6 +145,31 @@
     - ***Acceptance Criteria***:
         - The "History" view must show a table of past registries.
         - Each registry must include the timestamp, user, and items delivered/received.
+
+- **US 5.3** - **History Advanced Filtering**: As a user, I want to filter the history by note type, GLPI status, equipment type/brand/model, date range, and recipient so that I can quickly locate specific past notes.
+    - ***Acceptance Criteria***:
+        - All filter dropdowns must support multi-select (selecting multiple values shows notes matching any of them).
+        - Equipment brand and model dropdowns must cascade based on selected types.
+        - Filter values for equipment must reflect what was historically recorded, not the current catalog.
+        - Clicking "Limpiar" resets all filters and reloads the full history.
+
+- **US 5.4** - **History Export**: As a user, I want to export the currently filtered history to CSV or Excel so that I can share reports or analyze them in a spreadsheet.
+    - ***Acceptance Criteria***:
+        - Export options appear in a dropdown on the History view.
+        - CSV must use UTF-8 encoding with BOM for compatibility with Excel.
+        - Excel export must include bold headers and auto-sized columns.
+
+- **US 5.5** - **S/N Validation Management**: As an administrator, I want to view and toggle per-model S/N validation rules in Settings so that I can control which models enforce regex patterns without editing config files.
+    - ***Acceptance Criteria***:
+        - Table shows type, brand, model, regex pattern, and active toggle for all asset-type models.
+        - Active rows sort to the top; a text filter allows searching by type, brand, or model.
+        - Toggling active state is admin-protected.
+
+- **US 5.6** - **Admin GLPI Sync via Note Detail**: As an administrator, I want to sync or reject individual PENDING items directly from the note detail popup so that I can manage GLPI status without a separate admin panel.
+    - ***Acceptance Criteria***:
+        - In admin mode, PENDING asset items in the note detail popup show Sync and Reject buttons.
+        - Rejecting requires entering a rejection reason.
+        - After a sync/reject action, the item card updates immediately and the history table refreshes.
 
 ##### 6. User Interface & Experience
 

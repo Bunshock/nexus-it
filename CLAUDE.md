@@ -114,6 +114,8 @@ Every external dependency has an interface (`IADService`, `IEquipmentService`, `
 ### Admin dialog pattern
 `requireAdmin(Runnable)` in `SettingsController` and `DatabaseSectionController` handles the full admin flow: check `AdminAuthService.isConfigured()`, prompt password, verify hash, run action. Each controller also duplicates `buildDialogStage / buildDialogRoot / buildDialogScene / centerOnContent` — this duplication is intentional (no shared utility class, per the no-abstraction rule). Do not extract a base class or helper unless explicitly requested.
 
+`AdminSession` is a singleton with `addOnActivateListener` / `addOnDeactivateListener` hooks. `NoteDetailController.open()` takes a boolean `adminMode` parameter — callers pass `AdminSession.getInstance().isActive()` at open time. Inside the popup, `case PENDING` in `buildGlpiStatusRow()` shows Sync/Reject buttons only when `adminMode && AdminSession.getInstance().isActive()`. This means admin actions are embedded in the note detail popup, not in a separate tab.
+
 ### Remote PostgreSQL (write-through cache)
 `RemoteDatabaseService` manages the PostgreSQL connection. When `db_host` is set in `APP_SETTINGS`, `ServiceLocator.initialize()` calls `RemoteDatabaseService.configure(...)`, runs `ensureSchema()` (PostgreSQL DDL), then wraps both remote and local `SqliteEquipmentService`/`SqliteHistoryService` instances in `CachingEquipmentService`/`CachingHistoryService`. Reads try remote first, fall back to local SQLite on error. Writes go to remote first (fail loudly), then local SQLite best-effort. If remote is unreachable at startup, the app runs fully local. `APP_SETTINGS`, `TECHNICIAN_PROFILE`, and `SMTP` config are always local SQLite regardless of remote config.
 

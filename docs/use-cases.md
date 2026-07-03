@@ -109,14 +109,21 @@ Same as UC-01 but with profile "FIN DE CONTRATO". Used for employees leaving the
 
 ---
 
-## UC-09 — View History
+## UC-09 — View and Filter History
 
 **Actor:** IT Technician  
 **Trigger:** Clicks "Historial" in the sidebar
 
 **Main Flow:**
-1. History section loads; table shows all past reports (date, profile type, recipient, GLPI sync status)
-2. Technician can click "Actualizar" to refresh from DB
+1. History section loads; table shows all past reports (date, profile type, recipient, author, equipment count, GLPI sync status)
+2. Technician applies optional filters: date range (DESDE/HASTA), note type (multi-select), GLPI status (multi-select), recipient/provider text, equipment type/brand/model (cascading multi-select)
+3. Clicking "Buscar" or changing any filter reloads the table with matching results
+4. Double-clicking a row opens the note detail popup (UC-14)
+5. Technician can click "Limpiar" to reset all filters
+6. Technician can export the current results via "Exportar" → CSV or Excel
+
+**Alternate Flow A — Admin mode active:** GLPI Sync/Reject buttons appear in the detail popup for PENDING items (see UC-14)  
+**Alternate Flow B — No matching records:** Table shows empty placeholder
 
 ---
 
@@ -163,6 +170,53 @@ Same as UC-01 but with profile "FIN DE CONTRATO". Used for employees leaving the
 4. Temp file is deleted after send
 
 **Failure Flow:** SMTP error is shown in status label; report is still saved to history
+
+---
+
+## UC-14 — View Note Detail / Admin GLPI Sync
+
+**Actor:** IT Technician (read-only); IT Administrator (sync/reject actions)  
+**Trigger:** Double-click on a row in the History table
+
+**Main Flow:**
+1. Note detail popup opens centered on the content area
+2. Left panel shows the rendered HTML note (WebView)
+3. Right panel shows item cards with type, brand, model, S/N/A/F, and current GLPI status badge
+4. Technician reviews the note and closes the popup
+
+**Alternate Flow — Admin mode active:**
+1. Admin opens the popup from history; PENDING items show "Sincronizar" and "Rechazar" buttons
+2. Admin clicks "Sincronizar" → item status updates to SYNCED; card refreshes
+3. Admin clicks "Rechazar" → rejection reason dialog appears; admin enters reason; status updates to REJECTED
+4. After any action, the history table in the background refreshes to reflect updated GLPI counts
+
+---
+
+## UC-15 — Activate Admin Mode
+
+**Actor:** IT Administrator  
+**Trigger:** Clicks "Activar modo administrador" in Configuración
+
+**Main Flow:**
+1. If no admin password is configured: prompt to set one; hash is stored in APP_SETTINGS (SHA-256)
+2. If password is configured: prompt for password; verify against stored hash
+3. On success: AdminSession activates; Settings label shows "Activo"; status label in sidebar updates
+4. Admin actions (GLPI sync/reject, S/N validation edits, DB connection changes) are now accessible
+5. Session expires automatically after 15 minutes of inactivity
+
+---
+
+## UC-16 — Manage S/N Validation Rules
+
+**Actor:** IT Administrator  
+**Trigger:** Clicks "Ver tabla" under "Validación de S/N por modelo" in Configuración
+
+**Main Flow:**
+1. Admin activates admin mode (UC-15) if not already active
+2. Clicks "Ver tabla" — admin panel slides in showing all asset-type models with their regex and active toggle
+3. Admin enables or disables a rule via the toggle; change is persisted immediately to SQLite
+4. Admin uses the text filter to search by type, brand, or model
+5. Clicks "← Volver" to return to Configuración
 
 ---
 
