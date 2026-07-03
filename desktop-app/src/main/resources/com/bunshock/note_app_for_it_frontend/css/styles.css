@@ -86,6 +86,29 @@
     -fx-effect: none;
 }
 
+/* Secondary action button, sized between .button-secondary and .button-secondary-large */
+.button-secondary-medium {
+    -fx-background-color: transparent;
+    -fx-text-fill: #64748b;
+    -fx-border-color: #e2e8f0;
+    -fx-border-width: 1.5;
+    -fx-border-radius: 5;
+    -fx-background-radius: 5;
+    -fx-padding: 8 16;
+    -fx-cursor: hand;
+}
+
+.button-secondary-medium:hover {
+    -fx-background-color: #f8fafc;
+    -fx-text-fill: #1e293b;
+    -fx-border-color: #cbd5e1;
+}
+
+.button-secondary-medium:pressed {
+    -fx-translate-y: 1px;
+    -fx-effect: none;
+}
+
 /* Small text field (used in observations field) */
 .text-field-small {
     -fx-background-color: white;

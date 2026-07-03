@@ -66,7 +66,7 @@
                         <Separator/>
 
                         <HBox spacing="10" alignment="CENTER_RIGHT">
-                            <Button text="Cancelar" onAction="#handleCancel" styleClass="button-secondary"/>
+                            <Button text="Cancelar" onAction="#handleCancel" styleClass="button-secondary-medium"/>
                             <Button fx:id="btnGenerate" text="Generar" onAction="#handleGenerate"
                                     styleClass="button-primary-large" disable="true"/>
                         </HBox>
