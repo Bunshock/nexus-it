@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?import javafx.scene.layout.*?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.web.WebView?>
+
+<VBox fx:id="rootContainer" spacing="0" prefWidth="1100" prefHeight="720"
+      xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1"
+      fx:controller="com.bunshock.note_app_for_it_frontend.controllers.NoteDetailController">
+    <children>
+
+        <!-- Header -->
+        <HBox alignment="CENTER_LEFT"
+              style="-fx-background-color: linear-gradient(to bottom right, #0e9a82, #0a6b5a);
+                     -fx-padding: 20 25;
+                     -fx-background-radius: 10 10 0 0;">
+            <VBox spacing="3">
+                <Label text="HISTORIAL DE NOTAS"
+                       style="-fx-text-fill: rgba(255,255,255,0.6); -fx-font-size: 9px;
+                              -fx-font-weight: bold; -fx-letter-spacing: 1.5;"/>
+                <Label fx:id="lblTitle" text="DETALLE DE NOTA" styleClass="dialog-title"/>
+            </VBox>
+        </HBox>
+
+        <!-- Content row -->
+        <HBox VBox.vgrow="ALWAYS" spacing="0">
+            <children>
+
+                <WebView fx:id="webPreview" HBox.hgrow="ALWAYS" minWidth="700"
+                         style="-fx-background-color: white;"/>
+
+                <!-- Right panel: item list -->
+                <VBox spacing="0" prefWidth="310"
+                      style="-fx-background-color: #f8fafc;
+                             -fx-border-color: #e2e8f0;
+                             -fx-border-width: 0 0 0 1;
+                             -fx-background-radius: 0 0 10 0;">
+
+                    <Label text="EQUIPOS"
+                           style="-fx-font-weight: bold; -fx-font-size: 11px;
+                                  -fx-text-fill: #64748b; -fx-letter-spacing: 1px;
+                                  -fx-padding: 18 20 10 20;"/>
+                    <Separator/>
+
+                    <ScrollPane fx:id="scrollItems" VBox.vgrow="ALWAYS" fitToWidth="true"
+                                style="-fx-background: transparent; -fx-background-color: transparent;
+                                       -fx-border-color: transparent;">
+                        <VBox fx:id="vboxItems" spacing="1" style="-fx-padding: 8 12;"/>
+                    </ScrollPane>
+
+                    <Separator/>
+                    <HBox spacing="10" alignment="CENTER_RIGHT"
+                          style="-fx-padding: 14 20;">
+                        <Button text="Cerrar" onAction="#handleClose" styleClass="button-secondary"/>
+                    </HBox>
+
+                </VBox>
+            </children>
+        </HBox>
+
+    </children>
+</VBox>
