@@ -66,7 +66,7 @@ erDiagram
     NOTE_REPORT {
         int id PK
         string created_at "ISO-8601 timestamp"
-        string profile_type "ENTREGA / DEVOLUCION / FIN_DE_CONTRATO / RECAMBIO / PROVEEDOR"
+        string profile_type "ENTREGA / DEVOLUCION / FIN_DE_CONTRATO / PROVEEDOR"
         int glpi_synced "0 = not synced"
         int technician_id FK
     }
@@ -76,7 +76,7 @@ erDiagram
         string user_name
         string user_dni
         string user_email
-        string motivo "mandatory for ENTREGA and RECAMBIO"
+        string motivo "mandatory for ENTREGA"
     }
 
     NOTE_PROVEEDOR {
@@ -118,6 +118,7 @@ erDiagram
 | Key | Value | Description |
 |-----|-------|-------------|
 | `smtp_password` | Base64-encoded DPAPI ciphertext | SMTP password, encrypted via Windows DPAPI |
+| `glpi_api_key` | Base64-encoded DPAPI ciphertext | GLPI REST API key, encrypted via Windows DPAPI |
 
 ```sql
 APP_SETTINGS (

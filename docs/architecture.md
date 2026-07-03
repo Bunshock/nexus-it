@@ -20,7 +20,7 @@ desktop-app/src/main/java/com/bunshock/note_app_for_it_frontend/
 │   ├── UserNoteController.java       — User note fields: type toggle, Motivo, AD search
 │   ├── ProviderNoteController.java   — Provider note fields: name, CUIT, Motivo, responsible
 │   ├── ItemDialogController.java     — Add/edit item: cascading dropdowns, S/N, A/F, quantity
-│   ├── NotePreviewController.java    — Preview popup: rendered HTML, print/email/GLPI options
+│   ├── NotePreviewController.java    — Preview popup: rendered HTML, print/email options
 │   ├── NoteDetailController.java     — History detail popup: HTML preview + item list with admin GLPI actions
 │   ├── HistoryController.java        — History table with multi-select filters and CSV/xlsx export
 │   ├── DatabaseSectionController.java — Equipment catalog CRUD, DB IP config
@@ -91,13 +91,13 @@ Every external dependency has an interface (`IADService`, `IEquipmentService`, `
 Templates live in `src/main/resources/.../templates/`. `NoteGenerationService` selects the correct template based on note profile type and builds the token maps from form data.
 
 ### Windows DPAPI Credential Storage
-`WindowsDPAPIService` wraps JNA's `Crypt32Util` to encrypt/decrypt sensitive strings (SMTP password) using the Windows Data Protection API. Encrypted bytes are stored as Base64 in the `APP_SETTINGS` SQLite table. Plaintext never touches disk.
+`WindowsDPAPIService` wraps JNA's `Crypt32Util` to encrypt/decrypt sensitive strings (SMTP password, GLPI API key) using the Windows Data Protection API. Encrypted bytes are stored as Base64 in the `APP_SETTINGS` SQLite table. Plaintext never touches disk.
 
 ### SQLite Local Database
 `DatabaseService` initializes a local `data/noteapp.db` on first run. The schema mirrors the planned PostgreSQL structure exactly (same table names and column types), so migration will require only a JDBC driver swap and connection string change. The `Generic` brand is inserted as protected default data on initialization.
 
 ### Admin Mode (AdminSession)
-`AdminSession` is a singleton that tracks whether an admin session is currently active. Controllers register listeners via `addOnActivateListener` / `addOnDeactivateListener`. Activation is done via `SettingsController.handleToggleAdmin()` which calls `requireAdmin(Runnable)` — this checks if a password is configured (`AdminAuthService.isConfigured()`), prompts for it, verifies against the stored SHA-256 hash, then fires the callback. Sessions auto-expire after 15 minutes of inactivity.
+`AdminSession` is a singleton that tracks whether an admin session is currently active. Controllers register listeners via `addOnActivateListener` / `addOnDeactivateListener`. Activation is done via `SettingsController.handleToggleAdmin()` which calls `requireAdmin(Runnable)` — this checks if a password is configured (`AdminAuthService.isConfigured()`), prompts for it, verifies against the stored SHA-256 hash, then fires the callback. Sessions auto-expire after 15 minutes of inactivity. `SettingsController`'s own configuration fields (A/F format, SMTP, GLPI API) and its "Guardar Configuración" button are disabled unless admin mode is active, via the same listener pair (`SettingsController.updateFieldEditability()`).
 
 ### Note Detail Popup (admin-integrated GLPI actions)
 `NoteDetailController.open(NoteReport, boolean adminMode, Window owner, Runnable onUpdate)` opens a floating stage showing the rendered HTML note alongside a scrollable item card list. When `adminMode` is true and `AdminSession.getInstance().isActive()`, each PENDING item's card includes Sync and Reject buttons. The `adminMode` flag is set from the caller by reading `AdminSession.getInstance().isActive()` at open time. No separate admin tab or view — actions are embedded directly in the popup.
@@ -137,9 +137,11 @@ User fills form fields
           → TemplateEngine.render(template, tokens, items)
           → returns rendered HTML string
       → opens NotePreviewView (modal) with rendered HTML
-  → User selects options (Print / Email / GLPI)
+  → User selects options (Print / Email)
       → NotePreviewController.handleGenerate()
-          → if Print: WebView.print()
+          → if Print: WebView.print(), via PrinterJob.showPrintDialog()
+              → if the technician cancels the print dialog, generation aborts here:
+                no email sent, no NoteReport saved, preview popup stays open
           → if Email: GmailEmailService.sendNote()
           → saves NoteReport to SQLite via IHistoryService
           → closes preview

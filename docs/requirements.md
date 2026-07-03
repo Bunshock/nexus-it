@@ -32,7 +32,7 @@
 
 ##### 4. Security & Administration
 
-- **FR-13**: The system shall require an Admin Password or Environment Key to modify critical settings (like Server IP).
+- **FR-13**: The system shall require an Admin Password or Environment Key to modify critical settings (like Server IP). All general configuration fields in Settings (A/F format, SMTP, GLPI API URL/Key) and the "Guardar Configuración" button are disabled unless an admin session is active.
 
 - **FR-14**: The system shall protect the "Generic" brand entry from deletion.
 

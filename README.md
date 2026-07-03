@@ -51,14 +51,15 @@ Two JSON files in `desktop-app/config/` control runtime behavior. **Do not commi
 | `motivoOptions.entrega` | List of Motivo values for Entrega notes |
 | `motivoOptions.devolucion` | List of Motivo values for Devolución notes |
 | `motivoOptions.proveedor` | List of Motivo values for Provider notes |
-| `motivoOptions.recambio` | List of Motivo values for Recambio notes |
+| `fallaOptions` | Failure-cause combobox values shown by the Falla detail popup (Devolución only) |
 | `smtp.host` | SMTP server host |
 | `smtp.port` | SMTP port (587 for Gmail STARTTLS) |
 | `smtp.senderAddress` | Sender email address |
 | `adApi.baseUrl` | REST API URL for AD lookups |
+| `glpiApi.baseUrl` | GLPI REST API URL |
 | `noteItemLimit` | Max items per note before showing a warning |
 
-SMTP password is stored encrypted in the local SQLite database (Windows DPAPI) — never in this file.
+SMTP password and GLPI API key are stored encrypted in the local SQLite database (Windows DPAPI) — never in this file.
 
 ### `config/mock-equipment.json`
 
@@ -93,7 +94,10 @@ Each template is a plain `.html` file. The template engine replaces `{{TOKEN}}` 
 
 | Template file | Used for |
 |---------------|----------|
-| `entrega.html` | Entrega, Devolución, Fin de Contrato, Recambio notes |
+| `entrega.html` | Entrega notes |
+| `devolucion.html` | Devolución notes |
+| `entrega - fin de contrato.html` | Fin de Contrato notes |
+| `prestamo.html` | Préstamo notes |
 | `proveedor.html` | Entrega - Proveedor notes |
 
 To customize the look of a generated note, edit the corresponding HTML file — no Java changes needed. The CSS inside the template controls print layout. Common tokens available in both templates:
@@ -122,9 +126,8 @@ mvn test
 
 ### Note Generation
 
-- **5 note profiles**: Entrega, Devolución, Fin de Contrato, Recambio, Entrega - Proveedor
-- Recambio generates two notes (Entrega + Devolución) from a single form
-- Motivo dropdown (configurable per profile type) — mandatory for Entrega and Provider notes
+- **5 note profiles**: Entrega, Devolución, Fin de Contrato, Préstamo, Entrega - Proveedor
+- Motivo dropdown (configurable per profile type) — mandatory for Entrega, Devolución, Fin de Contrato, and Provider notes
 - HTML template rendering with `{{TOKEN}}` substitution and `{{#ITEMS}}` loops
 - Preview popup: choose Print / Send Email / Sync GLPI before generating
 
@@ -171,13 +174,14 @@ mvn test
 
 - A/F format configuration with live preview
 - SMTP credentials (password encrypted via Windows DPAPI — never stored in plaintext)
-- GLPI API URL
+- GLPI API URL and API Key (key encrypted via Windows DPAPI — never stored in plaintext)
+- All configuration fields and the "Guardar Configuración" button are read-only/disabled unless admin mode is active
 - **S/N Validation table** (admin-protected): view all asset-type models with their regex pattern and active toggle; active rules sort to the top; filterable by type, brand, or model
-- **Admin mode**: password-protected session (SHA-256 hash in SQLite); unlocks S/N validation edits, GLPI sync actions, and DB connection changes; auto-expires after 15 minutes of inactivity
+- **Admin mode**: password-protected session (SHA-256 hash in SQLite); unlocks general configuration editing, S/N validation edits, GLPI sync actions, and DB connection changes; auto-expires after 15 minutes of inactivity
 
 ### Security
 
-- SMTP password encrypted at rest using Windows DPAPI (tied to the current Windows user account)
+- SMTP password and GLPI API key encrypted at rest using Windows DPAPI (tied to the current Windows user account)
 - No plaintext secrets in config files or source code
 - Input validated at every system boundary
 
@@ -205,6 +209,6 @@ notes-app-for-it/
 | File | Contents |
 |------|----------|
 | [`docs/architecture.md`](docs/architecture.md) | Package structure, design patterns, startup sequence, data flow |
-| [`docs/use-cases.md`](docs/use-cases.md) | User-facing use cases (UC-01 through UC-13) |
+| [`docs/use-cases.md`](docs/use-cases.md) | User-facing use cases (UC-01 through UC-15) |
 | [`docs/requirements.md`](docs/requirements.md) | Functional and non-functional requirements |
 | [`docs/database.md`](docs/database.md) | SQLite schema and planned PostgreSQL migration path |

@@ -13,11 +13,12 @@
 4. Adds equipment items via the item dialog (Type → Brand → Model cascade; S/N and A/F if applicable)
 5. Optionally fills Observaciones
 6. Clicks "Generar PDF y Registrar"
-7. Preview popup shows rendered note; technician selects Print / Email / GLPI
+7. Preview popup shows rendered note; technician selects Print / Email
 8. Clicks "Generar" — note is printed/sent; report saved to history
 
 **Alternate Flow A — AD unavailable:** Fields are filled manually  
-**Alternate Flow B — Item limit exceeded:** Warning shown; second note recommended
+**Alternate Flow B — Item limit exceeded:** Warning shown; second note recommended  
+**Alternate Flow C — Print cancelled:** If "Imprimir" is checked and the technician cancels the OS print dialog, the whole generation is aborted — no email is sent and no History entry is created; status shows "Impresión cancelada — nota no generada" and the preview popup stays open so the technician can retry
 
 ---
 
@@ -33,22 +34,7 @@ Same as UC-01 but with profile "FIN DE CONTRATO". Used for employees leaving the
 
 ---
 
-## UC-04 — Generate a Recambio Note
-
-**Actor:** IT Technician  
-**Trigger:** Equipment replacement scenario (old out, new in)
-
-**Main Flow:**
-1. Technician selects profile "RECAMBIO"
-2. Selects Motivo (e.g., Falla, Obsolescencia)
-3. Fills recipient data
-4. Adds equipment items
-5. System generates two notes: one Entrega (new equipment) and one Devolución (returned equipment)
-6. Preview shows both; technician prints/sends
-
----
-
-## UC-05 — Generate a Provider Note (Entrega - Proveedor)
+## UC-04 — Generate a Provider Note (Entrega - Proveedor)
 
 **Actor:** IT Technician  
 **Trigger:** Equipment received from or delivered to a supplier
@@ -63,7 +49,7 @@ Same as UC-01 but with profile "FIN DE CONTRATO". Used for employees leaving the
 
 ---
 
-## UC-06 — Add Equipment Item
+## UC-05 — Add Equipment Item
 
 **Actor:** IT Technician  
 **Trigger:** Clicks "+ Agregar" in the equipment section
@@ -80,7 +66,7 @@ Same as UC-01 but with profile "FIN DE CONTRATO". Used for employees leaving the
 
 ---
 
-## UC-07 — Edit Equipment Item
+## UC-06 — Edit Equipment Item
 
 **Actor:** IT Technician  
 **Trigger:** Clicks "Editar" on an existing item row
@@ -92,7 +78,7 @@ Same as UC-01 but with profile "FIN DE CONTRATO". Used for employees leaving the
 
 ---
 
-## UC-08 — Search User in Active Directory
+## UC-07 — Search User in Active Directory
 
 **Actor:** IT Technician  
 **Trigger:** Clicks "Buscar en AD" with at least one search field filled
@@ -109,7 +95,7 @@ Same as UC-01 but with profile "FIN DE CONTRATO". Used for employees leaving the
 
 ---
 
-## UC-09 — View and Filter History
+## UC-08 — View and Filter History
 
 **Actor:** IT Technician  
 **Trigger:** Clicks "Historial" in the sidebar
@@ -118,16 +104,16 @@ Same as UC-01 but with profile "FIN DE CONTRATO". Used for employees leaving the
 1. History section loads; table shows all past reports (date, profile type, recipient, author, equipment count, GLPI sync status)
 2. Technician applies optional filters: date range (DESDE/HASTA), note type (multi-select), GLPI status (multi-select), recipient/provider text, equipment type/brand/model (cascading multi-select)
 3. Clicking "Buscar" or changing any filter reloads the table with matching results
-4. Double-clicking a row opens the note detail popup (UC-14)
+4. Double-clicking a row opens the note detail popup (UC-12)
 5. Technician can click "Limpiar" to reset all filters
 6. Technician can export the current results via "Exportar" → CSV or Excel
 
-**Alternate Flow A — Admin mode active:** GLPI Sync/Reject buttons appear in the detail popup for PENDING items (see UC-14)  
+**Alternate Flow A — Admin mode active:** GLPI Sync/Reject buttons appear in the detail popup for PENDING items (see UC-12)  
 **Alternate Flow B — No matching records:** Table shows empty placeholder
 
 ---
 
-## UC-10 — Manage Equipment Catalog (Database Section)
+## UC-09 — Manage Equipment Catalog (Database Section)
 
 **Actor:** IT Technician  
 **Trigger:** Clicks "Base de Datos" in the sidebar
@@ -143,20 +129,24 @@ Same as UC-01 but with profile "FIN DE CONTRATO". Used for employees leaving the
 
 ---
 
-## UC-11 — Configure Application Settings
+## UC-10 — Configure Application Settings
 
-**Actor:** IT Technician  
+**Actor:** IT Administrator (edit); IT Technician (read-only)  
 **Trigger:** Clicks "Configuración" in the sidebar
 
+**Preconditions:** Admin mode is active (see UC-13) — all fields and the save button are disabled otherwise
+
 **Main Flow:**
-1. Technician configures A/F format (Prefix, Separator, Length, Filler); live preview shown
+1. Administrator configures A/F format (Prefix, Separator, Length, Filler); live preview shown
 2. Configures SMTP sender address and password (stored encrypted via DPAPI)
-3. Configures GLPI API URL
-4. Clicks "Guardar Configuración" → saved to app-config.json and DB
+3. Configures GLPI API URL and API Key (key stored encrypted via DPAPI, never in app-config.json)
+4. Clicks "Guardar Configuración" → URL/format fields saved to app-config.json, credentials saved encrypted to DB; a status message appears next to the save button
+
+**Alternate Flow — Admin mode inactive:** all input fields and the save button are disabled (greyed out); technician can view current values but not change them
 
 ---
 
-## UC-12 — Send Note via Email
+## UC-11 — Send Note via Email
 
 **Actor:** IT Technician  
 **Trigger:** Selects "Enviar por correo" in the note generation popup
@@ -173,7 +163,7 @@ Same as UC-01 but with profile "FIN DE CONTRATO". Used for employees leaving the
 
 ---
 
-## UC-14 — View Note Detail / Admin GLPI Sync
+## UC-12 — View Note Detail / Admin GLPI Sync
 
 **Actor:** IT Technician (read-only); IT Administrator (sync/reject actions)  
 **Trigger:** Double-click on a row in the History table
@@ -192,7 +182,7 @@ Same as UC-01 but with profile "FIN DE CONTRATO". Used for employees leaving the
 
 ---
 
-## UC-15 — Activate Admin Mode
+## UC-13 — Activate Admin Mode
 
 **Actor:** IT Administrator  
 **Trigger:** Clicks "Activar modo administrador" in Configuración
@@ -206,13 +196,13 @@ Same as UC-01 but with profile "FIN DE CONTRATO". Used for employees leaving the
 
 ---
 
-## UC-16 — Manage S/N Validation Rules
+## UC-14 — Manage S/N Validation Rules
 
 **Actor:** IT Administrator  
 **Trigger:** Clicks "Ver tabla" under "Validación de S/N por modelo" in Configuración
 
 **Main Flow:**
-1. Admin activates admin mode (UC-15) if not already active
+1. Admin activates admin mode (UC-13) if not already active
 2. Clicks "Ver tabla" — admin panel slides in showing all asset-type models with their regex and active toggle
 3. Admin enables or disables a rule via the toggle; change is persisted immediately to SQLite
 4. Admin uses the text filter to search by type, brand, or model
@@ -220,12 +210,20 @@ Same as UC-01 but with profile "FIN DE CONTRATO". Used for employees leaving the
 
 ---
 
-## UC-13 — Manage Technician Profile
+## UC-15 — View Technician Profile
 
-**Actor:** IT Technician  
+**Actor:** IT Technician (view/refresh); IT Administrator (manual override)  
 **Trigger:** Clicks "Mi Perfil" in the sidebar
 
+**Preconditions:** None for viewing — identity resolution happens automatically at app startup, before this section is ever opened
+
 **Main Flow:**
-1. Profile section loads with data from SQLite (pre-filled from Windows user + AD lookup at startup)
-2. Technician edits name, DNI, email and saves
-3. Data persists in `TECHNICIAN_PROFILE` table; used to auto-fill technician fields in notes
+1. At app startup, the app reads the Windows session's UPN (domain email), derives the AD username from it, and looks up that user in Active Directory; Name, Username, Email, and DNI are held in memory for the current session only — never persisted to disk
+2. Technician opens "Mi Perfil"; the four fields show the current session values, read-only (grayed out)
+3. Technician clicks "Actualizar Perfil desde AD" to re-run the lookup on demand (e.g. if it failed at startup, or AD data changed)
+4. Sidebar welcome message ("Hola, {nombre}!" / "Usuario: {username}") updates immediately to reflect any change
+
+**Alternate Flow A — AD lookup fails:** A warning popup (and Profile's status label) distinguishes "user not found in AD" from "could not connect to AD" from "no Windows domain session available"; fields stay empty and read-only until a successful refresh or an admin override. Sidebar shows "Perfil no configurado" under the welcome message.  
+**Alternate Flow B — Admin mode active:** Fields become editable; Administrator can manually enter or correct Name, Username, DNI, and Email; "Guardar" commits the override for the current session only — lost on the next AD refresh or app restart, not written to any database table.
+
+**Note:** Technician identity is session-only and is never stored in a database table. When a note is generated, the current session's Name and DNI are copied as plain text directly onto that note's history record (not a reference to a shared profile row), so historical notes stay accurate even if the technician's AD identity changes later.
