@@ -103,7 +103,13 @@ public class NotePreviewController {
         try {
             File tempHtml = writeTempHtml();
 
-            if (chkPrint.isSelected()) printNote();
+            if (chkPrint.isSelected() && !printNote()) {
+                tempHtml.delete();
+                lblStatus.setStyle("-fx-text-fill: #64748b;");
+                lblStatus.setText("Impresión cancelada — nota no generada");
+                btnGenerate.setDisable(false);
+                return;
+            }
 
             if (chkEmail.isSelected()) {
                 ServiceLocator.getInstance().getEmailService().sendNote(
@@ -127,16 +133,17 @@ public class NotePreviewController {
         }
     }
 
-    private void printNote() {
+    private boolean printNote() {
         PrinterJob job = PrinterJob.createPrinterJob();
-        if (job == null) return;
+        if (job == null) return true;
         Stage stage = (Stage) rootContainer.getScene().getWindow();
-        if (!job.showPrintDialog(stage)) return;
+        if (!job.showPrintDialog(stage)) return false;
         PageLayout layout = job.getPrinter().createPageLayout(
             Paper.A4, PageOrientation.PORTRAIT, Printer.MarginType.HARDWARE_MINIMUM);
         job.getJobSettings().setPageLayout(layout);
         webPreview.getEngine().print(job);
         job.endJob();
+        return true;
     }
 
     private File writeTempHtml() throws IOException {
