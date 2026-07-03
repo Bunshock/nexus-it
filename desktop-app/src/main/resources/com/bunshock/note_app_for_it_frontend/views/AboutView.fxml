@@ -62,7 +62,7 @@
                 <Separator/>
 
                 <Label wrapText="true"
-                       text="El Generador de Notas IT permite al personal de soporte técnico crear notas de entrega, devolución, recambio y proveedor de equipamiento informático. Las notas pueden previsualizarse, imprimirse y enviarse por correo electrónico directamente desde la aplicación."
+                       text="El Generador de Notas IT permite al personal de soporte técnico crear notas de entrega, devolución y proveedor de equipamiento informático. Las notas pueden previsualizarse, imprimirse y enviarse por correo electrónico directamente desde la aplicación."
                        style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
 
                 <Separator/>
@@ -88,9 +88,7 @@
                            style="-fx-font-size: 12px; -fx-text-fill: #64748b;"/>
                     <Label text="     3.3  Fin de Contrato"
                            style="-fx-font-size: 12px; -fx-text-fill: #64748b;"/>
-                    <Label text="     3.4  Recambio"
-                           style="-fx-font-size: 12px; -fx-text-fill: #64748b;"/>
-                    <Label text="     3.5  Entrega — Proveedor"
+                    <Label text="     3.4  Entrega — Proveedor"
                            style="-fx-font-size: 12px; -fx-text-fill: #64748b;"/>
                     <Label text="4.   Gestión de equipamiento"
                            style="-fx-font-size: 12px; -fx-text-fill: #334155;"/>
@@ -183,13 +181,7 @@
                        text="Variante de la devolución que indica explícitamente la finalización de la relación laboral del usuario con la institución. Se usa cuando el motivo de devolución es el egreso del empleado."
                        style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
 
-                <Label text="3.4  Recambio"
-                       style="-fx-font-size: 13px; -fx-font-weight: bold; -fx-text-fill: #334155;"/>
-                <Label wrapText="true"
-                       text="Genera automáticamente dos notas a partir de un único formulario: una nota de Entrega (el equipo nuevo que se le da al usuario) y una nota de Devolución (el equipo viejo que se retira). Requiere Motivo (Falla, Obsolescencia, Actualización u Otro). Permite gestionar un cambio de equipo completo en una sola operación."
-                       style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
-
-                <Label text="3.5  Entrega — Proveedor"
+                <Label text="3.4  Entrega — Proveedor"
                        style="-fx-font-size: 13px; -fx-font-weight: bold; -fx-text-fill: #334155;"/>
                 <Label wrapText="true"
                        text="Nota de recepción de equipamiento proveniente de un proveedor externo. Requiere CUIT del proveedor y Motivo (Compra, Garantía, Reparación u Otro). Disponible únicamente desde la pestaña &quot;Nota de Proveedor&quot;."

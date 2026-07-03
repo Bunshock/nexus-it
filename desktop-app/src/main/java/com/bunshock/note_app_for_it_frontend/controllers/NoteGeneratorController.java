@@ -42,6 +42,7 @@ import javafx.util.Duration;
 
 public class NoteGeneratorController {
 
+    @FXML private javafx.scene.layout.VBox rootContainer;
     @FXML private ToggleButton btnUserNote;
     @FXML private ToggleButton btnProviderNote;
     @FXML private ToggleGroup typeGroup;
@@ -354,10 +355,50 @@ public class NoteGeneratorController {
         NotePreviewController ctrl = loader.getController();
         ctrl.loadPreview(html, profileType, report, assetList, countableList);
 
+        javafx.scene.layout.VBox rootVBox = (javafx.scene.layout.VBox) root;
+
+        // Dark border frame: children paint over background tricks, so the border
+        // must be a real container with padding around the content.
+        javafx.scene.layout.StackPane borderFrame = new javafx.scene.layout.StackPane(rootVBox);
+        borderFrame.setStyle("""
+            -fx-background-color: #1a1a1a;
+            -fx-background-radius: 12;
+            -fx-padding: 2;
+            """);
+
+        // WebView prevents effects from rendering on ancestor nodes — shadow lives on
+        // a separate backing layer stacked behind the border frame.
+        javafx.scene.layout.Region shadowBacking = new javafx.scene.layout.Region();
+        shadowBacking.prefWidthProperty().bind(borderFrame.widthProperty());
+        shadowBacking.prefHeightProperty().bind(borderFrame.heightProperty());
+        shadowBacking.setStyle("""
+            -fx-background-color: white;
+            -fx-background-radius: 12;
+            -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.6), 20, 0, 0, 5);
+            """);
+
+        javafx.scene.layout.StackPane wrapper = new javafx.scene.layout.StackPane(shadowBacking, borderFrame);
+        wrapper.setStyle("-fx-background-color: transparent; -fx-padding: 32;");
+        javafx.scene.Scene scene = new javafx.scene.Scene(wrapper);
+        scene.setFill(javafx.scene.paint.Color.TRANSPARENT);
+        scene.getStylesheets().add(getClass().getResource(
+            "/com/bunshock/note_app_for_it_frontend/css/styles.css").toExternalForm());
+
         Stage stage = new Stage();
+        stage.initStyle(StageStyle.TRANSPARENT);
         stage.initModality(Modality.APPLICATION_MODAL);
-        stage.setTitle("Previsualización de Nota");
-        stage.setScene(new Scene(root));
+        stage.setScene(scene);
+
+        stage.setOpacity(0);
+        stage.setOnShown(e -> {
+            javafx.geometry.Bounds b = rootContainer.localToScreen(rootContainer.getBoundsInLocal());
+            if (b != null) {
+                stage.setX(b.getMinX() + (b.getWidth()  - stage.getWidth())  / 2);
+                stage.setY(b.getMinY() + (b.getHeight() - stage.getHeight()) / 2);
+            }
+            stage.setOpacity(1);
+        });
+
         stage.show();
     }
 }

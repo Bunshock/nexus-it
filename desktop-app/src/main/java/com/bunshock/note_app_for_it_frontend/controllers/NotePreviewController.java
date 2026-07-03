@@ -11,11 +11,18 @@ import java.util.List;
 import com.bunshock.note_app_for_it_frontend.models.AssetItem;
 import com.bunshock.note_app_for_it_frontend.models.CountableItem;
 import com.bunshock.note_app_for_it_frontend.models.NoteReport;
+import com.bunshock.note_app_for_it_frontend.models.GlpiStatus;
 import com.bunshock.note_app_for_it_frontend.models.NoteReportItem;
 import com.bunshock.note_app_for_it_frontend.services.IEmailService;
 import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;
 
 import javafx.fxml.FXML;
+import javafx.print.PageLayout;
+import javafx.print.PageOrientation;
+import javafx.print.Paper;
+import javafx.print.Printer;
+import javafx.print.PrinterJob;
+import javafx.scene.shape.Rectangle;
 import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.Label;
@@ -26,14 +33,13 @@ import javafx.stage.Stage;
 
 public class NotePreviewController {
 
+    @FXML private VBox rootContainer;
     @FXML private WebView webPreview;
 
     @FXML private CheckBox chkPrint;
     @FXML private CheckBox chkEmail;
     @FXML private VBox vboxEmailField;
     @FXML private TextField txtEmailRecipient;
-    @FXML private CheckBox chkGlpi;
-    @FXML private Label lblGlpiStatus;
     @FXML private Label lblStatus;
     @FXML private Button btnGenerate;
 
@@ -46,11 +52,16 @@ public class NotePreviewController {
     public void initialize() {
         chkPrint.selectedProperty().addListener((o, a, b) -> updateGenerateButton());
         chkEmail.selectedProperty().addListener((o, a, b) -> updateGenerateButton());
-        chkGlpi.selectedProperty().addListener((o, a, b) -> updateGenerateButton());
 
-        boolean glpiUp = ServiceLocator.getInstance().getGlpiService().isReachable();
-        chkGlpi.setDisable(!glpiUp);
-        lblGlpiStatus.setText(glpiUp ? "" : "(GLPI desconectado)");
+        chkPrint.setSelected(true);
+        updateGenerateButton();
+
+        Rectangle clip = new Rectangle();
+        clip.setArcWidth(20);
+        clip.setArcHeight(20);
+        clip.widthProperty().bind(rootContainer.widthProperty());
+        clip.heightProperty().bind(rootContainer.heightProperty());
+        rootContainer.setClip(clip);
     }
 
     public void loadPreview(String html, String profileType, NoteReport report,
@@ -78,7 +89,7 @@ public class NotePreviewController {
     }
 
     private void updateGenerateButton() {
-        boolean atLeastOne = chkPrint.isSelected() || chkEmail.isSelected() || chkGlpi.isSelected();
+        boolean atLeastOne = chkPrint.isSelected() || chkEmail.isSelected();
         boolean emailOk = !chkEmail.isSelected() || !txtEmailRecipient.getText().isBlank();
         btnGenerate.setDisable(!atLeastOne || !emailOk);
     }
@@ -92,14 +103,11 @@ public class NotePreviewController {
         try {
             File tempHtml = writeTempHtml();
 
-            if (chkPrint.isSelected()) {
-                printNote();
-            }
+            if (chkPrint.isSelected()) printNote();
 
             if (chkEmail.isSelected()) {
-                String recipient = txtEmailRecipient.getText().trim();
                 ServiceLocator.getInstance().getEmailService().sendNote(
-                    recipient,
+                    txtEmailRecipient.getText().trim(),
                     "Nota IT — " + profileType,
                     "Adjunto encontrará la nota generada por el área de Soporte IT.",
                     tempHtml
@@ -107,7 +115,6 @@ public class NotePreviewController {
             }
 
             ServiceLocator.getInstance().getHistoryService().save(buildReportWithItems());
-
             tempHtml.delete();
 
             lblStatus.setStyle("-fx-text-fill: #22c55e;");
@@ -121,7 +128,15 @@ public class NotePreviewController {
     }
 
     private void printNote() {
-        webPreview.getEngine().print(null);
+        PrinterJob job = PrinterJob.createPrinterJob();
+        if (job == null) return;
+        Stage stage = (Stage) rootContainer.getScene().getWindow();
+        if (!job.showPrintDialog(stage)) return;
+        PageLayout layout = job.getPrinter().createPageLayout(
+            Paper.A4, PageOrientation.PORTRAIT, Printer.MarginType.HARDWARE_MINIMUM);
+        job.getJobSettings().setPageLayout(layout);
+        webPreview.getEngine().print(job);
+        job.endJob();
     }
 
     private File writeTempHtml() throws IOException {
@@ -147,6 +162,8 @@ public class NotePreviewController {
             i.setAf(a.getAf().get());
             i.setQuantity(1);
             i.setObservations(a.getObservations().get());
+            i.setAsset(true);
+            i.setGlpiStatus(GlpiStatus.PENDING);
             items.add(i);
         }
         for (CountableItem c : countables) {
@@ -156,6 +173,8 @@ public class NotePreviewController {
             i.setModelName(c.getModel().get());
             i.setQuantity(c.getQuantity().get());
             i.setObservations(c.getObservations().get());
+            i.setAsset(false);
+            i.setGlpiStatus(GlpiStatus.N_A);
             items.add(i);
         }
         r.setItems(items);
@@ -164,6 +183,6 @@ public class NotePreviewController {
 
     @FXML
     private void handleCancel() {
-        ((Stage) webPreview.getScene().getWindow()).close();
+        ((Stage) rootContainer.getScene().getWindow()).close();
     }
 }

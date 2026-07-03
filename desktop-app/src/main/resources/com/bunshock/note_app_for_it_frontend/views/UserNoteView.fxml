@@ -87,19 +87,19 @@
             </children>
         </VBox>
 
-        <!-- DNI -->
-        <VBox spacing="2">
-            <children>
-                <Label text="DNI" styleClass="input-label-small"/>
-                <TextField fx:id="txtUserDni" styleClass="form-input-main"/>
-            </children>
-        </VBox>
-
         <!-- Nombre completo -->
         <VBox spacing="2">
             <children>
                 <Label text="NOMBRE COMPLETO" styleClass="input-label-small"/>
                 <TextField fx:id="txtUserName" styleClass="form-input-main"/>
+            </children>
+        </VBox>
+
+        <!-- DNI -->
+        <VBox spacing="2">
+            <children>
+                <Label text="DNI" styleClass="input-label-small"/>
+                <TextField fx:id="txtUserDni" styleClass="form-input-main"/>
             </children>
         </VBox>
 

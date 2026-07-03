@@ -3,45 +3,79 @@
 <?import javafx.scene.control.*?>
 <?import javafx.scene.web.WebView?>
 
-<HBox spacing="0" prefWidth="1100" prefHeight="700"
+<VBox fx:id="rootContainer" spacing="0" prefWidth="1100" prefHeight="720"
       xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1"
       fx:controller="com.bunshock.note_app_for_it_frontend.controllers.NotePreviewController">
     <children>
 
-        <!-- Note preview (left) -->
-        <WebView fx:id="webPreview" HBox.hgrow="ALWAYS" minWidth="700"/>
+        <!-- Header -->
+        <HBox alignment="CENTER_LEFT"
+              style="-fx-background-color: linear-gradient(to bottom right, #0e9a82, #0a6b5a);
+                     -fx-padding: 20 25;
+                     -fx-background-radius: 10 10 0 0;">
+            <VBox spacing="3">
+                <Label text="HERRAMIENTA DE GENERACIÓN"
+                       style="-fx-text-fill: rgba(255,255,255,0.6); -fx-font-size: 9px;
+                              -fx-font-weight: bold; -fx-letter-spacing: 1.5;"/>
+                <Label text="GENERAR REPORTE" styleClass="dialog-title"/>
+            </VBox>
+        </HBox>
 
-        <!-- Options panel (right) -->
-        <VBox spacing="20" prefWidth="280"
-              style="-fx-padding: 30; -fx-background-color: #f8fafc; -fx-border-color: #e2e8f0; -fx-border-width: 0 0 0 1;">
+        <!-- Content row: note preview (left) + options panel (right) -->
+        <HBox VBox.vgrow="ALWAYS" spacing="0">
             <children>
-                <Label text="OPCIONES DE GENERACIÓN"
-                       style="-fx-font-weight: bold; -fx-font-size: 13px; -fx-text-fill: #0c8570;"/>
 
-                <CheckBox fx:id="chkPrint" text="Imprimir nota"/>
-                <CheckBox fx:id="chkEmail" text="Enviar por correo" onAction="#handleEmailToggle"/>
-                <VBox fx:id="vboxEmailField" spacing="4" managed="false" visible="false">
-                    <Label text="DESTINATARIO" styleClass="input-label-small"/>
-                    <TextField fx:id="txtEmailRecipient" styleClass="form-input-main"
-                               promptText="email@ues21.edu.ar"/>
+                <WebView fx:id="webPreview" HBox.hgrow="ALWAYS" minWidth="700"
+                         style="-fx-background-color: white;"/>
+
+                <VBox spacing="18" prefWidth="290"
+                      style="-fx-padding: 28 26 26 26;
+                             -fx-background-color: #f8fafc;
+                             -fx-border-color: #e2e8f0;
+                             -fx-border-width: 0 0 0 1;
+                             -fx-background-radius: 0 0 10 0;">
+                    <children>
+
+                        <Label text="OPCIONES DE GENERACIÓN"
+                               style="-fx-font-weight: bold; -fx-font-size: 11px;
+                                      -fx-text-fill: #64748b; -fx-letter-spacing: 1px;"/>
+
+                        <Separator/>
+
+                        <!-- Print -->
+                        <CheckBox fx:id="chkPrint" text="Imprimir nota" selected="true"
+                                  style="-fx-font-size: 13px; -fx-text-fill: #1e293b;"/>
+
+                        <!-- Email -->
+                        <VBox spacing="6">
+                            <CheckBox fx:id="chkEmail" text="Enviar por correo" onAction="#handleEmailToggle"
+                                      style="-fx-font-size: 13px; -fx-text-fill: #1e293b;"/>
+                            <VBox fx:id="vboxEmailField" spacing="4" managed="false" visible="false"
+                                  style="-fx-padding: 0 0 0 24;">
+                                <Label text="DESTINATARIO" styleClass="input-label-small"/>
+                                <TextField fx:id="txtEmailRecipient" styleClass="form-input-main"
+                                           promptText="email@ues21.edu.ar"/>
+                            </VBox>
+                        </VBox>
+
+                        <Region VBox.vgrow="ALWAYS"/>
+
+                        <Label fx:id="lblStatus" text="" wrapText="true"
+                               style="-fx-font-size: 11px;"/>
+
+                        <Separator/>
+
+                        <HBox spacing="10" alignment="CENTER_RIGHT">
+                            <Button text="Cancelar" onAction="#handleCancel" styleClass="button-secondary"/>
+                            <Button fx:id="btnGenerate" text="Generar" onAction="#handleGenerate"
+                                    styleClass="button-primary-large" disable="true"/>
+                        </HBox>
+
+                    </children>
                 </VBox>
 
-                <CheckBox fx:id="chkGlpi" text="Sincronizar con GLPI" disable="true"/>
-                <Label text="(GLPI desconectado)" fx:id="lblGlpiStatus"
-                       style="-fx-font-size: 10px; -fx-text-fill: #94a3b8;"/>
-
-                <Region VBox.vgrow="ALWAYS"/>
-
-                <Label fx:id="lblStatus" text="" wrapText="true"
-                       style="-fx-font-size: 11px;"/>
-
-                <HBox spacing="10" alignment="CENTER_RIGHT">
-                    <Button text="Cancelar" onAction="#handleCancel" styleClass="button-secondary"/>
-                    <Button fx:id="btnGenerate" text="Generar" onAction="#handleGenerate"
-                            styleClass="button-primary-large" disable="true"/>
-                </HBox>
             </children>
-        </VBox>
+        </HBox>
 
     </children>
-</HBox>
+</VBox>
