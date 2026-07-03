@@ -64,7 +64,7 @@ public class NoteDetailController {
         this.onUpdate  = onUpdate;
 
         String date = report.getCreatedAt() != null ? report.getCreatedAt().format(DT_FMT) : "";
-        lblTitle.setText(report.getProfileType() + " — " + date);
+        lblTitle.setText(toDisplayName(report.getProfileType()) + " — " + date);
 
         try {
             String html = GEN_SVC.generateFromStoredReport(report);
@@ -329,5 +329,22 @@ public class NoteDetailController {
         scene.getStylesheets().add(getClass().getResource(
             "/com/bunshock/note_app_for_it_frontend/css/styles.css").toExternalForm());
         return scene;
+    }
+
+    // Mirrors NoteGenerationService.toDisplayName() — duplicated per the no-shared-abstraction
+    // convention, since it's only used to format a value already read from the DB here.
+    private static String toDisplayName(String profileType) {
+        if (profileType == null) return "";
+        return switch (profileType.toUpperCase().trim()) {
+            case "ENTREGA"             -> "Entrega";
+            case "DEVOLUCIÓN"          -> "Devolución";
+            case "DEVOLUCION"          -> "Devolución";
+            case "PRÉSTAMO"            -> "Préstamo";
+            case "PRESTAMO"            -> "Préstamo";
+            case "ENTREGA PERMANENTE"  -> "Fin de contrato";
+            case "FIN DE CONTRATO"     -> "Fin de contrato";
+            case "ENTREGA - PROVEEDOR" -> "Entrega - Proveedor";
+            default                    -> profileType;
+        };
     }
 }

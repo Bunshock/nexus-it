@@ -64,7 +64,7 @@ public class HistoryController {
     private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
 
     private static final List<String> PROFILE_TYPE_OPTIONS = List.of(
-        "Entrega", "Devolución", "Fin de Contrato", "Entrega - Proveedor", "Préstamo", "Recambio");
+        "Entrega", "Devolución", "Fin de Contrato", "Entrega - Proveedor", "Préstamo");
 
     private static final List<String> GLPI_STATUS_LABELS = List.of(
         "Pendiente", "Sincronizado", "Rechazado", "Sin GLPI");
@@ -74,6 +74,17 @@ public class HistoryController {
         "Sincronizado", "SYNCED",
         "Rechazado",    "REJECTED",
         "Sin GLPI",     "N_A");
+
+    // NOTE_REPORT.profile_type is stored raw (see CLAUDE.md), and its raw form differs by how
+    // the row was created: live "Generar Nota" stores the ALL-CAPS ToggleButton text, but
+    // DatabaseService.seedHistoryData()'s demo rows use the nice-cased label directly — so each
+    // filter label must match both forms, not just the one the live UI currently produces.
+    private static final Map<String, List<String>> PROFILE_TYPE_LABEL_TO_RAW = Map.of(
+        "Entrega",             List.of("ENTREGA", "Entrega"),
+        "Devolución",          List.of("DEVOLUCIÓN", "Devolución"),
+        "Fin de Contrato",     List.of("ENTREGA PERMANENTE", "FIN DE CONTRATO", "Fin de Contrato"),
+        "Préstamo",            List.of("PRÉSTAMO", "Préstamo"),
+        "Entrega - Proveedor", List.of("ENTREGA - PROVEEDOR", "Entrega - Proveedor"));
 
     private final Set<String> selProfileTypes = new LinkedHashSet<>();
     private final Set<String> selGlpiStatuses = new LinkedHashSet<>();
@@ -227,7 +238,7 @@ public class HistoryController {
         HistoryFilter f = new HistoryFilter();
         f.setFromDate(dpFrom.getValue());
         f.setToDate(dpTo.getValue());
-        if (!selProfileTypes.isEmpty()) f.setProfileTypes(new ArrayList<>(selProfileTypes));
+        if (!selProfileTypes.isEmpty()) f.setProfileTypes(expandProfileTypeLabels(selProfileTypes));
         if (!selGlpiStatuses.isEmpty()) {
             f.setGlpiStatuses(selGlpiStatuses.stream()
                 .map(GLPI_LABEL_TO_CODE::get)
@@ -240,6 +251,12 @@ public class HistoryController {
         if (!selItemBrands.isEmpty()) f.setItemBrands(new ArrayList<>(selItemBrands));
         if (!selItemModels.isEmpty()) f.setItemModels(new ArrayList<>(selItemModels));
         return f;
+    }
+
+    private static List<String> expandProfileTypeLabels(Set<String> labels) {
+        return labels.stream()
+            .flatMap(label -> PROFILE_TYPE_LABEL_TO_RAW.getOrDefault(label, List.of(label)).stream())
+            .toList();
     }
 
     // ── Table setup ───────────────────────────────────────────────────────────
@@ -255,7 +272,7 @@ public class HistoryController {
         colGDate.setCellValueFactory(d ->
             new SimpleStringProperty(d.getValue().getCreatedAt().format(FMT)));
         colGProfile.setCellValueFactory(d ->
-            new SimpleStringProperty(d.getValue().getProfileType()));
+            new SimpleStringProperty(toDisplayName(d.getValue().getProfileType())));
         colGRecipient.setCellValueFactory(d ->
             new SimpleStringProperty(orEmpty(d.getValue().getRecipientDisplay())));
         colGAuthor.setCellValueFactory(d ->
@@ -371,7 +388,7 @@ public class HistoryController {
             for (NoteReport r : data) {
                 pw.println(String.join(",",
                     csvEscape(r.getCreatedAt().format(FMT)),
-                    csvEscape(r.getProfileType()),
+                    csvEscape(toDisplayName(r.getProfileType())),
                     csvEscape(orEmpty(r.getRecipientDisplay())),
                     csvEscape(orEmpty(r.getAuthorName())),
                     csvEscape(glpiStatusLabel(r))));
@@ -415,7 +432,7 @@ public class HistoryController {
                 NoteReport r = data.get(i);
                 Row row = sheet.createRow(i + 1);
                 row.createCell(0).setCellValue(r.getCreatedAt().format(FMT));
-                row.createCell(1).setCellValue(r.getProfileType());
+                row.createCell(1).setCellValue(toDisplayName(r.getProfileType()));
                 row.createCell(2).setCellValue(orEmpty(r.getRecipientDisplay()));
                 row.createCell(3).setCellValue(orEmpty(r.getAuthorName()));
                 row.createCell(4).setCellValue(glpiStatusLabel(r));
@@ -449,4 +466,21 @@ public class HistoryController {
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private static String orEmpty(String s) { return s != null ? s : ""; }
+
+    // Mirrors NoteGenerationService.toDisplayName() — duplicated per the no-shared-abstraction
+    // convention, since it's only used to format a value already read from the DB here.
+    private static String toDisplayName(String profileType) {
+        if (profileType == null) return "";
+        return switch (profileType.toUpperCase().trim()) {
+            case "ENTREGA"             -> "Entrega";
+            case "DEVOLUCIÓN"          -> "Devolución";
+            case "DEVOLUCION"          -> "Devolución";
+            case "PRÉSTAMO"            -> "Préstamo";
+            case "PRESTAMO"            -> "Préstamo";
+            case "ENTREGA PERMANENTE"  -> "Fin de contrato";
+            case "FIN DE CONTRATO"     -> "Fin de contrato";
+            case "ENTREGA - PROVEEDOR" -> "Entrega - Proveedor";
+            default                    -> profileType;
+        };
+    }
 }
