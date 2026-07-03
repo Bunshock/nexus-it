@@ -11,6 +11,7 @@ import com.bunshock.note_app_for_it_frontend.models.EquipmentBrand;
 import com.bunshock.note_app_for_it_frontend.models.EquipmentModel;
 import com.bunshock.note_app_for_it_frontend.models.EquipmentType;
 import com.bunshock.note_app_for_it_frontend.services.AdminAuthService;
+import com.bunshock.note_app_for_it_frontend.services.AdminSession;
 import com.bunshock.note_app_for_it_frontend.services.DatabaseService;
 import com.bunshock.note_app_for_it_frontend.services.IEquipmentService;
 import com.bunshock.note_app_for_it_frontend.services.RemoteDatabaseService;
@@ -522,6 +523,11 @@ public class DatabaseSectionController {
     // ── Admin auth ────────────────────────────────────────────────────
 
     private void requireAdmin(Runnable action) {
+        if (AdminSession.getInstance().isActive()) {
+            AdminSession.getInstance().refreshActivity();
+            action.run();
+            return;
+        }
         if (!AdminAuthService.isConfigured()) {
             showErrorDialog("Administrador no configurado",
                 "Contacte al desarrollador para configurar el acceso de administrador.");

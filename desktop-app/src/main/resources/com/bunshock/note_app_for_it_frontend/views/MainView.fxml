@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <?import javafx.scene.layout.*?>
 <?import javafx.scene.control.*?>
+<?import javafx.geometry.Insets?>
 <?import javafx.scene.image.Image?>
 <?import javafx.scene.image.ImageView?>
 <?import javafx.scene.shape.Circle?>
@@ -51,10 +52,19 @@
                <children>
                   <Label fx:id="lblWelcome" styleClass="user-welcome"/>
                   <Label fx:id="lblUsername" styleClass="user-username"/>
+                  <Label fx:id="lblAdminIndicator" text="MODO ADMINISTRADOR" maxWidth="Infinity"
+                         visible="false"
+                         style="-fx-background-color: #0e9a82; -fx-text-fill: white;
+                                -fx-font-size: 9px; -fx-font-weight: bold; -fx-letter-spacing: 1.5px;
+                                -fx-padding: 4 0 4 0; -fx-alignment: center;">
+                     <VBox.margin><Insets top="8"/></VBox.margin>
+                  </Label>
                </children>
             </VBox>
 
-            <!-- Top navigation buttons -->
+            <Region VBox.vgrow="ALWAYS" />
+
+            <!-- Main navigation buttons -->
             <ToggleButton text="Generar Nota" fx:id="btnGenerator" toggleGroup="$navigationGroup"
                   maxWidth="Infinity" styleClass="nav-button" selected="true" onAction="#handleShowGenerator"/>
             <ToggleButton text="Historial" fx:id="btnHistory" toggleGroup="$navigationGroup"
@@ -62,9 +72,13 @@
             <ToggleButton text="Base de Datos" fx:id="btnData" toggleGroup="$navigationGroup"
                   maxWidth="Infinity" styleClass="nav-button" onAction="#handleShowDatabase"/>
 
-            <Region VBox.vgrow="ALWAYS" />
+            <!-- Separator -->
+            <Region maxWidth="Infinity"
+                    style="-fx-background-color: rgba(255,255,255,0.15); -fx-min-height: 1; -fx-max-height: 1;">
+               <VBox.margin><Insets left="12" right="12" top="4" bottom="4"/></VBox.margin>
+            </Region>
 
-            <!-- Bottom navigation buttons -->
+            <!-- Secondary navigation buttons -->
             <ToggleButton text="Mi Perfil" fx:id="btnProfile" toggleGroup="$navigationGroup"
                   maxWidth="Infinity" styleClass="nav-button" onAction="#handleShowProfile"/>
             <ToggleButton text="Configuración" fx:id="btnSettings" toggleGroup="$navigationGroup"
