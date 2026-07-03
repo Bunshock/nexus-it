@@ -14,10 +14,15 @@ public class NoteReport {
     private String providerName;
     private String cuit;
     private String motivo;
+    private String failureCause;
+    private String failureDetails;
+    private String responsibleName;
+    private String responsibleDni;
     private List<NoteReportItem> items;
 
     // Populated from JOIN queries — not stored directly in NOTE_REPORT
     private String authorName;
+    private String authorDni;
     private String recipientDisplay;
     private int assetItemCount;
     private int pendingItemCount;
@@ -56,11 +61,26 @@ public class NoteReport {
     public String getMotivo() { return motivo; }
     public void setMotivo(String motivo) { this.motivo = motivo; }
 
+    public String getFailureCause() { return failureCause; }
+    public void setFailureCause(String failureCause) { this.failureCause = failureCause; }
+
+    public String getFailureDetails() { return failureDetails; }
+    public void setFailureDetails(String failureDetails) { this.failureDetails = failureDetails; }
+
+    public String getResponsibleName() { return responsibleName; }
+    public void setResponsibleName(String responsibleName) { this.responsibleName = responsibleName; }
+
+    public String getResponsibleDni() { return responsibleDni; }
+    public void setResponsibleDni(String responsibleDni) { this.responsibleDni = responsibleDni; }
+
     public List<NoteReportItem> getItems() { return items; }
     public void setItems(List<NoteReportItem> items) { this.items = items; }
 
     public String getAuthorName() { return authorName; }
     public void setAuthorName(String authorName) { this.authorName = authorName; }
+
+    public String getAuthorDni() { return authorDni; }
+    public void setAuthorDni(String authorDni) { this.authorDni = authorDni; }
 
     public String getRecipientDisplay() { return recipientDisplay; }
     public void setRecipientDisplay(String recipientDisplay) { this.recipientDisplay = recipientDisplay; }

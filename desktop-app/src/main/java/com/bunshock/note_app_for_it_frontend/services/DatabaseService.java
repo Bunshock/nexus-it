@@ -37,9 +37,30 @@ public class DatabaseService {
             createHistoryTables(stmt);
             createTechnicianTable(stmt);
             createSettingsTable(stmt);
+            migrateSchema(stmt);
             insertDefaultData(stmt);
             seedEquipmentData(conn);
             seedHistoryData(conn);
+        }
+    }
+
+    // CREATE TABLE IF NOT EXISTS silently no-ops on a database that already has the
+    // table from an older schema version, so newly added columns never land on disk —
+    // each column added after the initial release must be migrated in here too.
+    private void migrateSchema(Statement stmt) {
+        addColumnIfMissing(stmt, "NOTE_ENTREGA_DEVOLUCION", "failure_cause", "TEXT");
+        addColumnIfMissing(stmt, "NOTE_ENTREGA_DEVOLUCION", "failure_details", "TEXT");
+        addColumnIfMissing(stmt, "NOTE_PROVEEDOR", "responsible_name", "TEXT");
+        addColumnIfMissing(stmt, "NOTE_PROVEEDOR", "responsible_dni", "TEXT");
+        addColumnIfMissing(stmt, "NOTE_REPORT", "technician_name", "TEXT");
+        addColumnIfMissing(stmt, "NOTE_REPORT", "technician_dni", "TEXT");
+    }
+
+    private void addColumnIfMissing(Statement stmt, String table, String column, String type) {
+        try {
+            stmt.executeUpdate("ALTER TABLE " + table + " ADD COLUMN " + column + " " + type);
+        } catch (SQLException alreadyExists) {
+            // column already present from a prior run — nothing to do
         }
     }
 
@@ -85,27 +106,33 @@ public class DatabaseService {
     private void createHistoryTables(Statement stmt) throws SQLException {
         stmt.executeUpdate("""
             CREATE TABLE IF NOT EXISTS NOTE_REPORT (
-                id            INTEGER PRIMARY KEY AUTOINCREMENT,
-                created_at    TEXT NOT NULL,
-                profile_type  TEXT NOT NULL,
-                technician_id INTEGER REFERENCES TECHNICIAN_PROFILE(id)
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at      TEXT NOT NULL,
+                profile_type    TEXT NOT NULL,
+                technician_id   INTEGER REFERENCES TECHNICIAN_PROFILE(id),
+                technician_name TEXT,
+                technician_dni  TEXT
             )""");
 
         stmt.executeUpdate("""
             CREATE TABLE IF NOT EXISTS NOTE_ENTREGA_DEVOLUCION (
-                note_report_id INTEGER PRIMARY KEY REFERENCES NOTE_REPORT(id),
-                user_name      TEXT,
-                user_dni       TEXT,
-                user_email     TEXT,
-                motivo         TEXT
+                note_report_id  INTEGER PRIMARY KEY REFERENCES NOTE_REPORT(id),
+                user_name       TEXT,
+                user_dni        TEXT,
+                user_email      TEXT,
+                motivo          TEXT,
+                failure_cause   TEXT,
+                failure_details TEXT
             )""");
 
         stmt.executeUpdate("""
             CREATE TABLE IF NOT EXISTS NOTE_PROVEEDOR (
-                note_report_id  INTEGER PRIMARY KEY REFERENCES NOTE_REPORT(id),
-                provider_name   TEXT,
-                cuit            TEXT,
-                motivo          TEXT
+                note_report_id   INTEGER PRIMARY KEY REFERENCES NOTE_REPORT(id),
+                provider_name    TEXT,
+                cuit             TEXT,
+                motivo           TEXT,
+                responsible_name TEXT,
+                responsible_dni  TEXT
             )""");
 
         stmt.executeUpdate("""

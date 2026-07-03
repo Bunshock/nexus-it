@@ -168,8 +168,20 @@
 
             /* --- Signature Section (Fixed at Bottom) --- */
 
-            .signature-section {
+            .signature-row {
+                display: flex;
+                justify-content: space-between;
+                align-items: flex-start;
+                gap: 20px;
                 margin-top: 10px;
+            }
+
+            .signature-section {
+                width: 48%;
+            }
+
+            .signature-section .outro-text {
+                margin-bottom: 5px;
             }
 
             .signature-box {
@@ -220,13 +232,16 @@
                         <div class="template-name">{{TEMPLATE_NAME}}</div>
                     </div>
 
-                    <div class="header-right">{{FECHA}}</div>
+                    <div class="header-right">{{DATE}}</div>
                 </div>
 
                 <div class="intro-text">
                     <p>
                         En la sede Campus de la Universidad Siglo 21, en el día de la fecha, el área de Soporte IT
-                        realiza la entrega a <strong>{{NOMBRE}}</strong>, DNI: <strong>{{DNI}}</strong> el siguiente equipamiento:
+                        realiza la entrega a <strong>{{NAME}}</strong>, DNI: <strong>{{DNI}}</strong> el siguiente equipamiento:
+                    </p>
+                    <p>
+                        <strong>Motivo:</strong> {{REASON}}
                     </p>
                 </div>
 
@@ -242,7 +257,7 @@
 
                         <div class="item-property"><span class="item-label">N° Serie:</span> {{SERIAL}}</div>
 
-                        <div class="item-property"><span class="item-label">N° Activo Fijo:</span> {{ACTIVOFIJO}}</div>
+                        <div class="item-property"><span class="item-label">N° Activo Fijo:</span> {{ASSET_TAG}}</div>
 
                         <div class="item-property"><span class="item-label">Detalles:</span> {{DETAILS}}</div>
                     </div>
@@ -252,7 +267,7 @@
 
                 <div class="outro-text">
                     <p>
-                        <strong>Observaciones</strong> : {{OBSERVACIONES}}
+                        <strong>Observaciones</strong> : {{OBSERVATIONS}}
                     </p>
                 </div>
 
@@ -274,15 +289,36 @@
                 <div class="section-separator"></div>
             </div>
 
-            <div class="signature-section">
-                <div class="signature-box">
-                    <div class="sign-data">
-                        <strong>Firma:</strong> __________________________<br />
-                        <strong>Nombre:</strong> {{NOMBRE}}<br />
-                        <strong>DNI:</strong> {{DNI}}<br />
-                        <strong>Fecha:</strong> {{FECHA}}<br />
+            <div class="signature-row">
+
+                <div class="signature-section">
+                    <div class="outro-text">
+                        <p><b>Recibe:</b></p>
+                    </div>
+                    <div class="signature-box">
+                        <div class="sign-data">
+                            <strong>Firma:</strong> __________________________<br />
+                            <strong>Nombre:</strong> {{NAME}}<br />
+                            <strong>DNI:</strong> {{DNI}}
+                        </div>
                     </div>
                 </div>
+
+                <div class="signature-section">
+                    <div class="outro-text">
+                        <p><b>Técnico responsable:</b></p>
+                    </div>
+                    <div class="signature-box">
+                        <div class="sign-data">
+                            <strong>Firma:</strong> __________________________<br />
+                            <strong>Nombre:</strong> {{TECHNICIAN_NAME}}<br />
+                            <strong>DNI:</strong> {{TECHNICIAN_DNI}}
+                        </div>
+                    </div>
+                </div>
+
+            </div> <div style="margin-top: 20px; font-size: 11pt;">
+                <strong>Fecha:</strong> {{DATE}}
             </div>
         </div>
     </body>

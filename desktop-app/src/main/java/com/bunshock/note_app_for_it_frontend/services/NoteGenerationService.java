@@ -27,40 +27,57 @@ public class NoteGenerationService {
     public String generateUserNote(String profileType,
                                    String userName, String userDni, String userEmail,
                                    String motivo,
+                                   String technicianName, String technicianDni,
+                                   String failureCause, String failureDetails,
                                    List<AssetItem> assets, List<CountableItem> countables,
                                    String observations) throws IOException {
         String template = loadTemplate(resolveTemplateName(profileType));
 
         Map<String, String> tokens = new LinkedHashMap<>();
         tokens.put("TEMPLATE_NAME", toDisplayName(profileType));
-        tokens.put("FECHA", LocalDate.now().format(DATE_FMT));
-        tokens.put("NOMBRE", userName);
+        tokens.put("DATE", LocalDate.now().format(DATE_FMT));
+        tokens.put("NAME", userName);
         tokens.put("DNI", userDni);
         tokens.put("EMAIL", userEmail);
-        tokens.put("MOTIVO", motivo != null ? motivo : "");
-        tokens.put("OBSERVACIONES", observations);
+        tokens.put("REASON", motivo != null ? motivo : "");
+        // Préstamo captures a return date through this same parameter instead of a reason;
+        // only prestamo.html declares this token, so it's harmless for every other template.
+        tokens.put("EXPECTED_RETURN_DATE", motivo != null ? motivo : "");
+        tokens.put("TECHNICIAN_NAME", technicianName);
+        tokens.put("TECHNICIAN_DNI", technicianDni);
+        tokens.put("OBSERVATIONS", observations);
 
-        return engine.render(template, tokens, "ITEMS", buildItemTokensFromLive(assets, countables));
+        Map<String, List<Map<String, String>>> loops = new LinkedHashMap<>();
+        loops.put("ITEMS", buildItemTokensFromLive(assets, countables));
+        loops.put("FAILURE", failureLoop(failureCause, failureDetails));
+
+        return engine.render(template, tokens, loops);
     }
 
     public String generateProviderNote(String providerName, String cuit,
                                        String responsibleName, String responsibleDni,
                                        String motivo,
+                                       String technicianName, String technicianDni,
                                        List<AssetItem> assets, List<CountableItem> countables,
                                        String observations) throws IOException {
         String template = loadTemplate("proveedor.html");
 
         Map<String, String> tokens = new LinkedHashMap<>();
         tokens.put("TEMPLATE_NAME", "Entrega - Proveedor");
-        tokens.put("FECHA", LocalDate.now().format(DATE_FMT));
-        tokens.put("PROVEEDOR", providerName);
+        tokens.put("DATE", LocalDate.now().format(DATE_FMT));
+        tokens.put("COMPANY_NAME", providerName);
         tokens.put("CUIT", cuit);
-        tokens.put("RESPONSABLE", responsibleName);
-        tokens.put("RESPONSABLE_DNI", responsibleDni);
-        tokens.put("MOTIVO", motivo != null ? motivo : "");
-        tokens.put("OBSERVACIONES", observations);
+        tokens.put("RESPONSIBLE_NAME", responsibleName);
+        tokens.put("RESPONSIBLE_DNI", responsibleDni);
+        tokens.put("REASON", motivo != null ? motivo : "");
+        tokens.put("TECHNICIAN_NAME", technicianName);
+        tokens.put("TECHNICIAN_DNI", technicianDni);
+        tokens.put("OBSERVATIONS", observations);
 
-        return engine.render(template, tokens, "ITEMS", buildItemTokensFromLive(assets, countables));
+        Map<String, List<Map<String, String>>> loops = new LinkedHashMap<>();
+        loops.put("ITEMS", buildItemTokensFromLive(assets, countables));
+
+        return engine.render(template, tokens, loops);
     }
 
     /** Re-renders a stored NoteReport back into HTML for the history detail view. */
@@ -72,19 +89,23 @@ public class NoteGenerationService {
 
         String dateStr = report.getCreatedAt() != null
             ? report.getCreatedAt().format(DT_FMT) : "";
+        String motivo = orEmpty(report.getMotivo());
 
         Map<String, String> tokens = new LinkedHashMap<>();
         tokens.put("TEMPLATE_NAME", toDisplayName(report.getProfileType()));
-        tokens.put("FECHA", dateStr);
-        tokens.put("NOMBRE",   orEmpty(report.getUserName()));
-        tokens.put("DNI",      orEmpty(report.getUserDni()));
-        tokens.put("EMAIL",    orEmpty(report.getUserEmail()));
-        tokens.put("MOTIVO",   orEmpty(report.getMotivo()));
-        tokens.put("OBSERVACIONES", "");
-        tokens.put("PROVEEDOR",      orEmpty(report.getProviderName()));
-        tokens.put("CUIT",           orEmpty(report.getCuit()));
-        tokens.put("RESPONSABLE",    orEmpty(report.getUserName()));
-        tokens.put("RESPONSABLE_DNI", orEmpty(report.getUserDni()));
+        tokens.put("DATE", dateStr);
+        tokens.put("NAME",   orEmpty(report.getUserName()));
+        tokens.put("DNI",    orEmpty(report.getUserDni()));
+        tokens.put("EMAIL",  orEmpty(report.getUserEmail()));
+        tokens.put("REASON", motivo);
+        tokens.put("EXPECTED_RETURN_DATE", motivo);
+        tokens.put("TECHNICIAN_NAME", orEmpty(report.getAuthorName()));
+        tokens.put("TECHNICIAN_DNI",  orEmpty(report.getAuthorDni()));
+        tokens.put("OBSERVATIONS", "");
+        tokens.put("COMPANY_NAME", orEmpty(report.getProviderName()));
+        tokens.put("CUIT", orEmpty(report.getCuit()));
+        tokens.put("RESPONSIBLE_NAME", orEmpty(report.getResponsibleName()));
+        tokens.put("RESPONSIBLE_DNI", orEmpty(report.getResponsibleDni()));
 
         List<Map<String, String>> itemTokens = new ArrayList<>();
         if (report.getItems() != null) {
@@ -94,19 +115,30 @@ public class NoteGenerationService {
                 t.put("BRAND",      orEmpty(item.getBrandName()));
                 t.put("MODEL",      orEmpty(item.getModelName()));
                 if (item.isAsset()) {
-                    t.put("SERIAL",      orEmpty(item.getSerialNumber()));
-                    t.put("ACTIVOFIJO",  orEmpty(item.getAf()));
+                    t.put("SERIAL",     orEmpty(item.getSerialNumber()));
+                    t.put("ASSET_TAG",  orEmpty(item.getAf()));
                 } else {
                     int qty = item.getQuantity();
                     t.put("SERIAL",     qty > 1 ? "Cant: " + qty : "");
-                    t.put("ACTIVOFIJO", "");
+                    t.put("ASSET_TAG",  "");
                 }
                 t.put("DETAILS", orEmpty(item.getObservations()));
                 itemTokens.add(t);
             }
         }
 
-        return engine.render(template, tokens, "ITEMS", itemTokens);
+        Map<String, List<Map<String, String>>> loops = new LinkedHashMap<>();
+        loops.put("ITEMS", itemTokens);
+        loops.put("FAILURE", failureLoop(report.getFailureCause(), report.getFailureDetails()));
+
+        return engine.render(template, tokens, loops);
+    }
+
+    private List<Map<String, String>> failureLoop(String failureCause, String failureDetails) {
+        if (failureCause == null || failureCause.isBlank()) return List.of();
+        return List.of(Map.of(
+            "FAILURE_CAUSE", failureCause,
+            "FAILURE_DETAILS", failureDetails != null ? failureDetails : ""));
     }
 
     private List<Map<String, String>> buildItemTokensFromLive(List<AssetItem> assets,
@@ -118,7 +150,7 @@ public class NoteGenerationService {
             t.put("BRAND", a.getBrand().get());
             t.put("MODEL", a.getModel().get());
             t.put("SERIAL", a.getSerial().get());
-            t.put("ACTIVOFIJO", a.getAf().get());
+            t.put("ASSET_TAG", a.getAf().get());
             t.put("DETAILS", a.getObservations().get());
             result.add(t);
         }
@@ -129,7 +161,7 @@ public class NoteGenerationService {
             t.put("MODEL", c.getModel().get());
             int qty = c.getQuantity().get();
             t.put("SERIAL", qty > 1 ? "Cant: " + qty : "");
-            t.put("ACTIVOFIJO", "");
+            t.put("ASSET_TAG", "");
             t.put("DETAILS", c.getObservations().get());
             result.add(t);
         }
@@ -146,7 +178,6 @@ public class NoteGenerationService {
             case "PRESTAMO"            -> "Préstamo";
             case "ENTREGA PERMANENTE"  -> "Fin de contrato";
             case "FIN DE CONTRATO"     -> "Fin de contrato";
-            case "RECAMBIO"            -> "Recambio";
             case "ENTREGA - PROVEEDOR" -> "Entrega - Proveedor";
             default                    -> profileType;
         };
@@ -155,9 +186,10 @@ public class NoteGenerationService {
     private String resolveTemplateName(String profileType) {
         if (profileType == null) return "entrega.html";
         return switch (profileType.toUpperCase()) {
-            case "DEVOLUCIÓN"      -> "devolucion.html";
-            case "FIN DE CONTRATO" -> "entrega - fin de contrato.html";
-            default                -> "entrega.html";
+            case "DEVOLUCIÓN", "DEVOLUCION"               -> "devolucion.html";
+            case "ENTREGA PERMANENTE", "FIN DE CONTRATO"  -> "entrega - fin de contrato.html";
+            case "PRÉSTAMO", "PRESTAMO"                   -> "prestamo.html";
+            default                                       -> "entrega.html";
         };
     }
 

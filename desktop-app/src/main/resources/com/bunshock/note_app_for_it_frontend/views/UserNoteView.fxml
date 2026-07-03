@@ -80,7 +80,7 @@
                 </HBox>
                 <HBox spacing="6" alignment="CENTER_LEFT" style="-fx-padding: 2 0 6 0;">
                     <children>
-                        <Button text="Buscar en AD" onAction="#handleADSearch" styleClass="button-primary"/>
+                        <Button fx:id="btnBuscarAD" text="Buscar en AD" onAction="#handleADSearch" styleClass="button-primary"/>
                         <Button text="Limpiar" onAction="#handleClearUserFields" styleClass="button-secondary"/>
                     </children>
                 </HBox>

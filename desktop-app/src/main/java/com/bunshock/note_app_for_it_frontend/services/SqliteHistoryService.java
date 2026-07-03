@@ -18,7 +18,8 @@ public class SqliteHistoryService implements IHistoryService {
 
     private static final String LIST_BASE_SQL = """
         SELECT r.id, r.created_at, r.profile_type, r.technician_id,
-               tp.name AS author_name,
+               COALESCE(r.technician_name, tp.name) AS author_name,
+               COALESCE(r.technician_dni, tp.dni) AS author_dni,
                COALESCE(e.user_name, p.provider_name, '') AS recipient,
                SUM(CASE WHEN i.is_asset = 1 AND i.glpi_status = 'PENDING'  THEN 1 ELSE 0 END) AS pending_count,
                SUM(CASE WHEN i.is_asset = 1 AND i.glpi_status = 'SYNCED'   THEN 1 ELSE 0 END) AS synced_count,
@@ -66,43 +67,44 @@ public class SqliteHistoryService implements IHistoryService {
     }
 
     private int insertReport(Connection c, NoteReport report) throws SQLException {
-        Integer techId = lookupTechnicianId(c);
         PreparedStatement ps = c.prepareStatement(
-            "INSERT INTO NOTE_REPORT (created_at, profile_type, technician_id) VALUES (?, ?, ?)",
+            "INSERT INTO NOTE_REPORT (created_at, profile_type, technician_name, technician_dni) VALUES (?, ?, ?, ?)",
             PreparedStatement.RETURN_GENERATED_KEYS);
         ps.setString(1, report.getCreatedAt().toString());
         ps.setString(2, report.getProfileType());
-        if (techId != null) ps.setInt(3, techId); else ps.setNull(3, java.sql.Types.INTEGER);
+        ps.setString(3, report.getAuthorName());
+        ps.setString(4, report.getAuthorDni());
         ps.executeUpdate();
         return ps.getGeneratedKeys().getInt(1);
     }
 
-    private Integer lookupTechnicianId(Connection c) {
-        try (PreparedStatement ps = c.prepareStatement(
-                 "SELECT id FROM TECHNICIAN_PROFILE WHERE windows_username = ?")) {
-            ps.setString(1, System.getProperty("user.name", ""));
-            ResultSet rs = ps.executeQuery();
-            return rs.next() ? rs.getInt(1) : null;
-        } catch (SQLException ignored) { return null; }
-    }
-
     private void insertProfileDetail(Connection c, int reportId, NoteReport report) throws SQLException {
         if (report.getProviderName() != null) {
-            PreparedStatement ps = c.prepareStatement(
-                "INSERT INTO NOTE_PROVEEDOR (note_report_id, provider_name, cuit, motivo) VALUES (?, ?, ?, ?)");
+            PreparedStatement ps = c.prepareStatement("""
+                INSERT INTO NOTE_PROVEEDOR
+                    (note_report_id, provider_name, cuit, motivo, responsible_name, responsible_dni)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """);
             ps.setInt(1, reportId);
             ps.setString(2, report.getProviderName());
             ps.setString(3, report.getCuit());
             ps.setString(4, report.getMotivo());
+            ps.setString(5, report.getResponsibleName());
+            ps.setString(6, report.getResponsibleDni());
             ps.executeUpdate();
         } else {
-            PreparedStatement ps = c.prepareStatement(
-                "INSERT INTO NOTE_ENTREGA_DEVOLUCION (note_report_id, user_name, user_dni, user_email, motivo) VALUES (?, ?, ?, ?, ?)");
+            PreparedStatement ps = c.prepareStatement("""
+                INSERT INTO NOTE_ENTREGA_DEVOLUCION
+                    (note_report_id, user_name, user_dni, user_email, motivo, failure_cause, failure_details)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """);
             ps.setInt(1, reportId);
             ps.setString(2, report.getUserName());
             ps.setString(3, report.getUserDni());
             ps.setString(4, report.getUserEmail());
             ps.setString(5, report.getMotivo());
+            ps.setString(6, report.getFailureCause());
+            ps.setString(7, report.getFailureDetails());
             ps.executeUpdate();
         }
     }
@@ -283,6 +285,7 @@ public class SqliteHistoryService implements IHistoryService {
         r.setCreatedAt(LocalDateTime.parse(rs.getString("created_at")));
         r.setProfileType(rs.getString("profile_type"));
         r.setAuthorName(rs.getString("author_name"));
+        r.setAuthorDni(rs.getString("author_dni"));
         r.setRecipientDisplay(rs.getString("recipient"));
         r.setAssetItemCount(rs.getInt("asset_count"));
         r.setPendingItemCount(rs.getInt("pending_count"));
@@ -295,13 +298,18 @@ public class SqliteHistoryService implements IHistoryService {
     public NoteReport getById(int id) {
         String sql = """
             SELECT r.id, r.created_at, r.profile_type,
-                   tp.name AS author_name,
+                   COALESCE(r.technician_name, tp.name) AS author_name,
+                   COALESCE(r.technician_dni, tp.dni) AS author_dni,
                    COALESCE(e.user_name, '')    AS user_name,
                    COALESCE(e.user_dni, '')     AS user_dni,
                    COALESCE(e.user_email, '')   AS user_email,
                    COALESCE(e.motivo, p.motivo, '') AS motivo,
+                   COALESCE(e.failure_cause, '')   AS failure_cause,
+                   COALESCE(e.failure_details, '') AS failure_details,
                    COALESCE(p.provider_name, '') AS provider_name,
-                   COALESCE(p.cuit, '')          AS cuit
+                   COALESCE(p.cuit, '')          AS cuit,
+                   COALESCE(p.responsible_name, '') AS responsible_name,
+                   COALESCE(p.responsible_dni, '')  AS responsible_dni
             FROM NOTE_REPORT r
             LEFT JOIN TECHNICIAN_PROFILE      tp ON tp.id            = r.technician_id
             LEFT JOIN NOTE_ENTREGA_DEVOLUCION  e ON e.note_report_id  = r.id
@@ -319,13 +327,18 @@ public class SqliteHistoryService implements IHistoryService {
             r.setCreatedAt(LocalDateTime.parse(rs.getString("created_at")));
             r.setProfileType(rs.getString("profile_type"));
             r.setAuthorName(rs.getString("author_name"));
+            r.setAuthorDni(rs.getString("author_dni"));
             r.setUserName(rs.getString("user_name"));
             r.setUserDni(rs.getString("user_dni"));
             r.setUserEmail(rs.getString("user_email"));
             r.setMotivo(rs.getString("motivo"));
+            r.setFailureCause(rs.getString("failure_cause"));
+            r.setFailureDetails(rs.getString("failure_details"));
             String provName = rs.getString("provider_name");
             r.setProviderName(provName.isBlank() ? null : provName);
             r.setCuit(rs.getString("cuit"));
+            r.setResponsibleName(rs.getString("responsible_name"));
+            r.setResponsibleDni(rs.getString("responsible_dni"));
             r.setRecipientDisplay(provName.isBlank() ? rs.getString("user_name") : provName);
             r.setItems(loadItems(c, id));
             return r;

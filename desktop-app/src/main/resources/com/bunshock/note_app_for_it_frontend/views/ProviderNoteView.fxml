@@ -67,6 +67,7 @@
                                 <TextField fx:id="txtProviderResponsibleDni" styleClass="form-input-main"/>
                             </children>
                         </VBox>
+                        <Label fx:id="lblResponsibleStatus" text="" styleClass="input-label-small"/>
                     </children>
                 </VBox>
             </children>

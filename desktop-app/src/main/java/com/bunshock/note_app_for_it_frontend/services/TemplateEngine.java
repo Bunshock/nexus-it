@@ -13,30 +13,27 @@ public class TemplateEngine {
         Pattern.compile("\\{\\{([\\w]+)\\}\\}");
 
     /**
-     * Renders a template string by replacing {{TOKEN}} placeholders and
-     * expanding {{#LOOP}}...{{/LOOP}} blocks for each item in the provided list.
+     * Renders a template string by replacing {{TOKEN}} placeholders and expanding every
+     * {{#LOOP}}...{{/LOOP}} block found. Each loop key is looked up in {@code loops}; a key
+     * with no entry (or an empty list) expands to nothing, which doubles as a conditional block.
      *
-     * @param template   raw HTML template content
-     * @param tokens     map of token name → replacement value
-     * @param loopKey    the loop block identifier (e.g. "ITEMS")
-     * @param loopItems  list of per-item token maps
+     * @param template raw HTML template content
+     * @param tokens   map of token name → replacement value
+     * @param loops    map of loop key → list of per-item token maps
      */
     public String render(String template, Map<String, String> tokens,
-                         String loopKey, List<Map<String, String>> loopItems) {
-        String result = expandLoop(template, loopKey, loopItems);
+                         Map<String, List<Map<String, String>>> loops) {
+        String result = expandLoops(template, loops);
         result = replaceTokens(result, tokens);
         return result;
     }
 
-    private String expandLoop(String template, String loopKey, List<Map<String, String>> items) {
+    private String expandLoops(String template, Map<String, List<Map<String, String>>> loops) {
         Matcher m = LOOP_PATTERN.matcher(template);
         StringBuffer sb = new StringBuffer();
         while (m.find()) {
-            if (!m.group(1).equals(loopKey)) {
-                m.appendReplacement(sb, Matcher.quoteReplacement(m.group(0)));
-                continue;
-            }
             String block = m.group(2);
+            List<Map<String, String>> items = loops.getOrDefault(m.group(1), List.of());
             StringBuilder expanded = new StringBuilder();
             for (Map<String, String> itemTokens : items) {
                 expanded.append(replaceTokens(block, itemTokens));

@@ -1,11 +1,9 @@
 package com.bunshock.note_app_for_it_frontend.controllers;
 
-import java.util.List;
-
-import com.bunshock.note_app_for_it_frontend.models.ADUser;
 import com.bunshock.note_app_for_it_frontend.services.AdminSession;
 import com.bunshock.note_app_for_it_frontend.services.RemoteDatabaseService;
 import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;
+import com.bunshock.note_app_for_it_frontend.services.TechnicianSessionService;
 import com.bunshock.note_app_for_it_frontend.utils.ViewFactory;
 
 import javafx.application.Platform;
@@ -48,11 +46,10 @@ public class MainController {
     private final ViewFactory viewFactory = new ViewFactory();
 
     public void initialize() {
-        String windowsUser = System.getProperty("user.name");
-        lblUsername.setText("Usuario: " + windowsUser);
-        lblWelcome.setText("Hola, " + extractFirstName(windowsUser) + "!");
+        TechnicianSessionService.getInstance().addOnChangeListener(this::updateWelcomeLabels);
+        updateWelcomeLabels();
+        refreshTechnicianSessionAsync();
 
-        lookupCurrentUserAsync(windowsUser);
         startStatusMonitor();
         showSection(viewFactory.getGeneratorView());
 
@@ -65,17 +62,23 @@ public class MainController {
         AdminSession.getInstance().addOnExpireListener(this::handleAdminExpiry);
     }
 
-    private void lookupCurrentUserAsync(String windowsUser) {
+    private void updateWelcomeLabels() {
+        TechnicianSessionService session = TechnicianSessionService.getInstance();
+        String name = session.getName();
+        String username = session.getUsername();
+        lblWelcome.setText(name != null ? "Hola, " + extractFirstName(name) + "!" : "Hola!");
+        lblUsername.setText(username != null ? "Usuario: " + username : "Perfil no configurado");
+    }
+
+    private void refreshTechnicianSessionAsync() {
         Thread t = new Thread(() -> {
-            try {
-                List<ADUser> results = ServiceLocator.getInstance().getAdService()
-                    .search(null, null, windowsUser);
-                if (!results.isEmpty()) {
-                    String firstName = extractFirstName(results.get(0).getFullName());
-                    Platform.runLater(() -> lblWelcome.setText("Hola, " + firstName + "!"));
-                }
-            } catch (Exception ignored) {}
-        }, "ad-startup-lookup");
+            TechnicianSessionService session = TechnicianSessionService.getInstance();
+            session.refreshFromWindowsSession();
+            if (!session.isResolved()) {
+                Platform.runLater(() -> showWarningNotice("Perfil de técnico no disponible",
+                    session.getLastError() + " Puede reintentar desde Mi Perfil con \"Actualizar Perfil desde AD\"."));
+            }
+        }, "technician-session-startup");
         t.setDaemon(true);
         t.start();
     }
@@ -152,15 +155,32 @@ public class MainController {
     }
 
     private void handleAdminExpiry() {
-        showAdminNotice("Sesión finalizada",
+        showNotice("Sesión finalizada",
             "El modo administrador expiró por inactividad (15 minutos).");
     }
 
-    private void showAdminNotice(String title, String message) {
-        Stage stage = buildDialogStage();
+    private void showNotice(String title, String message) {
+        showDialogNotice(title, message, "#1a1a1a", null);
+    }
 
+    private void showWarningNotice(String title, String message) {
+        showDialogNotice(title, message, "#f59e0b", "⚠");
+    }
+
+    private void showDialogNotice(String title, String message, String accentColor, String icon) {
+        Stage stage = buildDialogStage();
+        centerOnContent(stage);
+
+        HBox titleRow = new HBox(8);
+        titleRow.setAlignment(Pos.CENTER_LEFT);
+        if (icon != null) {
+            Label lblIcon = new Label(icon);
+            lblIcon.setStyle("-fx-font-size: 16px; -fx-text-fill: " + accentColor + ";");
+            titleRow.getChildren().add(lblIcon);
+        }
         Label lblT = new Label(title);
         lblT.getStyleClass().add("section-label");
+        titleRow.getChildren().add(lblT);
 
         Label lblMsg = new Label(message);
         lblMsg.setStyle("-fx-text-fill: #475569; -fx-font-size: 12px;");
@@ -173,8 +193,8 @@ public class MainController {
         HBox buttons = new HBox(btnOk);
         buttons.setAlignment(Pos.CENTER_RIGHT);
 
-        VBox root = buildDialogRoot(360);
-        root.getChildren().addAll(lblT, lblMsg, buttons);
+        VBox root = buildDialogRoot(360, accentColor);
+        root.getChildren().addAll(titleRow, lblMsg, buttons);
 
         Scene scene = buildDialogScene(root);
         scene.setOnKeyPressed(ev -> { if (ev.getCode() == KeyCode.ESCAPE) stage.close(); });
@@ -186,21 +206,31 @@ public class MainController {
         Stage s = new Stage();
         s.initStyle(StageStyle.TRANSPARENT);
         s.initModality(Modality.APPLICATION_MODAL);
-        s.setOpacity(0);
-        s.setOnShown(e -> { s.centerOnScreen(); s.setOpacity(1); });
         return s;
     }
 
-    private VBox buildDialogRoot(double prefWidth) {
+    private void centerOnContent(Stage stage) {
+        stage.setOpacity(0);
+        stage.setOnShown(e -> {
+            javafx.geometry.Bounds b = contentArea.localToScreen(contentArea.getBoundsInLocal());
+            if (b != null) {
+                stage.setX(b.getMinX() + (b.getWidth()  - stage.getWidth())  / 2);
+                stage.setY(b.getMinY() + (b.getHeight() - stage.getHeight()) / 2);
+            }
+            stage.setOpacity(1);
+        });
+    }
+
+    private VBox buildDialogRoot(double prefWidth, String accentColor) {
         VBox root = new VBox(14);
         root.setPrefWidth(prefWidth);
         root.setStyle("""
-            -fx-background-color: #1a1a1a, white;
+            -fx-background-color: %s, white;
             -fx-background-radius: 12, 10;
             -fx-background-insets: 0, 2;
             -fx-padding: 24;
             -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.6), 20, 0, 0, 5);
-            """);
+            """.formatted(accentColor));
         return root;
     }
 

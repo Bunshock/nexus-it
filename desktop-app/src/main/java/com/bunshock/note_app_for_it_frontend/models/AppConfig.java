@@ -10,6 +10,7 @@ public class AppConfig {
 
     public AfFormat afFormat;
     public Map<String, List<String>> motivoOptions;
+    public List<String> fallaOptions;
     public SmtpConfig smtp;
     public ApiEndpoint adApi;
     public ApiEndpoint glpiApi;

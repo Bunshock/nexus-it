@@ -13,35 +13,38 @@
 
         <VBox spacing="10" style="-fx-background-color: white; -fx-background-radius: 10; -fx-padding: 15 20 20 20;">
             <children>
-                <Label text="Estos datos se usan para completar automáticamente los campos del técnico en las notas."
+                <Label text="Estos datos se obtienen automáticamente desde Active Directory a partir de la sesión de Windows y se usan para completar los campos del técnico en las notas. Solo son editables en modo administrador."
+                       wrapText="true"
                        style="-fx-text-fill: #64748b; -fx-font-size: 12px;"/>
 
-                <GridPane hgap="15" vgap="10">
-                    <columnConstraints>
-                        <ColumnConstraints percentWidth="50"/>
-                        <ColumnConstraints percentWidth="25"/>
-                        <ColumnConstraints percentWidth="25"/>
-                    </columnConstraints>
+                <Separator style="-fx-opacity: 0.5;"/>
+
+                <VBox spacing="10" maxWidth="360">
                     <children>
-                        <VBox spacing="2" GridPane.columnIndex="0">
+                        <VBox spacing="2">
                             <Label text="NOMBRE COMPLETO" styleClass="input-label-small"/>
-                            <TextField fx:id="txtProfileName" styleClass="form-input-main"/>
+                            <TextField fx:id="txtProfileName" disable="true" styleClass="form-input-main"/>
                         </VBox>
-                        <VBox spacing="2" GridPane.columnIndex="1">
+                        <VBox spacing="2">
+                            <Label text="USERNAME" styleClass="input-label-small"/>
+                            <TextField fx:id="txtProfileUsername" disable="true" styleClass="form-input-main"/>
+                        </VBox>
+                        <VBox spacing="2">
                             <Label text="DNI" styleClass="input-label-small"/>
-                            <TextField fx:id="txtProfileDni" styleClass="form-input-main"/>
+                            <TextField fx:id="txtProfileDni" disable="true" styleClass="form-input-main"/>
                         </VBox>
-                        <VBox spacing="2" GridPane.columnIndex="2">
+                        <VBox spacing="2">
                             <Label text="EMAIL" styleClass="input-label-small"/>
-                            <TextField fx:id="txtProfileEmail" styleClass="form-input-main"/>
+                            <TextField fx:id="txtProfileEmail" disable="true" styleClass="form-input-main"/>
                         </VBox>
                     </children>
-                </GridPane>
+                </VBox>
 
-                <HBox alignment="CENTER_RIGHT" spacing="10">
+                <HBox alignment="CENTER_LEFT" spacing="10">
                     <Label fx:id="lblProfileStatus" text="" style="-fx-font-size: 11px;"/>
                     <Region HBox.hgrow="ALWAYS"/>
-                    <Button text="Guardar" onAction="#handleSave" styleClass="button-primary"/>
+                    <Button fx:id="btnRefreshFromAd" text="Actualizar Perfil desde AD" onAction="#handleRefreshFromAd" styleClass="button-secondary"/>
+                    <Button fx:id="btnSave" text="Guardar" onAction="#handleSave" styleClass="button-primary" visible="false" managed="false"/>
                 </HBox>
             </children>
         </VBox>

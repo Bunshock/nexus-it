@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?import javafx.scene.layout.*?>
+<?import javafx.scene.control.*?>
+<?import javafx.geometry.Insets?>
+
+<VBox prefWidth="440.0" spacing="0" style="-fx-background-color: white; -fx-border-color: #cbd5e1; -fx-border-width: 1;"
+      stylesheets="/com/bunshock/note_app_for_it_frontend/css/styles.css"
+      xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1"
+      fx:controller="com.bunshock.note_app_for_it_frontend.controllers.FailureDetailController">
+
+    <children>
+        <VBox alignment="CENTER_LEFT" prefHeight="60.0" styleClass="ad-header-gradient">
+            <children>
+                <HBox alignment="CENTER_LEFT" spacing="12">
+                    <children>
+                        <Label text="⚠" style="-fx-font-size: 22px;"/>
+                        <Label text="Detalles de Falla" styleClass="ad-header-title"/>
+                    </children>
+                </HBox>
+            </children>
+        </VBox>
+
+        <VBox spacing="14" style="-fx-padding: 20;">
+            <children>
+                <VBox spacing="2">
+                    <children>
+                        <Label text="CAUSA DE LA FALLA" styleClass="input-label-small"/>
+                        <ComboBox fx:id="cmbFailureCause" promptText="Seleccionar causa..."
+                                  maxWidth="Infinity" styleClass="form-input-main"/>
+                    </children>
+                </VBox>
+
+                <VBox spacing="2">
+                    <children>
+                        <Label text="DETALLES" styleClass="input-label-small"/>
+                        <TextArea fx:id="txtFailureDetails" prefRowCount="4" wrapText="true" styleClass="form-input-main"/>
+                    </children>
+                </VBox>
+
+                <Label fx:id="lblStatus" text="" styleClass="input-label-small"/>
+
+                <HBox alignment="CENTER_RIGHT" spacing="12">
+                    <children>
+                        <Button fx:id="btnCancel" text="Cancelar" onAction="#handleCancel" styleClass="button-secondary"/>
+                        <Button fx:id="btnSave" text="Guardar" onAction="#handleSave" styleClass="button-primary"/>
+                    </children>
+                </HBox>
+            </children>
+        </VBox>
+    </children>
+</VBox>

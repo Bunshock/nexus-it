@@ -15,13 +15,13 @@ class TemplateEngineTest {
     @Test
     void replacesSimpleTokens() {
         String template = "Hola {{NOMBRE}}, DNI: {{DNI}}";
-        String result = engine.render(template, Map.of("NOMBRE", "Juan", "DNI", "12345678"), "ITEMS", List.of());
+        String result = engine.render(template, Map.of("NOMBRE", "Juan", "DNI", "12345678"), Map.of());
         assertEquals("Hola Juan, DNI: 12345678", result);
     }
 
     @Test
     void leavesUnknownTokensEmpty() {
-        String result = engine.render("{{UNKNOWN}}", Map.of(), "ITEMS", List.of());
+        String result = engine.render("{{UNKNOWN}}", Map.of(), Map.of());
         assertEquals("", result);
     }
 
@@ -32,14 +32,21 @@ class TemplateEngineTest {
             Map.of("TYPE", "Notebook"),
             Map.of("TYPE", "Monitor")
         );
-        String result = engine.render(template, Map.of(), "ITEMS", items);
+        String result = engine.render(template, Map.of(), Map.of("ITEMS", items));
         assertEquals("<p>Notebook</p><p>Monitor</p>", result);
     }
 
     @Test
     void emptyLoopProducesNoOutput() {
         String template = "Before{{#ITEMS}}<p>{{TYPE}}</p>{{/ITEMS}}After";
-        String result = engine.render(template, Map.of(), "ITEMS", List.of());
+        String result = engine.render(template, Map.of(), Map.of("ITEMS", List.of()));
+        assertEquals("BeforeAfter", result);
+    }
+
+    @Test
+    void loopWithNoMatchingEntryProducesNoOutput() {
+        String template = "Before{{#ITEMS}}<p>{{TYPE}}</p>{{/ITEMS}}After";
+        String result = engine.render(template, Map.of(), Map.of());
         assertEquals("BeforeAfter", result);
     }
 
@@ -48,8 +55,24 @@ class TemplateEngineTest {
         String template = "{{NOMBRE}}{{#ITEMS}}-{{TYPE}}{{/ITEMS}}";
         String result = engine.render(template,
             Map.of("NOMBRE", "Test"),
-            "ITEMS",
-            List.of(Map.of("TYPE", "A"), Map.of("TYPE", "B")));
+            Map.of("ITEMS", List.of(Map.of("TYPE", "A"), Map.of("TYPE", "B"))));
         assertEquals("Test-A-B", result);
+    }
+
+    @Test
+    void multipleIndependentLoopsExpandSeparately() {
+        String template = "{{#ITEMS}}<i>{{TYPE}}</i>{{/ITEMS}}{{#FAILURE}}<f>{{FAILURE_CAUSE}}</f>{{/FAILURE}}";
+        String result = engine.render(template, Map.of(), Map.of(
+            "ITEMS", List.of(Map.of("TYPE", "Notebook")),
+            "FAILURE", List.of(Map.of("FAILURE_CAUSE", "No enciende"))));
+        assertEquals("<i>Notebook</i><f>No enciende</f>", result);
+    }
+
+    @Test
+    void conditionalBlockHiddenWhenLoopOmitted() {
+        String template = "Before{{#FAILURE}}<p>{{FAILURE_CAUSE}}</p>{{/FAILURE}}After";
+        String result = engine.render(template, Map.of(),
+            Map.of("ITEMS", List.of(Map.of("TYPE", "Notebook"))));
+        assertEquals("BeforeAfter", result);
     }
 }

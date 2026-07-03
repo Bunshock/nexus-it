@@ -236,13 +236,16 @@
                         <div class="template-name">{{TEMPLATE_NAME}}</div>
                     </div>
 
-                    <div class="header-right">{{FECHA}}</div>
+                    <div class="header-right">{{DATE}}</div>
                 </div>
 
                 <div class="intro-text">
                     <p>
                         En la sede Campus de la Universidad Siglo 21, en el día de la fecha, el área de Soporte IT
-                        realiza la entrega a <strong>{{EMPRESA}}</strong> del siguiente equipamiento (Motivo: {{MOTIVO}}):
+                        realiza la entrega a <strong>{{COMPANY_NAME}}</strong>, CUIT: <strong>{{CUIT}}</strong> del siguiente equipamiento:
+                    </p>
+                    <p>
+                        <strong>Motivo:</strong> {{REASON}}
                     </p>
                 </div>
 
@@ -258,7 +261,7 @@
 
                         <div class="item-property"><span class="item-label">N° Serie:</span> {{SERIAL}}</div>
 
-                        <div class="item-property"><span class="item-label">N° Activo Fijo:</span> {{ACTIVOFIJO}}</div>
+                        <div class="item-property"><span class="item-label">N° Activo Fijo:</span> {{ASSET_TAG}}</div>
 
                         <div class="item-property"><span class="item-label">Detalles:</span> {{DETAILS}}</div>
                     </div>
@@ -269,7 +272,7 @@
                 <div class="outro-text">
                     <p>
                         No siendo para más se da por finalizada la nota, firmando al pie la recepción conforme de los
-                        componentes. Se confeccionan dos copias, una para el representante de {{EMPRESA}} y otra para el área responsable.
+                        componentes. Se confeccionan dos copias, una para el representante de {{COMPANY_NAME}} y otra para el área responsable.
                         Para consultas generales, por favor comunicarse vía mail: <strong>soporteit@ues21.edu.ar</strong>
                     </p>
                 </div>
@@ -281,32 +284,32 @@
 
                 <div class="signature-section">
                     <div class="outro-text">
-                        <p><b>Responsable de la entrega:</b></p>
+                        <p><b>Recibe por parte del proveedor:</b></p>
                     </div>
                     <div class="signature-box">
                         <div class="sign-data">
                             <strong>Firma:</strong> __________________________<br />
-                            <strong>Nombre:</strong> {{NOMBRE_RESPONSABLE}}<br />
-                            <strong>DNI:</strong> {{DNI_RESPONSABLE}}
+                            <strong>Nombre:</strong> {{RESPONSIBLE_NAME}}<br />
+                            <strong>DNI:</strong> {{RESPONSIBLE_DNI}}
                         </div>
                     </div>
                 </div>
 
                 <div class="signature-section">
                     <div class="outro-text">
-                        <p><b>Representante de <strong>{{EMPRESA}}</strong>:</b></p>
+                        <p><b>Técnico responsable:</b></p>
                     </div>
                     <div class="signature-box">
                         <div class="sign-data">
                             <strong>Firma:</strong> __________________________<br />
-                            <strong>Nombre:</strong> <br />
-                            <strong>DNI:</strong> 
+                            <strong>Nombre:</strong> {{TECHNICIAN_NAME}}<br />
+                            <strong>DNI:</strong> {{TECHNICIAN_DNI}}
                         </div>
                     </div>
                 </div>
 
             </div> <div style="margin-top: 20px; font-size: 11pt;">
-                <strong>Fecha:</strong> {{FECHA}}
+                <strong>Fecha:</strong> {{DATE}}
             </div>
             
         </div>

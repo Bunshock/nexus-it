@@ -5,6 +5,7 @@ import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.regex.Pattern;
 
 import com.bunshock.note_app_for_it_frontend.models.ADUser;
 import com.bunshock.note_app_for_it_frontend.services.ConfigService;
@@ -18,18 +19,26 @@ import javafx.fxml.FXML;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
+import javafx.scene.control.Button;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.DatePicker;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextField;
+import javafx.scene.control.TextFormatter;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.ToggleGroup;
 import javafx.scene.layout.VBox;
 import javafx.stage.Modality;
 import javafx.stage.Stage;
+import javafx.stage.StageStyle;
 import javafx.util.Duration;
 
 public class UserNoteController {
+
+    private static final Pattern NAME_PATTERN =
+        Pattern.compile("^\\p{L}+( \\p{L}+)*$");
+    private static final Pattern DNI_PATTERN =
+        Pattern.compile("^\\d{7,8}$");
 
     @FXML private ToggleGroup userNoteTypeGroup;
     @FXML private ToggleButton btnTypeEntrega;
@@ -46,10 +55,14 @@ public class UserNoteController {
     @FXML private Label lblFechaTentativaStatus;
 
     @FXML private Label lblADStatus;
+    @FXML private Button btnBuscarAD;
     @FXML private TextField txtUserDni;
     @FXML private TextField txtUserName;
     @FXML private TextField txtUserAccount;
     @FXML private Label lblUserEmail;
+
+    private String failureCause;
+    private String failureDetails;
 
     public void initialize() {
         userNoteTypeGroup.selectedToggleProperty().addListener((obs, oldToggle, newToggle) -> {
@@ -57,8 +70,26 @@ public class UserNoteController {
                 oldToggle.setSelected(true);
                 return;
             }
+            if (newToggle != btnTypeDevolucion) clearFailureDetails();
             updateMotivoVisibility((ToggleButton) newToggle);
         });
+
+        cmbMotivo.valueProperty().addListener((obs, old, motivo) -> {
+            if (btnTypeDevolucion.isSelected() && "Falla".equals(motivo)) {
+                openFailureDetailDialog();
+            } else if (!"Falla".equals(motivo)) {
+                clearFailureDetails();
+            }
+        });
+
+        txtUserName.setTextFormatter(new TextFormatter<>(change -> {
+            String newText = change.getControlNewText();
+            return newText.isEmpty() || newText.matches("[\\p{L} ]*") ? change : null;
+        }));
+        txtUserDni.setTextFormatter(new TextFormatter<>(change -> {
+            String newText = change.getControlNewText();
+            return newText.length() <= 8 && newText.matches("\\d*") ? change : null;
+        }));
 
         loadMotivoOptions("entrega");
         updateMotivoVisibility(btnTypeEntrega);
@@ -118,9 +149,20 @@ public class UserNoteController {
         if (getUserName().isEmpty() || getUserDni().isEmpty()) {
             triggerFeedback("Nombre y DNI son obligatorios", "#ef4444");
             valid = false;
+        } else if (!NAME_PATTERN.matcher(getUserName()).matches()) {
+            triggerFeedback("El nombre solo puede contener letras y espacios simples", "#ef4444");
+            valid = false;
+        } else if (!DNI_PATTERN.matcher(getUserDni()).matches()) {
+            triggerFeedback("El DNI debe tener 7 u 8 dígitos, sin puntos", "#ef4444");
+            valid = false;
         }
         if (!btnTypePrestamo.isSelected() && (getMotivo() == null || getMotivo().isEmpty())) {
             triggerLabelFeedback(lblMotivoStatus, "El motivo es obligatorio", "#ef4444");
+            valid = false;
+        }
+        if (btnTypeDevolucion.isSelected() && "Falla".equals(getMotivo())
+                && (failureCause == null || failureCause.isBlank())) {
+            triggerLabelFeedback(lblMotivoStatus, "Debe completar los detalles de la falla", "#ef4444");
             valid = false;
         }
         if (btnTypePrestamo.isSelected()) {
@@ -150,6 +192,42 @@ public class UserNoteController {
             label.setOpacity(1.0);
         });
         fade.play();
+    }
+
+    public String getFailureCause() { return failureCause; }
+    public String getFailureDetails() { return failureDetails; }
+
+    public void setFailureDetails(String cause, String details) {
+        this.failureCause = cause;
+        this.failureDetails = details;
+    }
+
+    private void clearFailureDetails() {
+        failureCause = null;
+        failureDetails = null;
+    }
+
+    public void onFailureDialogCancelled() {
+        cmbMotivo.getSelectionModel().clearSelection();
+    }
+
+    private void openFailureDetailDialog() {
+        try {
+            FXMLLoader loader = new FXMLLoader(getClass().getResource(
+                "/com/bunshock/note_app_for_it_frontend/views/FailureDetailView.fxml"));
+            Parent root = loader.load();
+            FailureDetailController ctrl = loader.getController();
+            ctrl.setParentController(this);
+            ctrl.prefill(failureCause, failureDetails);
+
+            Stage stage = new Stage();
+            stage.initModality(Modality.APPLICATION_MODAL);
+            stage.setTitle("Detalles de Falla");
+            stage.setScene(new Scene(root));
+            stage.show();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 
     public String getUserDni() { return txtUserDni.getText().trim(); }
@@ -206,9 +284,26 @@ public class UserNoteController {
             ctrl.setResults(results);
 
             Stage stage = new Stage();
+            stage.initStyle(StageStyle.TRANSPARENT);
             stage.initModality(Modality.APPLICATION_MODAL);
-            stage.setTitle("Búsqueda AD - Seleccionar Usuario");
-            stage.setScene(new Scene(root));
+            Scene dialogScene = new Scene(root);
+            dialogScene.setFill(javafx.scene.paint.Color.TRANSPARENT);
+            dialogScene.getStylesheets().add(getClass().getResource(
+                "/com/bunshock/note_app_for_it_frontend/css/styles.css").toExternalForm());
+            stage.setScene(dialogScene);
+
+            // Scene has no fixed size (unlike ItemDialogView), so wait for the layout pass to
+            // finish (onShown) before reading stage width/height, instead of racing it post-show().
+            stage.setOpacity(0);
+            stage.setOnShown(e -> {
+                javafx.geometry.Bounds btn = btnBuscarAD.localToScreen(btnBuscarAD.getBoundsInLocal());
+                javafx.geometry.Rectangle2D screen = javafx.stage.Screen.getPrimary().getVisualBounds();
+                double x = Math.min(btn.getMaxX() + 6, screen.getMaxX() - stage.getWidth());
+                double y = Math.min(btn.getMinY(), screen.getMaxY() - stage.getHeight());
+                stage.setX(Math.max(screen.getMinX(), x));
+                stage.setY(Math.max(screen.getMinY(), y));
+                stage.setOpacity(1);
+            });
             stage.show();
         } catch (IOException e) {
             e.printStackTrace();
@@ -233,7 +328,7 @@ public class UserNoteController {
         fade.play();
     }
 
-    private void highlightFields(String hexColor) {
+    void highlightFields(String hexColor) {
         String style = "-fx-border-color: " + hexColor
             + "; -fx-border-width: 1.5; -fx-border-radius: 4; -fx-background-radius: 4;";
         txtUserDni.setStyle(style);
@@ -255,6 +350,7 @@ public class UserNoteController {
         lblUserEmail.setText("email: ");
         cmbMotivo.getSelectionModel().clearSelection();
         dtpFechaTentativa.setValue(nextWorkingDay());
+        clearFailureDetails();
         resetFieldStyles();
         lblADStatus.setText("");
     }

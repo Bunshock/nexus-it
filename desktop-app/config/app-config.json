@@ -11,6 +11,7 @@
     "proveedor" : [ "Compra", "Garantía", "Reparación", "Otro" ],
     "devolucion" : [ "Fin de préstamo", "Falla", "Fin de contrato", "Otro" ]
   },
+  "fallaOptions" : [ "Pantalla rota", "No enciende", "Daño por líquido", "Batería agotada / no carga", "Falla de software / sistema operativo", "Componente faltante o dañado", "Otro" ],
   "smtp" : {
     "host" : "smtp.gmail.com",
     "port" : 587,

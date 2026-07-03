@@ -1,6 +1,7 @@
 package com.bunshock.note_app_for_it_frontend.controllers;
 
 import java.io.IOException;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
@@ -11,6 +12,7 @@ import com.bunshock.note_app_for_it_frontend.models.NoteReport;
 import com.bunshock.note_app_for_it_frontend.services.ConfigService;
 import com.bunshock.note_app_for_it_frontend.services.NoteGenerationService;
 import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;
+import com.bunshock.note_app_for_it_frontend.services.TechnicianSessionService;
 import com.bunshock.note_app_for_it_frontend.utils.ViewFactory;
 
 import javafx.animation.FadeTransition;
@@ -32,8 +34,11 @@ import javafx.scene.control.TextField;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.ToggleGroup;
 import javafx.scene.control.Tooltip;
+import javafx.scene.input.KeyCode;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.StackPane;
+import javafx.scene.layout.VBox;
+import javafx.scene.paint.Color;
 import javafx.stage.Modality;
 import javafx.stage.Stage;
 import javafx.stage.StageStyle;
@@ -42,7 +47,7 @@ import javafx.util.Duration;
 
 public class NoteGeneratorController {
 
-    @FXML private javafx.scene.layout.VBox rootContainer;
+    @FXML private VBox rootContainer;
     @FXML private ToggleButton btnUserNote;
     @FXML private ToggleButton btnProviderNote;
     @FXML private ToggleGroup typeGroup;
@@ -267,12 +272,22 @@ public class NoteGeneratorController {
     @FXML
     private void handleGenerateNote() {
         try {
+            TechnicianSessionService technician = TechnicianSessionService.getInstance();
+            if (technician.getName() == null || technician.getName().isBlank()
+                    || technician.getDni() == null || technician.getDni().isBlank()) {
+                showMissingTechnicianProfileError();
+                return;
+            }
+
             boolean canGenerate = true;
             if (assetList.isEmpty() && countableList.isEmpty()) {
                 showTableError("Agregue al menos un equipo");
                 canGenerate = false;
             }
             if (isUserNote() && !viewFactory.getUserNoteController().validateAndShowErrors()) {
+                canGenerate = false;
+            }
+            if (!isUserNote() && !viewFactory.getProviderNoteController().validateAndShowErrors()) {
                 canGenerate = false;
             }
             if (!canGenerate) return;
@@ -286,17 +301,24 @@ public class NoteGeneratorController {
                 UserNoteController unc = viewFactory.getUserNoteController();
                 String profileType = unc.getSelectedNoteType();
                 boolean isPrestamo = "PRÉSTAMO".equals(profileType);
+                boolean isDevolucion = "DEVOLUCIÓN".equals(profileType);
                 String motimoOrFecha = isPrestamo ? unc.getFechaTentativa() : unc.getMotivo();
+                String failureCause = isDevolucion ? unc.getFailureCause() : null;
+                String failureDetails = isDevolucion ? unc.getFailureDetails() : null;
                 html = generator.generateUserNote(
                     profileType,
                     unc.getUserName(), unc.getUserDni(), unc.getUserEmail(),
                     motimoOrFecha,
+                    technician.getName(), technician.getDni(),
+                    failureCause, failureDetails,
                     assetList, countableList, getObservations()
                 );
                 report.setUserName(unc.getUserName());
                 report.setUserDni(unc.getUserDni());
                 report.setUserEmail(unc.getUserEmail());
                 report.setMotivo(motimoOrFecha);
+                report.setFailureCause(failureCause);
+                report.setFailureDetails(failureDetails);
                 report.setProfileType(profileType);
             } else {
                 ProviderNoteController pnc = viewFactory.getProviderNoteController();
@@ -304,20 +326,113 @@ public class NoteGeneratorController {
                     pnc.getProviderName(), pnc.getCuit(),
                     pnc.getResponsibleName(), pnc.getResponsibleDni(),
                     pnc.getMotivo(),
+                    technician.getName(), technician.getDni(),
                     assetList, countableList, getObservations()
                 );
                 report.setProviderName(pnc.getProviderName());
                 report.setCuit(pnc.getCuit());
                 report.setMotivo(pnc.getMotivo());
+                report.setResponsibleName(pnc.getResponsibleName());
+                report.setResponsibleDni(pnc.getResponsibleDni());
                 report.setProfileType("Entrega - Proveedor");
             }
 
-            report.setCreatedAt(java.time.LocalDateTime.now());
+            report.setAuthorName(technician.getName());
+            report.setAuthorDni(technician.getDni());
+            report.setCreatedAt(LocalDateTime.now());
             openPreview(html, report.getProfileType(), report);
 
         } catch (Exception e) {
             e.printStackTrace();
         }
+    }
+
+    private void showMissingTechnicianProfileError() {
+        showWarningNotice("Perfil de técnico incompleto",
+            "No se puede generar la nota: no se pudo obtener su nombre y DNI desde Active Directory. "
+            + "Vaya a Mi Perfil y use \"Actualizar Perfil desde AD\", o pídale a un administrador que complete sus datos manualmente. "
+            + "Toda nota debe quedar asociada al técnico que la generó.");
+    }
+
+    private void showWarningNotice(String title, String message) {
+        showDialogNotice(title, message, "#f59e0b", "⚠");
+    }
+
+    private void showDialogNotice(String title, String message, String accentColor, String icon) {
+        Stage stage = buildDialogStage();
+        centerOnContent(stage);
+
+        HBox titleRow = new HBox(8);
+        titleRow.setAlignment(Pos.CENTER_LEFT);
+        if (icon != null) {
+            Label lblIcon = new Label(icon);
+            lblIcon.setStyle("-fx-font-size: 16px; -fx-text-fill: " + accentColor + ";");
+            titleRow.getChildren().add(lblIcon);
+        }
+        Label lblT = new Label(title);
+        lblT.getStyleClass().add("section-label");
+        titleRow.getChildren().add(lblT);
+
+        Label lblMsg = new Label(message);
+        lblMsg.setStyle("-fx-text-fill: #475569; -fx-font-size: 12px;");
+        lblMsg.setWrapText(true);
+
+        Button btnOk = new Button("Aceptar");
+        btnOk.getStyleClass().add("button-primary");
+        btnOk.setOnAction(e -> stage.close());
+
+        HBox buttons = new HBox(btnOk);
+        buttons.setAlignment(Pos.CENTER_RIGHT);
+
+        VBox root = buildDialogRoot(360, accentColor);
+        root.getChildren().addAll(titleRow, lblMsg, buttons);
+
+        Scene scene = buildDialogScene(root);
+        scene.setOnKeyPressed(ev -> { if (ev.getCode() == KeyCode.ESCAPE) stage.close(); });
+        stage.setScene(scene);
+        stage.showAndWait();
+    }
+
+    private Stage buildDialogStage() {
+        Stage s = new Stage();
+        s.initStyle(StageStyle.TRANSPARENT);
+        s.initModality(Modality.APPLICATION_MODAL);
+        return s;
+    }
+
+    private void centerOnContent(Stage stage) {
+        stage.setOpacity(0);
+        stage.setOnShown(e -> {
+            javafx.geometry.Bounds b = rootContainer.localToScreen(rootContainer.getBoundsInLocal());
+            if (b != null) {
+                stage.setX(b.getMinX() + (b.getWidth()  - stage.getWidth())  / 2);
+                stage.setY(b.getMinY() + (b.getHeight() - stage.getHeight()) / 2);
+            }
+            stage.setOpacity(1);
+        });
+    }
+
+    private VBox buildDialogRoot(double prefWidth, String accentColor) {
+        VBox root = new VBox(14);
+        root.setPrefWidth(prefWidth);
+        root.setStyle("""
+            -fx-background-color: %s, white;
+            -fx-background-radius: 12, 10;
+            -fx-background-insets: 0, 2;
+            -fx-padding: 24;
+            -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.6), 20, 0, 0, 5);
+            """.formatted(accentColor));
+        return root;
+    }
+
+    private Scene buildDialogScene(VBox content) {
+        StackPane wrapper = new StackPane(content);
+        wrapper.setStyle("-fx-background-color: transparent; -fx-padding: 20;");
+        Scene scene = new Scene(wrapper);
+        scene.setFill(Color.TRANSPARENT);
+        scene.getStylesheets().add(getClass().getResource(
+            "/com/bunshock/note_app_for_it_frontend/css/styles.css").toExternalForm());
+        return scene;
     }
 
     private boolean checkGlpiAssignments() {

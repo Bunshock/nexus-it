@@ -188,9 +188,21 @@
 
             /* --- Signature Section (Fixed at Bottom) --- */
 
-            .signature-section {
+            .signature-row {
+                display: flex;
+                justify-content: space-between;
+                align-items: flex-start;
+                gap: 20px;
                 margin-top: 10px;
                 margin-bottom: 15px;
+            }
+
+            .signature-section {
+                width: 48%;
+            }
+
+            .signature-section .outro-text {
+                margin-bottom: 5px;
             }
 
             .signature-box {
@@ -248,10 +260,25 @@
                         <div class="template-name">{{TEMPLATE_NAME}}</div>
                     </div>
 
-                    <div class="header-right">{{FECHA}}</div>
+                    <div class="header-right">{{DATE}}</div>
                 </div>
 
                 <div class="spacer-top"></div>
+
+                <div class="outro-text">
+                    <p>
+                        En la sede Campus de la Universidad Siglo 21, en el día de la fecha, el área de Soporte IT
+                        recibe la devolución de parte de <strong>{{NAME}}</strong>, DNI: <strong>{{DNI}}</strong> de los siguientes componentes:
+                    </p>
+                    <p>
+                        <strong>Motivo:</strong> {{REASON}}
+                    </p>
+                    {{#FAILURE}}
+                    <p>
+                        <strong>Detalles de Falla:</strong> {{FAILURE_CAUSE}} — {{FAILURE_DETAILS}}
+                    </p>
+                    {{/FAILURE}}
+                </div>
 
                 <div class="items-list-container">
                     {{#ITEMS}}
@@ -266,7 +293,7 @@
                         <div class="item-value">{{SERIAL}}</div>
 
                         <div class="item-label">N° Activo Fijo:</div>
-                        <div class="item-value">{{ACTIVOFIJO}}</div>
+                        <div class="item-value">{{ASSET_TAG}}</div>
 
                         <div class="item-label">Detalles:</div>
                         <div class="item-value">{{DETAILS}}</div>
@@ -278,7 +305,7 @@
 
                 <div class="outro-text">
                     <p>
-                        <strong>Observaciones</strong> : {{OBSERVACIONES}}
+                        <strong>Observaciones</strong> : {{OBSERVATIONS}}
                     </p>
                 </div>
 
@@ -287,28 +314,38 @@
                 <div class="spacer-bottom"></div>
             </div>
 
-            <div class="signature-section">
-                <div class="signature-box">
-                    <div class="sign-data">
-                        <strong>Firma de quien devuelve:</strong> __________________________<br />
-                        <strong>Nombre:</strong> {{NOMBRE_DEV}}<br />
-                        <strong>DNI:</strong> {{DNI_DEV}}<br />
-                    </div>
-                </div>
-            </div>
+            <div class="signature-row">
 
-            <div class="signature-section">
-                <div class="signature-box">
-                    <div class="sign-data">
-                        <strong>Firma de quien recibe:</strong> __________________________<br />
-                        <strong>Nombre:</strong> {{NOMBRE_REC}}<br />
-                        <strong>DNI:</strong> {{DNI_REC}}<br />
+                <div class="signature-section">
+                    <div class="outro-text">
+                        <p><b>Quien devuelve:</b></p>
+                    </div>
+                    <div class="signature-box">
+                        <div class="sign-data">
+                            <strong>Firma:</strong> __________________________<br />
+                            <strong>Nombre:</strong> {{NAME}}<br />
+                            <strong>DNI:</strong> {{DNI}}
+                        </div>
                     </div>
                 </div>
+
+                <div class="signature-section">
+                    <div class="outro-text">
+                        <p><b>Técnico responsable:</b></p>
+                    </div>
+                    <div class="signature-box">
+                        <div class="sign-data">
+                            <strong>Firma:</strong> __________________________<br />
+                            <strong>Nombre:</strong> {{TECHNICIAN_NAME}}<br />
+                            <strong>DNI:</strong> {{TECHNICIAN_DNI}}
+                        </div>
+                    </div>
+                </div>
+
             </div>
 
             <div class="footer-date-section">
-                <strong>Fecha:</strong> <span>{{FECHA}}</span>
+                <strong>Fecha:</strong> <span>{{DATE}}</span>
             </div>
         
         </div>

@@ -94,26 +94,32 @@ public class RemoteDatabaseService {
                 )""");
             stmt.executeUpdate("""
                 CREATE TABLE IF NOT EXISTS NOTE_REPORT (
-                    id            SERIAL PRIMARY KEY,
-                    created_at    TEXT NOT NULL,
-                    profile_type  TEXT NOT NULL,
-                    glpi_synced   INTEGER NOT NULL DEFAULT 0,
-                    technician_id INTEGER REFERENCES TECHNICIAN_PROFILE(id)
+                    id              SERIAL PRIMARY KEY,
+                    created_at      TEXT NOT NULL,
+                    profile_type    TEXT NOT NULL,
+                    glpi_synced     INTEGER NOT NULL DEFAULT 0,
+                    technician_id   INTEGER REFERENCES TECHNICIAN_PROFILE(id),
+                    technician_name TEXT,
+                    technician_dni  TEXT
                 )""");
             stmt.executeUpdate("""
                 CREATE TABLE IF NOT EXISTS NOTE_ENTREGA_DEVOLUCION (
-                    note_report_id INTEGER PRIMARY KEY REFERENCES NOTE_REPORT(id),
-                    user_name      TEXT,
-                    user_dni       TEXT,
-                    user_email     TEXT,
-                    motivo         TEXT
+                    note_report_id  INTEGER PRIMARY KEY REFERENCES NOTE_REPORT(id),
+                    user_name       TEXT,
+                    user_dni        TEXT,
+                    user_email      TEXT,
+                    motivo          TEXT,
+                    failure_cause   TEXT,
+                    failure_details TEXT
                 )""");
             stmt.executeUpdate("""
                 CREATE TABLE IF NOT EXISTS NOTE_PROVEEDOR (
-                    note_report_id INTEGER PRIMARY KEY REFERENCES NOTE_REPORT(id),
-                    provider_name  TEXT,
-                    cuit           TEXT,
-                    motivo         TEXT
+                    note_report_id   INTEGER PRIMARY KEY REFERENCES NOTE_REPORT(id),
+                    provider_name    TEXT,
+                    cuit             TEXT,
+                    motivo           TEXT,
+                    responsible_name TEXT,
+                    responsible_dni  TEXT
                 )""");
             stmt.executeUpdate("""
                 CREATE TABLE IF NOT EXISTS NOTE_ITEM (
@@ -127,6 +133,15 @@ public class RemoteDatabaseService {
                     quantity      INTEGER NOT NULL DEFAULT 1,
                     observations  TEXT
                 )""");
+
+            // CREATE TABLE IF NOT EXISTS silently no-ops on a database that already has the
+            // table from an older schema version, so columns added later must be migrated here too.
+            stmt.executeUpdate("ALTER TABLE NOTE_ENTREGA_DEVOLUCION ADD COLUMN IF NOT EXISTS failure_cause TEXT");
+            stmt.executeUpdate("ALTER TABLE NOTE_ENTREGA_DEVOLUCION ADD COLUMN IF NOT EXISTS failure_details TEXT");
+            stmt.executeUpdate("ALTER TABLE NOTE_PROVEEDOR ADD COLUMN IF NOT EXISTS responsible_name TEXT");
+            stmt.executeUpdate("ALTER TABLE NOTE_PROVEEDOR ADD COLUMN IF NOT EXISTS responsible_dni TEXT");
+            stmt.executeUpdate("ALTER TABLE NOTE_REPORT ADD COLUMN IF NOT EXISTS technician_name TEXT");
+            stmt.executeUpdate("ALTER TABLE NOTE_REPORT ADD COLUMN IF NOT EXISTS technician_dni TEXT");
         }
     }
 }
