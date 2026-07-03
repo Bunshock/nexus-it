@@ -98,13 +98,11 @@ class CachingServiceTest {
         @Override public int save(NoteReport r) { r.setId(nextId++); store.add(r); return r.getId(); }
         @Override public List<NoteReport> getAll() { return store; }
         @Override public NoteReport getById(int id) { return store.stream().filter(r -> r.getId() == id).findFirst().orElse(null); }
-        @Override public void markGlpiSynced(int id) {}
     }
 
     private static class FailingHistoryService implements com.bunshock.note_app_for_it_frontend.services.IHistoryService {
         @Override public int save(NoteReport r) { throw new RuntimeException("primary down"); }
         @Override public List<NoteReport> getAll() { throw new RuntimeException("primary down"); }
         @Override public NoteReport getById(int id) { throw new RuntimeException("primary down"); }
-        @Override public void markGlpiSynced(int id) { throw new RuntimeException("primary down"); }
     }
 }

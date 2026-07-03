@@ -1,37 +1,126 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <?import javafx.scene.layout.*?>
 <?import javafx.scene.control.*?>
+<?import javafx.geometry.Insets?>
 
-<VBox spacing="20" style="-fx-padding: 30; -fx-background-color: #f4f4f4;"
+<VBox spacing="15" style="-fx-padding: 30; -fx-background-color: #f4f4f4;"
       xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1"
       fx:controller="com.bunshock.note_app_for_it_frontend.controllers.HistoryController">
     <children>
 
-        <HBox alignment="CENTER_LEFT" spacing="15">
-            <Label text="HISTORIAL DE NOTAS" styleClass="section-label"/>
-            <Region HBox.hgrow="ALWAYS"/>
-            <Button text="Actualizar" onAction="#handleRefresh" styleClass="button-secondary"/>
+        <!-- Page title -->
+        <HBox styleClass="page-title-card" alignment="CENTER_LEFT">
+            <Label text="HISTORIAL DE NOTAS" styleClass="page-title"/>
         </HBox>
 
+        <!-- Filter panel -->
+        <VBox spacing="14"
+              style="-fx-background-color: white; -fx-background-radius: 10; -fx-padding: 18 20;">
+            <children>
+
+                <!-- FECHA + NOTA side by side -->
+                <HBox spacing="28">
+
+                    <!-- FECHA -->
+                    <VBox spacing="6">
+                        <Label text="Fecha" styleClass="filter-section-label"/>
+                        <HBox spacing="12">
+                            <VBox spacing="3">
+                                <Label text="DESDE" styleClass="input-label-small"/>
+                                <DatePicker fx:id="dpFrom" promptText="dd/mm/aaaa"
+                                            prefWidth="145" prefHeight="32" styleClass="form-input-filter"/>
+                            </VBox>
+                            <VBox spacing="3">
+                                <Label text="HASTA" styleClass="input-label-small"/>
+                                <DatePicker fx:id="dpTo" promptText="dd/mm/aaaa"
+                                            prefWidth="145" prefHeight="32" styleClass="form-input-filter"/>
+                            </VBox>
+                        </HBox>
+                    </VBox>
+
+                    <!-- NOTA -->
+                    <VBox spacing="6">
+                        <Label text="Nota" styleClass="filter-section-label"/>
+                        <HBox spacing="12">
+                            <VBox spacing="3">
+                                <Label text="TIPO DE NOTA" styleClass="input-label-small"/>
+                                <MenuButton fx:id="mnuProfileType" text="Todas"
+                                            prefWidth="178" prefHeight="32" styleClass="filter-menu-button"/>
+                            </VBox>
+                            <VBox spacing="3">
+                                <Label text="ESTADO GLPI" styleClass="input-label-small"/>
+                                <MenuButton fx:id="mnuGlpiStatus" text="Todas"
+                                            prefWidth="155" prefHeight="32" styleClass="filter-menu-button"/>
+                            </VBox>
+                        </HBox>
+                    </VBox>
+
+                </HBox>
+
+                <!-- EQUIPOS section -->
+                <VBox spacing="6">
+                    <Label text="Equipos" styleClass="filter-section-label"/>
+                    <HBox spacing="12" alignment="BOTTOM_LEFT">
+                        <VBox spacing="3">
+                            <Label text="DESTINATARIO / PROVEEDOR" styleClass="input-label-small"/>
+                            <TextField fx:id="txtRecipientSearch" prefWidth="225" prefHeight="32"
+                                       promptText="Buscar destinatario o proveedor..."
+                                       onAction="#handleSearch"
+                                       styleClass="form-input-filter"/>
+                        </VBox>
+                        <VBox spacing="3">
+                            <Label text="TIPO" styleClass="input-label-small"/>
+                            <MenuButton fx:id="mnuItemType" text="Todos"
+                                        prefWidth="158" prefHeight="32" styleClass="filter-menu-button"/>
+                        </VBox>
+                        <VBox spacing="3">
+                            <Label text="MARCA" styleClass="input-label-small"/>
+                            <MenuButton fx:id="mnuItemBrand" text="Todas"
+                                        prefWidth="158" prefHeight="32" styleClass="filter-menu-button"/>
+                        </VBox>
+                        <VBox spacing="3">
+                            <Label text="MODELO" styleClass="input-label-small"/>
+                            <MenuButton fx:id="mnuItemModel" text="Todos"
+                                        prefWidth="158" prefHeight="32" styleClass="filter-menu-button"/>
+                        </VBox>
+                    </HBox>
+                </VBox>
+
+                <!-- Action buttons: Buscar + Limpiar left | Exportar right -->
+                <HBox spacing="10" alignment="CENTER_LEFT">
+                    <Button text="Buscar" onAction="#handleSearch" styleClass="button-primary" prefHeight="32"/>
+                    <Button text="Limpiar" onAction="#handleClearFilters" styleClass="button-secondary" prefHeight="32"/>
+                    <Region HBox.hgrow="ALWAYS"/>
+                    <MenuButton text="Exportar" prefHeight="32" styleClass="button-primary">
+                        <items>
+                            <MenuItem text="Exportar como CSV (.csv)" onAction="#handleExportCsv"/>
+                            <MenuItem text="Exportar como Excel (.xlsx)" onAction="#handleExportXlsx"/>
+                        </items>
+                    </MenuButton>
+                </HBox>
+
+            </children>
+        </VBox>
+
+        <!-- History table -->
         <VBox VBox.vgrow="ALWAYS"
               style="-fx-background-color: white; -fx-background-radius: 10; -fx-padding: 15 20 20 20;">
-            <children>
-                <TableView fx:id="tblHistory" VBox.vgrow="ALWAYS" styleClass="modern-table">
-                    <placeholder>
-                        <Label text="No hay registros de notas generadas." />
-                    </placeholder>
-                    <columnResizePolicy>
-                        <TableView fx:constant="CONSTRAINED_RESIZE_POLICY"/>
-                    </columnResizePolicy>
-                    <columns>
-                        <TableColumn fx:id="colId" text="ID" prefWidth="50" maxWidth="50"/>
-                        <TableColumn fx:id="colDate" text="FECHA" prefWidth="160" maxWidth="160"/>
-                        <TableColumn fx:id="colProfile" text="PERFIL" prefWidth="180" maxWidth="180"/>
-                        <TableColumn fx:id="colRecipient" text="DESTINATARIO"/>
-                        <TableColumn fx:id="colGlpi" text="GLPI" prefWidth="70" maxWidth="70"/>
-                    </columns>
-                </TableView>
-            </children>
+            <TableView fx:id="tblGlobal" VBox.vgrow="ALWAYS" styleClass="modern-table">
+                <placeholder>
+                    <Label text="No hay registros de notas generadas."/>
+                </placeholder>
+                <columnResizePolicy>
+                    <TableView fx:constant="CONSTRAINED_RESIZE_POLICY"/>
+                </columnResizePolicy>
+                <columns>
+                    <TableColumn fx:id="colGDate"      text="FECHA"        prefWidth="155" maxWidth="155"/>
+                    <TableColumn fx:id="colGProfile"   text="TIPO"         prefWidth="160" maxWidth="160"/>
+                    <TableColumn fx:id="colGRecipient" text="DESTINATARIO"/>
+                    <TableColumn fx:id="colGAuthor"    text="AUTOR"        prefWidth="140" maxWidth="140"/>
+                    <TableColumn fx:id="colGItems"     text="EQUIPOS"      prefWidth="90"  maxWidth="90"/>
+                    <TableColumn fx:id="colGStatus"    text="ESTADO GLPI"  prefWidth="115" maxWidth="115"/>
+                </columns>
+            </TableView>
         </VBox>
 
     </children>

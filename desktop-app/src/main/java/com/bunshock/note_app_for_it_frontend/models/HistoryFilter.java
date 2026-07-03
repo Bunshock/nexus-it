@@ -1,0 +1,47 @@
+package com.bunshock.note_app_for_it_frontend.models;
+
+import java.time.LocalDate;
+import java.util.List;
+
+public class HistoryFilter {
+    private LocalDate   fromDate;
+    private LocalDate   toDate;
+    private List<String> profileTypes;  // null = all
+    private List<String> glpiStatuses;  // null = all; values: PENDING, SYNCED, REJECTED, N_A
+    private String       recipientSearch;
+    private List<String> itemTypes;     // null = all
+    private List<String> itemBrands;    // null = all
+    private List<String> itemModels;    // null = all
+
+    public HistoryFilter() {}
+
+    public static HistoryFilter pendingGlpiSync() {
+        HistoryFilter f = new HistoryFilter();
+        f.glpiStatuses = List.of("PENDING");
+        return f;
+    }
+
+    public LocalDate   getFromDate()       { return fromDate; }
+    public void        setFromDate(LocalDate v)        { fromDate = v; }
+
+    public LocalDate   getToDate()         { return toDate; }
+    public void        setToDate(LocalDate v)          { toDate = v; }
+
+    public List<String> getProfileTypes()  { return profileTypes; }
+    public void         setProfileTypes(List<String> v){ profileTypes = v; }
+
+    public List<String> getGlpiStatuses()  { return glpiStatuses; }
+    public void         setGlpiStatuses(List<String> v){ glpiStatuses = v; }
+
+    public String       getRecipientSearch(){ return recipientSearch; }
+    public void         setRecipientSearch(String v)  { recipientSearch = v; }
+
+    public List<String> getItemTypes()     { return itemTypes; }
+    public void         setItemTypes(List<String> v)  { itemTypes = v; }
+
+    public List<String> getItemBrands()    { return itemBrands; }
+    public void         setItemBrands(List<String> v) { itemBrands = v; }
+
+    public List<String> getItemModels()    { return itemModels; }
+    public void         setItemModels(List<String> v) { itemModels = v; }
+}
