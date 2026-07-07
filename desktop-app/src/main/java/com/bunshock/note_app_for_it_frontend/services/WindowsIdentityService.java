@@ -22,7 +22,10 @@ public class WindowsIdentityService {
         try {
             String upn = Secur32Util.getUserNameEx(Secur32.EXTENDED_NAME_FORMAT.NameUserPrincipal);
             return upn != null && !upn.isBlank() ? upn : null;
-        } catch (Exception notDomainJoined) {
+        } catch (Throwable notDomainJoined) {
+            // Secur32 is a native Windows library — on a non-Windows OS, JNA fails to load it
+            // with an UnsatisfiedLinkError (an Error, not an Exception), so this must catch
+            // Throwable to keep the graceful-degradation contract on non-Windows machines.
             return null;
         }
     }
