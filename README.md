@@ -6,22 +6,26 @@ Desktop application for IT support teams at Universidad Siglo 21 to generate equ
 
 ## Requirements
 
-- Java 21 (JDK)
-- Maven 3.8+
-- Windows (DPAPI used for credential encryption)
+- Java 21 (JDK) — verify with `java -version`
+- Maven 3.8+ — verify with `mvn -version`
+- Windows (DPAPI used for credential encryption). On Linux/macOS the app can be built and run for development, but any DPAPI-backed feature (saving SMTP password, GLPI API key, or remote DB credentials in Settings) will throw at runtime.
+- Git (to clone the repository)
 
 ---
 
 ## Setup
 
 ```bash
-cd desktop-app
+git clone <repository-url>
+cd notes-app-for-it/desktop-app
 
 # First run — creates data/noteapp.db automatically
 mvn clean javafx:run
 ```
 
 > **Always use `mvn clean javafx:run`**, not just `mvn javafx:run`. The IDE (VS Code / Eclipse) can leave stale `.class` files in `target/` that Maven reuses without recompiling, causing runtime errors.
+
+> **Never commit `desktop-app/data/noteapp.db`.** It's a runtime artifact created fresh on first launch and is already listed in `.gitignore`. If your local clone fails on startup with an error like `SQLITE_ERROR ... table NOTE_ITEM has no column named ...`, you likely have a stale database file left over from an old checkout — delete `desktop-app/data/noteapp.db` and re-run `mvn clean javafx:run` to regenerate it.
 
 To run with Kerberos/AD support (for real ADService):
 
