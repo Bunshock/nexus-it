@@ -31,6 +31,8 @@ mvn clean javafx:run
 
 > **`desktop-app/config/app-config.json` is gitignored** — it holds real per-deployment values (internal AD API URL, SMTP sender address) that must never reach git history. `config/app-config.json.example` is the committed template with placeholder values; copy it once per machine and edit the copy. If you pull changes to `app-config.json.example` (new keys), diff it against your local `app-config.json` and merge the new keys in manually.
 
+> **Want AD/SMTP/GLPI/DB already configured on first launch, with nothing to type in Settings?** Fill in `app-config.json`'s `defaults` section before running the app for the first time — see [Pre-configuring default secrets](#pre-configuring-default-secrets-zero-touch-first-run) below.
+
 ---
 
 ## Configuration
