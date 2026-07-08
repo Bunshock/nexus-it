@@ -16,9 +16,9 @@ class AdApiServiceTest {
     private final AdApiService service = AdApiService.getInstance();
     private final ObjectMapper mapper = new ObjectMapper();
 
-    private String extractDni(String json) throws Exception {
+    private String extractString(String json) throws Exception {
         JsonNode node = mapper.readTree(json);
-        Method m = AdApiService.class.getDeclaredMethod("extractDni", JsonNode.class);
+        Method m = AdApiService.class.getDeclaredMethod("extractString", JsonNode.class);
         m.setAccessible(true);
         return (String) m.invoke(null, node);
     }
@@ -130,22 +130,24 @@ class AdApiServiceTest {
     }
 
     @Test
-    void extractDniReadsPlainStringValue() throws Exception {
-        assertEquals("45933368", extractDni("\"45933368\""));
+    void extractStringReadsPlainStringValue() throws Exception {
+        assertEquals("45933368", extractString("\"45933368\""));
     }
 
     @Test
-    void extractDniUsesFirstElementWhenArray() throws Exception {
-        assertEquals("45933368", extractDni("[\"45933368\", \"00000000\"]"));
+    void extractStringUsesFirstElementWhenArray() throws Exception {
+        assertEquals("45933368", extractString("[\"45933368\", \"00000000\"]"));
+        assertEquals("joaquin.rodriguez@ues21.edu.ar",
+            extractString("[\"joaquin.rodriguez@ues21.edu.ar\", \"jrodriguez@ues21.edu.ar\"]"));
     }
 
     @Test
-    void extractDniIsEmptyStringForEmptyArray() throws Exception {
-        assertEquals("", extractDni("[]"));
+    void extractStringIsEmptyStringForEmptyArray() throws Exception {
+        assertEquals("", extractString("[]"));
     }
 
     @Test
-    void extractDniIsNullWhenFieldIsJsonNull() throws Exception {
-        assertNull(extractDni("null"));
+    void extractStringIsNullWhenFieldIsJsonNull() throws Exception {
+        assertNull(extractString("null"));
     }
 }

@@ -61,7 +61,7 @@ public class AdApiService implements IADService {
         for (String d : dniVariants) {
             for (String n : nameVariants) {
                 for (AdApiUserDto dto : query(baseUrl, apiToken, d, n, usernameValue, httpClient, mapper)) {
-                    merged.putIfAbsent(dto.samAccountName, dto);
+                    merged.putIfAbsent(extractString(dto.samAccountName), dto);
                 }
             }
         }
@@ -166,15 +166,18 @@ public class AdApiService implements IADService {
     private static boolean isBlank(String s) { return s == null || s.isBlank(); }
 
     private static ADUser toADUser(AdApiUserDto dto) {
-        return new ADUser(extractDni(dto.dni), dto.displayName, dto.samAccountName, dto.mail, dto.ou);
+        return new ADUser(extractString(dto.dni), extractString(dto.displayName),
+            extractString(dto.samAccountName), extractString(dto.mail), extractString(dto.ou));
     }
 
     /**
-     * Some AD accounts return "dni" as a JSON array instead of a plain string (a multi-valued
-     * directory attribute) — use the first value, or "" if the array is empty. A missing/null
-     * field stays null, same as before this was discovered.
+     * Some AD accounts return one or more fields as a JSON array instead of a plain string
+     * (a multi-valued directory attribute) — confirmed in practice on both "dni" and "mail"
+     * for the same account, so every field on AdApiUserDto is treated this way rather than
+     * assuming only one field can be affected. Uses the first value, or "" if the array is
+     * empty. A missing/null field stays null.
      */
-    private static String extractDni(JsonNode node) {
+    private static String extractString(JsonNode node) {
         if (node == null || node.isNull()) return null;
         if (node.isArray()) return node.size() > 0 ? node.get(0).asText() : "";
         return node.asText();
@@ -182,10 +185,10 @@ public class AdApiService implements IADService {
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     private static class AdApiUserDto {
-        public String samAccountName;
-        public String displayName;
+        public JsonNode samAccountName;
+        public JsonNode displayName;
         public JsonNode dni;
-        public String mail;
-        public String ou;
+        public JsonNode mail;
+        public JsonNode ou;
     }
 }

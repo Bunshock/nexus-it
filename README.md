@@ -113,13 +113,14 @@ Saving tests the connection in the background (using the currently resolved tech
 |-------|---------|-------|
 | `samAccountName` | Username | Matched by `username` query param (partial match) |
 | `displayName` | Full name | Stored/matched as `"Apellido, Nombre(s)"`; matched by `name` query param (partial match) |
-| `dni` | DNI | Matched by `dni` query param; queried both with and without dots (see below). Some accounts return this as a JSON array instead of a plain string (a multi-valued directory attribute) — the app uses the first value in that case |
+| `dni` | DNI | Matched by `dni` query param; queried both with and without dots (see below) |
 | `mail` | Email | Not queried, only returned |
 | `ou` | Organizational unit | Raw DN-style string, shown as-is in the AD multi-result picker popup |
 
 - An empty array `[]` with HTTP `200` means "no matching user" (not an error).
 - HTTP `401` means the token is missing/invalid — the app treats this (and any other non-200 response) as "AD unreachable", distinct from a genuine zero-match search.
 - A `dni` search tries both the plain-digits and dotted forms (grouped by 3 from the right, e.g. `45933368` and `45.933.368`); a `name` search tries the text as typed and a `"<lastWord>, <rest>"` reordering — both are real, separate HTTP calls whose results get merged.
+- **Any of the 5 fields above can come back as a JSON array instead of a plain string** for some accounts (a multi-valued directory attribute — confirmed on both `dni` and `mail` in practice). The app always uses the first value in that case (empty array → empty string).
 
 ### Remote database (PostgreSQL)
 
