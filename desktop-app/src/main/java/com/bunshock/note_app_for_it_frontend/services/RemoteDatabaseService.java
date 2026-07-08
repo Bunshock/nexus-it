@@ -42,7 +42,13 @@ public class RemoteDatabaseService {
 
     public boolean testConnection() {
         if (!isConfigured()) return false;
-        try (Connection c = getConnection()) {
+        return testConnection(host, port, dbName, username, password);
+    }
+
+    public boolean testConnection(String host, int port, String dbName, String username, String password) {
+        if (host == null || host.isBlank()) return false;
+        String url = "jdbc:postgresql://" + host + ":" + port + "/" + dbName;
+        try (Connection c = DriverManager.getConnection(url, username, password)) {
             c.createStatement().execute("SELECT 1");
             return true;
         } catch (Exception e) {

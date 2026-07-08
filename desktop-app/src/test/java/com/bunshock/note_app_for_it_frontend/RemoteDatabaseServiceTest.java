@@ -44,4 +44,19 @@ class RemoteDatabaseServiceTest {
         service.configure(null, 5432, "db", "user", "pass");
         assertThrows(IllegalStateException.class, service::getConnection);
     }
+
+    @Test
+    void testConnectionOverloadFalseForNullHost() {
+        assertFalse(service.testConnection(null, 5432, "db", "user", "pass"));
+    }
+
+    @Test
+    void testConnectionOverloadFalseForBlankHost() {
+        assertFalse(service.testConnection("   ", 5432, "db", "user", "pass"));
+    }
+
+    @Test
+    void testConnectionOverloadFalseForUnreachableHost() {
+        assertFalse(service.testConnection("localhost", 1, "db", "user", "pass"));
+    }
 }

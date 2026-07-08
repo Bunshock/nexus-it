@@ -12,19 +12,35 @@
         </HBox>
 
         <!-- DB connection config -->
-        <VBox spacing="10" style="-fx-background-color: white; -fx-background-radius: 10; -fx-padding: 15 20 20 20;">
+        <VBox spacing="14" style="-fx-background-color: white; -fx-background-radius: 10; -fx-padding: 15 20 20 20;">
             <children>
-                <Label text="CONEXIÓN" styleClass="section-label"/>
-                <HBox spacing="10" alignment="CENTER_LEFT">
-                    <VBox spacing="4" HBox.hgrow="ALWAYS">
-                        <Label text="SERVIDOR" styleClass="input-label-small"/>
-                        <Label fx:id="lblDbServer" text="No configurado"
-                               style="-fx-text-fill: #94a3b8; -fx-font-size: 13px;"/>
-                    </VBox>
+                <HBox alignment="CENTER_LEFT" spacing="10">
+                    <Label text="CONEXIÓN" styleClass="section-label"/>
+                    <Region HBox.hgrow="ALWAYS"/>
                     <Button text="✏ Editar" onAction="#handleEditConnection" styleClass="button-secondary"/>
                     <Button text="Probar conexión" onAction="#handleTestConnection" styleClass="button-primary"/>
                 </HBox>
-                <Label fx:id="lblConnectionStatus" text="" style="-fx-font-size: 11px;"/>
+                <GridPane hgap="14" vgap="8">
+                    <columnConstraints>
+                        <ColumnConstraints minWidth="110"/>
+                        <ColumnConstraints hgrow="ALWAYS"/>
+                    </columnConstraints>
+                    <Label text="SERVIDOR" styleClass="input-label-small"
+                           GridPane.rowIndex="0" GridPane.columnIndex="0"/>
+                    <Label fx:id="lblDbServer" text="No configurado"
+                           style="-fx-text-fill: #94a3b8; -fx-font-size: 13px;"
+                           GridPane.rowIndex="0" GridPane.columnIndex="1"/>
+                    <Label text="BASE DE DATOS" styleClass="input-label-small"
+                           GridPane.rowIndex="1" GridPane.columnIndex="0"/>
+                    <Label fx:id="lblDbName" text="—"
+                           style="-fx-text-fill: #94a3b8; -fx-font-size: 13px;"
+                           GridPane.rowIndex="1" GridPane.columnIndex="1"/>
+                    <Label text="ESTADO" styleClass="input-label-small"
+                           GridPane.rowIndex="2" GridPane.columnIndex="0"/>
+                    <Label fx:id="lblConnectionStatus" text="Sin verificar"
+                           style="-fx-text-fill: #94a3b8; -fx-font-size: 13px;"
+                           GridPane.rowIndex="2" GridPane.columnIndex="1"/>
+                </GridPane>
             </children>
         </VBox>
 

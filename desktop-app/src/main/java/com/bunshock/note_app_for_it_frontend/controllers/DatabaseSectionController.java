@@ -45,6 +45,7 @@ public class DatabaseSectionController {
 
     @FXML private VBox rootContainer;
     @FXML private Label lblDbServer;
+    @FXML private Label lblDbName;
     @FXML private Label lblConnectionStatus;
     @FXML private ListView<EquipmentType>  listTypes;
     @FXML private ListView<EquipmentBrand> listBrands;
@@ -78,12 +79,16 @@ public class DatabaseSectionController {
         if (host == null || host.isBlank()) {
             lblDbServer.setText("No configurado");
             lblDbServer.setStyle("-fx-text-fill: #94a3b8; -fx-font-size: 13px;");
+            lblDbName.setText("—");
+            lblDbName.setStyle("-fx-text-fill: #94a3b8; -fx-font-size: 13px;");
         } else {
-            lblDbServer.setText(host + ":" + (port != null && !port.isBlank() ? port : "5432")
-                + "/" + (name != null ? name : ""));
+            lblDbServer.setText(host + ":" + (port != null && !port.isBlank() ? port : "5432"));
             lblDbServer.setStyle("-fx-text-fill: #334155; -fx-font-size: 13px;");
+            lblDbName.setText(name != null && !name.isBlank() ? name : "—");
+            lblDbName.setStyle("-fx-text-fill: #334155; -fx-font-size: 13px;");
         }
-        lblConnectionStatus.setText("");
+        lblConnectionStatus.setText("Sin verificar");
+        lblConnectionStatus.setStyle("-fx-text-fill: #94a3b8; -fx-font-size: 13px;");
     }
 
     @FXML
@@ -96,19 +101,19 @@ public class DatabaseSectionController {
         RemoteDatabaseService remote = RemoteDatabaseService.getInstance();
         if (remote.isConfigured()) {
             if (remote.testConnection()) {
-                lblConnectionStatus.setStyle("-fx-text-fill: #22c55e; -fx-font-size: 11px;");
+                lblConnectionStatus.setStyle("-fx-text-fill: #22c55e; -fx-font-size: 13px;");
                 lblConnectionStatus.setText("✓ Conexión remota activa");
             } else {
-                lblConnectionStatus.setStyle("-fx-text-fill: #ef4444; -fx-font-size: 11px;");
-                lblConnectionStatus.setText("✗ No se pudo conectar al servidor remoto");
+                lblConnectionStatus.setStyle("-fx-text-fill: #ef4444; -fx-font-size: 13px;");
+                lblConnectionStatus.setText("✗ Servidor remoto configurado no disponible — usando base de datos local");
             }
         } else {
             try (Connection c = DatabaseService.getInstance().getConnection()) {
                 c.createStatement().execute("SELECT 1");
-                lblConnectionStatus.setStyle("-fx-text-fill: #22c55e; -fx-font-size: 11px;");
+                lblConnectionStatus.setStyle("-fx-text-fill: #22c55e; -fx-font-size: 13px;");
                 lblConnectionStatus.setText("✓ Base de datos local activa");
             } catch (Exception e) {
-                lblConnectionStatus.setStyle("-fx-text-fill: #ef4444; -fx-font-size: 11px;");
+                lblConnectionStatus.setStyle("-fx-text-fill: #ef4444; -fx-font-size: 13px;");
                 lblConnectionStatus.setText("✗ Error: " + e.getMessage());
             }
         }
@@ -159,13 +164,52 @@ public class DatabaseSectionController {
         Button btnSave = new Button("Guardar");
         btnSave.getStyleClass().add("button-primary");
         btnSave.setOnAction(e -> {
-            saveSetting("db_host", tfHost.getText().trim());
-            saveSetting("db_port", tfPort.getText().trim().isEmpty() ? "5432" : tfPort.getText().trim());
-            saveSetting("db_name", tfName.getText().trim());
-            saveEncryptedSetting("db_username", tfUser.getText().trim());
-            saveEncryptedSetting("db_password", pfPass.getText());
-            loadConnectionDisplay();
-            stage.close();
+            String host   = tfHost.getText().trim();
+            String portStr = tfPort.getText().trim().isEmpty() ? "5432" : tfPort.getText().trim();
+            String name   = tfName.getText().trim();
+            String user   = tfUser.getText().trim();
+            String pass   = pfPass.getText();
+
+            Runnable persistAndClose = () -> {
+                saveSetting("db_host", host);
+                saveSetting("db_port", portStr);
+                saveSetting("db_name", name);
+                saveEncryptedSetting("db_username", user);
+                saveEncryptedSetting("db_password", pass);
+                int configuredPort;
+                try { configuredPort = Integer.parseInt(portStr); }
+                catch (NumberFormatException nfe) { configuredPort = 5432; }
+                RemoteDatabaseService.getInstance().configure(host, configuredPort, name, user, pass);
+                loadConnectionDisplay();
+                stage.close();
+            };
+
+            if (host.isEmpty()) {
+                persistAndClose.run();
+                return;
+            }
+
+            int port;
+            try { port = Integer.parseInt(portStr); }
+            catch (NumberFormatException nfe) { port = -1; }
+
+            btnSave.setDisable(true);
+            btnCancel.setDisable(true);
+            btnSave.setText("Probando...");
+
+            int testPort = port;
+            Thread t = new Thread(() -> {
+                boolean ok = testPort > 0 && RemoteDatabaseService.getInstance()
+                    .testConnection(host, testPort, name, user, pass);
+                Platform.runLater(() -> {
+                    btnSave.setDisable(false);
+                    btnCancel.setDisable(false);
+                    btnSave.setText("Guardar");
+                    if (ok || confirmSaveDespiteFailedTest()) persistAndClose.run();
+                });
+            }, "db-connection-test");
+            t.setDaemon(true);
+            t.start();
         });
 
         HBox buttons = new HBox(8, btnCancel, btnSave);
@@ -499,6 +543,43 @@ public class DatabaseSectionController {
         btnDel.setOnAction(e -> { confirmed[0] = true; stage.close(); });
 
         HBox buttons = new HBox(8, btnCancel, btnDel);
+        buttons.setAlignment(Pos.CENTER_RIGHT);
+
+        VBox root = buildDialogRoot(380);
+        root.getChildren().addAll(lblTitle, lblMsg, buttons);
+
+        Scene scene = buildDialogScene(root);
+        scene.setOnKeyPressed(ev -> { if (ev.getCode() == KeyCode.ESCAPE) stage.close(); });
+        stage.setScene(scene);
+        stage.showAndWait();
+
+        return confirmed[0];
+    }
+
+    private boolean confirmSaveDespiteFailedTest() {
+        boolean[] confirmed = {false};
+        Stage stage = buildDialogStage();
+        centerOnContent(stage);
+
+        Label lblTitle = new Label("No se pudo conectar");
+        lblTitle.getStyleClass().add("section-label");
+
+        Label lblMsg = new Label(
+            "No se pudo establecer conexión con el servidor remoto usando estos datos. "
+                + "¿Guardar de todas formas?");
+        lblMsg.setStyle("-fx-text-fill: #475569; -fx-font-size: 12px;");
+        lblMsg.setWrapText(true);
+
+        Button btnCancel = new Button("Cancelar");
+        btnCancel.getStyleClass().add("button-secondary");
+        btnCancel.setOnAction(e -> stage.close());
+
+        Button btnConfirm = new Button("Guardar de todas formas");
+        btnConfirm.setStyle("-fx-background-color: #ef4444; -fx-text-fill: white; " +
+            "-fx-background-radius: 6; -fx-font-weight: bold; -fx-cursor: hand;");
+        btnConfirm.setOnAction(e -> { confirmed[0] = true; stage.close(); });
+
+        HBox buttons = new HBox(8, btnCancel, btnConfirm);
         buttons.setAlignment(Pos.CENTER_RIGHT);
 
         VBox root = buildDialogRoot(380);
