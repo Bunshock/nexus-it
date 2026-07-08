@@ -1128,3 +1128,26 @@
 }
 
 /* --- ItemDialogView styles - END --- */
+
+/* --- SettingsView styles - START --- */
+
+.settings-scroll, .settings-scroll .viewport {
+    -fx-background-color: transparent;
+}
+
+.settings-scroll {
+    -fx-background-insets: 0;
+    -fx-padding: 0;
+}
+
+.settings-scroll .scroll-bar:vertical .track,
+.settings-scroll .scroll-bar:vertical .track-background,
+.settings-scroll .scroll-bar:vertical .increment-button,
+.settings-scroll .scroll-bar:vertical .decrement-button {
+    -fx-background-color: transparent;
+    -fx-background-radius: 0;
+}
+
+/* --- SettingsView styles - END --- */
+
+/* --- ItemDialogView styles - END --- */

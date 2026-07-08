@@ -8,7 +8,12 @@
            fx:controller="com.bunshock.note_app_for_it_frontend.controllers.SettingsController">
 
     <!-- ── Panel: Configuración general ──────────────────────────────── -->
-    <VBox fx:id="panelSettings" spacing="20" style="-fx-padding: 30; -fx-background-color: #f4f4f4;">
+    <VBox fx:id="panelSettings" spacing="0" style="-fx-background-color: #f4f4f4;">
+        <children>
+
+        <ScrollPane fitToWidth="true" VBox.vgrow="ALWAYS" styleClass="settings-scroll">
+        <content>
+        <VBox spacing="20" style="-fx-padding: 30 30 20 30; -fx-background-color: #f4f4f4;">
         <children>
 
             <HBox styleClass="page-title-card" alignment="CENTER_LEFT">
@@ -98,6 +103,31 @@
                 </children>
             </VBox>
 
+            <!-- Active Directory -->
+            <VBox spacing="10" style="-fx-background-color: white; -fx-background-radius: 10; -fx-padding: 15 20 20 20;">
+                <children>
+                    <Label text="ACTIVE DIRECTORY API" styleClass="section-label"/>
+                    <GridPane hgap="15" vgap="10">
+                        <columnConstraints>
+                            <ColumnConstraints percentWidth="25"/>
+                            <ColumnConstraints percentWidth="25"/>
+                        </columnConstraints>
+                        <children>
+                            <VBox spacing="2" GridPane.columnIndex="0">
+                                <Label text="API URL" styleClass="input-label-small"/>
+                                <TextField fx:id="txtAdUrl" promptText="http://ad-api-server"
+                                           styleClass="form-input-main" disable="true"/>
+                            </VBox>
+                            <VBox spacing="2" GridPane.columnIndex="1">
+                                <Label text="API TOKEN" styleClass="input-label-small"/>
+                                <PasswordField fx:id="pfAdApiToken" promptText="Token de API de Active Directory"
+                                               styleClass="form-input-main" disable="true"/>
+                            </VBox>
+                        </children>
+                    </GridPane>
+                </children>
+            </VBox>
+
             <!-- S/N validation -->
             <VBox spacing="10" style="-fx-background-color: white; -fx-background-radius: 10; -fx-padding: 15 20 20 20;">
                 <children>
@@ -125,8 +155,14 @@
                 </children>
             </VBox>
 
-            <!-- Save button -->
-            <HBox spacing="15" alignment="CENTER_RIGHT">
+        </children>
+        </VBox>
+        </content>
+        </ScrollPane>
+
+            <!-- Save button (fixed footer, outside the scrollable area) -->
+            <HBox spacing="15" alignment="CENTER_RIGHT"
+                  style="-fx-padding: 15 30 20 30; -fx-background-color: #f4f4f4;">
                 <Label fx:id="lblSaveStatus" text="" style="-fx-font-size: 11px;"/>
                 <Button fx:id="btnSave" text="Guardar Configuración" onAction="#handleSave"
                         styleClass="button-primary-large" disable="true"/>
