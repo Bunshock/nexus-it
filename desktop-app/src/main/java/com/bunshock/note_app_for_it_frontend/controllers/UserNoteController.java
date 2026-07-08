@@ -14,6 +14,7 @@ import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;
 import javafx.animation.FadeTransition;
 import javafx.animation.KeyFrame;
 import javafx.animation.Timeline;
+import javafx.application.Platform;
 import javafx.collections.FXCollections;
 import javafx.fxml.FXML;
 import javafx.fxml.FXMLLoader;
@@ -250,21 +251,43 @@ public class UserNoteController {
             return;
         }
 
-        List<ADUser> results = ServiceLocator.getInstance().getAdService().search(dni, name, username);
+        btnBuscarAD.setDisable(true);
+        String originalText = btnBuscarAD.getText();
+        btnBuscarAD.setText("Buscando...");
 
-        if (results.isEmpty()) {
-            highlightFields("#ef4444");
-            triggerFeedback("Usuario no encontrado", "#ef4444");
-            return;
-        }
+        Thread t = new Thread(() -> {
+            List<ADUser> results;
+            boolean failed;
+            try {
+                results = ServiceLocator.getInstance().getAdService().search(dni, name, username);
+                failed = false;
+            } catch (Exception e) {
+                results = List.of();
+                failed = true;
+            }
+            List<ADUser> finalResults = results;
+            boolean searchFailed = failed;
+            Platform.runLater(() -> {
+                btnBuscarAD.setDisable(false);
+                btnBuscarAD.setText(originalText);
 
-        if (results.size() == 1) {
-            fillUserData(results.get(0));
-            highlightFields("#0c8570");
-            triggerFeedback("Usuario cargado", "#0c8570");
-        } else {
-            showUserSelectionDialog(results);
-        }
+                if (searchFailed) {
+                    highlightFields("#ef4444");
+                    triggerFeedback("No se pudo conectar con AD", "#ef4444");
+                } else if (finalResults.isEmpty()) {
+                    highlightFields("#ef4444");
+                    triggerFeedback("Usuario no encontrado", "#ef4444");
+                } else if (finalResults.size() == 1) {
+                    fillUserData(finalResults.get(0));
+                    highlightFields("#0c8570");
+                    triggerFeedback("Usuario cargado", "#0c8570");
+                } else {
+                    showUserSelectionDialog(finalResults);
+                }
+            });
+        }, "ad-search");
+        t.setDaemon(true);
+        t.start();
     }
 
     public void fillUserData(ADUser user) {
