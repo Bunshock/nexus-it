@@ -24,6 +24,7 @@ import javafx.scene.control.Button;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.DatePicker;
 import javafx.scene.control.Label;
+import javafx.scene.control.ProgressIndicator;
 import javafx.scene.control.TextField;
 import javafx.scene.control.TextFormatter;
 import javafx.scene.control.ToggleButton;
@@ -61,6 +62,8 @@ public class UserNoteController {
     @FXML private TextField txtUserName;
     @FXML private TextField txtUserAccount;
     @FXML private Label lblUserEmail;
+
+    private Timeline searchEllipsis;
 
     private String failureCause;
     private String failureDetails;
@@ -253,7 +256,7 @@ public class UserNoteController {
 
         btnBuscarAD.setDisable(true);
         String originalText = btnBuscarAD.getText();
-        btnBuscarAD.setText("Buscando...");
+        startSearchingAnimation();
 
         Thread t = new Thread(() -> {
             List<ADUser> results;
@@ -269,7 +272,7 @@ public class UserNoteController {
             boolean searchFailed = failed;
             Platform.runLater(() -> {
                 btnBuscarAD.setDisable(false);
-                btnBuscarAD.setText(originalText);
+                stopSearchingAnimation(originalText);
 
                 if (searchFailed) {
                     highlightFields("#ef4444");
@@ -288,6 +291,32 @@ public class UserNoteController {
         }, "ad-search");
         t.setDaemon(true);
         t.start();
+    }
+
+    /** Mini spinner + cycling "..." text on btnBuscarAD, matching the startup overlay's pending-row look. */
+    private void startSearchingAnimation() {
+        ProgressIndicator spinner = new ProgressIndicator();
+        spinner.setMinSize(14, 14);
+        spinner.setMaxSize(14, 14);
+        spinner.setStyle("-fx-progress-color: #0c8570;");
+        btnBuscarAD.setGraphic(spinner);
+
+        int[] dotCount = {1};
+        searchEllipsis = new Timeline(new KeyFrame(Duration.millis(450), e -> {
+            dotCount[0] = dotCount[0] % 3 + 1;
+            btnBuscarAD.setText("Buscando" + ".".repeat(dotCount[0]));
+        }));
+        searchEllipsis.setCycleCount(Timeline.INDEFINITE);
+        searchEllipsis.play();
+    }
+
+    private void stopSearchingAnimation(String originalText) {
+        if (searchEllipsis != null) {
+            searchEllipsis.stop();
+            searchEllipsis = null;
+        }
+        btnBuscarAD.setGraphic(null);
+        btnBuscarAD.setText(originalText);
     }
 
     public void fillUserData(ADUser user) {
