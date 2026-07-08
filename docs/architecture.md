@@ -65,11 +65,12 @@ desktop-app/src/main/java/com/bunshock/note_app_for_it_frontend/
 │   ├── GLPIServiceStub.java          — No-op stub (GLPI out of scope for v1)
 │   ├── IEmailService.java            — Email sending interface
 │   ├── GmailEmailService.java        — Jakarta Mail + Gmail SMTP implementation
-│   ├── WindowsDPAPIService.java      — Credential encryption via Windows DPAPI (JNA)
+│   ├── AppKeyEncryptionService.java  — Credential encryption via AES-256/GCM (fixed shared key)
 │   ├── TemplateEngine.java           — {{TOKEN}} and {{#LOOP}} HTML template renderer
 │   └── NoteGenerationService.java    — Builds rendered HTML notes from form data + templates
 └── utils/
-    ├── AdminPasswordHashGenerator.java — CLI utility to generate admin password SHA-256 hash
+    ├── AdminPasswordHashGenerator.java   — CLI utility to generate admin password SHA-256 hash
+    ├── AppKeyEncryptionGenerator.java    — CLI utility to pre-encrypt default secrets for app-config.json
     └── ViewFactory.java              — View cache: loads each FXML once, reuses across nav switches
 ```
 
@@ -83,7 +84,7 @@ Every external dependency has an interface (`IADService`, `IEquipmentService`, `
 ### Active Directory Integration (AdApiService)
 `AdApiService` (singleton, `configure(baseUrl, apiToken)` / `isConfigured()`) is the active `IADService` implementation, calling `<baseUrl>/api/v1/ad/users` with `dni`/`name`/`username` query params (server-side ANDs whatever is supplied) and an `Authorization: Bearer <token>` header. `MockADService` is test-only now — `ServiceLocator` always wires `AdApiService`.
 
-- **Config storage**: the URL (`adApi.baseUrl`) lives in `app-config.json` like `glpiApi.baseUrl`; the token is a secret, DPAPI-encrypted into `APP_SETTINGS` (`ad_api_token`), never re-displayed once saved (write-only `PasswordField`, same pattern as `glpi_api_key`). Both fields live in `SettingsController`'s "ACTIVE DIRECTORY API" card, admin-gated like every other config field.
+- **Config storage**: the URL (`adApi.baseUrl`) lives in `app-config.json` like `glpiApi.baseUrl`; the token is a secret, encrypted (`AppKeyEncryptionService`) into `APP_SETTINGS` (`ad_api_token`), never re-displayed once saved (write-only `PasswordField`, same pattern as `glpi_api_key`). Both fields live in `SettingsController`'s "ACTIVE DIRECTORY API" card, admin-gated like every other config field. Can ship pre-configured via `app-config.json`'s `defaults.adApiToken` — see "Credential Encryption" pattern below.
 - **Verify-before-save**: saving a new URL/token in Settings tests the connection on a background thread (using the current technician's already-resolved username as a cheap, real query) before persisting; a failed test prompts for confirmation rather than silently accepting bad config — mirrors `DatabaseSectionController`'s DB connection flow.
 - **DNI query variants**: the API matches literally, so a technician-typed DNI (digits only) is queried in both its plain and dotted forms (grouped by 3 from the right, e.g. `45933368` → `45.933.368`); results from both are merged and deduped by `samAccountName`.
 - **Name query variants**: `name` is a partial/contains match against the stored `"Apellido, Nombre(s)"` display format, so a typed name is queried both as-typed (matches when given names are stored in the typed order, regardless of what precedes the comma) and reordered as `"<lastWord>, <restOfWords>"` (matches the common "Nombre Apellido" input shape). Both variants run as separate HTTP calls and are merged.
@@ -101,8 +102,12 @@ Every external dependency has an interface (`IADService`, `IEquipmentService`, `
 
 Templates live in `src/main/resources/.../templates/`. `NoteGenerationService` selects the correct template based on note profile type and builds the token maps from form data.
 
-### Windows DPAPI Credential Storage
-`WindowsDPAPIService` wraps JNA's `Crypt32Util` to encrypt/decrypt sensitive strings (SMTP password, GLPI API key) using the Windows Data Protection API. Encrypted bytes are stored as Base64 in the `APP_SETTINGS` SQLite table. Plaintext never touches disk.
+### Credential Encryption (AppKeyEncryptionService)
+`AppKeyEncryptionService` (AES-256/GCM, `javax.crypto`) encrypts/decrypts the four shared organizational secrets — `smtp_password`, `glpi_api_key`, `db_password`/`db_username`, `ad_api_token` — stored as Base64 in the `APP_SETTINGS` SQLite table. Replaced `WindowsDPAPIService` on 2026-07-08: DPAPI ties every encrypted value to the specific Windows account that encrypted it, which made pre-configuring these fleet-wide shared credentials across many technician machines impractical without visiting each one (none of these four are actually *personal* per-technician secrets — they're all IT-department-owned service credentials identical across every installation). `AppKeyEncryptionService` uses one fixed key embedded in the app, shared across every installation.
+
+**Explicit accepted trade-off** (discussed with and decided by the user, not a default/oversight): this is materially weaker than DPAPI against a determined local attacker — the key can be extracted from the installed app by decompiling it, and the same key decrypts every installation's secrets, not just one machine's. It stops casual plaintext exposure (opening `noteapp.db` in a browser/viewer) but not a deliberate extraction attempt. If a proper installer is built later, generate a unique key per deployment at packaging time instead of reusing one static key indefinitely (tracked as a known follow-up).
+
+**Zero-touch pre-configuration**: `app-config.json`'s `defaults` object (`smtpPassword`, `glpiApiKey`, `dbPassword`, `adApiToken`) holds pre-encrypted values, generated via `utils.AppKeyEncryptionGenerator` (mirrors `AdminPasswordHashGenerator`'s existing CLI pattern). `ServiceLocator.provisionDefaultSecrets()` copies any of these into `APP_SETTINGS` on first startup, only for keys not already set — an admin's later edit via Settings always takes precedence and is never overwritten by a shipped default.
 
 ### SQLite Local Database
 `DatabaseService` initializes a local `data/noteapp.db` on first run. The schema mirrors the planned PostgreSQL structure exactly (same table names and column types), so migration will require only a JDBC driver swap and connection string change. The `Generic` brand is inserted as protected default data on initialization.
@@ -187,7 +192,7 @@ HistoryController       → ServiceLocator → IHistoryService (filtered queries
 DatabaseSectionController → ServiceLocator → IEquipmentService
                           → RemoteDatabaseService
 SettingsController      → ConfigService
-                        → WindowsDPAPIService
+                        → AppKeyEncryptionService
                         → DatabaseService
                         → AdminSession / AdminAuthService
 ProfileController       → DatabaseService

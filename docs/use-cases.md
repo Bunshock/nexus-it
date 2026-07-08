@@ -140,9 +140,9 @@ Same as UC-01 but with profile "FIN DE CONTRATO". Used for employees leaving the
 
 **Main Flow:**
 1. Administrator configures A/F format (Prefix, Separator, Length, Filler); live preview shown
-2. Configures SMTP sender address and password (stored encrypted via DPAPI)
-3. Configures GLPI API URL and API Key (key stored encrypted via DPAPI, never in app-config.json)
-4. Configures Active Directory API URL and Token (token stored encrypted via DPAPI, write-only — never redisplayed once saved)
+2. Configures SMTP sender address and password (stored encrypted via AppKeyEncryptionService)
+3. Configures GLPI API URL and API Key (key stored encrypted via AppKeyEncryptionService, never in app-config.json)
+4. Configures Active Directory API URL and Token (token stored encrypted via AppKeyEncryptionService, write-only — never redisplayed once saved)
 5. Clicks "Guardar Configuración" → URL/format fields saved to app-config.json, credentials saved encrypted to DB; a status message appears next to the save button
 6. Configuration content (A/F, SMTP, GLPI, AD, S/N validation entry point, Admin mode) scrolls independently within its own panel — the save button always stays visible in a fixed footer below it
 

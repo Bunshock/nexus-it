@@ -24,7 +24,7 @@ Project-level instructions for Claude Code. These override defaults and apply to
 ## Security requirements (mandatory on every feature)
 
 - **No plaintext secrets** anywhere — not in source code, not in config files, not in git history.
-- SMTP password and any other credentials must be encrypted at rest using **Windows DPAPI** via `WindowsDPAPIService` (JNA `Crypt32Util`). Store encrypted Base64 in the `APP_SETTINGS` SQLite table.
+- SMTP password, GLPI API key, DB password, and AD API token must be encrypted at rest using **`AppKeyEncryptionService`** (AES-256/GCM, `javax.crypto`, no native dependency). Store encrypted Base64 in the `APP_SETTINGS` SQLite table. **This replaced Windows DPAPI on 2026-07-08** — see "AppKeyEncryptionService replaced WindowsDPAPIService" in Known issues/gotchas below for why, and the accepted security trade-off.
 - **Validate all user inputs** at every system boundary (form fields, config values, FXML bindings).
 - **Fail safely**: if AD, GLPI, or SMTP is unreachable, degrade gracefully — show a status message, do not crash and do not expose internal errors to the UI.
 - The "Generic" brand is protected from deletion (`SqliteEquipmentService` enforces this).
@@ -37,8 +37,8 @@ Project-level instructions for Claude Code. These override defaults and apply to
 - Every implemented feature must have tests. Write test files **and run them** before marking a task done.
 - Desktop app: **JUnit 5 + TestFX** (`src/test/java/...`)
 - Run: `mvn test` from `desktop-app/`
-- Current test count: 140 tests, all passing.
-- Test classes: `TemplateEngineTest`, `AfFormatterTest`, `MockADServiceTest`, `AdApiServiceTest`, `MockEquipmentServiceTest`, `CachingServiceTest`, `GlpiStatusTest`, `NoteGenerationServiceTest`, `AdminSessionTest`, `RemoteDatabaseServiceTest`, `SqliteHistoryServiceTest`, `HistoryControllerTest`, `InputValidationTest`, `TechnicianSessionServiceTest`, `SettingsControllerTest`
+- Current test count: 145 tests, all passing.
+- Test classes: `TemplateEngineTest`, `AfFormatterTest`, `MockADServiceTest`, `AdApiServiceTest`, `AppKeyEncryptionServiceTest`, `MockEquipmentServiceTest`, `CachingServiceTest`, `GlpiStatusTest`, `NoteGenerationServiceTest`, `AdminSessionTest`, `RemoteDatabaseServiceTest`, `SqliteHistoryServiceTest`, `HistoryControllerTest`, `InputValidationTest`, `TechnicianSessionServiceTest`, `SettingsControllerTest`
 
 ---
 
@@ -108,8 +108,8 @@ Every external dependency has an interface (`IADService`, `IEquipmentService`, `
 ### Template engine
 `TemplateEngine.render(template, tokens, loops)` processes `{{TOKEN}}` replacements and expands every `{{#LOOP_KEY}}...{{/LOOP_KEY}}` block found against a `Map<String, List<Map<String,String>>> loops`. A loop key with no entry (or an empty list) expands to nothing — this doubles as a conditional block (used by `devolucion.html`'s `{{#FAILURE}}` section, populated only when Motivo = Falla). `NoteGenerationService` selects the correct HTML template and builds the token/loop maps from form data.
 
-### Windows DPAPI
-`WindowsDPAPIService` wraps JNA `Crypt32Util.cryptProtectData(byte[])` / `cryptUnprotectData(byte[])`. Returns Base64 string for SQLite storage. Decryption is tied to the Windows user account — never portable as plaintext.
+### Credential encryption (AppKeyEncryptionService)
+`AppKeyEncryptionService` (AES-256/GCM via `javax.crypto`) replaced `WindowsDPAPIService` on 2026-07-08. Returns Base64 (random IV + ciphertext) for SQLite storage. The key is a fixed constant shared across every installation — see "AppKeyEncryptionService replaced WindowsDPAPIService" in Known issues/gotchas for the full rationale and accepted trade-off.
 
 ### Admin dialog pattern
 `requireAdmin(Runnable)` in `SettingsController` and `DatabaseSectionController` handles the full admin flow: check `AdminAuthService.isConfigured()`, prompt password, verify hash, run action. Each controller also duplicates `buildDialogStage / buildDialogRoot / buildDialogScene / centerOnContent` — this duplication is intentional (no shared utility class, per the no-abstraction rule). Do not extract a base class or helper unless explicitly requested. `MainController` and `NoteGeneratorController` duplicate the same pattern again for `showWarningNotice`/`showDialogNotice` (orange-accent warning popups) — `NoteGeneratorController` centers on `rootContainer` instead of a `contentArea`/`panelSettings`-style field, since it's a section-level controller, not the shell.
@@ -178,7 +178,7 @@ When Motivo = "Falla" is selected in the Devolución flow, `UserNoteController` 
 
 | Interface | Active implementation | Future |
 |-----------|----------------------|--------|
-| `IADService` | `AdApiService` (REST client, `adApi.baseUrl` + DPAPI-encrypted `ad_api_token`) | — |
+| `IADService` | `AdApiService` (REST client, `adApi.baseUrl` + encrypted `ad_api_token`) | — |
 | `IEquipmentService` | `SqliteEquipmentService` (SQLite, seeded on first run) | PostgreSQL (JDBC driver swap) |
 | `IHistoryService` | `SqliteHistoryService` | — |
 | `IGLPIService` | `GLPIServiceStub` (no-op) | GLPI REST API (out of scope v1) |
@@ -194,7 +194,8 @@ When Motivo = "Falla" is selected in the Devolución flow, `UserNoteController` 
 - `fallaOptions`: failure-cause combobox values shown by the Falla detail popup (Devolución only)
 - `smtp`: `host`, `port`, `senderAddress` (password stored encrypted in DB, never here)
 - `adApi.baseUrl`, `glpiApi.baseUrl`, `database.baseUrl`: external service URLs
-- GLPI API key and AD API token are **not** in this file — they're credentials, stored DPAPI-encrypted in `APP_SETTINGS` (`glpi_api_key`, `ad_api_token`), same as `smtp_password`. Both are configured via a write-only `PasswordField` in `SettingsController` (never re-displayed once saved) and verified with a live test-before-save call before persisting (see `docs/architecture.md`'s "Active Directory Integration" section).
+- GLPI API key and AD API token are **not** in this file — they're credentials, encrypted (`AppKeyEncryptionService`) in `APP_SETTINGS` (`glpi_api_key`, `ad_api_token`), same as `smtp_password`. Both are configured via a write-only `PasswordField` in `SettingsController` (never re-displayed once saved) and verified with a live test-before-save call before persisting (see `docs/architecture.md`'s "Active Directory Integration" section).
+- `defaults` (optional): pre-encrypted (`AppKeyEncryptionService`) default values for `smtpPassword`, `glpiApiKey`, `dbPassword`, `adApiToken` — copied into `APP_SETTINGS` on first startup only if that key isn't already set, so a fresh install can ship pre-configured with zero technician/admin setup. Generate values via `utils.AppKeyEncryptionGenerator`, never paste plaintext here.
 - `noteItemLimit`: max items before warning
 
 **Jackson config**: `AppConfig` and all inner classes are annotated `@JsonIgnoreProperties(ignoreUnknown = true)` — unknown keys in the JSON file do not crash the app.
@@ -218,14 +219,14 @@ See `docs/database.md` for full ERD.
 
 | Key | Encrypted | Purpose |
 |-----|-----------|---------|
-| `smtp_password` | DPAPI | SMTP sender password |
-| `glpi_api_key` | DPAPI | GLPI REST API key |
-| `ad_api_token` | DPAPI | AD API bearer token |
+| `smtp_password` | AES (AppKeyEncryptionService) | SMTP sender password |
+| `glpi_api_key` | AES (AppKeyEncryptionService) | GLPI REST API key |
+| `ad_api_token` | AES (AppKeyEncryptionService) | AD API bearer token |
 | `db_host` | No | Remote DB hostname |
 | `db_port` | No | Remote DB port (default `5432`) |
 | `db_name` | No | Remote DB database name |
-| `db_username` | DPAPI | Remote DB username |
-| `db_password` | DPAPI | Remote DB password |
+| `db_username` | AES (AppKeyEncryptionService) | Remote DB username |
+| `db_password` | AES (AppKeyEncryptionService) | Remote DB password |
 
 ### Equipment seed data
 
@@ -237,7 +238,8 @@ See `docs/database.md` for full ERD.
 
 - Always run `mvn clean javafx:run` — never just `mvn javafx:run`. The IDE (VS Code / Eclipse) can write broken `.class` files that Maven reuses without recompiling.
 - `config/app-config.json` must use `"baseUrl"` (not `"remoteUrl"`) in all API endpoint objects to match `AppConfig.ApiEndpoint`.
-- `WindowsDPAPIService` only works on Windows. Tests that invoke it will fail on Linux/macOS CI.
+- **`AppKeyEncryptionService` replaced `WindowsDPAPIService`** (2026-07-08, explicit user decision after discussing trade-offs) — DPAPI ties every encrypted value to the specific Windows account that encrypted it, which made pre-configuring shared organizational credentials (AD token, GLPI key, SMTP/DB passwords — all four are org-wide shared credentials, not personal per-technician secrets) across many machines impractical without visiting each one. `AppKeyEncryptionService` uses a single AES-256/GCM key, shared across every installation, embedded in `AppKeyEncryptionService.KEY_BASE64` — no native/JNA dependency, works on any OS. **Accepted trade-off, stated explicitly to the user before implementing**: this is materially weaker than DPAPI against a determined local attacker — anyone with the installed app can decompile it, extract the key, and decrypt any copy of `data/noteapp.db`'s encrypted settings (not just their own). It stops casual plaintext exposure (e.g. opening the DB in a browser tool) but not a deliberate extraction attempt. If an installer is built later, generate a unique key per deployment at packaging time instead of reusing this one static key indefinitely — tracked as a known follow-up, not yet done. Rotating the key makes every previously-encrypted `APP_SETTINGS` value undecryptable (all four secrets would need re-entry) — `utils.AppKeyEncryptionGenerator` (mirrors `AdminPasswordHashGenerator`'s existing pattern) produces new ciphertext for `app-config.json`'s `defaults` section, which `ServiceLocator.provisionDefaultSecrets()` copies into `APP_SETTINGS` on first run only (never overwrites an admin's existing value).
+- `WindowsIdentityService` (unrelated to the above — reads the Windows session UPN for AD username derivation, not encryption) still only works on Windows and still uses JNA.
 - SLF4J "Failed to load class StaticLoggerBinder" at runtime is harmless — ControlsFX logs via SLF4J but the app functions normally without a binding.
 - The sidebar's AD status dot (`MainController.circleAD`) now reflects real `AdApiService` reachability: `checkAdReachable()` queries by the current technician's already-resolved username (`TechnicianSessionService.getUsername()`), and a thrown exception (401/5xx/network failure) means genuinely "down," not a mock artifact. If the technician's username isn't resolved yet, the check is skipped for that cycle (shown as unreachable) rather than sending an unbounded query. A third gray "No configurado" state shows via `IADService.isConfigured()` when the AD URL/token aren't set.
 - `.modern-table` (`styles.css`) is shared by History's `tblGlobal`, Settings' S/N Validation `tblSnValidation`, and the note-generation item tables `tblAssets`/`tblCountables` (`NoteGeneratorView.fxml`) — a selected-row text-color change intended only for one silently affects all four. Only History's `tblGlobal` intentionally kept the darker selected-row text from commit `349c9e0`; the other three carry an extra `equipment-table` class that overrides `.modern-table .table-row-cell:selected .table-cell`'s text-fill back to the original light color. If a future change needs to diverge these tables' styling further, extend `.equipment-table`'s rule rather than editing `.modern-table` directly — and check whether it should apply to `tblAssets`/`tblCountables` too, not just `tblSnValidation`.

@@ -8,7 +8,7 @@ Desktop application for IT support teams at Universidad Siglo 21 to generate equ
 
 - Java 21 (JDK) — verify with `java -version`
 - Maven 3.8+ — verify with `mvn -version`
-- Windows (DPAPI used for credential encryption). On Linux/macOS the app can be built and run for development, but any DPAPI-backed feature (saving SMTP password, GLPI API key, or remote DB credentials in Settings) will throw at runtime.
+- Windows recommended — the technician-identity lookup (`WindowsIdentityService`, resolves the current Windows session's UPN) only works on Windows. Credential encryption (`AppKeyEncryptionService`) is cross-platform (pure `javax.crypto`, no native dependency) and works on Linux/macOS too.
 - Git (to clone the repository)
 
 ---
@@ -57,7 +57,30 @@ Two JSON files in `desktop-app/config/` control runtime behavior. **Do not commi
 | `glpiApi.baseUrl` | GLPI REST API URL |
 | `noteItemLimit` | Max items per note before showing a warning |
 
-SMTP password and GLPI API key are stored encrypted in the local SQLite database (Windows DPAPI) — never in this file.
+SMTP password and GLPI API key are stored encrypted in the local SQLite database (`AppKeyEncryptionService`, AES-256/GCM) — never in this file.
+
+### Pre-configuring default secrets (zero-touch first run)
+
+`app-config.json`'s `defaults` object lets a fresh install ship with `smtpPassword`, `glpiApiKey`, `dbPassword`, and `adApiToken` already configured — no technician or admin has to type anything in Settings on first launch. Each value must be **pre-encrypted**, never plaintext:
+
+```bash
+cd desktop-app
+mvn exec:java -Dexec.mainClass="com.bunshock.note_app_for_it_frontend.utils.AppKeyEncryptionGenerator"
+# Enter the secret when prompted, paste the printed ciphertext into app-config.json
+```
+
+```json
+"defaults": {
+  "smtpPassword": "<ciphertext from the generator>",
+  "glpiApiKey": "",
+  "dbPassword": "",
+  "adApiToken": "<ciphertext from the generator>"
+}
+```
+
+On first startup, any of these four whose `APP_SETTINGS` key isn't already set gets copied in from `defaults` — once an admin edits a value via Settings, that always takes precedence and the shipped default is never consulted again for that key. Leave a field as `""` if you don't want to pre-configure it.
+
+**Security note**: all four secrets share one fixed encryption key embedded in the app (`AppKeyEncryptionService`) — this trades some security for zero-touch deployability across many machines (see `CLAUDE.md`'s Known issues/gotchas for the full trade-off discussion). Anyone with the installed application can, in principle, extract this key and decrypt these values from any copy of `data/noteapp.db` — this is materially weaker than the previous per-account Windows DPAPI approach, and was an explicit, discussed decision, not an oversight.
 
 ### Active Directory (AD) API
 
@@ -66,7 +89,7 @@ The app looks up users (recipient name/DNI/email autofill, technician profile) a
 | Field | Where it's stored | Notes |
 |-------|-------------------|-------|
 | API URL | `config/app-config.json` → `adApi.baseUrl` | Not a secret; e.g. `https://ad-api.example.org` |
-| API Token | DPAPI-encrypted in `data/noteapp.db` (`APP_SETTINGS.ad_api_token`) | Write-only field — once saved it's never shown again in the UI; re-enter to replace it |
+| API Token | Encrypted (`AppKeyEncryptionService`) in `data/noteapp.db` (`APP_SETTINGS.ad_api_token`) | Write-only field — once saved it's never shown again in the UI; re-enter to replace it |
 
 Saving tests the connection in the background (using the currently resolved technician's own username as a lightweight, real query) before persisting; if the test fails you're asked to confirm before saving anyway.
 
@@ -98,7 +121,7 @@ Saving tests the connection in the background (using the currently resolved tech
 
 ### Remote database (PostgreSQL)
 
-The app runs fully on local SQLite by default. To point it at a shared PostgreSQL instance instead, go to **Base de Datos** → **✏ Editar** (admin mode required) and enter host, port, database name, username, and password — stored in `data/noteapp.db`'s `APP_SETTINGS` table (host/port/name in plaintext, username/password DPAPI-encrypted). Saving tests the connection before persisting, same confirm-on-failure flow as the AD API above. The **Probar conexión** button re-checks connectivity on demand without opening the edit dialog. If the remote database is unreachable, the app automatically falls back to local SQLite (write-through cache: writes go to remote first, then local; reads try remote first, fall back to local).
+The app runs fully on local SQLite by default. To point it at a shared PostgreSQL instance instead, go to **Base de Datos** → **✏ Editar** (admin mode required) and enter host, port, database name, username, and password — stored in `data/noteapp.db`'s `APP_SETTINGS` table (host/port/name in plaintext, username/password encrypted via `AppKeyEncryptionService`). Saving tests the connection before persisting, same confirm-on-failure flow as the AD API above. The **Probar conexión** button re-checks connectivity on demand without opening the edit dialog. If the remote database is unreachable, the app automatically falls back to local SQLite (write-through cache: writes go to remote first, then local; reads try remote first, fall back to local).
 
 ### `config/mock-equipment.json`
 
@@ -213,9 +236,9 @@ mvn test
 ### Settings
 
 - A/F format configuration with live preview
-- SMTP credentials (password encrypted via Windows DPAPI — never stored in plaintext)
-- GLPI API URL and API Key (key encrypted via Windows DPAPI — never stored in plaintext)
-- Active Directory API URL and Token (token encrypted via Windows DPAPI, write-only field — never redisplayed once saved); saving tests the connection first and asks for confirmation if it fails
+- SMTP credentials (password encrypted via `AppKeyEncryptionService` — never stored in plaintext)
+- GLPI API URL and API Key (key encrypted via `AppKeyEncryptionService` — never stored in plaintext)
+- Active Directory API URL and Token (token encrypted via `AppKeyEncryptionService`, write-only field — never redisplayed once saved); saving tests the connection first and asks for confirmation if it fails
 - Settings content scrolls independently in a fixed-height panel — the "Guardar Configuración" button always stays visible in its own footer row, not pushed off-screen as cards are added
 - All configuration fields and the "Guardar Configuración" button are read-only/disabled unless admin mode is active
 - **S/N Validation table** (admin-protected): view all asset-type models with their regex pattern and active toggle; active rules sort to the top; filterable by type, brand, or model
@@ -223,7 +246,7 @@ mvn test
 
 ### Security
 
-- SMTP password, GLPI API key, and AD API token encrypted at rest using Windows DPAPI (tied to the current Windows user account)
+- SMTP password, GLPI API key, DB password, and AD API token encrypted at rest using `AppKeyEncryptionService` (AES-256/GCM); see [Pre-configuring default secrets](#pre-configuring-default-secrets-zero-touch-first-run) above for the accepted security trade-off of this scheme
 - No plaintext secrets in config files or source code
 - Input validated at every system boundary
 

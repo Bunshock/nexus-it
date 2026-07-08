@@ -117,9 +117,13 @@ erDiagram
 
 | Key | Value | Description |
 |-----|-------|-------------|
-| `smtp_password` | Base64-encoded DPAPI ciphertext | SMTP password, encrypted via Windows DPAPI |
-| `glpi_api_key` | Base64-encoded DPAPI ciphertext | GLPI REST API key, encrypted via Windows DPAPI |
-| `ad_api_token` | Base64-encoded DPAPI ciphertext | AD API bearer token, encrypted via Windows DPAPI |
+| `smtp_password` | Base64-encoded AES-256/GCM ciphertext | SMTP password, encrypted via `AppKeyEncryptionService` |
+| `glpi_api_key` | Base64-encoded AES-256/GCM ciphertext | GLPI REST API key, encrypted via `AppKeyEncryptionService` |
+| `ad_api_token` | Base64-encoded AES-256/GCM ciphertext | AD API bearer token, encrypted via `AppKeyEncryptionService` |
+| `db_username` | Base64-encoded AES-256/GCM ciphertext | Remote DB username, encrypted via `AppKeyEncryptionService` |
+| `db_password` | Base64-encoded AES-256/GCM ciphertext | Remote DB password, encrypted via `AppKeyEncryptionService` |
+
+`smtp_password`, `glpi_api_key`, `db_password`, and `ad_api_token` can ship pre-configured: `app-config.json`'s `defaults` object holds pre-encrypted values that `ServiceLocator.provisionDefaultSecrets()` copies into this table on first startup, only if that key isn't already set (see README.md's "Pre-configuring default secrets").
 
 ```sql
 APP_SETTINGS (
@@ -135,6 +139,6 @@ APP_SETTINGS (
 - `Generic` brand row is inserted on first run and is protected from deletion in `SqliteEquipmentService`.
 - `NOTE_ENTREGA_DEVOLUCION` and `NOTE_PROVEEDOR` are optional one-to-one extensions of `NOTE_REPORT`, populated based on `profile_type`.
 - `TECHNICIAN_PROFILE` is keyed by `windows_username` so each Windows account on the machine has its own profile.
-- All encrypted values use Windows DPAPI via `WindowsDPAPIService` — decryption fails on a different Windows user account by design.
+- All encrypted values use `AppKeyEncryptionService` (AES-256/GCM, replaced Windows DPAPI on 2026-07-08) — a single fixed key shared across every installation, chosen specifically so these organization-wide shared credentials can be pre-configured across many machines without per-account/per-machine setup. See `CLAUDE.md`'s Known issues/gotchas for the accepted security trade-off.
 - `NOTE_ITEM.glpi_status` tracks GLPI sync state per asset item. Only rows where `is_asset = 1` are eligible for GLPI sync; countable items always remain `N_A`. `NoteReport` aggregates these counts into `getPendingItemCount()`, `getSyncedItemCount()`, `getRejectedItemCount()` for display in the history table.
 - `GlpiStatus` enum values: `N_A` (no GLPI tracking), `PENDING` (queued for sync), `SYNCED` (successfully pushed to GLPI), `REJECTED` (sync attempted but rejected, reason stored in `glpi_rejection_reason`).
