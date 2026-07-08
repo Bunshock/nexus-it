@@ -6,6 +6,14 @@ import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;
 import com.bunshock.note_app_for_it_frontend.services.TechnicianSessionService;
 import com.bunshock.note_app_for_it_frontend.utils.ViewFactory;
 
+import java.util.concurrent.atomic.AtomicInteger;
+
+import javafx.animation.FadeTransition;
+import javafx.animation.KeyFrame;
+import javafx.animation.KeyValue;
+import javafx.animation.ParallelTransition;
+import javafx.animation.PauseTransition;
+import javafx.animation.Timeline;
 import javafx.application.Platform;
 import javafx.concurrent.ScheduledService;
 import javafx.concurrent.Task;
@@ -15,9 +23,14 @@ import javafx.scene.Parent;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
+import javafx.scene.control.ProgressIndicator;
 import javafx.scene.control.Tooltip;
+import javafx.scene.effect.GaussianBlur;
 import javafx.scene.input.KeyCode;
+import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
@@ -28,6 +41,13 @@ import javafx.stage.StageStyle;
 import javafx.util.Duration;
 
 public class MainController {
+
+    // 3 is a conventional retry count for a startup connectivity check — enough to ride out
+    // a transient blip without turning a genuine outage into a long wait (worst case per
+    // service: 3 attempts + 2 gaps of sleepBetweenAttempts()).
+    private static final int MAX_CONNECTION_ATTEMPTS = 3;
+
+    @FXML private BorderPane rootPane;
 
     @FXML private Label lblWelcome;
     @FXML private Label lblUsername;
@@ -48,10 +68,12 @@ public class MainController {
     public void initialize() {
         TechnicianSessionService.getInstance().addOnChangeListener(this::updateWelcomeLabels);
         updateWelcomeLabels();
-        refreshTechnicianSessionAsync();
 
-        startStatusMonitor();
         showSection(viewFactory.getGeneratorView());
+        // Deferred: initialize() runs during FXMLLoader.load(), before App.start() calls
+        // stage.show() — centerOnContent()'s localToScreen() needs the window already
+        // shown to position the overlay correctly, so this must wait one pulse.
+        Platform.runLater(this::runStartupChecks);
 
         navigationGroup.selectedToggleProperty().addListener((obs, old, newVal) -> {
             if (newVal == null) old.setSelected(true);
@@ -70,17 +92,222 @@ public class MainController {
         lblUsername.setText(username != null ? "Usuario: " + username : "Perfil no configurado");
     }
 
-    private void refreshTechnicianSessionAsync() {
-        Thread t = new Thread(() -> {
-            TechnicianSessionService session = TechnicianSessionService.getInstance();
-            session.refreshFromWindowsSession();
-            if (!session.isResolved()) {
-                Platform.runLater(() -> showWarningNotice("Perfil de técnico no disponible",
-                    session.getLastError() + " Puede reintentar desde Mi Perfil con \"Actualizar Perfil desde AD\"."));
+    /**
+     * Runs the AD profile lookup, DB connection test, and GLPI reachability check in
+     * parallel behind a blurred, non-dismissable loading overlay, so the technician sees
+     * one unified startup sequence instead of the AD lookup silently taking a while in the
+     * background. Feeds the same sidebar dots the periodic monitor updates later. Only
+     * after the overlay closes (plus a short pause so the results are actually readable) is
+     * the existing "AD lookup failed" warning shown, if the AD check failed.
+     */
+    private void runStartupChecks() {
+        GaussianBlur blur = new GaussianBlur(20);
+        rootPane.setEffect(blur);
+
+        ProgressIndicator spinner = new ProgressIndicator();
+        spinner.setMaxSize(40, 40);
+        spinner.setStyle("-fx-progress-color: #0c8570;");
+
+        Label lblTitle = new Label("Verificando conexiones...");
+        lblTitle.getStyleClass().add("section-label");
+
+        StartupRow rowAD   = buildPendingRow("Active Directory");
+        StartupRow rowDB   = buildPendingRow("Base de Datos");
+        StartupRow rowGLPI = buildPendingRow("GLPI");
+
+        VBox statusRows = new VBox(8, rowAD.container, rowDB.container, rowGLPI.container);
+        statusRows.setStyle("-fx-padding: 10 0 0 0;");
+
+        VBox root = buildDialogRoot(320, "#1a1a1a");
+        root.setAlignment(Pos.CENTER);
+        root.getChildren().addAll(spinner, lblTitle, statusRows);
+
+        Stage loadingStage = buildDialogStage();
+        centerOnContent(loadingStage);
+        loadingStage.setScene(buildDialogScene(root));
+        loadingStage.show();
+
+        AtomicInteger remaining = new AtomicInteger(3);
+        Runnable onCheckDone = () -> {
+            if (remaining.decrementAndGet() == 0) {
+                PauseTransition pause = new PauseTransition(Duration.seconds(4));
+                pause.setOnFinished(e -> fadeOutStartupOverlay(loadingStage, root, blur));
+                pause.play();
             }
-        }, "technician-session-startup");
+        };
+
+        // Staggered starts (1s, 2s, 3s from when the overlay appears) so the pending/loading
+        // state of each row is visible for a moment, and so the three don't all flash their
+        // spinners at once — each still runs independently and reports its own result
+        // whenever it finishes, regardless of the others.
+        delayThenRun(1, () -> startAdCheck(rowAD, onCheckDone));
+        delayThenRun(2, () -> startDbCheck(rowDB, onCheckDone));
+        delayThenRun(3, () -> startGlpiCheck(rowGLPI, onCheckDone));
+
+        startStatusMonitor();
+    }
+
+    private void delayThenRun(int seconds, Runnable action) {
+        PauseTransition delay = new PauseTransition(Duration.seconds(seconds));
+        delay.setOnFinished(e -> action.run());
+        delay.play();
+    }
+
+    /** Retries the technician-profile AD lookup up to MAX_CONNECTION_ATTEMPTS times before giving up. */
+    private void startAdCheck(StartupRow row, Runnable onCheckDone) {
+        Thread t = new Thread(() -> {
+            boolean resolved = false;
+            for (int attempt = 1; attempt <= MAX_CONNECTION_ATTEMPTS && !resolved; attempt++) {
+                TechnicianSessionService.getInstance().refreshFromWindowsSession();
+                resolved = TechnicianSessionService.getInstance().isResolved();
+                if (!resolved && attempt < MAX_CONNECTION_ATTEMPTS) sleepBetweenAttempts();
+            }
+            boolean finalResolved = resolved;
+            Platform.runLater(() -> {
+                updateADStatus(finalResolved);
+                resolveRow(row, "Active Directory",
+                    ServiceLocator.getInstance().getAdService().isConfigured(), finalResolved);
+                onCheckDone.run();
+            });
+        }, "startup-ad-check");
         t.setDaemon(true);
         t.start();
+    }
+
+    /** Retries the DB connection test up to MAX_CONNECTION_ATTEMPTS times before giving up. */
+    private void startDbCheck(StartupRow row, Runnable onCheckDone) {
+        Thread t = new Thread(() -> {
+            boolean dbUp = false;
+            for (int attempt = 1; attempt <= MAX_CONNECTION_ATTEMPTS && !dbUp; attempt++) {
+                dbUp = RemoteDatabaseService.getInstance().testConnection();
+                if (!dbUp && attempt < MAX_CONNECTION_ATTEMPTS) sleepBetweenAttempts();
+            }
+            boolean finalDbUp = dbUp;
+            Platform.runLater(() -> {
+                updateDBStatus(finalDbUp);
+                resolveRow(row, "Base de Datos", RemoteDatabaseService.getInstance().isConfigured(), finalDbUp);
+                onCheckDone.run();
+            });
+        }, "startup-db-check");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    /** Retries the GLPI reachability check up to MAX_CONNECTION_ATTEMPTS times before giving up. */
+    private void startGlpiCheck(StartupRow row, Runnable onCheckDone) {
+        Thread t = new Thread(() -> {
+            boolean glpiUp = false;
+            for (int attempt = 1; attempt <= MAX_CONNECTION_ATTEMPTS && !glpiUp; attempt++) {
+                glpiUp = ServiceLocator.getInstance().getGlpiService().isReachable();
+                if (!glpiUp && attempt < MAX_CONNECTION_ATTEMPTS) sleepBetweenAttempts();
+            }
+            boolean finalGlpiUp = glpiUp;
+            Platform.runLater(() -> {
+                updateGLPIStatus(finalGlpiUp);
+                resolveRow(row, "GLPI", true, finalGlpiUp);
+                onCheckDone.run();
+            });
+        }, "startup-glpi-check");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    private void sleepBetweenAttempts() {
+        try { Thread.sleep(500); }
+        catch (InterruptedException ie) { Thread.currentThread().interrupt(); }
+    }
+
+    /** Holds the mutable pieces of one startup-overlay row so it can transition from pending to resolved. */
+    private static class StartupRow {
+        final HBox container;
+        final StackPane indicatorSlot;
+        final Label lblService;
+        final Label lblStatus;
+        final Timeline ellipsis;
+
+        StartupRow(HBox container, StackPane indicatorSlot, Label lblService, Label lblStatus, Timeline ellipsis) {
+            this.container = container;
+            this.indicatorSlot = indicatorSlot;
+            this.lblService = lblService;
+            this.lblStatus = lblStatus;
+            this.ellipsis = ellipsis;
+        }
+    }
+
+    /** Builds one row in its pending state: a mini spinner, a greyed-out label with a cycling "..." animation. */
+    private StartupRow buildPendingRow(String serviceName) {
+        ProgressIndicator miniSpinner = new ProgressIndicator();
+        miniSpinner.setMinSize(16, 16);
+        miniSpinner.setMaxSize(16, 16);
+        miniSpinner.setStyle("-fx-progress-color: #0c8570;");
+
+        StackPane indicatorSlot = new StackPane(miniSpinner);
+        indicatorSlot.setMinWidth(16);
+
+        Label lblService = new Label(serviceName + ".");
+        lblService.setStyle("-fx-text-fill: #94a3b8; -fx-font-size: 12px;");
+
+        Label lblStatus = new Label("");
+        lblStatus.setStyle("-fx-font-size: 11px; -fx-font-weight: bold;");
+
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+
+        HBox row = new HBox(8, indicatorSlot, lblService, spacer, lblStatus);
+        row.setAlignment(Pos.CENTER_LEFT);
+
+        int[] dotCount = {1};
+        Timeline ellipsis = new Timeline(new KeyFrame(Duration.millis(450), e -> {
+            dotCount[0] = dotCount[0] % 3 + 1;
+            lblService.setText(serviceName + ".".repeat(dotCount[0]));
+        }));
+        ellipsis.setCycleCount(Timeline.INDEFINITE);
+        ellipsis.play();
+
+        return new StartupRow(row, indicatorSlot, lblService, lblStatus, ellipsis);
+    }
+
+    /** Transitions a row from pending to resolved: real status dot, plain label, EN LÍNEA/DESCONECTADO text. */
+    private void resolveRow(StartupRow row, String serviceName, boolean configured, boolean online) {
+        row.ellipsis.stop();
+        row.lblService.setText(serviceName);
+        row.lblService.setStyle("-fx-text-fill: #334155; -fx-font-size: 12px;");
+
+        row.indicatorSlot.getChildren().setAll(new Circle(5, statusColor(configured, online)));
+
+        if (!configured) {
+            row.lblStatus.setText("NO CONFIGURADO");
+            row.lblStatus.setStyle("-fx-text-fill: #94a3b8; -fx-font-size: 11px; -fx-font-weight: bold;");
+        } else if (online) {
+            row.lblStatus.setText("EN LÍNEA");
+            row.lblStatus.setStyle("-fx-text-fill: #22c55e; -fx-font-size: 11px; -fx-font-weight: bold;");
+        } else {
+            row.lblStatus.setText("DESCONECTADO");
+            row.lblStatus.setStyle("-fx-text-fill: #ef4444; -fx-font-size: 11px; -fx-font-weight: bold;");
+        }
+    }
+
+    /** Fades the loading card and the background blur out together, then closes the overlay. */
+    private void fadeOutStartupOverlay(Stage loadingStage, VBox root, GaussianBlur blur) {
+        Duration fadeDuration = Duration.millis(700);
+
+        FadeTransition fade = new FadeTransition(fadeDuration, root);
+        fade.setFromValue(1);
+        fade.setToValue(0);
+
+        Timeline unblur = new Timeline(new KeyFrame(fadeDuration, new KeyValue(blur.radiusProperty(), 0)));
+
+        ParallelTransition fadeOut = new ParallelTransition(fade, unblur);
+        fadeOut.setOnFinished(e -> {
+            loadingStage.close();
+            rootPane.setEffect(null);
+            TechnicianSessionService session = TechnicianSessionService.getInstance();
+            if (!session.isResolved()) {
+                showWarningNotice("Perfil de técnico no disponible",
+                    session.getLastError() + " Puede reintentar desde Mi Perfil con \"Actualizar Perfil desde AD\".");
+            }
+        });
+        fadeOut.play();
     }
 
     private void startStatusMonitor() {
@@ -98,6 +325,7 @@ public class MainController {
                 };
             }
         };
+        service.setDelay(Duration.seconds(60));
         service.setPeriod(Duration.seconds(60));
         service.setOnSucceeded(e -> {
             boolean[] r = service.getValue();
@@ -106,19 +334,6 @@ public class MainController {
             updateDBStatus(r[2]);
         });
         service.start();
-
-        Thread initial = new Thread(() -> {
-            boolean adUp   = checkAdReachable();
-            boolean glpiUp = ServiceLocator.getInstance().getGlpiService().isReachable();
-            boolean dbUp   = RemoteDatabaseService.getInstance().testConnection();
-            Platform.runLater(() -> {
-                updateADStatus(adUp);
-                updateGLPIStatus(glpiUp);
-                updateDBStatus(dbUp);
-            });
-        }, "status-initial-check");
-        initial.setDaemon(true);
-        initial.start();
     }
 
     private boolean checkAdReachable() {
@@ -132,14 +347,15 @@ public class MainController {
         }
     }
 
+    private Color statusColor(boolean configured, boolean online) {
+        if (!configured) return Color.web("#94a3b8");
+        return online ? Color.web("#22c55e") : Color.web("#ef4444");
+    }
+
     private void updateADStatus(boolean online) {
-        if (!ServiceLocator.getInstance().getAdService().isConfigured()) {
-            circleAD.setFill(Color.web("#94a3b8"));
-            tooltipAD.setText("Active Directory: No configurado");
-        } else {
-            circleAD.setFill(online ? Color.web("#22c55e") : Color.web("#ef4444"));
-            tooltipAD.setText("Active Directory: " + (online ? "En línea" : "Desconectado"));
-        }
+        boolean configured = ServiceLocator.getInstance().getAdService().isConfigured();
+        circleAD.setFill(statusColor(configured, online));
+        tooltipAD.setText("Active Directory: " + (!configured ? "No configurado" : (online ? "En línea" : "Desconectado")));
     }
 
     private void updateGLPIStatus(boolean online) {
@@ -148,13 +364,9 @@ public class MainController {
     }
 
     private void updateDBStatus(boolean online) {
-        if (!RemoteDatabaseService.getInstance().isConfigured()) {
-            circleDB.setFill(Color.web("#94a3b8"));
-            tooltipDB.setText("Base de datos remota: No configurada");
-        } else {
-            circleDB.setFill(online ? Color.web("#22c55e") : Color.web("#ef4444"));
-            tooltipDB.setText("Base de datos remota: " + (online ? "En línea" : "Desconectada"));
-        }
+        boolean configured = RemoteDatabaseService.getInstance().isConfigured();
+        circleDB.setFill(statusColor(configured, online));
+        tooltipDB.setText("Base de datos remota: " + (!configured ? "No configurada" : (online ? "En línea" : "Desconectada")));
     }
 
     private void updateAdminIndicator() {
