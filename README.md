@@ -113,7 +113,7 @@ Saving tests the connection in the background (using the currently resolved tech
 |-------|---------|-------|
 | `samAccountName` | Username | Matched by `username` query param (partial match) |
 | `displayName` | Full name | Stored/matched as `"Apellido, Nombre(s)"`; matched by `name` query param (partial match) |
-| `dni` | DNI | Matched by `dni` query param; queried both with and without dots (see below) |
+| `dni` | DNI | Matched by `dni` query param; queried both with and without dots (see below). Some accounts return this as a JSON array instead of a plain string (a multi-valued directory attribute) — the app uses the first value in that case |
 | `mail` | Email | Not queried, only returned |
 | `ou` | Organizational unit | Raw DN-style string, shown as-is in the AD multi-result picker popup |
 

@@ -16,6 +16,7 @@ import java.util.Map;
 import com.bunshock.note_app_for_it_frontend.models.ADUser;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 public class AdApiService implements IADService {
@@ -165,14 +166,25 @@ public class AdApiService implements IADService {
     private static boolean isBlank(String s) { return s == null || s.isBlank(); }
 
     private static ADUser toADUser(AdApiUserDto dto) {
-        return new ADUser(dto.dni, dto.displayName, dto.samAccountName, dto.mail, dto.ou);
+        return new ADUser(extractDni(dto.dni), dto.displayName, dto.samAccountName, dto.mail, dto.ou);
+    }
+
+    /**
+     * Some AD accounts return "dni" as a JSON array instead of a plain string (a multi-valued
+     * directory attribute) — use the first value, or "" if the array is empty. A missing/null
+     * field stays null, same as before this was discovered.
+     */
+    private static String extractDni(JsonNode node) {
+        if (node == null || node.isNull()) return null;
+        if (node.isArray()) return node.size() > 0 ? node.get(0).asText() : "";
+        return node.asText();
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     private static class AdApiUserDto {
         public String samAccountName;
         public String displayName;
-        public String dni;
+        public JsonNode dni;
         public String mail;
         public String ou;
     }

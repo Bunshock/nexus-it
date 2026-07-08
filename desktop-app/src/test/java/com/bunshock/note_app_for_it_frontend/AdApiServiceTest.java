@@ -5,6 +5,8 @@ import java.util.List;
 
 import com.bunshock.note_app_for_it_frontend.models.ADUser;
 import com.bunshock.note_app_for_it_frontend.services.AdApiService;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
@@ -12,6 +14,14 @@ import static org.junit.jupiter.api.Assertions.*;
 class AdApiServiceTest {
 
     private final AdApiService service = AdApiService.getInstance();
+    private final ObjectMapper mapper = new ObjectMapper();
+
+    private String extractDni(String json) throws Exception {
+        JsonNode node = mapper.readTree(json);
+        Method m = AdApiService.class.getDeclaredMethod("extractDni", JsonNode.class);
+        m.setAccessible(true);
+        return (String) m.invoke(null, node);
+    }
 
     @SuppressWarnings("unchecked")
     private List<String> dniVariants(String dni) throws Exception {
@@ -117,5 +127,25 @@ class AdApiServiceTest {
     void testConnectionFalseForBlankUrlOrToken() {
         assertFalse(service.testConnection(null, "token", "user"));
         assertFalse(service.testConnection("http://ad-api", null, "user"));
+    }
+
+    @Test
+    void extractDniReadsPlainStringValue() throws Exception {
+        assertEquals("45933368", extractDni("\"45933368\""));
+    }
+
+    @Test
+    void extractDniUsesFirstElementWhenArray() throws Exception {
+        assertEquals("45933368", extractDni("[\"45933368\", \"00000000\"]"));
+    }
+
+    @Test
+    void extractDniIsEmptyStringForEmptyArray() throws Exception {
+        assertEquals("", extractDni("[]"));
+    }
+
+    @Test
+    void extractDniIsNullWhenFieldIsJsonNull() throws Exception {
+        assertNull(extractDni("null"));
     }
 }
