@@ -1,6 +1,9 @@
 # SQLite database — created at runtime, may contain org config data
 desktop-app/data/noteapp.db
 
+# Real per-deployment config (internal URLs, sender addresses) — copy from app-config.json.example
+desktop-app/config/app-config.json
+
 target/
 pom.xml.tag
 pom.xml.releaseBackup
