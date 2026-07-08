@@ -123,15 +123,19 @@ public class RemoteDatabaseService {
                 )""");
             stmt.executeUpdate("""
                 CREATE TABLE IF NOT EXISTS NOTE_ITEM (
-                    id            SERIAL PRIMARY KEY,
-                    note_id       INTEGER NOT NULL REFERENCES NOTE_REPORT(id),
-                    type_name     TEXT NOT NULL,
-                    brand_name    TEXT,
-                    model_name    TEXT,
-                    serial_number TEXT,
-                    a_f           TEXT,
-                    quantity      INTEGER NOT NULL DEFAULT 1,
-                    observations  TEXT
+                    id                     SERIAL PRIMARY KEY,
+                    note_id                INTEGER NOT NULL REFERENCES NOTE_REPORT(id),
+                    type_name              TEXT NOT NULL,
+                    brand_name             TEXT,
+                    model_name             TEXT,
+                    serial_number          TEXT,
+                    a_f                    TEXT,
+                    quantity               INTEGER NOT NULL DEFAULT 1,
+                    observations           TEXT,
+                    is_asset               INTEGER NOT NULL DEFAULT 0,
+                    glpi_status            TEXT NOT NULL DEFAULT 'N_A',
+                    glpi_rejection_reason  TEXT,
+                    glpi_status_updated_at TEXT
                 )""");
 
             // CREATE TABLE IF NOT EXISTS silently no-ops on a database that already has the
@@ -142,6 +146,10 @@ public class RemoteDatabaseService {
             stmt.executeUpdate("ALTER TABLE NOTE_PROVEEDOR ADD COLUMN IF NOT EXISTS responsible_dni TEXT");
             stmt.executeUpdate("ALTER TABLE NOTE_REPORT ADD COLUMN IF NOT EXISTS technician_name TEXT");
             stmt.executeUpdate("ALTER TABLE NOTE_REPORT ADD COLUMN IF NOT EXISTS technician_dni TEXT");
+            stmt.executeUpdate("ALTER TABLE NOTE_ITEM ADD COLUMN IF NOT EXISTS is_asset INTEGER NOT NULL DEFAULT 0");
+            stmt.executeUpdate("ALTER TABLE NOTE_ITEM ADD COLUMN IF NOT EXISTS glpi_status TEXT NOT NULL DEFAULT 'N_A'");
+            stmt.executeUpdate("ALTER TABLE NOTE_ITEM ADD COLUMN IF NOT EXISTS glpi_rejection_reason TEXT");
+            stmt.executeUpdate("ALTER TABLE NOTE_ITEM ADD COLUMN IF NOT EXISTS glpi_status_updated_at TEXT");
         }
     }
 }
