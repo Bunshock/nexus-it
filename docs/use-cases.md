@@ -84,11 +84,12 @@ Same as UC-01 but with profile "FIN DE CONTRATO". Used for employees leaving the
 **Trigger:** Clicks "Buscar en AD" with at least one search field filled
 
 **Main Flow:**
-1. App calls IADService.search() with DNI, name, and/or username inputs — the real AD API ANDs whatever fields are supplied together (filling more fields narrows the result, it doesn't broaden it)
-2. If one result: fields are auto-filled
-3. If multiple results: AD user selection dialog shows a list with a hover popup showing DNI/email/OU; technician picks one
-4. If no results: status label shows error feedback
-5. If the AD API itself is unreachable or misconfigured (invalid/missing token): status label shows a distinct "could not connect" error rather than "not found"
+1. "Buscar en AD" disables and shows a "Buscando" state (small spinner beside the button) while the search runs on a background thread — the search itself is a real HTTP call and no longer blocks the UI
+2. App calls IADService.search() with DNI, name, and/or username inputs — the real AD API ANDs whatever fields are supplied together (filling more fields narrows the result, it doesn't broaden it)
+3. If one result: fields are auto-filled, button returns to normal, and the DNI/name/username fields briefly highlight (fading back to their default border over ~2.65s)
+4. If multiple results: AD user selection dialog shows a list with a hover popup showing DNI/email/OU; the button stays in its "Buscando" state (disabled, spinner visible) for as long as this dialog is open — it only returns to normal once the technician picks a user or clicks Cancelar
+5. If no results: status label and field borders show red error feedback, same fade-back behavior as a successful match
+6. If the AD API itself is unreachable or misconfigured (invalid/missing token): status label shows a distinct "could not connect" error rather than "not found"
 
 **Variants:**
 - DNI is queried both as plain digits and dotted (grouped by 3 from the right, e.g. "35123456" and "35.123.456") — both are real HTTP calls, results merged

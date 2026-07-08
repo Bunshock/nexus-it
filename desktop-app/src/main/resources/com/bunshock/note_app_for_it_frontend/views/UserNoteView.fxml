@@ -80,8 +80,11 @@
                 </HBox>
                 <HBox spacing="6" alignment="CENTER_LEFT" style="-fx-padding: 2 0 6 0;">
                     <children>
-                        <Button fx:id="btnBuscarAD" text="Buscar en AD" onAction="#handleADSearch" styleClass="button-primary"
-                                prefWidth="150" minWidth="150"/>
+                        <Button fx:id="btnBuscarAD" text="Buscar en AD" onAction="#handleADSearch" styleClass="button-primary"/>
+                        <ProgressIndicator fx:id="spinnerADSearch" visible="false" managed="false"
+                                           minWidth="16" minHeight="16" maxWidth="16" maxHeight="16"
+                                           style="-fx-progress-color: #0c8570;"/>
+                        <Region HBox.hgrow="ALWAYS"/>
                         <Button text="Limpiar" onAction="#handleClearUserFields" styleClass="button-secondary"/>
                     </children>
                 </HBox>

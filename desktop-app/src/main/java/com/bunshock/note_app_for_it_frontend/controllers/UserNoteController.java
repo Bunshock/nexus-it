@@ -12,8 +12,7 @@ import com.bunshock.note_app_for_it_frontend.services.ConfigService;
 import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;
 
 import javafx.animation.FadeTransition;
-import javafx.animation.KeyFrame;
-import javafx.animation.Timeline;
+import javafx.animation.Transition;
 import javafx.application.Platform;
 import javafx.collections.FXCollections;
 import javafx.fxml.FXML;
@@ -30,6 +29,7 @@ import javafx.scene.control.TextFormatter;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.ToggleGroup;
 import javafx.scene.layout.VBox;
+import javafx.scene.paint.Color;
 import javafx.stage.Modality;
 import javafx.stage.Stage;
 import javafx.stage.StageStyle;
@@ -58,12 +58,13 @@ public class UserNoteController {
 
     @FXML private Label lblADStatus;
     @FXML private Button btnBuscarAD;
+    @FXML private ProgressIndicator spinnerADSearch;
     @FXML private TextField txtUserDni;
     @FXML private TextField txtUserName;
     @FXML private TextField txtUserAccount;
     @FXML private Label lblUserEmail;
 
-    private Timeline searchEllipsis;
+    private String adSearchOriginalText;
 
     private String failureCause;
     private String failureDetails;
@@ -255,8 +256,8 @@ public class UserNoteController {
         }
 
         btnBuscarAD.setDisable(true);
-        String originalText = btnBuscarAD.getText();
-        startSearchingAnimation();
+        adSearchOriginalText = btnBuscarAD.getText();
+        showSearchingState();
 
         Thread t = new Thread(() -> {
             List<ADUser> results;
@@ -271,20 +272,27 @@ public class UserNoteController {
             List<ADUser> finalResults = results;
             boolean searchFailed = failed;
             Platform.runLater(() -> {
-                btnBuscarAD.setDisable(false);
-                stopSearchingAnimation(originalText);
-
                 if (searchFailed) {
+                    btnBuscarAD.setDisable(false);
+                    hideSearchingState(adSearchOriginalText);
                     highlightFields("#ef4444");
                     triggerFeedback("No se pudo conectar con AD", "#ef4444");
                 } else if (finalResults.isEmpty()) {
+                    btnBuscarAD.setDisable(false);
+                    hideSearchingState(adSearchOriginalText);
                     highlightFields("#ef4444");
                     triggerFeedback("Usuario no encontrado", "#ef4444");
                 } else if (finalResults.size() == 1) {
+                    btnBuscarAD.setDisable(false);
+                    hideSearchingState(adSearchOriginalText);
                     fillUserData(finalResults.get(0));
                     highlightFields("#0c8570");
                     triggerFeedback("Usuario cargado", "#0c8570");
                 } else {
+                    // Keep the button disabled and the spinner running — the multi-result
+                    // popup is itself the continuation of this search, not a new idle state.
+                    // onAdSelectionDialogClosed() (called by ADUserSelectionController on
+                    // either selection or cancel) is what restores normal button state.
                     showUserSelectionDialog(finalResults);
                 }
             });
@@ -293,30 +301,32 @@ public class UserNoteController {
         t.start();
     }
 
-    /** Mini spinner + cycling "..." text on btnBuscarAD, matching the startup overlay's pending-row look. */
-    private void startSearchingAnimation() {
-        ProgressIndicator spinner = new ProgressIndicator();
-        spinner.setMinSize(14, 14);
-        spinner.setMaxSize(14, 14);
-        spinner.setStyle("-fx-progress-color: #0c8570;");
-        btnBuscarAD.setGraphic(spinner);
-
-        int[] dotCount = {1};
-        searchEllipsis = new Timeline(new KeyFrame(Duration.millis(450), e -> {
-            dotCount[0] = dotCount[0] % 3 + 1;
-            btnBuscarAD.setText("Buscando" + ".".repeat(dotCount[0]));
-        }));
-        searchEllipsis.setCycleCount(Timeline.INDEFINITE);
-        searchEllipsis.play();
+    /** Called by ADUserSelectionController when the multi-result popup closes, however it closed. */
+    public void onAdSelectionDialogClosed() {
+        btnBuscarAD.setDisable(false);
+        hideSearchingState(adSearchOriginalText);
     }
 
-    private void stopSearchingAnimation(String originalText) {
-        if (searchEllipsis != null) {
-            searchEllipsis.stop();
-            searchEllipsis = null;
+    /**
+     * Locks btnBuscarAD's width to its current (pre-search) rendered size before shrinking
+     * the text, so swapping to the shorter "Buscando" never resizes/re-centers the button.
+     * The spinner lives beside the button (spinnerADSearch, FXML), not as the button's own
+     * graphic — putting it inside the button alongside changing text caused the content
+     * group's centered midpoint to shift each time the text changed.
+     */
+    private void showSearchingState() {
+        if (btnBuscarAD.getWidth() > btnBuscarAD.getMinWidth()) {
+            btnBuscarAD.setMinWidth(btnBuscarAD.getWidth());
         }
-        btnBuscarAD.setGraphic(null);
+        btnBuscarAD.setText("Buscando");
+        spinnerADSearch.setVisible(true);
+        spinnerADSearch.setManaged(true);
+    }
+
+    private void hideSearchingState(String originalText) {
         btnBuscarAD.setText(originalText);
+        spinnerADSearch.setVisible(false);
+        spinnerADSearch.setManaged(false);
     }
 
     public void fillUserData(ADUser user) {
@@ -362,26 +372,68 @@ public class UserNoteController {
         }
     }
 
+    // Shared by triggerFeedback()'s label fade and highlightFields()'s border fade so the
+    // two always stay in sync — they used to drift because the border was cleared with a
+    // flat setStyle("") instead of an animated fade, making it look like an on/off snap
+    // next to the label's smooth opacity fade.
+    private static final Duration FEEDBACK_HOLD = Duration.millis(2000);
+    private static final Duration FEEDBACK_FADE = Duration.millis(650);
+
+    // The .form-input-main CSS class's default (non-focused) border color — the border
+    // fade interpolates toward this exact color, not toward transparent, so the handoff to
+    // resetFieldStyles()'s empty style (which falls back to this same CSS default) is
+    // invisible instead of popping from "fully transparent" to "solid grey".
+    private static final Color DEFAULT_BORDER_COLOR = Color.web("#cbd5e1");
+
+    private Transition borderFade;
+
     public void triggerFeedback(String message, String hexColor) {
         lblADStatus.setText(message);
         lblADStatus.setStyle("-fx-text-fill: " + hexColor + "; -fx-font-size: 10px; -fx-font-weight: bold;");
         lblADStatus.setOpacity(1.0);
 
-        FadeTransition fade = new FadeTransition(Duration.millis(400), lblADStatus);
-        fade.setDelay(Duration.millis(2000));
+        FadeTransition fade = new FadeTransition(FEEDBACK_FADE, lblADStatus);
+        fade.setDelay(FEEDBACK_HOLD);
         fade.setFromValue(1.0);
         fade.setToValue(0.0);
         fade.setOnFinished(e -> {
             lblADStatus.setText("");
             lblADStatus.setStyle("");
             lblADStatus.setOpacity(1.0);
-            resetFieldStyles();
         });
         fade.play();
     }
 
     void highlightFields(String hexColor) {
-        String style = "-fx-border-color: " + hexColor
+        if (borderFade != null) {
+            borderFade.stop();
+        }
+
+        applyBorderStyle(hexColor);
+
+        Color from = Color.web(hexColor);
+
+        Transition fade = new Transition() {
+            { setDelay(FEEDBACK_HOLD); setCycleDuration(FEEDBACK_FADE); }
+            @Override
+            protected void interpolate(double frac) {
+                applyBorderStyle(toRgbString(from.interpolate(DEFAULT_BORDER_COLOR, frac)));
+            }
+        };
+        fade.setOnFinished(e -> resetFieldStyles());
+        borderFade = fade;
+        fade.play();
+    }
+
+    private static String toRgbString(Color c) {
+        int r = (int) Math.round(c.getRed() * 255);
+        int g = (int) Math.round(c.getGreen() * 255);
+        int b = (int) Math.round(c.getBlue() * 255);
+        return String.format("rgb(%d,%d,%d)", r, g, b);
+    }
+
+    private void applyBorderStyle(String colorValue) {
+        String style = "-fx-border-color: " + colorValue
             + "; -fx-border-width: 1.5; -fx-border-radius: 4; -fx-background-radius: 4;";
         txtUserDni.setStyle(style);
         txtUserName.setStyle(style);

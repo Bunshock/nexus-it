@@ -103,10 +103,12 @@ public class ADUserSelectionController {
     @FXML
     private void handleCancel() {
         ((Stage) btnCancel.getScene().getWindow()).close();
+        parentController.onAdSelectionDialogClosed();
     }
 
     private void closeWindow() {
         ((Stage) btnSelect.getScene().getWindow()).close();
+        parentController.onAdSelectionDialogClosed();
         parentController.highlightFields("#0c8570");
         parentController.triggerFeedback("✔ Usuario cargado", "#0c8570");
     }
