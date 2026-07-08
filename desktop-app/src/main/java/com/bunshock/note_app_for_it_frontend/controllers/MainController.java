@@ -130,7 +130,7 @@ public class MainController {
         AtomicInteger remaining = new AtomicInteger(3);
         Runnable onCheckDone = () -> {
             if (remaining.decrementAndGet() == 0) {
-                PauseTransition pause = new PauseTransition(Duration.seconds(4));
+                PauseTransition pause = new PauseTransition(Duration.seconds(3));
                 pause.setOnFinished(e -> fadeOutStartupOverlay(loadingStage, root, blur));
                 pause.play();
             }
