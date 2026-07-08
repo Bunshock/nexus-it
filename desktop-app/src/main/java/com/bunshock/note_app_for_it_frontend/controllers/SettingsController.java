@@ -189,6 +189,9 @@ public class SettingsController {
                 pfAdApiToken.clear();
             }
 
+            String effectiveToken = !adToken.isBlank() ? adToken : decryptSetting("ad_api_token");
+            AdApiService.getInstance().configure(adUrl.isBlank() ? null : adUrl, effectiveToken);
+
             try {
                 ConfigService.getInstance().save();
                 lblSaveStatus.setStyle("-fx-text-fill: #0c8570;");
