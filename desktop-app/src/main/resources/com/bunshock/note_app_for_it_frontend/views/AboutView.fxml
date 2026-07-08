@@ -110,6 +110,8 @@
                            style="-fx-font-size: 12px; -fx-text-fill: #64748b;"/>
                     <Label text="     8.2  Correo electrónico"
                            style="-fx-font-size: 12px; -fx-text-fill: #64748b;"/>
+                    <Label text="     8.3  Active Directory"
+                           style="-fx-font-size: 12px; -fx-text-fill: #64748b;"/>
                 </VBox>
 
                 <Separator/>
@@ -297,6 +299,12 @@
                        style="-fx-font-size: 13px; -fx-font-weight: bold; -fx-text-fill: #334155;"/>
                 <Label wrapText="true"
                        text="Para habilitar el envío de notas por correo, completar los campos de configuración SMTP: servidor, puerto y dirección del remitente. La contraseña se ingresa una sola vez y queda almacenada de forma segura en el equipo; no es necesario volver a ingresarla en sesiones posteriores. Una vez configurado, el botón &quot;Enviar por correo&quot; en la previsualización quedará habilitado."
+                       style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
+
+                <Label text="8.3  Active Directory"
+                       style="-fx-font-size: 13px; -fx-font-weight: bold; -fx-text-fill: #334155;"/>
+                <Label wrapText="true"
+                       text="Para habilitar la búsqueda de usuarios en Active Directory (sección 6), completar la URL y el Token de la API en &quot;ACTIVE DIRECTORY API&quot;. El Token se ingresa una sola vez y queda almacenado de forma segura en el equipo; por seguridad, el campo no vuelve a mostrar el valor guardado, solo se completa si se desea reemplazarlo. Al guardar, la aplicación verifica la conexión antes de confirmar el cambio."
                        style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
 
                 <!-- Espacio final -->

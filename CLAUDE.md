@@ -37,8 +37,8 @@ Project-level instructions for Claude Code. These override defaults and apply to
 - Every implemented feature must have tests. Write test files **and run them** before marking a task done.
 - Desktop app: **JUnit 5 + TestFX** (`src/test/java/...`)
 - Run: `mvn test` from `desktop-app/`
-- Current test count: 125 tests, all passing.
-- Test classes: `TemplateEngineTest`, `AfFormatterTest`, `MockADServiceTest`, `MockEquipmentServiceTest`, `CachingServiceTest`, `GlpiStatusTest`, `NoteGenerationServiceTest`, `AdminSessionTest`, `RemoteDatabaseServiceTest`, `SqliteHistoryServiceTest`, `HistoryControllerTest`, `InputValidationTest`, `TechnicianSessionServiceTest`, `SettingsControllerTest`
+- Current test count: 140 tests, all passing.
+- Test classes: `TemplateEngineTest`, `AfFormatterTest`, `MockADServiceTest`, `AdApiServiceTest`, `MockEquipmentServiceTest`, `CachingServiceTest`, `GlpiStatusTest`, `NoteGenerationServiceTest`, `AdminSessionTest`, `RemoteDatabaseServiceTest`, `SqliteHistoryServiceTest`, `HistoryControllerTest`, `InputValidationTest`, `TechnicianSessionServiceTest`, `SettingsControllerTest`
 
 ---
 
@@ -178,7 +178,7 @@ When Motivo = "Falla" is selected in the Devolución flow, `UserNoteController` 
 
 | Interface | Active implementation | Future |
 |-----------|----------------------|--------|
-| `IADService` | `MockADService` (in-memory) | REST API (Spring Boot, URL configurable via `adApi.baseUrl`) |
+| `IADService` | `AdApiService` (REST client, `adApi.baseUrl` + DPAPI-encrypted `ad_api_token`) | — |
 | `IEquipmentService` | `SqliteEquipmentService` (SQLite, seeded on first run) | PostgreSQL (JDBC driver swap) |
 | `IHistoryService` | `SqliteHistoryService` | — |
 | `IGLPIService` | `GLPIServiceStub` (no-op) | GLPI REST API (out of scope v1) |
@@ -194,7 +194,7 @@ When Motivo = "Falla" is selected in the Devolución flow, `UserNoteController` 
 - `fallaOptions`: failure-cause combobox values shown by the Falla detail popup (Devolución only)
 - `smtp`: `host`, `port`, `senderAddress` (password stored encrypted in DB, never here)
 - `adApi.baseUrl`, `glpiApi.baseUrl`, `database.baseUrl`: external service URLs
-- GLPI API key is **not** in this file — it's a credential, stored DPAPI-encrypted in `APP_SETTINGS` (`glpi_api_key`), same as `smtp_password`
+- GLPI API key and AD API token are **not** in this file — they're credentials, stored DPAPI-encrypted in `APP_SETTINGS` (`glpi_api_key`, `ad_api_token`), same as `smtp_password`. Both are configured via a write-only `PasswordField` in `SettingsController` (never re-displayed once saved) and verified with a live test-before-save call before persisting (see `docs/architecture.md`'s "Active Directory Integration" section).
 - `noteItemLimit`: max items before warning
 
 **Jackson config**: `AppConfig` and all inner classes are annotated `@JsonIgnoreProperties(ignoreUnknown = true)` — unknown keys in the JSON file do not crash the app.
@@ -220,6 +220,7 @@ See `docs/database.md` for full ERD.
 |-----|-----------|---------|
 | `smtp_password` | DPAPI | SMTP sender password |
 | `glpi_api_key` | DPAPI | GLPI REST API key |
+| `ad_api_token` | DPAPI | AD API bearer token |
 | `db_host` | No | Remote DB hostname |
 | `db_port` | No | Remote DB port (default `5432`) |
 | `db_name` | No | Remote DB database name |
@@ -238,5 +239,6 @@ See `docs/database.md` for full ERD.
 - `config/app-config.json` must use `"baseUrl"` (not `"remoteUrl"`) in all API endpoint objects to match `AppConfig.ApiEndpoint`.
 - `WindowsDPAPIService` only works on Windows. Tests that invoke it will fail on Linux/macOS CI.
 - SLF4J "Failed to load class StaticLoggerBinder" at runtime is harmless — ControlsFX logs via SLF4J but the app functions normally without a binding.
-- The sidebar's AD status dot (`MainController.circleAD`) is **always green while `MockADService` is active** — `checkAdReachable()` just calls `search(null, "ping", null)` in a try/catch, and the mock never throws (it's a plain in-memory list filter), so the "reachability" it's actually testing is "is the mock object present," not any real network/service health. This will only mean something once a real `IADService` REST implementation exists.
+- The sidebar's AD status dot (`MainController.circleAD`) now reflects real `AdApiService` reachability: `checkAdReachable()` queries by the current technician's already-resolved username (`TechnicianSessionService.getUsername()`), and a thrown exception (401/5xx/network failure) means genuinely "down," not a mock artifact. If the technician's username isn't resolved yet, the check is skipped for that cycle (shown as unreachable) rather than sending an unbounded query. A third gray "No configurado" state shows via `IADService.isConfigured()` when the AD URL/token aren't set.
 - `.modern-table` (`styles.css`) is shared by History's `tblGlobal`, Settings' S/N Validation `tblSnValidation`, and the note-generation item tables `tblAssets`/`tblCountables` (`NoteGeneratorView.fxml`) — a selected-row text-color change intended only for one silently affects all four. Only History's `tblGlobal` intentionally kept the darker selected-row text from commit `349c9e0`; the other three carry an extra `equipment-table` class that overrides `.modern-table .table-row-cell:selected .table-cell`'s text-fill back to the original light color. If a future change needs to diverge these tables' styling further, extend `.equipment-table`'s rule rather than editing `.modern-table` directly — and check whether it should apply to `tblAssets`/`tblCountables` too, not just `tblSnValidation`.
+- **`App.java` creates the Scene with a fixed size** (`visualBounds.getWidth() * 0.85`, `* 0.95`) — it does not grow to fit content. `MainView.fxml`'s `BorderPane` gives `left` (sidebar) and `center` (`contentArea`) the same actual height, so if any section's root content isn't height-bounded and its min-height exceeds the fixed window height, the whole row is forced taller than the visible viewport — the sidebar's bottom-anchored nav buttons and status dots get pushed down and off-screen, even though the sidebar's own content never changed. This is exactly what happened when the AD API card was added to `SettingsController`'s config list without a `ScrollPane`. Fixed by wrapping `panelSettings`'s card list in a `ScrollPane` (`styleClass="settings-scroll"`, styled transparent in `styles.css`) with `VBox.vgrow="ALWAYS"`, and moving the "Guardar Configuración" button to a fixed footer `HBox` outside the `ScrollPane`. **Any future card added to Settings must go inside that `ScrollPane`'s content `VBox`, not appended directly to `panelSettings`**, or this bug recurs. The same risk applies to any other section root that isn't already scrollable if its content can grow unboundedly.

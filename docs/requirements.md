@@ -24,7 +24,7 @@
 
 ##### 3. Integrations
 
-- **FR-10**: The system shall perform AD lookups to retrieve user data (name, DNI, email) based on a search query.
+- **FR-10**: The system shall perform AD lookups to retrieve user data (name, DNI, email, OU) based on a search query (DNI, name, and/or username), querying a configurable REST API endpoint.
 
 - **FR-11**: The system shall interface with the GLPI API to update asset history and status variables upon report generation.
 
@@ -32,7 +32,7 @@
 
 ##### 4. Security & Administration
 
-- **FR-13**: The system shall require an Admin Password or Environment Key to modify critical settings (like Server IP). All general configuration fields in Settings (A/F format, SMTP, GLPI API URL/Key) and the "Guardar Configuración" button are disabled unless an admin session is active.
+- **FR-13**: The system shall require an Admin Password or Environment Key to modify critical settings (like Server IP). All general configuration fields in Settings (A/F format, SMTP, GLPI API URL/Key, AD API URL/Token) and the "Guardar Configuración" button are disabled unless an admin session is active. Saving a new database or AD API connection tests it first and requires confirmation before persisting if the test fails.
 
 - **FR-14**: The system shall protect the "Generic" brand entry from deletion.
 

@@ -51,9 +51,9 @@ desktop-app/src/main/java/com/bunshock/note_app_for_it_frontend/
 │   ├── DatabaseService.java          — SQLite connection pool and schema initialization
 │   ├── RemoteDatabaseService.java    — PostgreSQL connection and DDL; used by Caching* wrappers
 │   ├── ServiceLocator.java           — Single wiring point for all service implementations
-│   ├── IADService.java               — AD lookup interface
-│   ├── MockADService.java            — In-memory AD mock (used until REST API is ready)
-│   ├── ADService.java                — JAAS/GSSAPI Kerberos implementation (not active)
+│   ├── IADService.java               — AD lookup interface (search + isConfigured)
+│   ├── AdApiService.java             — Active implementation: REST client for the AD API (see below)
+│   ├── MockADService.java            — In-memory AD mock (tests only)
 │   ├── IEquipmentService.java        — Equipment catalog interface (types, brands, models)
 │   ├── MockEquipmentService.java     — JSON-backed equipment catalog (reads mock-equipment.json)
 │   ├── SqliteEquipmentService.java   — SQLite-backed equipment catalog
@@ -79,6 +79,17 @@ desktop-app/src/main/java/com/bunshock/note_app_for_it_frontend/
 
 ### Service Abstraction (Strategy Pattern)
 Every external dependency has an interface (`IADService`, `IEquipmentService`, `IGLPIService`, `IEmailService`, `IHistoryService`). Concrete implementations are wired in `ServiceLocator.initialize()`. Swapping from mock to real is a one-line change in `ServiceLocator`.
+
+### Active Directory Integration (AdApiService)
+`AdApiService` (singleton, `configure(baseUrl, apiToken)` / `isConfigured()`) is the active `IADService` implementation, calling `<baseUrl>/api/v1/ad/users` with `dni`/`name`/`username` query params (server-side ANDs whatever is supplied) and an `Authorization: Bearer <token>` header. `MockADService` is test-only now — `ServiceLocator` always wires `AdApiService`.
+
+- **Config storage**: the URL (`adApi.baseUrl`) lives in `app-config.json` like `glpiApi.baseUrl`; the token is a secret, DPAPI-encrypted into `APP_SETTINGS` (`ad_api_token`), never re-displayed once saved (write-only `PasswordField`, same pattern as `glpi_api_key`). Both fields live in `SettingsController`'s "ACTIVE DIRECTORY API" card, admin-gated like every other config field.
+- **Verify-before-save**: saving a new URL/token in Settings tests the connection on a background thread (using the current technician's already-resolved username as a cheap, real query) before persisting; a failed test prompts for confirmation rather than silently accepting bad config — mirrors `DatabaseSectionController`'s DB connection flow.
+- **DNI query variants**: the API matches literally, so a technician-typed DNI (digits only) is queried in both its plain and dotted forms (grouped by 3 from the right, e.g. `45933368` → `45.933.368`); results from both are merged and deduped by `samAccountName`.
+- **Name query variants**: `name` is a partial/contains match against the stored `"Apellido, Nombre(s)"` display format, so a typed name is queried both as-typed (matches when given names are stored in the typed order, regardless of what precedes the comma) and reordered as `"<lastWord>, <restOfWords>"` (matches the common "Nombre Apellido" input shape). Both variants run as separate HTTP calls and are merged.
+- **Error handling**: any non-200 response (401 `invalid_api_key`/`missing_api_key`, 5xx, network failure) throws, so existing callers (e.g. `TechnicianSessionService`) can keep distinguishing "AD reachable, zero matches" from "AD unreachable" without change. A `200` with an empty array is a normal zero-match result.
+- **Reachability check**: `MainController`'s periodic 60s AD status poll queries by the current technician's own already-resolved username (`TechnicianSessionService.getUsername()`) instead of an unbounded/empty query, to avoid pulling the full directory just to check liveness; the sidebar dot shows a third gray "No configurado" state via `IADService.isConfigured()` when the URL/token aren't set, distinct from red "Desconectado".
+- **`ADUser` no longer carries group memberships** — the real API's DTO has no such field. It now carries the raw `ou` string (e.g. `OU=2025,OU=Bajas,OU=Cau2018,OU=SEDES CAU`) in the existing `distinguishedName` field, shown as-is in `ADUserSelectionController`'s multi-result popup; the "GRUPOS" line was removed.
 
 ### ViewFactory — State Persistence Across Navigation
 `ViewFactory` loads each section FXML exactly once and caches the result. When `MainController` switches sections via sidebar, it calls `viewFactory.getXxxView()` which returns the cached node. Controller instances — and their bound data — remain alive in memory for the session. This implements FR-08 (in-session data persistence).

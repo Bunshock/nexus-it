@@ -19,7 +19,9 @@ Desktop application for IT support teams at Universidad Siglo 21 to generate equ
 git clone <repository-url>
 cd notes-app-for-it/desktop-app
 
-# First run — creates data/noteapp.db automatically
+# First run — copy the config template, then edit it with your real values
+cp config/app-config.json.example config/app-config.json
+
 mvn clean javafx:run
 ```
 
@@ -27,15 +29,7 @@ mvn clean javafx:run
 
 > **Never commit `desktop-app/data/noteapp.db`.** It's a runtime artifact created fresh on first launch and is already listed in `.gitignore`. If your local clone fails on startup with an error like `SQLITE_ERROR ... table NOTE_ITEM has no column named ...`, you likely have a stale database file left over from an old checkout — delete `desktop-app/data/noteapp.db` and re-run `mvn clean javafx:run` to regenerate it.
 
-To run with Kerberos/AD support (for real ADService):
-
-```bash
-# Use the Launcher config in .vscode/launch.json
-# or pass these VM args manually:
-# --add-exports=java.security.jgss/sun.security.jgss=ALL-UNNAMED
-# --add-exports=java.security.jgss/sun.security.jgss.spi=ALL-UNNAMED
-# -Djavax.security.auth.useSubjectCredsOnly=false
-```
+> **`desktop-app/config/app-config.json` is gitignored** — it holds real per-deployment values (internal AD API URL, SMTP sender address) that must never reach git history. `config/app-config.json.example` is the committed template with placeholder values; copy it once per machine and edit the copy. If you pull changes to `app-config.json.example` (new keys), diff it against your local `app-config.json` and merge the new keys in manually.
 
 ---
 
@@ -64,6 +58,47 @@ Two JSON files in `desktop-app/config/` control runtime behavior. **Do not commi
 | `noteItemLimit` | Max items per note before showing a warning |
 
 SMTP password and GLPI API key are stored encrypted in the local SQLite database (Windows DPAPI) — never in this file.
+
+### Active Directory (AD) API
+
+The app looks up users (recipient name/DNI/email autofill, technician profile) against a real REST API — there is no built-in directory server integration. Configure it from **Configuración → ACTIVE DIRECTORY API** (admin mode required, see [Settings](#settings) below):
+
+| Field | Where it's stored | Notes |
+|-------|-------------------|-------|
+| API URL | `config/app-config.json` → `adApi.baseUrl` | Not a secret; e.g. `https://ad-api.example.org` |
+| API Token | DPAPI-encrypted in `data/noteapp.db` (`APP_SETTINGS.ad_api_token`) | Write-only field — once saved it's never shown again in the UI; re-enter to replace it |
+
+Saving tests the connection in the background (using the currently resolved technician's own username as a lightweight, real query) before persisting; if the test fails you're asked to confirm before saving anyway.
+
+**Required API contract** — the app calls `GET <baseUrl>/api/v1/ad/users` with any combination of `dni`, `name`, `username` query parameters (server-side ANDs whatever is supplied) and header `Authorization: Bearer <token>`. Expected response, a JSON array (placeholders below — not real data):
+
+```json
+[
+  {
+    "samAccountName": "example.username",
+    "displayName": "Apellido, Nombre",
+    "dni": "00.000.000",
+    "mail": "example.username@example.org",
+    "ou": "OU=Example,OU=Users,DC=example,DC=org"
+  }
+]
+```
+
+| Field | Maps to | Notes |
+|-------|---------|-------|
+| `samAccountName` | Username | Matched by `username` query param (partial match) |
+| `displayName` | Full name | Stored/matched as `"Apellido, Nombre(s)"`; matched by `name` query param (partial match) |
+| `dni` | DNI | Matched by `dni` query param; queried both with and without dots (see below) |
+| `mail` | Email | Not queried, only returned |
+| `ou` | Organizational unit | Raw DN-style string, shown as-is in the AD multi-result picker popup |
+
+- An empty array `[]` with HTTP `200` means "no matching user" (not an error).
+- HTTP `401` means the token is missing/invalid — the app treats this (and any other non-200 response) as "AD unreachable", distinct from a genuine zero-match search.
+- A `dni` search tries both the plain-digits and dotted forms (grouped by 3 from the right, e.g. `45933368` and `45.933.368`); a `name` search tries the text as typed and a `"<lastWord>, <rest>"` reordering — both are real, separate HTTP calls whose results get merged.
+
+### Remote database (PostgreSQL)
+
+The app runs fully on local SQLite by default. To point it at a shared PostgreSQL instance instead, go to **Base de Datos** → **✏ Editar** (admin mode required) and enter host, port, database name, username, and password — stored in `data/noteapp.db`'s `APP_SETTINGS` table (host/port/name in plaintext, username/password DPAPI-encrypted). Saving tests the connection before persisting, same confirm-on-failure flow as the AD API above. The **Probar conexión** button re-checks connectivity on demand without opening the edit dialog. If the remote database is unreachable, the app automatically falls back to local SQLite (write-through cache: writes go to remote first, then local; reads try remote first, fall back to local).
 
 ### `config/mock-equipment.json`
 
@@ -122,7 +157,7 @@ cd desktop-app
 mvn test
 ```
 
-35 unit tests covering: template engine, A/F formatting, AD search, equipment cascade logic, and caching service fallback behavior.
+140 unit tests covering: template engine, A/F formatting, AD search (mock and real REST client), equipment cascade logic, caching service fallback behavior, remote DB connection handling, and more — see `CLAUDE.md`'s Testing requirements section for the full class list.
 
 ---
 
@@ -159,11 +194,12 @@ mvn test
 
 ### AD Integration
 
-- Search by DNI, name, or username
-- DNI dot format normalized automatically (`"35.123.456"` = `"35123456"`)
-- Username `.` vs `-` separator variants tried automatically
-- Multi-result picker dialog when search returns more than one user
-- Current Windows user looked up in AD on startup (background thread)
+- Search by DNI, name, and/or username against a real REST API (see [Active Directory (AD) API](#active-directory-ad-api) above) — multiple fields narrow the search (AND)
+- DNI dot format normalized automatically — queried both as `"35123456"` and `"35.123.456"`
+- Name queried both as typed and reordered as `"Apellido, Nombre"` to match the stored display-name format
+- Multi-result picker dialog when search returns more than one user, showing DNI/email/OU on hover
+- Current Windows user looked up in AD on startup (background thread) to populate the technician profile
+- Sidebar status dot reflects real AD API reachability (see [Configure Application Settings](docs/use-cases.md) / `CLAUDE.md` for the status-check design)
 
 ### History
 
@@ -179,13 +215,15 @@ mvn test
 - A/F format configuration with live preview
 - SMTP credentials (password encrypted via Windows DPAPI — never stored in plaintext)
 - GLPI API URL and API Key (key encrypted via Windows DPAPI — never stored in plaintext)
+- Active Directory API URL and Token (token encrypted via Windows DPAPI, write-only field — never redisplayed once saved); saving tests the connection first and asks for confirmation if it fails
+- Settings content scrolls independently in a fixed-height panel — the "Guardar Configuración" button always stays visible in its own footer row, not pushed off-screen as cards are added
 - All configuration fields and the "Guardar Configuración" button are read-only/disabled unless admin mode is active
 - **S/N Validation table** (admin-protected): view all asset-type models with their regex pattern and active toggle; active rules sort to the top; filterable by type, brand, or model
 - **Admin mode**: password-protected session (SHA-256 hash in SQLite); unlocks general configuration editing, S/N validation edits, GLPI sync actions, and DB connection changes; auto-expires after 15 minutes of inactivity
 
 ### Security
 
-- SMTP password and GLPI API key encrypted at rest using Windows DPAPI (tied to the current Windows user account)
+- SMTP password, GLPI API key, and AD API token encrypted at rest using Windows DPAPI (tied to the current Windows user account)
 - No plaintext secrets in config files or source code
 - Input validated at every system boundary
 

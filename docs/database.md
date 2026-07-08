@@ -119,6 +119,7 @@ erDiagram
 |-----|-------|-------------|
 | `smtp_password` | Base64-encoded DPAPI ciphertext | SMTP password, encrypted via Windows DPAPI |
 | `glpi_api_key` | Base64-encoded DPAPI ciphertext | GLPI REST API key, encrypted via Windows DPAPI |
+| `ad_api_token` | Base64-encoded DPAPI ciphertext | AD API bearer token, encrypted via Windows DPAPI |
 
 ```sql
 APP_SETTINGS (

@@ -84,14 +84,16 @@ Same as UC-01 but with profile "FIN DE CONTRATO". Used for employees leaving the
 **Trigger:** Clicks "Buscar en AD" with at least one search field filled
 
 **Main Flow:**
-1. App calls IADService.search() with DNI, name, and/or username inputs
+1. App calls IADService.search() with DNI, name, and/or username inputs — the real AD API ANDs whatever fields are supplied together (filling more fields narrows the result, it doesn't broaden it)
 2. If one result: fields are auto-filled
-3. If multiple results: AD user selection dialog shows a list; technician picks one
+3. If multiple results: AD user selection dialog shows a list with a hover popup showing DNI/email/OU; technician picks one
 4. If no results: status label shows error feedback
+5. If the AD API itself is unreachable or misconfigured (invalid/missing token): status label shows a distinct "could not connect" error rather than "not found"
 
 **Variants:**
-- DNI with dots (e.g., "35.123.456") is normalized before search
-- Username with "." vs "-" separator is tried both ways
+- DNI is queried both as plain digits and dotted (grouped by 3 from the right, e.g. "35123456" and "35.123.456") — both are real HTTP calls, results merged
+- Name is queried both as typed and reordered as "Apellido, Nombre(s)" to match the stored display-name format — both are real HTTP calls, results merged
+- Username is queried as typed (lowercased), partial match — no automatic "." vs "-" variant handling today (unlike DNI/name, this hasn't been implemented for the real API yet)
 
 ---
 
@@ -140,9 +142,13 @@ Same as UC-01 but with profile "FIN DE CONTRATO". Used for employees leaving the
 1. Administrator configures A/F format (Prefix, Separator, Length, Filler); live preview shown
 2. Configures SMTP sender address and password (stored encrypted via DPAPI)
 3. Configures GLPI API URL and API Key (key stored encrypted via DPAPI, never in app-config.json)
-4. Clicks "Guardar Configuración" → URL/format fields saved to app-config.json, credentials saved encrypted to DB; a status message appears next to the save button
+4. Configures Active Directory API URL and Token (token stored encrypted via DPAPI, write-only — never redisplayed once saved)
+5. Clicks "Guardar Configuración" → URL/format fields saved to app-config.json, credentials saved encrypted to DB; a status message appears next to the save button
+6. Configuration content (A/F, SMTP, GLPI, AD, S/N validation entry point, Admin mode) scrolls independently within its own panel — the save button always stays visible in a fixed footer below it
 
-**Alternate Flow — Admin mode inactive:** all input fields and the save button are disabled (greyed out); technician can view current values but not change them
+**Alternate Flow A — Admin mode inactive:** all input fields and the save button are disabled (greyed out); technician can view current values but not change them
+
+**Alternate Flow B — AD API connection test fails on save:** if an AD API URL is entered, saving first tests the connection in the background (using the current technician's own resolved username as the query) — the Save button shows "Probando..." and is disabled during the test. If the test fails, a confirmation dialog asks whether to save anyway; declining leaves the dialog open without saving.
 
 ---
 
