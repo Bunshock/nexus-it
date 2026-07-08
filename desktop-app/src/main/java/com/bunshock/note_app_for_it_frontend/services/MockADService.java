@@ -1,6 +1,5 @@
 package com.bunshock.note_app_for_it_frontend.services;
 
-import java.util.Arrays;
 import java.util.List;
 
 import com.bunshock.note_app_for_it_frontend.models.ADUser;
@@ -9,14 +8,11 @@ public class MockADService implements IADService {
 
     private final List<ADUser> users = List.of(
         new ADUser("35123456", "Leandro Mantovani", "lmantovani",
-            "lmantovani@ues21.edu.ar", "OU=Cordoba,OU=IT,DC=ues21",
-            Arrays.asList("Domain Users", "IT_Admins", "VPN_Users")),
+            "lmantovani@ues21.edu.ar", "OU=Cordoba,OU=IT,DC=ues21"),
         new ADUser("38987654", "Leandro Garcia", "lgarcia",
-            "lgarcia@ues21.edu.ar", "OU=BuenosAires,OU=Docentes,DC=ues21",
-            Arrays.asList("Domain Users", "Faculty_Group")),
+            "lgarcia@ues21.edu.ar", "OU=BuenosAires,OU=Docentes,DC=ues21"),
         new ADUser("40111222", "Juan Perez", "jperez",
-            "jperez@ues21.edu.ar", "OU=Cordoba,OU=Alumnos,DC=ues21",
-            Arrays.asList("Domain Users", "Student_Group"))
+            "jperez@ues21.edu.ar", "OU=Cordoba,OU=Alumnos,DC=ues21")
     );
 
     @Override

@@ -62,7 +62,10 @@ public class ServiceLocator {
             }
         }
 
-        adService    = new MockADService();
+        AdApiService realAd = AdApiService.getInstance();
+        realAd.configure(config.adApi != null ? config.adApi.baseUrl : null, decryptSetting("ad_api_token"));
+        adService = realAd;
+
         glpiService  = new GLPIServiceStub();
 
         String encryptedPassword = loadSmtpPassword();

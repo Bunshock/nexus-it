@@ -24,7 +24,8 @@ class SettingsControllerTest {
 
     private static final String[] FIELD_NAMES = {
         "txtAfPrefix", "txtAfSeparator", "txtAfLength", "txtAfFiller",
-        "txtSmtpSender", "pfSmtpPassword", "txtGlpiUrl", "pfGlpiApiKey"
+        "txtSmtpSender", "pfSmtpPassword", "txtGlpiUrl", "pfGlpiApiKey",
+        "txtAdUrl", "pfAdApiToken"
     };
 
     private final AdminSession session = AdminSession.getInstance();
@@ -53,6 +54,8 @@ class SettingsControllerTest {
         setField("pfSmtpPassword", new PasswordField());
         setField("txtGlpiUrl", new TextField());
         setField("pfGlpiApiKey", new PasswordField());
+        setField("txtAdUrl", new TextField());
+        setField("pfAdApiToken", new PasswordField());
         setField("btnSave", new Button());
     }
 

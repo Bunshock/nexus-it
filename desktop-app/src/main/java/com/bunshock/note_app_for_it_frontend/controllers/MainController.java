@@ -122,8 +122,10 @@ public class MainController {
     }
 
     private boolean checkAdReachable() {
+        String username = TechnicianSessionService.getInstance().getUsername();
+        if (username == null || username.isBlank()) return false;
         try {
-            ServiceLocator.getInstance().getAdService().search(null, "ping", null);
+            ServiceLocator.getInstance().getAdService().search(null, null, username);
             return true;
         } catch (Exception e) {
             return false;
@@ -131,8 +133,13 @@ public class MainController {
     }
 
     private void updateADStatus(boolean online) {
-        circleAD.setFill(online ? Color.web("#22c55e") : Color.web("#ef4444"));
-        tooltipAD.setText("Active Directory: " + (online ? "En línea" : "Desconectado"));
+        if (!ServiceLocator.getInstance().getAdService().isConfigured()) {
+            circleAD.setFill(Color.web("#94a3b8"));
+            tooltipAD.setText("Active Directory: No configurado");
+        } else {
+            circleAD.setFill(online ? Color.web("#22c55e") : Color.web("#ef4444"));
+            tooltipAD.setText("Active Directory: " + (online ? "En línea" : "Desconectado"));
+        }
     }
 
     private void updateGLPIStatus(boolean online) {

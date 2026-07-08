@@ -8,14 +8,17 @@ import java.util.Optional;
 
 import com.bunshock.note_app_for_it_frontend.models.AppConfig;
 import com.bunshock.note_app_for_it_frontend.models.SnValidationRow;
+import com.bunshock.note_app_for_it_frontend.services.AdApiService;
 import com.bunshock.note_app_for_it_frontend.services.AdminAuthService;
 import com.bunshock.note_app_for_it_frontend.services.AdminSession;
 import com.bunshock.note_app_for_it_frontend.services.ConfigService;
 import com.bunshock.note_app_for_it_frontend.services.DatabaseService;
 import com.bunshock.note_app_for_it_frontend.services.IEquipmentService;
 import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;
+import com.bunshock.note_app_for_it_frontend.services.TechnicianSessionService;
 import com.bunshock.note_app_for_it_frontend.services.WindowsDPAPIService;
 
+import javafx.application.Platform;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.collections.transformation.FilteredList;
@@ -59,6 +62,9 @@ public class SettingsController {
     @FXML private TextField     txtGlpiUrl;
     @FXML private PasswordField pfGlpiApiKey;
 
+    @FXML private TextField     txtAdUrl;
+    @FXML private PasswordField pfAdApiToken;
+
     @FXML private Button btnSave;
     @FXML private Label  lblSaveStatus;
 
@@ -90,6 +96,7 @@ public class SettingsController {
         txtAfFiller.setText(config.afFormat.filler);
         txtSmtpSender.setText(config.smtp.senderAddress);
         txtGlpiUrl.setText(config.glpiApi.baseUrl);
+        txtAdUrl.setText(config.adApi.baseUrl);
 
         txtAfPrefix.textProperty().addListener((o, a, b) -> updateAfPreview());
         txtAfSeparator.textProperty().addListener((o, a, b) -> updateAfPreview());
@@ -119,6 +126,8 @@ public class SettingsController {
         pfSmtpPassword.setDisable(!adminActive);
         txtGlpiUrl.setDisable(!adminActive);
         pfGlpiApiKey.setDisable(!adminActive);
+        txtAdUrl.setDisable(!adminActive);
+        pfAdApiToken.setDisable(!adminActive);
         btnSave.setDisable(!adminActive);
     }
 
@@ -149,6 +158,8 @@ public class SettingsController {
         config.afFormat.filler    = txtAfFiller.getText().isEmpty() ? "0" : txtAfFiller.getText().substring(0, 1);
         config.smtp.senderAddress = txtSmtpSender.getText().trim();
         config.glpiApi.baseUrl    = txtGlpiUrl.getText().trim();
+        String adUrl   = txtAdUrl.getText().trim();
+        String adToken = pfAdApiToken.getText();
 
         try {
             config.afFormat.length = Integer.parseInt(txtAfLength.getText().trim());
@@ -158,25 +169,113 @@ public class SettingsController {
             return;
         }
 
-        String smtpPassword = pfSmtpPassword.getText();
-        if (!smtpPassword.isBlank()) {
-            saveEncryptedSetting("smtp_password", smtpPassword);
-            pfSmtpPassword.clear();
+        Runnable persist = () -> {
+            config.adApi.baseUrl = adUrl;
+
+            String smtpPassword = pfSmtpPassword.getText();
+            if (!smtpPassword.isBlank()) {
+                saveEncryptedSetting("smtp_password", smtpPassword);
+                pfSmtpPassword.clear();
+            }
+
+            String glpiApiKey = pfGlpiApiKey.getText();
+            if (!glpiApiKey.isBlank()) {
+                saveEncryptedSetting("glpi_api_key", glpiApiKey);
+                pfGlpiApiKey.clear();
+            }
+
+            if (!adToken.isBlank()) {
+                saveEncryptedSetting("ad_api_token", adToken);
+                pfAdApiToken.clear();
+            }
+
+            try {
+                ConfigService.getInstance().save();
+                lblSaveStatus.setStyle("-fx-text-fill: #0c8570;");
+                lblSaveStatus.setText("Configuración guardada");
+            } catch (Exception e) {
+                lblSaveStatus.setStyle("-fx-text-fill: #ef4444;");
+                lblSaveStatus.setText("Error al guardar la configuración");
+            }
+        };
+
+        if (adUrl.isEmpty()) {
+            persist.run();
+            return;
         }
 
-        String glpiApiKey = pfGlpiApiKey.getText();
-        if (!glpiApiKey.isBlank()) {
-            saveEncryptedSetting("glpi_api_key", glpiApiKey);
-            pfGlpiApiKey.clear();
+        String tokenForTest = !adToken.isBlank() ? adToken : decryptSetting("ad_api_token");
+        if (tokenForTest == null || tokenForTest.isBlank()) {
+            persist.run();
+            return;
         }
 
-        try {
-            ConfigService.getInstance().save();
-            lblSaveStatus.setStyle("-fx-text-fill: #0c8570;");
-            lblSaveStatus.setText("Configuración guardada");
+        btnSave.setDisable(true);
+        String originalText = btnSave.getText();
+        btnSave.setText("Probando...");
+
+        Thread t = new Thread(() -> {
+            String technicianUsername = TechnicianSessionService.getInstance().getUsername();
+            boolean ok = AdApiService.getInstance().testConnection(adUrl, tokenForTest, technicianUsername);
+            Platform.runLater(() -> {
+                btnSave.setDisable(false);
+                btnSave.setText(originalText);
+                if (ok || confirmSaveDespiteFailedTest()) persist.run();
+            });
+        }, "ad-connection-test");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    private boolean confirmSaveDespiteFailedTest() {
+        boolean[] confirmed = {false};
+        Stage stage = buildDialogStage();
+        centerOnContent(stage);
+
+        Label lblTitle = new Label("No se pudo conectar");
+        lblTitle.getStyleClass().add("section-label");
+
+        Label lblMsg = new Label(
+            "No se pudo establecer conexión con la API de Active Directory usando estos datos. "
+                + "¿Guardar de todas formas?");
+        lblMsg.setStyle("-fx-text-fill: #475569; -fx-font-size: 12px;");
+        lblMsg.setWrapText(true);
+
+        Button btnCancel = new Button("Cancelar");
+        btnCancel.getStyleClass().add("button-secondary");
+        btnCancel.setOnAction(e -> stage.close());
+
+        Button btnConfirm = new Button("Guardar de todas formas");
+        btnConfirm.setStyle("-fx-background-color: #ef4444; -fx-text-fill: white; " +
+            "-fx-background-radius: 6; -fx-font-weight: bold; -fx-cursor: hand;");
+        btnConfirm.setOnAction(e -> { confirmed[0] = true; stage.close(); });
+
+        HBox buttons = new HBox(8, btnCancel, btnConfirm);
+        buttons.setAlignment(Pos.CENTER_RIGHT);
+
+        VBox root = buildDialogRoot(380);
+        root.getChildren().addAll(lblTitle, lblMsg, buttons);
+
+        Scene scene = buildDialogScene(root);
+        scene.setOnKeyPressed(ev -> { if (ev.getCode() == javafx.scene.input.KeyCode.ESCAPE) stage.close(); });
+        stage.setScene(scene);
+        stage.showAndWait();
+
+        return confirmed[0];
+    }
+
+    private String decryptSetting(String key) {
+        try (Connection c = DatabaseService.getInstance().getConnection();
+             PreparedStatement ps = c.prepareStatement(
+                 "SELECT value FROM APP_SETTINGS WHERE key = ?")) {
+            ps.setString(1, key);
+            try (var rs = ps.executeQuery()) {
+                if (!rs.next()) return null;
+                String enc = rs.getString("value");
+                return (enc == null || enc.isBlank()) ? null : WindowsDPAPIService.getInstance().decrypt(enc);
+            }
         } catch (Exception e) {
-            lblSaveStatus.setStyle("-fx-text-fill: #ef4444;");
-            lblSaveStatus.setText("Error al guardar la configuración");
+            return null;
         }
     }
 

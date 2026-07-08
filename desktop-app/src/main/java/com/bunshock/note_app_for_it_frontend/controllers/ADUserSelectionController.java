@@ -57,8 +57,7 @@ public class ADUserSelectionController {
                     Label lblData = new Label(
                         "DNI: " + user.getDni() + "\n" +
                         "EMAIL: " + user.getEmail() + "\n" +
-                        "OU: " + user.getDistinguishedName() + "\n\n" +
-                        "GRUPOS:\n" + user.getMemberOfSummary()
+                        "OU: " + user.getDistinguishedName()
                     );
                     lblData.setStyle("-fx-text-fill: white; -fx-font-size: 11px;");
                     lblData.setWrapText(true);
