@@ -12,11 +12,11 @@ import com.bunshock.note_app_for_it_frontend.models.EquipmentModel;
 import com.bunshock.note_app_for_it_frontend.models.EquipmentType;
 import com.bunshock.note_app_for_it_frontend.services.AdminAuthService;
 import com.bunshock.note_app_for_it_frontend.services.AdminSession;
+import com.bunshock.note_app_for_it_frontend.services.AppKeyEncryptionService;
 import com.bunshock.note_app_for_it_frontend.services.DatabaseService;
 import com.bunshock.note_app_for_it_frontend.services.IEquipmentService;
 import com.bunshock.note_app_for_it_frontend.services.RemoteDatabaseService;
 import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;
-import com.bunshock.note_app_for_it_frontend.services.WindowsDPAPIService;
 
 import javafx.application.Platform;
 import javafx.collections.FXCollections;
@@ -691,7 +691,7 @@ public class DatabaseSectionController {
     private String decryptSetting(String key) {
         String enc = getSetting(key);
         if (enc == null || enc.isBlank()) return null;
-        try { return WindowsDPAPIService.getInstance().decrypt(enc); }
+        try { return AppKeyEncryptionService.getInstance().decrypt(enc); }
         catch (Exception e) { return null; }
     }
 
@@ -699,7 +699,7 @@ public class DatabaseSectionController {
         if (value == null || value.isBlank()) {
             saveSetting(key, "");
         } else {
-            saveSetting(key, WindowsDPAPIService.getInstance().encrypt(value));
+            saveSetting(key, AppKeyEncryptionService.getInstance().encrypt(value));
         }
     }
 

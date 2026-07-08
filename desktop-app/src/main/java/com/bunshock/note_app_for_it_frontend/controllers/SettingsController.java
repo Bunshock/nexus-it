@@ -11,12 +11,12 @@ import com.bunshock.note_app_for_it_frontend.models.SnValidationRow;
 import com.bunshock.note_app_for_it_frontend.services.AdApiService;
 import com.bunshock.note_app_for_it_frontend.services.AdminAuthService;
 import com.bunshock.note_app_for_it_frontend.services.AdminSession;
+import com.bunshock.note_app_for_it_frontend.services.AppKeyEncryptionService;
 import com.bunshock.note_app_for_it_frontend.services.ConfigService;
 import com.bunshock.note_app_for_it_frontend.services.DatabaseService;
 import com.bunshock.note_app_for_it_frontend.services.IEquipmentService;
 import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;
 import com.bunshock.note_app_for_it_frontend.services.TechnicianSessionService;
-import com.bunshock.note_app_for_it_frontend.services.WindowsDPAPIService;
 
 import javafx.application.Platform;
 import javafx.collections.FXCollections;
@@ -272,7 +272,7 @@ public class SettingsController {
             try (var rs = ps.executeQuery()) {
                 if (!rs.next()) return null;
                 String enc = rs.getString("value");
-                return (enc == null || enc.isBlank()) ? null : WindowsDPAPIService.getInstance().decrypt(enc);
+                return (enc == null || enc.isBlank()) ? null : AppKeyEncryptionService.getInstance().decrypt(enc);
             }
         } catch (Exception e) {
             return null;
@@ -280,7 +280,7 @@ public class SettingsController {
     }
 
     private void saveEncryptedSetting(String key, String plainValue) {
-        String encrypted = WindowsDPAPIService.getInstance().encrypt(plainValue);
+        String encrypted = AppKeyEncryptionService.getInstance().encrypt(plainValue);
         try (Connection c = DatabaseService.getInstance().getConnection();
              PreparedStatement ps = c.prepareStatement(
                  "INSERT INTO APP_SETTINGS (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value")) {

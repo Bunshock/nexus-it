@@ -26,5 +26,11 @@
   "database" : {
     "baseUrl" : ""
   },
-  "noteItemLimit" : 8
+  "noteItemLimit" : 8,
+  "defaults" : {
+    "smtpPassword" : "",
+    "glpiApiKey" : "",
+    "dbPassword" : "",
+    "adApiToken" : ""
+  }
 }

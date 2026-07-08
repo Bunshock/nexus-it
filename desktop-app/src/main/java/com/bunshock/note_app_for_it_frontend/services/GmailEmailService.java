@@ -43,7 +43,7 @@ public class GmailEmailService implements IEmailService {
             throw new IllegalStateException("Email service is not configured");
         }
 
-        String password = WindowsDPAPIService.getInstance().decrypt(encryptedPassword);
+        String password = AppKeyEncryptionService.getInstance().decrypt(encryptedPassword);
 
         Properties props = new Properties();
         props.put("mail.smtp.auth", "true");

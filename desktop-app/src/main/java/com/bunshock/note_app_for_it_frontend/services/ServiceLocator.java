@@ -28,6 +28,8 @@ public class ServiceLocator {
     }
 
     public void initialize(AppConfig config) {
+        provisionDefaultSecrets(config);
+
         SqliteEquipmentService localEquipment = new SqliteEquipmentService();
         SqliteHistoryService localHistory     = new SqliteHistoryService();
 
@@ -72,6 +74,34 @@ public class ServiceLocator {
         emailService = new GmailEmailService(config.smtp, encryptedPassword);
     }
 
+    /**
+     * Copies pre-encrypted default secrets (config.defaults) into APP_SETTINGS on first
+     * run only — never overwrites a value an admin already configured via Settings.
+     */
+    private void provisionDefaultSecrets(AppConfig config) {
+        if (config.defaults == null) return;
+        provisionIfMissing("smtp_password", config.defaults.smtpPassword);
+        provisionIfMissing("glpi_api_key", config.defaults.glpiApiKey);
+        provisionIfMissing("db_password", config.defaults.dbPassword);
+        provisionIfMissing("ad_api_token", config.defaults.adApiToken);
+    }
+
+    private void provisionIfMissing(String key, String preEncryptedDefault) {
+        if (preEncryptedDefault == null || preEncryptedDefault.isBlank()) return;
+        String existing = loadSetting(key);
+        if (existing != null && !existing.isBlank()) return;
+        try (Connection c = DatabaseService.getInstance().getConnection();
+             PreparedStatement ps = c.prepareStatement(
+                 "INSERT INTO APP_SETTINGS (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value")) {
+            ps.setString(1, key);
+            ps.setString(2, preEncryptedDefault);
+            ps.executeUpdate();
+        } catch (Exception e) {
+            // Best-effort — a failed default provisioning just leaves that setting
+            // unconfigured, same as a fresh install with no defaults shipped at all.
+        }
+    }
+
     private String loadSetting(String key) {
         try (Connection c = DatabaseService.getInstance().getConnection();
              PreparedStatement ps = c.prepareStatement(
@@ -88,7 +118,7 @@ public class ServiceLocator {
     private String decryptSetting(String key) {
         String enc = loadSetting(key);
         if (enc == null || enc.isBlank()) return null;
-        try { return WindowsDPAPIService.getInstance().decrypt(enc); }
+        try { return AppKeyEncryptionService.getInstance().decrypt(enc); }
         catch (Exception e) { return null; }
     }
 

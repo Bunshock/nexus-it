@@ -70,7 +70,7 @@
             <version>2.17.1</version>
         </dependency>
 
-        <!-- JNA (Windows DPAPI for credential encryption) -->
+        <!-- JNA (WindowsIdentityService: reads the Windows session UPN) -->
         <dependency>
             <groupId>net.java.dev.jna</groupId>
             <artifactId>jna</artifactId>

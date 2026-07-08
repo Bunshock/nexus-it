@@ -16,6 +16,7 @@ public class AppConfig {
     public ApiEndpoint glpiApi;
     public ApiEndpoint database;
     public int noteItemLimit;
+    public DefaultSecrets defaults;
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class AfFormat {
@@ -36,5 +37,19 @@ public class AppConfig {
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class ApiEndpoint {
         public String baseUrl;
+    }
+
+    /**
+     * Pre-encrypted (AppKeyEncryptionService) default values for a zero-touch first run —
+     * generated via utils.AppKeyEncryptionGenerator, never plaintext. Copied into
+     * APP_SETTINGS on first startup only if that key isn't already set; an admin's later
+     * Settings edit always takes precedence.
+     */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class DefaultSecrets {
+        public String smtpPassword;
+        public String glpiApiKey;
+        public String dbPassword;
+        public String adApiToken;
     }
 }
