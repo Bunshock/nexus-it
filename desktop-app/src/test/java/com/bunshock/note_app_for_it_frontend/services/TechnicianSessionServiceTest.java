@@ -90,4 +90,55 @@ class TechnicianSessionServiceTest {
             session.removeOnChangeListener(listener);
         }
     }
+
+    // setDisplayNamePreference() persists to the real local APP_SETTINGS table (keyed by
+    // username), not just in-memory — so tests must use usernames no other test touches and
+    // must clear whatever they write, or leftover rows leak across test runs and into the
+    // real app's database on this machine.
+
+    @Test
+    void getDisplayNameFallsBackToLastWordOfFullNameWhenNoPreferenceSet() {
+        // AD's name order is kept as "Apellido Nombre" (see AdApiService.normalizeName()), so
+        // the last word is the given name — the greeting should use that, not the surname.
+        session.applyManualOverride("Rodriguez Joaquin", "test-tss-fallback-1", "x@x.com", "45933368");
+        assertEquals("Joaquin", session.getDisplayName());
+    }
+
+    @Test
+    void getDisplayNameCapitalizesFallback() {
+        session.applyManualOverride("rodriguez joaquin", "test-tss-fallback-2", "x@x.com", "45933368");
+        assertEquals("Joaquin", session.getDisplayName());
+    }
+
+    @Test
+    void getDisplayNameNullWhenNameUnresolved() {
+        session.applyManualOverride(null, null, null, null);
+        assertNull(session.getDisplayName());
+    }
+
+    @Test
+    void setDisplayNamePreferenceOverridesFallbackImmediately() {
+        session.applyManualOverride("Rodriguez Joaquin", "test-tss-pref-1", "x@x.com", "45933368");
+        try {
+            session.setDisplayNamePreference("Joaco");
+            assertEquals("Joaco", session.getDisplayName());
+        } finally {
+            session.setDisplayNamePreference("");
+        }
+    }
+
+    @Test
+    void setDisplayNamePreferenceBlankClearsOverrideBackToFallback() {
+        session.applyManualOverride("Rodriguez Joaquin", "test-tss-pref-2", "x@x.com", "45933368");
+        session.setDisplayNamePreference("Joaco");
+        session.setDisplayNamePreference("   ");
+        assertEquals("Joaquin", session.getDisplayName());
+    }
+
+    @Test
+    void setDisplayNamePreferenceNoOpsWhenUsernameUnresolved() {
+        session.applyManualOverride(null, null, null, null);
+        session.setDisplayNamePreference("Joaco");
+        assertNull(session.getDisplayName());
+    }
 }

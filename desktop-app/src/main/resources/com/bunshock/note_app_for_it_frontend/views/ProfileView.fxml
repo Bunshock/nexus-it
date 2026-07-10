@@ -49,5 +49,28 @@
             </children>
         </VBox>
 
+        <VBox spacing="10" style="-fx-background-color: white; -fx-background-radius: 10; -fx-padding: 15 20 20 20;">
+            <children>
+                <Label text="Nombre que se muestra en el saludo de la barra lateral (&quot;Hola, ...!&quot;). Editable en cualquier momento, sin necesidad de modo administrador. Si se deja vacío, se usa un nombre sugerido a partir del nombre completo de Active Directory."
+                       wrapText="true"
+                       style="-fx-text-fill: #64748b; -fx-font-size: 12px;"/>
+
+                <Separator style="-fx-opacity: 0.5;"/>
+
+                <VBox spacing="2" maxWidth="360">
+                    <children>
+                        <Label text="NOMBRE PARA MOSTRAR" styleClass="input-label-small"/>
+                        <TextField fx:id="txtDisplayName" styleClass="form-input-main"/>
+                    </children>
+                </VBox>
+
+                <HBox alignment="CENTER_LEFT" spacing="10">
+                    <Label fx:id="lblDisplayNameStatus" text="" style="-fx-font-size: 11px;"/>
+                    <Region HBox.hgrow="ALWAYS"/>
+                    <Button fx:id="btnSaveDisplayName" text="Guardar" onAction="#handleSaveDisplayName" styleClass="button-primary"/>
+                </HBox>
+            </children>
+        </VBox>
+
     </children>
 </VBox>

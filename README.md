@@ -248,6 +248,12 @@ mvn test
 - **S/N Validation table** (admin-protected): view all asset-type models with their regex pattern and active toggle; active rules sort to the top; filterable by type, brand, or model
 - **Admin mode**: password-protected session (SHA-256 hash in SQLite); unlocks general configuration editing, S/N validation edits, GLPI sync actions, and DB connection changes; auto-expires after 15 minutes of inactivity
 
+### Mi Perfil (technician identity)
+
+- Name, Username, DNI, and Email resolved automatically from Active Directory via the current Windows session at startup, and on demand via "Actualizar Perfil desde AD" — read-only, editable only in admin mode, never persisted to disk
+- **Nombre para mostrar**: a separate, always-editable field (no admin mode required) controlling only the sidebar welcome greeting ("Hola, ...!"). Pre-filled with a suggested default (the last word of the AD full name); persisted locally per technician username so it survives restarts and AD refreshes. Clearing it and saving reverts to the suggested default
+- Sidebar welcome message updates immediately on any change (AD refresh, admin override, or a saved display-name preference) — no restart needed
+
 ### Security
 
 - SMTP password, GLPI API key, DB password, and AD API token encrypted at rest using `AppKeyEncryptionService` (AES-256/GCM); see [Pre-configuring default secrets](#pre-configuring-default-secrets-zero-touch-first-run) above for the accepted security trade-off of this scheme

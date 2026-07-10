@@ -1,5 +1,9 @@
 package com.bunshock.note_app_for_it_frontend.services;
 
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -11,6 +15,9 @@ import javafx.application.Platform;
  * Holds the current technician's identity for this app session only — never persisted to
  * disk. Populated from the Windows session's UPN (email) resolved against AD; refreshed at
  * app startup and on demand (manual "Actualizar desde AD" button, or an admin-mode edit).
+ * The one exception is displayNamePreference (see getDisplayName()/setDisplayNamePreference()):
+ * a personal greeting-name preference, independent of AD identity, persisted locally in
+ * APP_SETTINGS keyed by username so it survives restarts and AD refreshes.
  */
 public class TechnicianSessionService {
 
@@ -24,6 +31,7 @@ public class TechnicianSessionService {
     private volatile String dni;
     private volatile String lastError;
     private volatile UpdateSource lastUpdateSource;
+    private volatile String displayNamePreference;
 
     private final List<Runnable> onChangeListeners = new ArrayList<>();
 
@@ -63,6 +71,7 @@ public class TechnicianSessionService {
         dni = match.getDni();
         lastError = null;
         lastUpdateSource = UpdateSource.AD;
+        loadDisplayNamePreference();
         notifyListeners();
     }
 
@@ -74,6 +83,7 @@ public class TechnicianSessionService {
         this.dni = dni;
         this.lastError = null;
         this.lastUpdateSource = UpdateSource.MANUAL;
+        loadDisplayNamePreference();
         notifyListeners();
     }
 
@@ -87,8 +97,88 @@ public class TechnicianSessionService {
         username = null;
         email = null;
         dni = null;
+        displayNamePreference = null;
         lastError = error;
         notifyListeners();
+    }
+
+    /**
+     * The sidebar greeting name: the technician's own explicit preference if they've set one
+     * (persisted locally, keyed by username — see setDisplayNamePreference()), otherwise a
+     * suggested default derived from the AD full name's last word. AD's name order is kept as
+     * "Apellido Nombre" (see AdApiService.normalizeName()), so the last word is the given name.
+     */
+    public String getDisplayName() {
+        if (displayNamePreference != null && !displayNamePreference.isBlank()) return displayNamePreference;
+        return defaultDisplayName();
+    }
+
+    private String defaultDisplayName() {
+        if (name == null || name.isBlank()) return null;
+        String[] words = name.trim().split("\\s+");
+        String last = words[words.length - 1];
+        return last.isEmpty() ? name : Character.toUpperCase(last.charAt(0)) + last.substring(1).toLowerCase();
+    }
+
+    /**
+     * Sets the technician's explicit greeting-name preference — independent of AD identity data,
+     * so it survives AD refreshes untouched. A blank value clears the preference back to
+     * defaultDisplayName(). No-ops if the username isn't resolved yet (nothing to key it by).
+     */
+    public synchronized void setDisplayNamePreference(String value) {
+        if (username == null) return;
+        String trimmed = value == null ? "" : value.trim();
+        if (trimmed.isEmpty()) {
+            deleteSetting(displayNamePreferenceKey(username));
+            displayNamePreference = null;
+        } else {
+            saveSetting(displayNamePreferenceKey(username), trimmed);
+            displayNamePreference = trimmed;
+        }
+        notifyListeners();
+    }
+
+    private void loadDisplayNamePreference() {
+        displayNamePreference = username != null ? loadSetting(displayNamePreferenceKey(username)) : null;
+    }
+
+    private static String displayNamePreferenceKey(String username) {
+        return "display_name_pref:" + username;
+    }
+
+    private String loadSetting(String key) {
+        try (Connection c = DatabaseService.getInstance().getConnection();
+             PreparedStatement ps = c.prepareStatement("SELECT value FROM APP_SETTINGS WHERE key = ?")) {
+            ps.setString(1, key);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? rs.getString("value") : null;
+            }
+        } catch (SQLException e) {
+            return null;
+        }
+    }
+
+    private void saveSetting(String key, String value) {
+        try (Connection c = DatabaseService.getInstance().getConnection();
+             PreparedStatement ps = c.prepareStatement(
+                 "INSERT INTO APP_SETTINGS (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value")) {
+            ps.setString(1, key);
+            ps.setString(2, value);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            // best-effort persistence — the in-memory value above still updates, so this
+            // session stays correct even if the write fails
+        }
+    }
+
+    private void deleteSetting(String key) {
+        try (Connection c = DatabaseService.getInstance().getConnection();
+             PreparedStatement ps = c.prepareStatement("DELETE FROM APP_SETTINGS WHERE key = ?")) {
+            ps.setString(1, key);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            // best-effort — see saveSetting
+        }
     }
 
     private void notifyListeners() {

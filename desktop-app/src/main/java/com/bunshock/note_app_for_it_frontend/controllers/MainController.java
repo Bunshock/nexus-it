@@ -1,12 +1,12 @@
 package com.bunshock.note_app_for_it_frontend.controllers;
 
+import java.util.concurrent.atomic.AtomicInteger;
+
 import com.bunshock.note_app_for_it_frontend.services.AdminSession;
 import com.bunshock.note_app_for_it_frontend.services.RemoteDatabaseService;
 import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;
 import com.bunshock.note_app_for_it_frontend.services.TechnicianSessionService;
 import com.bunshock.note_app_for_it_frontend.utils.ViewFactory;
-
-import java.util.concurrent.atomic.AtomicInteger;
 
 import javafx.animation.FadeTransition;
 import javafx.animation.KeyFrame;
@@ -86,9 +86,9 @@ public class MainController {
 
     private void updateWelcomeLabels() {
         TechnicianSessionService session = TechnicianSessionService.getInstance();
-        String name = session.getName();
+        String displayName = session.getDisplayName();
         String username = session.getUsername();
-        lblWelcome.setText(name != null ? "Hola, " + extractFirstName(name) + "!" : "Hola!");
+        lblWelcome.setText(displayName != null ? "Hola " + displayName + "!" : "Hola!");
         lblUsername.setText(username != null ? "Usuario: " + username : "Perfil no configurado");
     }
 
@@ -465,12 +465,6 @@ public class MainController {
 
     private void showSection(Parent view) {
         contentArea.getChildren().setAll(view);
-    }
-
-    private String extractFirstName(String input) {
-        if (input == null || input.isBlank()) return input;
-        String first = input.trim().split("[._ ]+")[0];
-        return first.isEmpty() ? input : Character.toUpperCase(first.charAt(0)) + first.substring(1).toLowerCase();
     }
 
     @FXML private void handleShowGenerator() { showSection(viewFactory.getGeneratorView()); }

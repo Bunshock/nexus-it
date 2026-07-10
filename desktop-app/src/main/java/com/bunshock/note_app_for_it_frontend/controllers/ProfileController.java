@@ -31,6 +31,10 @@ public class ProfileController {
     @FXML private Button btnSave;
     @FXML private Button btnRefreshFromAd;
 
+    @FXML private TextField txtDisplayName;
+    @FXML private Label lblDisplayNameStatus;
+    @FXML private Button btnSaveDisplayName;
+
     public void initialize() {
         txtProfileName.setTextFormatter(new TextFormatter<>(change -> {
             String newText = change.getControlNewText();
@@ -39,6 +43,10 @@ public class ProfileController {
         txtProfileDni.setTextFormatter(new TextFormatter<>(change -> {
             String newText = change.getControlNewText();
             return newText.length() <= 8 && newText.matches("\\d*") ? change : null;
+        }));
+        txtDisplayName.setTextFormatter(new TextFormatter<>(change -> {
+            String newText = change.getControlNewText();
+            return newText.isEmpty() || newText.matches("[\\p{L} ]*") ? change : null;
         }));
 
         TechnicianSessionService.getInstance().addOnChangeListener(this::populateFieldsFromSession);
@@ -55,14 +63,15 @@ public class ProfileController {
         txtProfileUsername.setText(orEmpty(session.getUsername()));
         txtProfileDni.setText(orEmpty(session.getDni()));
         txtProfileEmail.setText(orEmpty(session.getEmail()));
+        txtDisplayName.setText(orEmpty(session.getDisplayName()));
 
         if (session.getLastError() != null) {
-            flashStatus(session.getLastError(), "#f59e0b");
+            flashStatus(lblProfileStatus, session.getLastError(), "#f59e0b");
         } else if (session.isResolved()) {
             String message = session.getLastUpdateSource() == TechnicianSessionService.UpdateSource.MANUAL
                 ? "Perfil guardado correctamente"
                 : "Perfil actualizado desde Active Directory";
-            flashStatus(message, "#0c8570");
+            flashStatus(lblProfileStatus, message, "#0c8570");
         } else {
             lblProfileStatus.setText("");
         }
@@ -83,7 +92,7 @@ public class ProfileController {
         btnRefreshFromAd.setDisable(true);
         String originalText = btnRefreshFromAd.getText();
         btnRefreshFromAd.setText("Actualizando...");
-        flashStatus("Consultando Active Directory...", "#64748b");
+        flashStatus(lblProfileStatus, "Consultando Active Directory...", "#64748b");
 
         Thread t = new Thread(() -> {
             TechnicianSessionService.getInstance().refreshFromWindowsSession();
@@ -104,19 +113,19 @@ public class ProfileController {
         String email = txtProfileEmail.getText().trim();
 
         if (name.isEmpty()) {
-            flashStatus("El nombre es obligatorio", "#ef4444");
+            flashStatus(lblProfileStatus, "El nombre es obligatorio", "#ef4444");
             return;
         }
         if (!NAME_PATTERN.matcher(name).matches()) {
-            flashStatus("El nombre solo puede contener letras y espacios simples", "#ef4444");
+            flashStatus(lblProfileStatus, "El nombre solo puede contener letras y espacios simples", "#ef4444");
             return;
         }
         if (!dni.isEmpty() && !DNI_PATTERN.matcher(dni).matches()) {
-            flashStatus("El DNI debe tener 7 u 8 dígitos, sin puntos", "#ef4444");
+            flashStatus(lblProfileStatus, "El DNI debe tener 7 u 8 dígitos, sin puntos", "#ef4444");
             return;
         }
         if (!email.isEmpty() && !EMAIL_PATTERN.matcher(email).matches()) {
-            flashStatus("El email no es válido", "#ef4444");
+            flashStatus(lblProfileStatus, "El email no es válido", "#ef4444");
             return;
         }
 
@@ -125,11 +134,22 @@ public class ProfileController {
         TechnicianSessionService.getInstance().applyManualOverride(name, username, email, dni);
     }
 
-    private void flashStatus(String message, String hexColor) {
-        lblProfileStatus.setStyle("-fx-text-fill: " + hexColor + "; -fx-font-weight: bold;");
-        lblProfileStatus.setText(message);
-        lblProfileStatus.setOpacity(0.2);
-        FadeTransition fade = new FadeTransition(Duration.millis(200), lblProfileStatus);
+    @FXML
+    private void handleSaveDisplayName() {
+        String value = txtDisplayName.getText().trim();
+        if (!value.isEmpty() && !NAME_PATTERN.matcher(value).matches()) {
+            flashStatus(lblDisplayNameStatus, "Solo se permiten letras y espacios simples", "#ef4444");
+            return;
+        }
+        TechnicianSessionService.getInstance().setDisplayNamePreference(value);
+        flashStatus(lblDisplayNameStatus, "Nombre para mostrar actualizado", "#0c8570");
+    }
+
+    private void flashStatus(Label label, String message, String hexColor) {
+        label.setStyle("-fx-text-fill: " + hexColor + "; -fx-font-weight: bold;");
+        label.setText(message);
+        label.setOpacity(0.2);
+        FadeTransition fade = new FadeTransition(Duration.millis(200), label);
         fade.setFromValue(0.2);
         fade.setToValue(1.0);
         fade.play();
