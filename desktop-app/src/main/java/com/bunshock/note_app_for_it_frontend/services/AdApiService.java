@@ -167,8 +167,24 @@ public class AdApiService implements IADService {
     private static boolean isBlank(String s) { return s == null || s.isBlank(); }
 
     private static ADUser toADUser(AdApiUserDto dto) {
-        return new ADUser(extractString(dto.dni), extractString(dto.displayName),
+        return new ADUser(normalizeDni(extractString(dto.dni)), normalizeName(extractString(dto.displayName)),
             extractString(dto.samAccountName), extractString(dto.mail), extractString(dto.ou));
+    }
+
+    /**
+     * AD returns dni with thousands-separator dots (e.g. "00.000.000"). The name/dni text
+     * fields that receive these values have TextFormatters restricting input to digits-only
+     * (dni) or letters-and-spaces (name), and TextFormatter rejects programmatic setText()
+     * just like typed input — an un-normalized dotted dni or comma-separated name is silently
+     * dropped instead of shown, so it must be normalized here at the AD boundary.
+     */
+    private static String normalizeDni(String dni) {
+        return dni == null ? null : dni.replaceAll("[^0-9]", "");
+    }
+
+    /** AD returns displayName as "Apellido, Nombre" — see normalizeDni() for why the comma must go. */
+    private static String normalizeName(String name) {
+        return name == null ? null : name.replace(",", "").replaceAll("\\s+", " ").trim();
     }
 
     /**

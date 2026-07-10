@@ -121,6 +121,7 @@ Saving tests the connection in the background (using the currently resolved tech
 - HTTP `401` means the token is missing/invalid — the app treats this (and any other non-200 response) as "AD unreachable", distinct from a genuine zero-match search.
 - A `dni` search tries both the plain-digits and dotted forms (grouped by 3 from the right, e.g. `45933368` and `45.933.368`); a `name` search tries the text as typed and a `"<lastWord>, <rest>"` reordering — both are real, separate HTTP calls whose results get merged.
 - **Any of the 5 fields above can come back as a JSON array instead of a plain string** for some accounts (a multi-valued directory attribute — confirmed on both `dni` and `mail` in practice). The app always uses the first value in that case (empty array → empty string).
+- **`dni` and `displayName` are normalized before display**: dots are stripped from `dni` (`"00.000.000"` → `"00000000"`) and the comma is stripped from `displayName` (`"Apellido, Nombre"` → `"Apellido Nombre"`, order kept as-is), since the destination fields only accept digits and letters/spaces respectively.
 
 ### Remote database (PostgreSQL)
 

@@ -49,6 +49,12 @@ class AdApiServiceTest {
         return (int) m.invoke(null, dto);
     }
 
+    private ADUser toADUser(Object dto) throws Exception {
+        Method m = AdApiService.class.getDeclaredMethod("toADUser", dto.getClass());
+        m.setAccessible(true);
+        return (ADUser) m.invoke(null, dto);
+    }
+
     @SuppressWarnings("unchecked")
     private List<String> dniVariants(String dni) throws Exception {
         Method m = AdApiService.class.getDeclaredMethod("dniVariants", String.class);
@@ -197,5 +203,37 @@ class AdApiServiceTest {
     @Test
     void extractStringIsNullWhenFieldIsJsonNull() throws Exception {
         assertNull(extractString("null"));
+    }
+
+    @Test
+    void toADUserStripsDotsFromDni() throws Exception {
+        Object dto = buildDto("\"jrodriguez\"", "\"Rodriguez, Joaquin\"", "\"00.000.000\"",
+            "\"jrodriguez@ues21.edu.ar\"", "\"OU=IT\"");
+        assertEquals("00000000", toADUser(dto).getDni());
+    }
+
+    @Test
+    void toADUserStripsCommaFromDisplayName() throws Exception {
+        Object dto = buildDto("\"jrodriguez\"", "\"Rodriguez, Joaquin\"", "\"45933368\"",
+            "\"jrodriguez@ues21.edu.ar\"", "\"OU=IT\"");
+        assertEquals("Rodriguez Joaquin", toADUser(dto).getFullName());
+    }
+
+    @Test
+    void toADUserLeavesAlreadyCleanValuesUnchanged() throws Exception {
+        Object dto = buildDto("\"jrodriguez\"", "\"Joaquin Rodriguez\"", "\"45933368\"",
+            "\"jrodriguez@ues21.edu.ar\"", "\"OU=IT\"");
+        ADUser user = toADUser(dto);
+        assertEquals("Joaquin Rodriguez", user.getFullName());
+        assertEquals("45933368", user.getDni());
+    }
+
+    @Test
+    void toADUserHandlesNullDniAndDisplayName() throws Exception {
+        Object dto = buildDto("\"jrodriguez\"", "null", "null",
+            "\"jrodriguez@ues21.edu.ar\"", "\"OU=IT\"");
+        ADUser user = toADUser(dto);
+        assertNull(user.getFullName());
+        assertNull(user.getDni());
     }
 }
