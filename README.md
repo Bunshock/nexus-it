@@ -196,6 +196,7 @@ mvn test
 - Motivo dropdown (configurable per profile type) — mandatory for Entrega, Devolución, Fin de Contrato, and Provider notes
 - HTML template rendering with `{{TOKEN}}` substitution and `{{#ITEMS}}` loops
 - Preview popup: choose Print / Send Email / Sync GLPI before generating
+- Provider notes select the provider from an admin-managed catalog (see [Database Section](#database-section-base-de-datos)) — not free text, to keep naming consistent across notes; generation is blocked with an inline message if none is selected
 
 ### Equipment Management
 
@@ -237,6 +238,13 @@ mvn test
 - **Note detail popup**: double-click any row to open a floating popup with the rendered note preview (left) and a scrollable item card list (right) showing per-item GLPI status badges
 - **Admin GLPI actions**: in admin mode, PENDING item cards in the popup show Sync and Reject buttons; rejection requires entering a reason; the history table refreshes after each action
 - **Auto-refreshes on open**: every time you navigate to Historial, the table reloads with whatever filters are currently set (not reset) — a note generated since your last visit shows up immediately, no manual "Buscar" needed
+
+### Database Section (Base de Datos)
+
+- Admin-managed catalogs: Tipos, Marcas, Modelos (cascading), and Proveedores (flat list) — add/rename/remove, all admin-gated
+- "Generic" brand protected from deletion
+- A provider added here is immediately selectable in Nota de Proveedor's dropdown, even in a tab already open earlier in the session
+- Remote PostgreSQL connection config and connectivity test (see [Remote database (PostgreSQL)](#remote-database-postgresql) below)
 
 ### Settings
 

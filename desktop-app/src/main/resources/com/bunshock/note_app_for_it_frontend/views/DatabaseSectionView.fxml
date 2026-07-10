@@ -104,6 +104,25 @@
                 </children>
             </VBox>
 
+            <!-- Providers -->
+            <VBox spacing="10" HBox.hgrow="ALWAYS"
+                  style="-fx-background-color: white; -fx-background-radius: 10; -fx-padding: 15 20 20 20;">
+                <children>
+                    <HBox alignment="CENTER_LEFT">
+                        <Label text="PROVEEDORES" styleClass="section-label"/>
+                        <Region HBox.hgrow="ALWAYS"/>
+                        <Button text="+ Agregar" onAction="#handleAddProvider" styleClass="button-primary"/>
+                    </HBox>
+                    <ListView fx:id="listProviders" VBox.vgrow="ALWAYS" styleClass="modern-list"/>
+                    <HBox spacing="8">
+                        <Button text="Renombrar" onAction="#handleRenameProvider" styleClass="button-secondary"
+                                maxWidth="Infinity" HBox.hgrow="ALWAYS"/>
+                        <Button text="Eliminar" onAction="#handleRemoveProvider" styleClass="button-secondary"
+                                maxWidth="Infinity" HBox.hgrow="ALWAYS"/>
+                    </HBox>
+                </children>
+            </VBox>
+
         </HBox>
 
     </children>

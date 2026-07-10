@@ -91,6 +91,11 @@ public class RemoteDatabaseService {
                     is_active     INTEGER NOT NULL DEFAULT 1
                 )""");
             stmt.executeUpdate("""
+                CREATE TABLE IF NOT EXISTS PROVIDER (
+                    id   SERIAL PRIMARY KEY,
+                    name TEXT NOT NULL UNIQUE
+                )""");
+            stmt.executeUpdate("""
                 CREATE TABLE IF NOT EXISTS TECHNICIAN_PROFILE (
                     id               SERIAL PRIMARY KEY,
                     windows_username TEXT NOT NULL UNIQUE,

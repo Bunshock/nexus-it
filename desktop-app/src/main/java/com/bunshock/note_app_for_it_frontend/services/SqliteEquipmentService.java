@@ -11,6 +11,7 @@ import java.util.function.Supplier;
 
 import com.bunshock.note_app_for_it_frontend.models.EquipmentBrand;
 import com.bunshock.note_app_for_it_frontend.models.EquipmentModel;
+import com.bunshock.note_app_for_it_frontend.models.EquipmentProvider;
 import com.bunshock.note_app_for_it_frontend.models.EquipmentType;
 import com.bunshock.note_app_for_it_frontend.models.SnValidation;
 import com.bunshock.note_app_for_it_frontend.models.SnValidationRow;
@@ -81,6 +82,20 @@ public class SqliteEquipmentService implements IEquipmentService {
             }
         } catch (SQLException e) {
             throw new RuntimeException("Failed to load models", e);
+        }
+        return result;
+    }
+
+    @Override
+    public List<EquipmentProvider> getAllProviders() {
+        List<EquipmentProvider> result = new ArrayList<>();
+        try (Connection c = connector.get();
+             ResultSet rs = c.createStatement().executeQuery("SELECT id, name FROM PROVIDER ORDER BY name")) {
+            while (rs.next()) {
+                result.add(new EquipmentProvider(rs.getInt("id"), rs.getString("name")));
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to load providers", e);
         }
         return result;
     }
@@ -259,6 +274,17 @@ public class SqliteEquipmentService implements IEquipmentService {
         }
     }
 
+    @Override
+    public void addProvider(String name) {
+        try (Connection c = connector.get();
+             PreparedStatement ps = c.prepareStatement("INSERT INTO PROVIDER (name) VALUES (?) ON CONFLICT (name) DO NOTHING")) {
+            ps.setString(1, name.trim());
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to add provider", e);
+        }
+    }
+
     private int ensureBrandTypeLink(Connection c, int brandId, int typeId) throws SQLException {
         PreparedStatement sel = c.prepareStatement(
             "SELECT id FROM BRAND_TYPE_LINK WHERE type_id = ? AND brand_id = ?");
@@ -311,6 +337,29 @@ public class SqliteEquipmentService implements IEquipmentService {
             ps.executeUpdate();
         } catch (SQLException e) {
             throw new RuntimeException("Failed to remove model", e);
+        }
+    }
+
+    @Override
+    public void removeProvider(int providerId) {
+        try (Connection c = connector.get();
+             PreparedStatement ps = c.prepareStatement("DELETE FROM PROVIDER WHERE id = ?")) {
+            ps.setInt(1, providerId);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to remove provider", e);
+        }
+    }
+
+    @Override
+    public void renameProvider(int providerId, String newName) {
+        try (Connection c = connector.get();
+             PreparedStatement ps = c.prepareStatement("UPDATE PROVIDER SET name = ? WHERE id = ?")) {
+            ps.setString(1, newName.trim());
+            ps.setInt(2, providerId);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to rename provider", e);
         }
     }
 }

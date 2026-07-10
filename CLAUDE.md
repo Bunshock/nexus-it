@@ -236,6 +236,15 @@ See `docs/database.md` for full ERD.
 
 `DatabaseService.seedEquipmentData()` runs automatically on first startup when `TYPE` is empty. It inserts all types, brands, type-brand links, and models from the organization's catalog. Every type+brand combination also gets an `Otro / Genérico` model added. Re-running the app on an existing DB skips seeding entirely.
 
+### Provider catalog (EquipmentProvider)
+
+`PROVIDER` (`id`, `name UNIQUE`) is a flat table — no type/brand/model structure, unlike the equipment catalog — backing `ProviderNoteController`'s "PROVEEDOR" `ComboBox`. **Fixed 2026-07-10**: that field used to be a `ComboBox<String>` never populated with items and never made editable anywhere in the code, so `getProviderName()` always returned `""` and every provider note generated through the live UI silently saved with a blank provider name — nothing crashed, it just silently produced incomplete notes. `IEquipmentService` gained `getAllProviders()`/`addProvider()`/`renameProvider()`/`removeProvider()`, implemented identically to the Type/Brand/Model pattern in `SqliteEquipmentService` (`ON CONFLICT (name) DO NOTHING`), `CachingEquipmentService` (remote-first, local-fallback), and `MockEquipmentService` (in-memory, test-only, empty by default — no `mock-equipment.json` seeding since providers are inherently org-specific with no sensible mock default).
+
+- **Managed like Types/Brands/Models**: a fourth "PROVEEDORES" list in `DatabaseSectionController`/`DatabaseSectionView.fxml`, admin-gated via the same `requireAdmin()` as the other three — but deliberately outside their cascade (`refreshProviders()` is independent of the Type/Brand selection listeners), since a provider isn't tied to a type or brand.
+- **`cmbProviderSearch` is intentionally non-editable** — strict selection from the admin-curated list, not free text. Explicit user choice over a simpler free-text fix, specifically to avoid typos/inconsistent provider naming across notes.
+- **Validated as mandatory**: `ProviderNoteController.validateAndShowErrors()` now blocks note generation with an inline "Debe seleccionar un proveedor" (`lblProviderStatus`) if `cmbProviderSearch.getValue()` is null — a check that was previously moot since the field could never hold a real value anyway.
+- **Refreshed on tab show, not just once**: `NoteGeneratorController.showProviderNoteView()` calls `ProviderNoteController.refreshProviders()` every time the Nota de Proveedor tab is shown, not just at `initialize()` — `ViewFactory` caches this view for the session, so without this, a provider added via Base de Datos mid-session wouldn't appear in an already-open tab (same staleness fix pattern as History's `refresh()`).
+
 ---
 
 ## Known issues / gotchas

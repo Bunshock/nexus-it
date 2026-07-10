@@ -8,6 +8,7 @@ import java.util.Optional;
 
 import com.bunshock.note_app_for_it_frontend.models.EquipmentBrand;
 import com.bunshock.note_app_for_it_frontend.models.EquipmentModel;
+import com.bunshock.note_app_for_it_frontend.models.EquipmentProvider;
 import com.bunshock.note_app_for_it_frontend.models.EquipmentType;
 import com.bunshock.note_app_for_it_frontend.models.SnValidation;
 import com.bunshock.note_app_for_it_frontend.models.SnValidationRow;
@@ -23,11 +24,13 @@ public class MockEquipmentService implements IEquipmentService {
     private final List<int[]> typeBrands = new ArrayList<>();
     private final List<EquipmentModel> models = new ArrayList<>();
     private final List<SnValidation> snValidations = new ArrayList<>();
+    private final List<EquipmentProvider> providers = new ArrayList<>();
 
     private int nextTypeId = 1000;
     private int nextBrandId = 1000;
     private int nextTypeBrandId = 1000;
     private int nextModelId = 1000;
+    private int nextProviderId = 1000;
 
     public MockEquipmentService() {
         try {
@@ -113,6 +116,11 @@ public class MockEquipmentService implements IEquipmentService {
     }
 
     @Override
+    public List<EquipmentProvider> getAllProviders() {
+        return List.copyOf(providers);
+    }
+
+    @Override
     public Optional<SnValidation> getSnValidation(int modelId) {
         return snValidations.stream()
             .filter(v -> v.getModelId() == modelId && v.isActive())
@@ -192,6 +200,11 @@ public class MockEquipmentService implements IEquipmentService {
     }
 
     @Override
+    public void addProvider(String name) {
+        providers.add(new EquipmentProvider(nextProviderId++, name.trim()));
+    }
+
+    @Override
     public void removeType(int typeId) {
         types.removeIf(t -> t.getId() == typeId);
     }
@@ -204,6 +217,11 @@ public class MockEquipmentService implements IEquipmentService {
     @Override
     public void removeModel(int modelId) {
         models.removeIf(m -> m.getId() == modelId);
+    }
+
+    @Override
+    public void removeProvider(int providerId) {
+        providers.removeIf(p -> p.getId() == providerId);
     }
 
     @Override
@@ -233,6 +251,16 @@ public class MockEquipmentService implements IEquipmentService {
             if (models.get(i).getId() == modelId) {
                 EquipmentModel old = models.get(i);
                 models.set(i, new EquipmentModel(old.getId(), old.getBrandTypeId(), newName.trim()));
+                return;
+            }
+        }
+    }
+
+    @Override
+    public void renameProvider(int providerId, String newName) {
+        for (int i = 0; i < providers.size(); i++) {
+            if (providers.get(i).getId() == providerId) {
+                providers.set(i, new EquipmentProvider(providerId, newName.trim()));
                 return;
             }
         }

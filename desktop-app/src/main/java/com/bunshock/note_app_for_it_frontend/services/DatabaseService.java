@@ -101,6 +101,12 @@ public class DatabaseService {
                 description   TEXT,
                 is_active     INTEGER NOT NULL DEFAULT 1
             )""");
+
+        stmt.executeUpdate("""
+            CREATE TABLE IF NOT EXISTS PROVIDER (
+                id   INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE
+            )""");
     }
 
     private void createHistoryTables(Statement stmt) throws SQLException {

@@ -13,7 +13,13 @@
 
                 <VBox spacing="2">
                     <children>
-                        <Label text="PROVEEDOR" styleClass="input-label-small"/>
+                        <HBox alignment="CENTER_LEFT">
+                            <children>
+                                <Label text="PROVEEDOR" styleClass="input-label-small"/>
+                                <Region HBox.hgrow="ALWAYS"/>
+                                <Label fx:id="lblProviderStatus" text="" styleClass="input-label-small"/>
+                            </children>
+                        </HBox>
                         <ComboBox fx:id="cmbProviderSearch" promptText="Seleccionar proveedor..."
                                   maxWidth="Infinity" styleClass="form-input-main"/>
                     </children>

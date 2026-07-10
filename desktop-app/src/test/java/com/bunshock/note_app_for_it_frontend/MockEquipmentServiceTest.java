@@ -4,6 +4,7 @@ import java.util.List;
 
 import com.bunshock.note_app_for_it_frontend.models.EquipmentBrand;
 import com.bunshock.note_app_for_it_frontend.models.EquipmentModel;
+import com.bunshock.note_app_for_it_frontend.models.EquipmentProvider;
 import com.bunshock.note_app_for_it_frontend.models.EquipmentType;
 import com.bunshock.note_app_for_it_frontend.models.SnValidationRow;
 import com.bunshock.note_app_for_it_frontend.services.MockEquipmentService;
@@ -166,5 +167,43 @@ class MockEquipmentServiceTest {
 
         assertTrue(service.getSnValidation(modelId).isPresent());
         assertEquals("[A-Z]{3}\\d{5}", service.getSnValidation(modelId).get().getRegexPattern());
+    }
+
+    // ── Providers ─────────────────────────────────────────────────────────────
+
+    @Test
+    void getAllProvidersEmptyByDefault() {
+        assertTrue(service.getAllProviders().isEmpty());
+    }
+
+    @Test
+    void addProviderIsReflectedInGetAllProviders() {
+        service.addProvider("TechCorp S.A.");
+        assertTrue(service.getAllProviders().stream().anyMatch(p -> p.getName().equals("TechCorp S.A.")));
+    }
+
+    @Test
+    void renameProviderIsReflectedAfterRename() {
+        service.addProvider("OldProviderName");
+        EquipmentProvider created = service.getAllProviders().stream()
+            .filter(p -> p.getName().equals("OldProviderName"))
+            .findFirst().orElseThrow();
+
+        service.renameProvider(created.getId(), "NewProviderName");
+
+        assertTrue(service.getAllProviders().stream().anyMatch(p -> p.getName().equals("NewProviderName")));
+        assertFalse(service.getAllProviders().stream().anyMatch(p -> p.getName().equals("OldProviderName")));
+    }
+
+    @Test
+    void removeProviderDeletesIt() {
+        service.addProvider("TempProvider");
+        EquipmentProvider created = service.getAllProviders().stream()
+            .filter(p -> p.getName().equals("TempProvider"))
+            .findFirst().orElseThrow();
+
+        service.removeProvider(created.getId());
+
+        assertFalse(service.getAllProviders().stream().anyMatch(p -> p.getName().equals("TempProvider")));
     }
 }

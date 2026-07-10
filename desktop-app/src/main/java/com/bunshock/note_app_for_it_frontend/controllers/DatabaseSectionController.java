@@ -9,6 +9,7 @@ import java.util.Optional;
 
 import com.bunshock.note_app_for_it_frontend.models.EquipmentBrand;
 import com.bunshock.note_app_for_it_frontend.models.EquipmentModel;
+import com.bunshock.note_app_for_it_frontend.models.EquipmentProvider;
 import com.bunshock.note_app_for_it_frontend.models.EquipmentType;
 import com.bunshock.note_app_for_it_frontend.services.AdminAuthService;
 import com.bunshock.note_app_for_it_frontend.services.AdminSession;
@@ -50,6 +51,7 @@ public class DatabaseSectionController {
     @FXML private ListView<EquipmentType>  listTypes;
     @FXML private ListView<EquipmentBrand> listBrands;
     @FXML private ListView<EquipmentModel> listModels;
+    @FXML private ListView<EquipmentProvider> listProviders;
 
     private IEquipmentService equipmentService;
 
@@ -57,6 +59,7 @@ public class DatabaseSectionController {
         equipmentService = ServiceLocator.getInstance().getEquipmentService();
         loadConnectionDisplay();
         refreshTypes();
+        refreshProviders();
 
         listTypes.getSelectionModel().selectedItemProperty().addListener((obs, old, sel) -> {
             if (sel != null) refreshBrandsForType(sel.getId());
@@ -247,9 +250,14 @@ public class DatabaseSectionController {
             equipmentService.getModelsForBrandAndType(brandId, typeId)));
     }
 
+    private void refreshProviders() {
+        listProviders.setItems(FXCollections.observableArrayList(equipmentService.getAllProviders()));
+    }
+
     @FXML private void handleAddType()    { requireAdmin(this::openAddTypeDialog); }
     @FXML private void handleAddBrand()   { requireAdmin(this::openAddBrandDialog); }
     @FXML private void handleAddModel()   { requireAdmin(this::openAddModelDialog); }
+    @FXML private void handleAddProvider(){ requireAdmin(this::openAddProviderDialog); }
 
     @FXML
     private void handleRenameType() {
@@ -281,6 +289,16 @@ public class DatabaseSectionController {
             EquipmentType  type  = listTypes.getSelectionModel().getSelectedItem();
             EquipmentBrand brand = listBrands.getSelectionModel().getSelectedItem();
             if (type != null && brand != null) refreshModelsForBrandType(brand.getId(), type.getId());
+        }));
+    }
+
+    @FXML
+    private void handleRenameProvider() {
+        EquipmentProvider sel = listProviders.getSelectionModel().getSelectedItem();
+        if (sel == null) return;
+        requireAdmin(() -> openRenameDialog(sel.getName(), newName -> {
+            equipmentService.renameProvider(sel.getId(), newName);
+            refreshProviders();
         }));
     }
 
@@ -321,6 +339,17 @@ public class DatabaseSectionController {
                 EquipmentBrand brand = listBrands.getSelectionModel().getSelectedItem();
                 if (type != null && brand != null) refreshModelsForBrandType(brand.getId(), type.getId());
             } catch (Exception e) { showErrorDialog("Error al eliminar", e.getMessage()); }
+        });
+    }
+
+    @FXML
+    private void handleRemoveProvider() {
+        EquipmentProvider sel = listProviders.getSelectionModel().getSelectedItem();
+        if (sel == null) return;
+        requireAdmin(() -> {
+            if (!confirmDelete(sel.getName())) return;
+            try { equipmentService.removeProvider(sel.getId()); refreshProviders(); }
+            catch (Exception e) { showErrorDialog("Error al eliminar", e.getMessage()); }
         });
     }
 
@@ -480,6 +509,40 @@ public class DatabaseSectionController {
         root.getChildren().addAll(lblTitle,
             new VBox(2, lblT, cmbType), new VBox(2, lblB, cmbBrand),
             new VBox(2, lblN, tfName), buttons);
+
+        buildAndShow(stage, root, tfName);
+    }
+
+    private void openAddProviderDialog() {
+        Stage stage = buildDialogStage();
+        centerOnContent(stage);
+
+        Label lblTitle = new Label("Nuevo proveedor");
+        lblTitle.getStyleClass().add("section-label");
+
+        Label lblN = new Label("NOMBRE"); lblN.getStyleClass().add("input-label-small");
+        TextField tfName = new TextField();
+        tfName.setPromptText("Ej: TechCorp S.A."); tfName.getStyleClass().add("form-input-main");
+
+        Button btnCancel = new Button("Cancelar");
+        btnCancel.getStyleClass().add("button-secondary");
+        btnCancel.setOnAction(e -> stage.close());
+
+        Button btnSave = new Button("Agregar");
+        btnSave.getStyleClass().add("button-primary");
+        btnSave.setOnAction(e -> {
+            String name = tfName.getText().trim();
+            if (name.isEmpty()) return;
+            equipmentService.addProvider(name);
+            refreshProviders();
+            stage.close();
+        });
+
+        HBox buttons = new HBox(8, btnCancel, btnSave);
+        buttons.setAlignment(Pos.CENTER_RIGHT);
+
+        VBox root = buildDialogRoot(380);
+        root.getChildren().addAll(lblTitle, new VBox(2, lblN, tfName), buttons);
 
         buildAndShow(stage, root, tfName);
     }

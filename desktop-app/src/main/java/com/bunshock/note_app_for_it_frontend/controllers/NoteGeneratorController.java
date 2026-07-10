@@ -110,7 +110,11 @@ public class NoteGeneratorController {
     }
 
     private void showProviderNoteView() {
-        if (viewFactory != null) dynamicContentArea.getChildren().setAll(viewFactory.getProviderNoteView());
+        if (viewFactory == null) return;
+        dynamicContentArea.getChildren().setAll(viewFactory.getProviderNoteView());
+        // ViewFactory caches this view for the session — without this, a provider an admin adds
+        // via Base de Datos mid-session wouldn't appear here until the app restarts.
+        viewFactory.getProviderNoteController().refreshProviders();
     }
 
     private <T> Callback<TableColumn<T, Void>, TableCell<T, Void>> createActionCellFactory(

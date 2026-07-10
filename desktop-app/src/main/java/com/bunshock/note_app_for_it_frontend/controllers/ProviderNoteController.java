@@ -3,7 +3,9 @@ package com.bunshock.note_app_for_it_frontend.controllers;
 import java.util.List;
 import java.util.regex.Pattern;
 
+import com.bunshock.note_app_for_it_frontend.models.EquipmentProvider;
 import com.bunshock.note_app_for_it_frontend.services.ConfigService;
+import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;
 
 import javafx.collections.FXCollections;
 import javafx.fxml.FXML;
@@ -21,7 +23,7 @@ public class ProviderNoteController {
     private static final Pattern DNI_PATTERN =
         Pattern.compile("^\\d{7,8}$");
 
-    @FXML private ComboBox<String> cmbProviderSearch;
+    @FXML private ComboBox<EquipmentProvider> cmbProviderSearch;
     @FXML private TextField txtCuit;
     @FXML private ComboBox<String> cmbMotivo;
 
@@ -30,11 +32,14 @@ public class ProviderNoteController {
     @FXML private TextField txtProviderResponsibleName;
     @FXML private TextField txtProviderResponsibleDni;
     @FXML private Label lblResponsibleStatus;
+    @FXML private Label lblProviderStatus;
 
     public void initialize() {
         List<String> motivoOptions = ConfigService.getInstance().getConfig()
             .motivoOptions.getOrDefault("proveedor", List.of());
         cmbMotivo.setItems(FXCollections.observableArrayList(motivoOptions));
+
+        refreshProviders();
 
         chkEnableResponsible.selectedProperty().addListener((obs, was, now) ->
             gridResponsibleDetails.setDisable(!now));
@@ -49,7 +54,30 @@ public class ProviderNoteController {
         }));
     }
 
+    /** Reloads the provider list from the catalog (Configuración → Base de Datos), keeping the
+     * current selection if it still exists. Called on initialize() and again every time this
+     * tab is shown (NoteGeneratorController.showProviderNoteView()) — ViewFactory caches this
+     * view for the session, so without a re-fetch, a provider an admin adds mid-session
+     * wouldn't appear until the app restarts (same staleness issue History had). */
+    public void refreshProviders() {
+        EquipmentProvider current = cmbProviderSearch.getValue();
+        List<EquipmentProvider> providers = ServiceLocator.getInstance().getEquipmentService().getAllProviders();
+        cmbProviderSearch.setItems(FXCollections.observableArrayList(providers));
+        if (current != null) {
+            providers.stream()
+                .filter(p -> p.getId() == current.getId())
+                .findFirst()
+                .ifPresent(cmbProviderSearch::setValue);
+        }
+    }
+
     public boolean validateAndShowErrors() {
+        if (cmbProviderSearch.getValue() == null) {
+            showProviderError("Debe seleccionar un proveedor");
+            return false;
+        }
+        lblProviderStatus.setText("");
+
         String name = txtProviderResponsibleName.getText().trim();
         String dni = txtProviderResponsibleDni.getText().trim();
 
@@ -65,14 +93,19 @@ public class ProviderNoteController {
         return true;
     }
 
+    private void showProviderError(String message) {
+        lblProviderStatus.setStyle("-fx-text-fill: #ef4444; -fx-font-weight: bold;");
+        lblProviderStatus.setText(message);
+    }
+
     private void showResponsibleError(String message) {
         lblResponsibleStatus.setStyle("-fx-text-fill: #ef4444; -fx-font-weight: bold;");
         lblResponsibleStatus.setText(message);
     }
 
     public String getProviderName() {
-        return cmbProviderSearch.getValue() != null
-            ? cmbProviderSearch.getValue().trim() : "";
+        EquipmentProvider selected = cmbProviderSearch.getValue();
+        return selected != null ? selected.getName() : "";
     }
 
     public String getCuit() { return txtCuit.getText().trim(); }
@@ -98,5 +131,6 @@ public class ProviderNoteController {
         txtProviderResponsibleName.clear();
         txtProviderResponsibleDni.clear();
         lblResponsibleStatus.setText("");
+        lblProviderStatus.setText("");
     }
 }
