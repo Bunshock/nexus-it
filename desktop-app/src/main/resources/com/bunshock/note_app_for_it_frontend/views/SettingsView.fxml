@@ -11,14 +11,20 @@
     <VBox fx:id="panelSettings" spacing="0" style="-fx-background-color: #f4f4f4;">
         <children>
 
+        <!-- Fixed header (outside the ScrollPane, alongside the fixed footer below).
+             Uses VBox.margin (external spacing) rather than overriding .page-title-card's own
+             padding, so the card keeps its original size/look — only its position changes. -->
+        <HBox styleClass="page-title-card" alignment="CENTER_LEFT">
+            <VBox.margin>
+                <Insets top="30" right="30" bottom="20" left="30"/>
+            </VBox.margin>
+            <Label text="CONFIGURACIÓN" styleClass="page-title"/>
+        </HBox>
+
         <ScrollPane fitToWidth="true" VBox.vgrow="ALWAYS" styleClass="settings-scroll">
         <content>
-        <VBox spacing="20" style="-fx-padding: 30 30 20 30; -fx-background-color: #f4f4f4;">
+        <VBox spacing="20" style="-fx-padding: 0 30 20 30; -fx-background-color: #f4f4f4;">
         <children>
-
-            <HBox styleClass="page-title-card" alignment="CENTER_LEFT">
-                <Label text="CONFIGURACIÓN" styleClass="page-title"/>
-            </HBox>
 
             <!-- A/F Format -->
             <VBox spacing="10" style="-fx-background-color: white; -fx-background-radius: 10; -fx-padding: 15 20 20 20;">

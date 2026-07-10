@@ -243,7 +243,7 @@ mvn test
 - SMTP credentials (password encrypted via `AppKeyEncryptionService` — never stored in plaintext)
 - GLPI API URL and API Key (key encrypted via `AppKeyEncryptionService` — never stored in plaintext)
 - Active Directory API URL and Token (token encrypted via `AppKeyEncryptionService`, write-only field — never redisplayed once saved); saving tests the connection first and asks for confirmation if it fails
-- Settings content scrolls independently in a fixed-height panel — the "Guardar Configuración" button always stays visible in its own footer row, not pushed off-screen as cards are added
+- Settings content scrolls independently in a fixed-height panel — the "CONFIGURACIÓN" header and the "Guardar Configuración" footer both stay fixed in place; only the card list in between scrolls
 - All configuration fields and the "Guardar Configuración" button are read-only/disabled unless admin mode is active
 - **S/N Validation table** (admin-protected): view all asset-type models with their regex pattern and active toggle; active rules sort to the top; filterable by type, brand, or model
 - **Admin mode**: password-protected session (SHA-256 hash in SQLite); unlocks general configuration editing, S/N validation edits, GLPI sync actions, and DB connection changes; auto-expires after 15 minutes of inactivity
