@@ -47,13 +47,21 @@
                </children>
             </VBox>
 
+            <!-- Spacers above and below the welcome block are equal (both VBox.vgrow="ALWAYS"),
+                 so the welcome/username block sits vertically centered between the header
+                 separator and the nav buttons. lblAdminIndicator is unmanaged when hidden (see
+                 MainController.updateAdminIndicator()), so it contributes zero height for a
+                 normal (non-admin) user — the centering is based on just the two welcome/
+                 username lines, not on space reserved for the admin label. -->
+            <Region VBox.vgrow="ALWAYS" />
+
             <!-- User info and welcome message -->
-            <VBox spacing="2" style="-fx-padding: 0 0 15 5;">
+            <VBox spacing="2" style="-fx-padding: 0 0 0 5;">
                <children>
                   <Label fx:id="lblWelcome" styleClass="user-welcome"/>
                   <Label fx:id="lblUsername" styleClass="user-username"/>
                   <Label fx:id="lblAdminIndicator" text="MODO ADMINISTRADOR" maxWidth="Infinity"
-                         visible="false"
+                         visible="false" managed="false"
                          style="-fx-background-color: #0e9a82; -fx-text-fill: white;
                                 -fx-font-size: 9px; -fx-font-weight: bold; -fx-letter-spacing: 1.5px;
                                 -fx-padding: 4 0 4 0; -fx-alignment: center;">

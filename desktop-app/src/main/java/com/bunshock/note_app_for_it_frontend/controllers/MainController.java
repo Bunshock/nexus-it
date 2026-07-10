@@ -370,7 +370,12 @@ public class MainController {
     }
 
     private void updateAdminIndicator() {
-        lblAdminIndicator.setVisible(AdminSession.getInstance().isActive());
+        boolean active = AdminSession.getInstance().isActive();
+        lblAdminIndicator.setVisible(active);
+        // managed must follow visible, not just default true — otherwise the label still
+        // reserves its layout space while hidden, which would throw off the welcome/username
+        // block's vertical centering (MainView.fxml) for the common non-admin case.
+        lblAdminIndicator.setManaged(active);
     }
 
     private void handleAdminExpiry() {
