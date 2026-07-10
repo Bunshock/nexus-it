@@ -158,6 +158,13 @@ public class SqliteHistoryService implements IHistoryService {
             sql.append(" AND COALESCE(e.user_name, p.provider_name, '') LIKE ?");
             params.add("%" + filter.getRecipientSearch().trim() + "%");
         }
+        if (filter.getAuthorSearch() != null && !filter.getAuthorSearch().isBlank()) {
+            // Can't reference the "author_name" SELECT alias here — SQLite tolerates it but
+            // PostgreSQL doesn't, and this query runs against both (see ServiceLocator's dual
+            // wiring of SqliteHistoryService for local vs. remote). Repeat the COALESCE instead.
+            sql.append(" AND COALESCE(r.technician_name, tp.name, '') LIKE ?");
+            params.add("%" + filter.getAuthorSearch().trim() + "%");
+        }
         if (hasValues(filter.getItemTypes()) || hasValues(filter.getItemBrands()) || hasValues(filter.getItemModels())) {
             sql.append(" AND r.id IN (SELECT DISTINCT ni.note_id FROM NOTE_ITEM ni WHERE 1=1");
             appendIn(sql, params, "ni.type_name",  filter.getItemTypes());

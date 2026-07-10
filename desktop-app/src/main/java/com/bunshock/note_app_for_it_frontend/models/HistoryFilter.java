@@ -9,6 +9,7 @@ public class HistoryFilter {
     private List<String> profileTypes;  // null = all
     private List<String> glpiStatuses;  // null = all; values: PENDING, SYNCED, REJECTED, N_A
     private String       recipientSearch;
+    private String       authorSearch;
     private List<String> itemTypes;     // null = all
     private List<String> itemBrands;    // null = all
     private List<String> itemModels;    // null = all
@@ -35,6 +36,9 @@ public class HistoryFilter {
 
     public String       getRecipientSearch(){ return recipientSearch; }
     public void         setRecipientSearch(String v)  { recipientSearch = v; }
+
+    public String       getAuthorSearch()  { return authorSearch; }
+    public void         setAuthorSearch(String v)     { authorSearch = v; }
 
     public List<String> getItemTypes()     { return itemTypes; }
     public void         setItemTypes(List<String> v)  { itemTypes = v; }

@@ -245,6 +245,24 @@ class SqliteHistoryServiceTest {
     }
 
     @Test
+    void filtersByAuthorSearch() {
+        NoteReport byPerez = userReport("Entrega", LocalDateTime.now(), "Client A", List.of());
+        byPerez.setAuthorName("Juan Perez");
+        service.save(byPerez);
+
+        NoteReport byDiaz = userReport("Entrega", LocalDateTime.now(), "Client B", List.of());
+        byDiaz.setAuthorName("Ana Diaz");
+        service.save(byDiaz);
+
+        HistoryFilter filter = new HistoryFilter();
+        filter.setAuthorSearch("perez");
+        List<NoteReport> results = service.getFiltered(filter);
+
+        assertEquals(1, results.size());
+        assertEquals("Client A", results.get(0).getRecipientDisplay());
+    }
+
+    @Test
     void filtersByGlpiStatus() {
         service.save(userReport("Entrega", LocalDateTime.now(), "Pending User",
             List.of(assetItem("NOTEBOOK", "DELL", "LATITUDE", "SN1", "AF1", GlpiStatus.PENDING))));

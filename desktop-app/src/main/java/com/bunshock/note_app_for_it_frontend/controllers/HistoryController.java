@@ -49,6 +49,7 @@ public class HistoryController {
     @FXML private MenuButton   mnuProfileType;
     @FXML private MenuButton   mnuGlpiStatus;
     @FXML private TextField    txtRecipientSearch;
+    @FXML private TextField    txtAuthorSearch;
     @FXML private MenuButton   mnuItemType;
     @FXML private MenuButton   mnuItemBrand;
     @FXML private MenuButton   mnuItemModel;
@@ -212,12 +213,20 @@ public class HistoryController {
         loadGlobal(buildFilter());
     }
 
+    /** Reloads the table with whatever filters are currently set (does not reset them) — called
+     * by MainController every time the History section is opened, so newly generated notes show
+     * up without the technician needing to click "Buscar" or leaving previously-applied filters. */
+    public void refresh() {
+        loadGlobal(buildFilter());
+    }
+
     @FXML
     private void handleClearFilters() {
         suppressCallbacks = true;
         dpFrom.setValue(null);
         dpTo.setValue(null);
         txtRecipientSearch.clear();
+        txtAuthorSearch.clear();
         selProfileTypes.clear();
         selGlpiStatuses.clear();
         selItemTypes.clear();
@@ -247,6 +256,8 @@ public class HistoryController {
         }
         String recipient = txtRecipientSearch.getText();
         if (recipient != null && !recipient.isBlank()) f.setRecipientSearch(recipient);
+        String author = txtAuthorSearch.getText();
+        if (author != null && !author.isBlank()) f.setAuthorSearch(author);
         if (!selItemTypes.isEmpty())  f.setItemTypes(new ArrayList<>(selItemTypes));
         if (!selItemBrands.isEmpty()) f.setItemBrands(new ArrayList<>(selItemBrands));
         if (!selItemModels.isEmpty()) f.setItemModels(new ArrayList<>(selItemModels));

@@ -232,10 +232,11 @@ mvn test
 
 - Every generated note saved to local SQLite
 - History table with date, profile type, recipient, author, equipment count, and GLPI sync status
-- **Advanced multi-select filters**: date range, note type, GLPI status (Pendiente/Sincronizado/Rechazado/Sin GLPI), recipient/provider text, and cascading equipment type → brand → model; partial/hybrid GLPI states are included in filtered results
+- **Advanced multi-select filters**: date range, note type, GLPI status (Pendiente/Sincronizado/Rechazado/Sin GLPI), author text, recipient/provider text, and cascading equipment type → brand → model; partial/hybrid GLPI states are included in filtered results
 - **Export**: filtered results exportable to CSV (UTF-8 with BOM) or Excel (.xlsx) with bold headers and auto-sized columns
 - **Note detail popup**: double-click any row to open a floating popup with the rendered note preview (left) and a scrollable item card list (right) showing per-item GLPI status badges
 - **Admin GLPI actions**: in admin mode, PENDING item cards in the popup show Sync and Reject buttons; rejection requires entering a reason; the history table refreshes after each action
+- **Auto-refreshes on open**: every time you navigate to Historial, the table reloads with whatever filters are currently set (not reset) — a note generated since your last visit shows up immediately, no manual "Buscar" needed
 
 ### Settings
 

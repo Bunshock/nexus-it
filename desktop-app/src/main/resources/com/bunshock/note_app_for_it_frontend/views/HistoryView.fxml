@@ -52,6 +52,13 @@
                                 <MenuButton fx:id="mnuGlpiStatus" text="Todas"
                                             prefWidth="155" prefHeight="32" styleClass="filter-menu-button"/>
                             </VBox>
+                            <VBox spacing="3">
+                                <Label text="AUTOR" styleClass="input-label-small"/>
+                                <TextField fx:id="txtAuthorSearch" prefWidth="178" prefHeight="32"
+                                           promptText="Buscar por autor..."
+                                           onAction="#handleSearch"
+                                           styleClass="form-input-filter"/>
+                            </VBox>
                         </HBox>
                     </VBox>
 

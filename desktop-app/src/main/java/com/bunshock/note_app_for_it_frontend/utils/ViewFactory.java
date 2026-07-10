@@ -2,6 +2,7 @@ package com.bunshock.note_app_for_it_frontend.utils;
 
 import java.io.IOException;
 
+import com.bunshock.note_app_for_it_frontend.controllers.HistoryController;
 import com.bunshock.note_app_for_it_frontend.controllers.NoteGeneratorController;
 import com.bunshock.note_app_for_it_frontend.controllers.ProviderNoteController;
 import com.bunshock.note_app_for_it_frontend.controllers.UserNoteController;
@@ -21,6 +22,7 @@ public class ViewFactory {
 
     private Parent generatorView;
     private Parent historyView;
+    private HistoryController historyController;
     private Parent databaseView;
     private Parent settingsView;
     private Parent aboutView;
@@ -55,9 +57,15 @@ public class ViewFactory {
     }
 
     public Parent getHistoryView() {
-        if (historyView == null) historyView = load(loader("HistoryView.fxml"));
+        if (historyView == null) {
+            FXMLLoader loader = loader("HistoryView.fxml");
+            historyView = load(loader);
+            historyController = loader.getController();
+        }
         return historyView;
     }
+
+    public HistoryController getHistoryController() { return historyController; }
 
     public Parent getDatabaseView() {
         if (databaseView == null) databaseView = load(loader("DatabaseSectionView.fxml"));

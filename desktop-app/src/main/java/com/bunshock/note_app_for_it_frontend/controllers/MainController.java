@@ -473,7 +473,16 @@ public class MainController {
     }
 
     @FXML private void handleShowGenerator() { showSection(viewFactory.getGeneratorView()); }
-    @FXML private void handleShowHistory()   { showSection(viewFactory.getHistoryView()); }
+
+    @FXML
+    private void handleShowHistory() {
+        showSection(viewFactory.getHistoryView());
+        // ViewFactory caches the History section for the session (see ViewFactory's doc), so
+        // without this, notes generated after the first visit wouldn't appear until the
+        // technician manually clicked "Buscar" — refresh() re-runs the currently-set filters
+        // rather than resetting them.
+        viewFactory.getHistoryController().refresh();
+    }
     @FXML private void handleShowDatabase()  { showSection(viewFactory.getDatabaseView()); }
     @FXML private void handleShowSettings()  { showSection(viewFactory.getSettingsView()); }
     @FXML private void handleShowAbout()     { showSection(viewFactory.getAboutView()); }
