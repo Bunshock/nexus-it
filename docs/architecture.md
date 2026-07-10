@@ -6,8 +6,6 @@
 
 The application follows a layered MVC architecture with a service abstraction layer that allows external dependencies (AD, GLPI, database) to be swapped without touching UI code.
 
-> **Keep the Mermaid diagrams current.** This file's class diagram (under [Service Abstraction](#service-abstraction-strategy-pattern)), the [Service Dependency Map](#service-dependency-map) flowchart, and the [System Architecture](#system-architecture-whole-app-overview) diagram below must be updated whenever a class/interface/implementation is added or removed, a controller starts/stops calling a service, or a new external system/resource is introduced — same "update docs with every feature" rule as `CLAUDE.md`'s Documentation requirements, called out here because it's easy to edit the prose above a diagram and forget the diagram itself is now stale.
-
 ---
 
 ## System Architecture (whole-app overview)

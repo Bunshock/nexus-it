@@ -51,7 +51,7 @@
 
         <VBox spacing="10" style="-fx-background-color: white; -fx-background-radius: 10; -fx-padding: 15 20 20 20;">
             <children>
-                <Label text="Nombre que se muestra en el saludo de la barra lateral (&quot;Hola, ...!&quot;). Editable en cualquier momento, sin necesidad de modo administrador. Si se deja vacío, se usa un nombre sugerido a partir del nombre completo de Active Directory."
+                <Label text="Nombre que se muestra en el saludo de la barra lateral (&quot;Hola, ...!&quot;). Si se deja vacío, se usa un nombre sugerido a partir del nombre completo de Active Directory."
                        wrapText="true"
                        style="-fx-text-fill: #64748b; -fx-font-size: 12px;"/>
 
