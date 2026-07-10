@@ -1,0 +1,94 @@
+-- Generador de Notas IT — PostgreSQL starting data (equipment catalog + provider catalog)
+--
+-- This is a TEMPLATE with placeholder rows, not real data — mirroring how
+-- config/app-config.json.example works for app-config.json. Copy this file to
+-- 02-seed-equipment.sql (gitignored) and replace the example rows below with your
+-- organization's actual equipment catalog and provider list before running it. Never commit
+-- real inventory or business-partner data to this repository.
+--
+-- Run this AFTER 01-schema.sql (or after launching the app once against this database, which
+-- creates the schema automatically via RemoteDatabaseService.ensureSchema()).
+--
+-- Idempotent: safe to re-run. Types/Brands/Brand-Type-Links use their existing UNIQUE
+-- constraints (ON CONFLICT DO NOTHING); MODEL has no unique constraint in the schema (matching
+-- SqliteEquipmentService's own behavior), so models are guarded with NOT EXISTS instead.
+--
+-- Does NOT touch S/N validation — that's configured separately, per model, through the app's
+-- own UI (Configuración → Validación de S/N por modelo, admin mode), not a SQL script. See this
+-- folder's README.md for why.
+
+BEGIN;
+
+INSERT INTO BRAND (name) VALUES ('Generic') ON CONFLICT (name) DO NOTHING;
+
+CREATE TEMP TABLE _seed_rows (
+    type_name  TEXT NOT NULL,
+    is_asset   INTEGER NOT NULL,
+    brand_name TEXT NOT NULL,
+    model_name TEXT
+) ON COMMIT DROP;
+
+-- {type, is_asset(1/0), brand, model or NULL} — NULL model = no specific model; every
+-- resulting brand-type combination also gets an "Otro / Genérico" catch-all model, added below.
+--
+-- EXAMPLE ROWS ONLY — replace with your organization's real catalog. A few illustrate the
+-- pattern: an asset type with two brands and specific models (NOTEBOOK), an asset type with a
+-- model-less brand (MONITOR/Genérico, still gets the catch-all "Otro / Genérico" model), and a
+-- countable (non-asset) type (MOUSE).
+INSERT INTO _seed_rows (type_name, is_asset, brand_name, model_name) VALUES
+('NOTEBOOK', 1, 'Marca Ejemplo A', 'Modelo Ejemplo 14'),
+('NOTEBOOK', 1, 'Marca Ejemplo A', 'Modelo Ejemplo 15'),
+('NOTEBOOK', 1, 'Marca Ejemplo B', 'Modelo Ejemplo Pro'),
+('MONITOR', 1, 'Genérico', NULL),
+('MOUSE', 0, 'Marca Ejemplo A', 'Modelo Ejemplo Inalámbrico'),
+('HEADSET', 0, 'Genérico', NULL);
+
+-- Types
+INSERT INTO TYPE (name, is_asset)
+SELECT DISTINCT type_name, is_asset FROM _seed_rows
+ON CONFLICT (name) DO NOTHING;
+
+-- Brands
+INSERT INTO BRAND (name)
+SELECT DISTINCT brand_name FROM _seed_rows
+ON CONFLICT (name) DO NOTHING;
+
+-- Brand-Type links
+INSERT INTO BRAND_TYPE_LINK (type_id, brand_id)
+SELECT DISTINCT t.id, b.id
+FROM _seed_rows s
+JOIN TYPE t ON t.name = s.type_name
+JOIN BRAND b ON b.name = s.brand_name
+ON CONFLICT (type_id, brand_id) DO NOTHING;
+
+-- Models (rows with a specific model_name)
+INSERT INTO MODEL (brand_type_id, name)
+SELECT btl.id, s.model_name
+FROM _seed_rows s
+JOIN TYPE t ON t.name = s.type_name
+JOIN BRAND b ON b.name = s.brand_name
+JOIN BRAND_TYPE_LINK btl ON btl.type_id = t.id AND btl.brand_id = b.id
+WHERE s.model_name IS NOT NULL
+AND NOT EXISTS (
+    SELECT 1 FROM MODEL m WHERE m.brand_type_id = btl.id AND m.name = s.model_name
+);
+
+-- "Otro / Genérico" catch-all model for every brand-type link (including brand-type
+-- combinations whose only seed row had a NULL model), mirroring seedEquipmentData()'s final step
+INSERT INTO MODEL (brand_type_id, name)
+SELECT btl.id, 'Otro / Genérico'
+FROM BRAND_TYPE_LINK btl
+WHERE NOT EXISTS (
+    SELECT 1 FROM MODEL m WHERE m.brand_type_id = btl.id AND m.name = 'Otro / Genérico'
+);
+
+-- Providers (Nota de Proveedor's "PROVEEDOR" dropdown, managed at Configuración → Base de
+-- Datos → Proveedores, admin mode) — EXAMPLE ROWS ONLY, replace with your organization's
+-- actual provider list. Unlike the equipment catalog above, providers have no type/brand/model
+-- structure — just a flat, unique name.
+INSERT INTO PROVIDER (name) VALUES
+('Proveedor Ejemplo S.A.'),
+('Distribuidora Ejemplo S.R.L.')
+ON CONFLICT (name) DO NOTHING;
+
+COMMIT;

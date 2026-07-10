@@ -234,7 +234,7 @@ See `docs/database.md` for full ERD.
 
 ### Equipment seed data
 
-`DatabaseService.seedEquipmentData()` runs automatically on first startup when `TYPE` is empty. It inserts all types, brands, type-brand links, and models from the organization's catalog. Every type+brand combination also gets an `Otro / Genérico` model added. Re-running the app on an existing DB skips seeding entirely.
+`DatabaseService.seedEquipmentData()` runs automatically on first startup when `TYPE` is empty. It inserts all types, brands, type-brand links, and models from the organization's catalog. Every type+brand combination also gets an `Otro / Genérico` model added. Re-running the app on an existing DB skips seeding entirely. For PostgreSQL, the equivalent starting data lives in `desktop-app/database/postgresql/02-seed-equipment.sql.example` — a **template only** (placeholder rows, same pattern as `app-config.json.example`), not the real catalog; see that folder's README for why real catalog/provider data must never be committed.
 
 ### Provider catalog (EquipmentProvider)
 

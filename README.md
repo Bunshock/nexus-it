@@ -127,6 +127,8 @@ Saving tests the connection in the background (using the currently resolved tech
 
 The app runs fully on local SQLite by default. To point it at a shared PostgreSQL instance instead, go to **Base de Datos** → **✏ Editar** (admin mode required) and enter host, port, database name, username, and password — stored in `data/noteapp.db`'s `APP_SETTINGS` table (host/port/name in plaintext, username/password encrypted via `AppKeyEncryptionService`). Saving tests the connection before persisting, same confirm-on-failure flow as the AD API above. The **Probar conexión** button re-checks connectivity on demand without opening the edit dialog. If the remote database is unreachable, the app automatically falls back to local SQLite (write-through cache: writes go to remote first, then local; reads try remote first, fall back to local).
 
+The app creates its own schema automatically on first connect (`RemoteDatabaseService.ensureSchema()`) — a fresh, empty PostgreSQL database is all that's required. **`desktop-app/database/postgresql/`** has ready-to-run scripts for setting one up, including starting data for the equipment catalog (Type/Brand/Model) and the provider catalog (Nota de Proveedor's dropdown), and a full remote-server setup walkthrough (creating the DB/role, allowing remote connections, running the scripts) — see that folder's `README.md`. The seed script is a **template** with placeholder rows only, not real data (same pattern as `app-config.json.example`) — copy it and fill in your organization's actual catalog before running it; never commit the real, filled-in file (already gitignored). S/N validation rules are configured through the app's own UI, not a SQL script — same README explains why.
+
 ### `config/mock-equipment.json`
 
 Contains placeholder equipment types, brands, models, and S/N validation rules used by `MockEquipmentService`. Replace with real data once connected to the PostgreSQL backend. Schema mirrors the production database structure.
@@ -278,6 +280,7 @@ notes-app-for-it/
 ├── desktop-app/           — JavaFX desktop application
 │   ├── config/            — Runtime config files (not compiled into JAR)
 │   ├── data/              — SQLite database (created at first run, gitignored)
+│   ├── database/postgresql/ — Remote DB setup: schema + starting equipment/provider catalog SQL scripts (example template, not real data)
 │   └── src/
 │       ├── main/java/     — Application source
 │       ├── main/resources/— FXML views, CSS, HTML note templates
