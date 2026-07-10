@@ -61,7 +61,8 @@ public class AdApiService implements IADService {
         for (String d : dniVariants) {
             for (String n : nameVariants) {
                 for (AdApiUserDto dto : query(baseUrl, apiToken, d, n, usernameValue, httpClient, mapper)) {
-                    merged.putIfAbsent(extractString(dto.samAccountName), dto);
+                    merged.merge(extractString(dto.samAccountName), dto,
+                        (existing, incoming) -> completeness(incoming) > completeness(existing) ? incoming : existing);
                 }
             }
         }
@@ -168,6 +169,24 @@ public class AdApiService implements IADService {
     private static ADUser toADUser(AdApiUserDto dto) {
         return new ADUser(extractString(dto.dni), extractString(dto.displayName),
             extractString(dto.samAccountName), extractString(dto.mail), extractString(dto.ou));
+    }
+
+    /**
+     * Number of non-blank fields on a DTO. Confirmed in practice: a broad/fuzzy query (e.g. an
+     * unstructured "name" search matching many people loosely) can return a lighter-weight
+     * record for the same person that a more precise query (e.g. the exact "Apellido, Nombre"
+     * reordering) returns in full — same samAccountName, missing displayName/dni. When two
+     * variant queries both surface the same person, prefer whichever version is more complete
+     * instead of arbitrarily keeping whichever query happened to run first.
+     */
+    private static int completeness(AdApiUserDto dto) {
+        int score = 0;
+        if (!isBlank(extractString(dto.samAccountName))) score++;
+        if (!isBlank(extractString(dto.displayName))) score++;
+        if (!isBlank(extractString(dto.dni))) score++;
+        if (!isBlank(extractString(dto.mail))) score++;
+        if (!isBlank(extractString(dto.ou))) score++;
+        return score;
     }
 
     /**

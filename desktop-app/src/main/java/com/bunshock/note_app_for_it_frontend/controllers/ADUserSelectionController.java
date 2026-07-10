@@ -1,5 +1,6 @@
 package com.bunshock.note_app_for_it_frontend.controllers;
 
+import java.util.Comparator;
 import java.util.List;
 
 import org.controlsfx.control.PopOver;
@@ -28,7 +29,11 @@ public class ADUserSelectionController {
     }
 
     public void setResults(List<ADUser> results) {
-        lstResults.setItems(FXCollections.observableArrayList(results));
+        List<ADUser> sorted = results.stream()
+            .sorted(Comparator.comparing(ADUser::getFullName,
+                Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER)))
+            .toList();
+        lstResults.setItems(FXCollections.observableArrayList(sorted));
         setupCellFactory();
     }
 

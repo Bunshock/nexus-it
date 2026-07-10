@@ -23,6 +23,32 @@ class AdApiServiceTest {
         return (String) m.invoke(null, node);
     }
 
+    private Object buildDto(String samAccountName, String displayName, String dni, String mail, String ou) throws Exception {
+        Class<?> dtoClass = Class.forName(
+            "com.bunshock.note_app_for_it_frontend.services.AdApiService$AdApiUserDto");
+        var constructor = dtoClass.getDeclaredConstructor();
+        constructor.setAccessible(true);
+        Object dto = constructor.newInstance();
+        setField(dtoClass, dto, "samAccountName", samAccountName);
+        setField(dtoClass, dto, "displayName", displayName);
+        setField(dtoClass, dto, "dni", dni);
+        setField(dtoClass, dto, "mail", mail);
+        setField(dtoClass, dto, "ou", ou);
+        return dto;
+    }
+
+    private void setField(Class<?> dtoClass, Object dto, String fieldName, String json) throws Exception {
+        var field = dtoClass.getDeclaredField(fieldName);
+        field.setAccessible(true);
+        field.set(dto, mapper.readTree(json));
+    }
+
+    private int completeness(Object dto) throws Exception {
+        Method m = AdApiService.class.getDeclaredMethod("completeness", dto.getClass());
+        m.setAccessible(true);
+        return (int) m.invoke(null, dto);
+    }
+
     @SuppressWarnings("unchecked")
     private List<String> dniVariants(String dni) throws Exception {
         Method m = AdApiService.class.getDeclaredMethod("dniVariants", String.class);
@@ -127,6 +153,28 @@ class AdApiServiceTest {
     void testConnectionFalseForBlankUrlOrToken() {
         assertFalse(service.testConnection(null, "token", "user"));
         assertFalse(service.testConnection("http://ad-api", null, "user"));
+    }
+
+    @Test
+    void completenessCountsNonBlankFields() throws Exception {
+        Object full = buildDto("\"jrodriguez\"", "\"Rodriguez, Joaquin\"", "\"45933368\"",
+            "\"jrodriguez@ues21.edu.ar\"", "\"OU=IT\"");
+        assertEquals(5, completeness(full));
+
+        Object partial = buildDto("\"jrodriguez\"", "null", "null",
+            "\"jrodriguez@ues21.edu.ar\"", "null");
+        assertEquals(2, completeness(partial));
+
+        Object empty = buildDto("null", "null", "null", "null", "null");
+        assertEquals(0, completeness(empty));
+    }
+
+    @Test
+    void completenessTreatsEmptyArrayAsBlank() throws Exception {
+        Object dto = buildDto("\"jrodriguez\"", "[]", "\"45933368\"",
+            "\"jrodriguez@ues21.edu.ar\"", "null");
+        // displayName is an empty array -> extractString returns "" -> blank -> not counted
+        assertEquals(3, completeness(dto));
     }
 
     @Test
