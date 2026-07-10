@@ -221,9 +221,9 @@ mvn test
 
 ### AD Integration
 
-- Search by DNI, name, and/or username against a real REST API (see [Active Directory (AD) API](#active-directory-ad-api) above) — multiple fields narrow the search (AND)
-- DNI dot format normalized automatically — queried both as `"35123456"` and `"35.123.456"`
-- Name queried both as typed and reordered as `"Apellido, Nombre"` to match the stored display-name format
+- Search by DNI, name, and/or username against a real REST API (see [Active Directory (AD) API](#active-directory-ad-api) above) — multiple fields narrow the search (AND). This is enforced on both ends: every request already sends the fields together so the server ANDs them, and the app additionally re-verifies every supplied field (dni, name, username) against each result's own data before showing it, unconditionally and with no exceptions — the server can't be trusted to actually AND them itself, confirmed in practice (adding a dni to an already-correct name search could return entirely different, dni-only matches)
+- DNI dot format normalized automatically — queried both as `"35123456"` and `"35.123.456"`. Note: a *partial* DNI search against a record whose DNI is stored dotted in AD may not find it unless the typed length happens to land on a dot boundary — this is how Active Directory itself indexes that data, confirmed in the native Windows AD tool too, not something the app's query can work around
+- Name accepts "Nombre Apellido", "Apellido Nombre", and incomplete words in either position (e.g. "Rodriguez Joa", "Joaquin Rodrig", or just "Rodrig" alone) — queried as typed plus both comma-insertion guesses; if that finds nothing, each word is automatically retried alone and the results are narrowed back down to only people matching every typed word
 - Multi-result picker dialog when search returns more than one user, showing DNI/email/OU on hover
 - Current Windows user looked up in AD on startup (background thread) to populate the technician profile
 - Sidebar status dot reflects real AD API reachability (see [Configure Application Settings](docs/use-cases.md) / `CLAUDE.md` for the status-check design)

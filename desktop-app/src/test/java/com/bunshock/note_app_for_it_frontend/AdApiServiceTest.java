@@ -63,10 +63,35 @@ class AdApiServiceTest {
     }
 
     @SuppressWarnings("unchecked")
-    private List<String> nameVariants(String name) throws Exception {
-        Method m = AdApiService.class.getDeclaredMethod("nameVariants", String.class);
+    private List<String> preciseNameVariants(String name) throws Exception {
+        Method m = AdApiService.class.getDeclaredMethod("preciseNameVariants", String.class);
         m.setAccessible(true);
         return (List<String>) m.invoke(null, name);
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<String> wordFallbackVariants(String name) throws Exception {
+        Method m = AdApiService.class.getDeclaredMethod("wordFallbackVariants", String.class);
+        m.setAccessible(true);
+        return (List<String>) m.invoke(null, name);
+    }
+
+    private boolean matchesAllWords(Object dto, List<String> words) throws Exception {
+        Method m = AdApiService.class.getDeclaredMethod("matchesAllWords", dto.getClass(), List.class);
+        m.setAccessible(true);
+        return (boolean) m.invoke(null, dto, words);
+    }
+
+    private boolean matchesDni(Object dto, String typedDigits) throws Exception {
+        Method m = AdApiService.class.getDeclaredMethod("matchesDni", dto.getClass(), String.class);
+        m.setAccessible(true);
+        return (boolean) m.invoke(null, dto, typedDigits);
+    }
+
+    private boolean matchesUsername(Object dto, String typedUsername) throws Exception {
+        Method m = AdApiService.class.getDeclaredMethod("matchesUsername", dto.getClass(), String.class);
+        m.setAccessible(true);
+        return (boolean) m.invoke(null, dto, typedUsername);
     }
 
     private String dotFormat(String digits) throws Exception {
@@ -79,6 +104,40 @@ class AdApiServiceTest {
     void dotFormatGroupsByThreeFromTheRight() throws Exception {
         assertEquals("45.933.368", dotFormat("45933368"));
         assertEquals("1.111.111", dotFormat("1111111"));
+    }
+
+    /**
+     * Documents a confirmed, accepted limitation (2026-07-10) — not a bug to "fix" here. Two
+     * real AD users share the same first 5 DNI digits, one stored undotted ("40858705"), one
+     * stored dotted ("40.858.711"). A partial-DNI search for the dotted user only succeeds when
+     * the typed prefix happens to land on a dot boundary (5 digits) or is the full exact value
+     * (8 digits) — 6 and 7 digit prefixes genuinely don't find him, confirmed via direct calls
+     * to the real API (bypassing this app) and independently reproduced in the native Windows
+     * AD search tool, so it's how that record is indexed in AD itself, not something any query
+     * shape from this app can work around. See dniVariants()'s doc for the full investigation.
+     */
+    @Test
+    void dniVariantsRealAdApiScenario() throws Exception {
+        String mariaRaw = "40858705";
+        String leandroRaw = "40.858.711";
+
+        List<String> q1 = dniVariants("40858");
+        assertTrue(anyVariantMatches(q1, mariaRaw), "5-digit prefix matches Maria");
+        assertTrue(anyVariantMatches(q1, leandroRaw), "5-digit prefix happens to land on a dot boundary, matches Leandro too");
+
+        List<String> q2 = dniVariants("408587");
+        assertTrue(anyVariantMatches(q2, mariaRaw), "6-digit prefix matches Maria");
+        assertFalse(anyVariantMatches(q2, leandroRaw), "6-digit prefix does NOT match Leandro — accepted AD limitation");
+
+        List<String> q4 = dniVariants("40858711");
+        assertFalse(anyVariantMatches(q4, mariaRaw), "full 8-digit query is Leandro's dni, not Maria's");
+        assertTrue(anyVariantMatches(q4, leandroRaw), "full exact 8-digit query matches Leandro");
+    }
+
+    /** Simulates the real AD API's dni prefix match: a candidate matches a search if the
+     * candidate's own raw stored dni string starts with ANY generated variant. */
+    private boolean anyVariantMatches(List<String> variants, String rawStoredDni) {
+        return variants.stream().anyMatch(rawStoredDni::startsWith);
     }
 
     @Test
@@ -104,25 +163,53 @@ class AdApiServiceTest {
     }
 
     @Test
-    void nameVariantsReordersLastWordAsSurname() throws Exception {
-        List<String> variants = nameVariants("Joaquín Rodriguez");
-        assertEquals(2, variants.size());
+    void preciseNameVariantsCoversBothSurnamePositions() throws Exception {
+        List<String> variants = preciseNameVariants("Joaquín Rodriguez");
+        assertEquals(3, variants.size());
         assertTrue(variants.contains("joaquín rodriguez"));
         assertTrue(variants.contains("rodriguez, joaquín"));
+        assertTrue(variants.contains("joaquín, rodriguez"));
     }
 
     @Test
-    void nameVariantsIsSingleValueForOneWord() throws Exception {
-        List<String> variants = nameVariants("Rodriguez");
+    void preciseNameVariantsIsSingleValueForOneWord() throws Exception {
+        List<String> variants = preciseNameVariants("Rodriguez");
         assertEquals(1, variants.size());
         assertEquals("rodriguez", variants.get(0));
     }
 
     @Test
-    void nameVariantsIsSingleNullForBlankInput() throws Exception {
-        List<String> variants = nameVariants(null);
+    void preciseNameVariantsIsSingleNullForBlankInput() throws Exception {
+        List<String> variants = preciseNameVariants(null);
         assertEquals(1, variants.size());
         assertNull(variants.get(0));
+    }
+
+    @Test
+    void preciseNameVariantsDedupesWhenGuessesCoincide() throws Exception {
+        // A 2-word input where both surname-position guesses would produce the same string
+        // (repeating the same word twice) should not yield duplicate query variants.
+        List<String> variants = preciseNameVariants("Rodriguez Rodriguez");
+        assertEquals(2, variants.size());
+    }
+
+    @Test
+    void wordFallbackVariantsReturnsEachWordAlone() throws Exception {
+        List<String> variants = wordFallbackVariants("Joaquin Rodrig");
+        assertEquals(2, variants.size());
+        assertTrue(variants.contains("joaquin"));
+        assertTrue(variants.contains("rodrig"));
+    }
+
+    @Test
+    void wordFallbackVariantsEmptyForSingleWord() throws Exception {
+        assertTrue(wordFallbackVariants("Rodriguez").isEmpty());
+    }
+
+    @Test
+    void wordFallbackVariantsEmptyForBlankInput() throws Exception {
+        assertTrue(wordFallbackVariants(null).isEmpty());
+        assertTrue(wordFallbackVariants("").isEmpty());
     }
 
     @Test
@@ -235,5 +322,96 @@ class AdApiServiceTest {
         ADUser user = toADUser(dto);
         assertNull(user.getFullName());
         assertNull(user.getDni());
+    }
+
+    @Test
+    void matchesAllWordsTrueWhenDisplayNameContainsEveryWord() throws Exception {
+        Object dto = buildDto("\"jrodriguez\"", "\"Rodriguez, Joaquin\"", "\"45933368\"",
+            "\"jrodriguez@ues21.edu.ar\"", "\"OU=IT\"");
+        assertTrue(matchesAllWords(dto, List.of("joaquin", "rodrig")));
+    }
+
+    @Test
+    void matchesAllWordsFalseWhenDisplayNameMissingAWord() throws Exception {
+        // "Joaquin Rodrig" falls back to querying "joaquin" and "rodrig" separately — the raw
+        // union would include every "Joaquin" and every "Rodrig*" surname; this check narrows
+        // it back down to only candidates whose displayName actually contains both words.
+        Object joaquinGomez = buildDto("\"jgomez\"", "\"Gomez, Joaquin\"", "\"11111111\"",
+            "\"jgomez@ues21.edu.ar\"", "\"OU=IT\"");
+        assertFalse(matchesAllWords(joaquinGomez, List.of("joaquin", "rodrig")));
+
+        Object anaRodriguez = buildDto("\"arodriguez\"", "\"Rodriguez, Ana\"", "\"22222222\"",
+            "\"arodriguez@ues21.edu.ar\"", "\"OU=IT\"");
+        assertFalse(matchesAllWords(anaRodriguez, List.of("joaquin", "rodrig")));
+    }
+
+    @Test
+    void matchesAllWordsIsCaseInsensitive() throws Exception {
+        Object dto = buildDto("\"jrodriguez\"", "\"RODRIGUEZ, JOAQUIN\"", "\"45933368\"",
+            "\"jrodriguez@ues21.edu.ar\"", "\"OU=IT\"");
+        assertTrue(matchesAllWords(dto, List.of("joaquin", "rodrig")));
+    }
+
+    @Test
+    void matchesAllWordsFalseWhenNoDisplayName() throws Exception {
+        Object dto = buildDto("\"jgomez\"", "null", "\"11111111\"",
+            "\"jgomez@ues21.edu.ar\"", "\"OU=IT\"");
+        assertFalse(matchesAllWords(dto, List.of("joaquin")));
+    }
+
+    // ── matchesDni / matchesUsername (2026-07-10 AND-enforcement fix) ──────────
+
+    @Test
+    void matchesDniTrueWhenActualStartsWithTyped() throws Exception {
+        Object dto = buildDto("\"jrodriguez\"", "\"Rodriguez, Joaquin\"", "\"45933368\"",
+            "\"jrodriguez@ues21.edu.ar\"", "\"OU=IT\"");
+        assertTrue(matchesDni(dto, "459333"));
+        assertTrue(matchesDni(dto, "45933368"));
+    }
+
+    @Test
+    void matchesDniFalseWhenActualBelongsToSomeoneElse() throws Exception {
+        Object dto = buildDto("\"jrodriguez\"", "\"Rodriguez, Joaquin\"", "\"45933368\"",
+            "\"jrodriguez@ues21.edu.ar\"", "\"OU=IT\"");
+        // Reproduces the reported bug: a name match whose DNI doesn't actually start with the
+        // typed (wrong/invalid) DNI must be excluded, not silently kept.
+        assertFalse(matchesDni(dto, "99999999"));
+    }
+
+    @Test
+    void matchesDniIgnoresDotsOnBothSides() throws Exception {
+        Object dto = buildDto("\"lmantovani\"", "\"Mantovani, Leandro\"", "\"40.858.711\"",
+            "\"leandro.mantovani@ues21.edu.ar\"", "\"OU=IT\"");
+        assertTrue(matchesDni(dto, "40858711"));
+        assertTrue(matchesDni(dto, "408587"));
+    }
+
+    @Test
+    void matchesDniFalseWhenDtoHasNoDni() throws Exception {
+        Object dto = buildDto("\"jrodriguez\"", "\"Rodriguez, Joaquin\"", "null",
+            "\"jrodriguez@ues21.edu.ar\"", "\"OU=IT\"");
+        assertFalse(matchesDni(dto, "45933368"));
+    }
+
+    @Test
+    void matchesUsernameTrueWhenActualContainsTyped() throws Exception {
+        Object dto = buildDto("\"jrodriguez\"", "\"Rodriguez, Joaquin\"", "\"45933368\"",
+            "\"jrodriguez@ues21.edu.ar\"", "\"OU=IT\"");
+        assertTrue(matchesUsername(dto, "jrodriguez"));
+        assertTrue(matchesUsername(dto, "rodri"));
+    }
+
+    @Test
+    void matchesUsernameFalseWhenUnrelated() throws Exception {
+        Object dto = buildDto("\"jrodriguez\"", "\"Rodriguez, Joaquin\"", "\"45933368\"",
+            "\"jrodriguez@ues21.edu.ar\"", "\"OU=IT\"");
+        assertFalse(matchesUsername(dto, "adiaz"));
+    }
+
+    @Test
+    void matchesUsernameIsSeparatorAgnostic() throws Exception {
+        Object dto = buildDto("\"juan.perez\"", "\"Perez, Juan\"", "\"45933368\"",
+            "\"juan.perez@ues21.edu.ar\"", "\"OU=IT\"");
+        assertTrue(matchesUsername(dto, "juan-perez"));
     }
 }

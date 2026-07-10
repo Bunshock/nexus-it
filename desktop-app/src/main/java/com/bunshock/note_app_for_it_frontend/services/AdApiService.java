@@ -10,6 +10,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 
@@ -54,9 +55,67 @@ public class AdApiService implements IADService {
         if (isBlank(dni) && isBlank(name) && isBlank(username)) return List.of();
 
         List<String> dniVariants = dniVariants(dni);
-        List<String> nameVariants = nameVariants(name);
         String usernameValue = isBlank(username) ? null : username.trim().toLowerCase();
 
+        Map<String, AdApiUserDto> merged = runQueries(dniVariants, preciseNameVariants(name), usernameValue);
+
+        // A word that's incomplete anywhere but the very end of a combined guess (e.g. "Joaquin
+        // Rodrig" reordered to "Rodrig, Joaquin") breaks the server's substring match, since
+        // "Rodrig" isn't immediately followed by ", Joaquin" in the stored "Rodriguez, Joaquin" —
+        // only querying that word alone can still match it. Only pay for this extra round when
+        // the precise guesses above found nothing, so a well-formed complete name still resolves
+        // in one round-trip without pulling in every person who shares a single word.
+        if (merged.isEmpty() && !isBlank(name)) {
+            List<String> fallback = wordFallbackVariants(name);
+            if (!fallback.isEmpty()) {
+                merged.putAll(runQueries(dniVariants, fallback, usernameValue));
+            }
+        }
+
+        // The server can't be trusted to actually AND dni/name/username together, even though
+        // every query above sends them combined in one request — confirmed in practice: a
+        // name-only search finds the right people, but simply adding a dni to that same search
+        // can return an entirely different set of people who only match the dni, never the name
+        // (the precise-round query apparently isn't ANDing them server-side either — this isn't
+        // limited to the word-fallback round). Re-verify EVERY supplied field client-side against
+        // each candidate's own data, unconditionally, regardless of which round produced it and
+        // regardless of which fields were supplied — any combination of dni/name/username must
+        // ALL match simultaneously. No "fall back to broader results" escape hatch: if a
+        // candidate fails even one supplied field, it's excluded, full stop — an empty result
+        // means exactly that, no candidate satisfied everything that was asked for.
+        List<String> nameWords = isBlank(name) ? List.of() : List.of(name.trim().toLowerCase().split("\\s+"));
+        String dniDigits = isBlank(dni) ? null : dni.replaceAll("[^0-9]", "");
+        merged.values().removeIf(dto ->
+            (!nameWords.isEmpty() && !matchesAllWords(dto, nameWords))
+            || (dniDigits != null && !dniDigits.isEmpty() && !matchesDni(dto, dniDigits))
+            || (usernameValue != null && !matchesUsername(dto, usernameValue)));
+
+        return merged.values().stream().map(AdApiService::toADUser).toList();
+    }
+
+    private static boolean matchesAllWords(AdApiUserDto dto, List<String> words) {
+        String displayName = extractString(dto.displayName);
+        String haystack = displayName == null ? "" : displayName.toLowerCase();
+        return words.stream().allMatch(haystack::contains);
+    }
+
+    private static boolean matchesDni(AdApiUserDto dto, String typedDigits) {
+        String actual = extractString(dto.dni);
+        if (actual == null) return false;
+        return actual.replaceAll("[^0-9]", "").startsWith(typedDigits);
+    }
+
+    /** Mirrors MockADService's separator-agnostic matching, so a typed "juan.perez" also matches
+     * a stored "juan-perez" the same way it would against the mock service in tests. */
+    private static boolean matchesUsername(AdApiUserDto dto, String typedUsername) {
+        String actual = extractString(dto.samAccountName);
+        if (actual == null) return false;
+        String actualLower = actual.toLowerCase();
+        return actualLower.contains(typedUsername)
+            || actualLower.replace('.', '-').equals(typedUsername.replace('.', '-'));
+    }
+
+    private Map<String, AdApiUserDto> runQueries(List<String> dniVariants, List<String> nameVariants, String usernameValue) {
         Map<String, AdApiUserDto> merged = new LinkedHashMap<>();
         for (String d : dniVariants) {
             for (String n : nameVariants) {
@@ -66,7 +125,7 @@ public class AdApiService implements IADService {
                 }
             }
         }
-        return merged.values().stream().map(AdApiService::toADUser).toList();
+        return merged;
     }
 
     /** Tests arbitrary connection details without mutating the singleton's live config. */
@@ -121,7 +180,21 @@ public class AdApiService implements IADService {
         return URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20").replace("%2C", ",");
     }
 
-    /** Non-blank DNI yields [digitsOnly] or [digitsOnly, dotted] when dotting actually changes the value. */
+    /**
+     * Non-blank DNI yields [digitsOnly] or [digitsOnly, dotted] when dotting actually changes
+     * the value.
+     *
+     * Investigated 2026-07-10 whether generating extra dotted guesses anchored to an assumed
+     * final length (7 or 8 digits) could recover partial-DNI searches against dotted-stored
+     * records — e.g. for the DNI "40858711" (stored dotted as "40.858.711"), trying "40.858.7"
+     * as a guess for the 6-digit-typed prefix "408587". That guess is a character-for-character
+     * exact prefix of the stored value, yet was confirmed (via direct API calls, bypassing this
+     * app entirely) to NOT match — and neither did any other dotted variant tried. The technician
+     * separately confirmed the same record fails to prefix-search in the native Windows AD tool
+     * too, so this isn't an API bug or something this app's query shape can work around — it's
+     * an inherent limitation of how that particular record is indexed in Active Directory itself.
+     * Reverted to the simple form below; do not reintroduce assumed-length dot guessing.
+     */
     private static List<String> dniVariants(String dni) {
         if (isBlank(dni)) return singleNullList();
         String digits = dni.replaceAll("[^0-9]", "");
@@ -144,18 +217,38 @@ public class AdApiService implements IADService {
     /**
      * Non-blank name yields the text as typed (matches stored "Apellido, Nombre(s)" as a
      * contiguous substring whenever the given names were typed in their stored order) and,
-     * when there are 2+ words, a reordered "lastWord, restOfWords" guess (matches the common
-     * "Nombre Apellido" input). Both are lowercased since the API expects lowercase.
+     * when there are 2+ words, two reordered guesses inserting a comma after the last word
+     * (matches "Nombre Apellido" input) and after the first word (matches "Apellido Nombre"
+     * input, i.e. the stored order but missing its comma) — we can't tell from the input alone
+     * which end holds the surname. All lowercased since the API expects lowercase. Deduplicated
+     * since a single-word input, or symmetric input, would otherwise repeat the same query.
      */
-    private static List<String> nameVariants(String name) {
+    private static List<String> preciseNameVariants(String name) {
         if (isBlank(name)) return singleNullList();
         String asTyped = name.trim().toLowerCase();
         String[] words = asTyped.split("\\s+");
         if (words.length < 2) return List.of(asTyped);
 
-        String rest = String.join(" ", Arrays.copyOfRange(words, 0, words.length - 1));
-        String reordered = words[words.length - 1] + ", " + rest;
-        return reordered.equals(asTyped) ? List.of(asTyped) : List.of(asTyped, reordered);
+        String rest = String.join(" ", Arrays.copyOfRange(words, 1, words.length));
+        String lastWordAsSurname = words[words.length - 1] + ", "
+            + String.join(" ", Arrays.copyOfRange(words, 0, words.length - 1));
+        String firstWordAsSurname = words[0] + ", " + rest;
+
+        return new ArrayList<>(new LinkedHashSet<>(List.of(asTyped, lastWordAsSurname, firstWordAsSurname)));
+    }
+
+    /**
+     * Each word of a 2+ word name, queried alone. A combined guess from preciseNameVariants()
+     * can never match if an incomplete word sits anywhere but the very end of the query string
+     * (see search()'s comment) — querying a word by itself sidesteps that, since it only needs
+     * to be a prefix of one stored word, not exactly followed by the rest of the stored string.
+     * A single-word input returns empty here since preciseNameVariants() already queries it alone.
+     */
+    private static List<String> wordFallbackVariants(String name) {
+        if (isBlank(name)) return List.of();
+        String[] words = name.trim().toLowerCase().split("\\s+");
+        if (words.length < 2) return List.of();
+        return new ArrayList<>(new LinkedHashSet<>(List.of(words)));
     }
 
     private static List<String> singleNullList() {
