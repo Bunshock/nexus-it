@@ -88,7 +88,9 @@
                            style="-fx-font-size: 12px; -fx-text-fill: #64748b;"/>
                     <Label text="     3.3  Fin de Contrato"
                            style="-fx-font-size: 12px; -fx-text-fill: #64748b;"/>
-                    <Label text="     3.4  Entrega — Proveedor"
+                    <Label text="     3.4  Préstamo"
+                           style="-fx-font-size: 12px; -fx-text-fill: #64748b;"/>
+                    <Label text="     3.5  Entrega — Proveedor"
                            style="-fx-font-size: 12px; -fx-text-fill: #64748b;"/>
                     <Label text="4.   Gestión de equipamiento"
                            style="-fx-font-size: 12px; -fx-text-fill: #334155;"/>
@@ -100,18 +102,26 @@
                            style="-fx-font-size: 12px; -fx-text-fill: #64748b;"/>
                     <Label text="5.   Previsualización y exportación"
                            style="-fx-font-size: 12px; -fx-text-fill: #334155;"/>
-                    <Label text="6.   Búsqueda de usuarios"
+                    <Label text="6.   Búsqueda de usuarios en Active Directory"
                            style="-fx-font-size: 12px; -fx-text-fill: #334155;"/>
-                    <Label text="7.   Historial de notas"
+                    <Label text="7.   Mi Perfil"
                            style="-fx-font-size: 12px; -fx-text-fill: #334155;"/>
-                    <Label text="8.   Ajustes"
+                    <Label text="8.   Historial de notas"
                            style="-fx-font-size: 12px; -fx-text-fill: #334155;"/>
-                    <Label text="     8.1  Formato del Activo Fijo"
+                    <Label text="9.   Base de Datos"
+                           style="-fx-font-size: 12px; -fx-text-fill: #334155;"/>
+                    <Label text="10.  Ajustes"
+                           style="-fx-font-size: 12px; -fx-text-fill: #334155;"/>
+                    <Label text="     10.1  Formato del Activo Fijo"
                            style="-fx-font-size: 12px; -fx-text-fill: #64748b;"/>
-                    <Label text="     8.2  Correo electrónico"
+                    <Label text="     10.2  Correo electrónico"
                            style="-fx-font-size: 12px; -fx-text-fill: #64748b;"/>
-                    <Label text="     8.3  Active Directory"
+                    <Label text="     10.3  Active Directory"
                            style="-fx-font-size: 12px; -fx-text-fill: #64748b;"/>
+                    <Label text="     10.4  Validación de S/N por modelo"
+                           style="-fx-font-size: 12px; -fx-text-fill: #64748b;"/>
+                    <Label text="11.  Modo administrador"
+                           style="-fx-font-size: 12px; -fx-text-fill: #334155;"/>
                 </VBox>
 
                 <Separator/>
@@ -121,20 +131,27 @@
                        style="-fx-font-size: 15px; -fx-font-weight: bold; -fx-text-fill: #0c8570;"/>
 
                 <Label wrapText="true"
-                       text="La aplicación se organiza en cuatro secciones accesibles desde el menú lateral izquierdo:"
+                       text="La aplicación se organiza en secciones accesibles desde el menú lateral izquierdo:"
                        style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
                 <VBox spacing="3" style="-fx-padding: 0 0 0 12;">
-                    <Label text="•  Generador — pantalla principal para crear notas de equipamiento"
+                    <Label text="•  Generar Nota — pantalla principal para crear notas de equipamiento"
                            style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
                     <Label text="•  Historial — registro de todas las notas generadas en la aplicación"
                            style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
-                    <Label text="•  Ajustes — configuración del correo y del formato de Activo Fijo"
+                    <Label text="•  Base de Datos — conexión a la base de datos compartida y catálogo de equipamiento (solo administrador)"
+                           style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
+                    <Label text="•  Mi Perfil — datos del técnico que aparecen en las notas y en el saludo de la barra lateral"
+                           style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
+                    <Label text="•  Configuración — ajustes de correo, GLPI, Active Directory y modo administrador"
                            style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
                     <Label text="•  Acerca de — información sobre la aplicación y este manual"
                            style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
                 </VBox>
                 <Label wrapText="true"
                        text="La pantalla del Generador presenta dos pestañas en la parte superior (Nota de Usuario y Nota de Proveedor), el formulario del destinatario o proveedor, las tablas de equipamiento agregado, el campo de observaciones generales de la nota y los botones &quot;Generar Nota&quot; y &quot;Limpiar&quot;."
+                       style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
+                <Label wrapText="true"
+                       text="En la parte inferior de la barra lateral, tres indicadores circulares muestran el estado de conexión de Active Directory, GLPI y la Base de Datos: verde (conectado), rojo (desconectado) o gris (no configurado). Pasar el mouse sobre cada uno muestra más detalle."
                        style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
 
                 <Separator/>
@@ -152,11 +169,14 @@
                 <Label text="2.2  Nota de proveedor"
                        style="-fx-font-size: 13px; -fx-font-weight: bold; -fx-text-fill: #334155;"/>
                 <Label wrapText="true"
-                       text="Seleccionar la pestaña &quot;Nota de Proveedor&quot;. Completar los datos del proveedor (razón social, CUIT, nombre del responsable y DNI). Seleccionar el Motivo. Agregar los equipos recibidos y presionar &quot;Generar Nota&quot;."
+                       text="Seleccionar la pestaña &quot;Nota de Proveedor&quot;. Elegir el proveedor de la lista desplegable (no es un campo de texto libre; los proveedores se administran desde Base de Datos, ver sección 9) e ingresar el CUIT. Si corresponde, completar los datos de la persona que recibe el equipamiento por parte del proveedor (nombre y DNI, mediante el checkbox correspondiente). Seleccionar el Motivo. Agregar los equipos recibidos y presionar &quot;Generar Nota&quot;. Si no se seleccionó un proveedor, la aplicación lo indica y no permite continuar."
                        style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
 
                 <Label wrapText="true"
                        text="El botón &quot;Limpiar&quot; restablece todos los campos del formulario y vacía las tablas de equipamiento. Los datos no se pueden recuperar una vez limpiados."
+                       style="-fx-font-size: 12px; -fx-text-fill: #94a3b8; -fx-font-style: italic;"/>
+                <Label wrapText="true"
+                       text="No es posible generar una nota sin tener el perfil del técnico completo (ver sección 7, Mi Perfil). Si falta el nombre o el DNI del técnico, la aplicación muestra un aviso indicando cómo completarlo antes de continuar."
                        style="-fx-font-size: 12px; -fx-text-fill: #94a3b8; -fx-font-style: italic;"/>
 
                 <Separator/>
@@ -174,7 +194,7 @@
                 <Label text="3.2  Devolución"
                        style="-fx-font-size: 13px; -fx-font-weight: bold; -fx-text-fill: #334155;"/>
                 <Label wrapText="true"
-                       text="Se utiliza cuando un usuario devuelve equipamiento. No requiere Motivo. La aplicación verifica que los activos ingresados estén efectivamente asignados al usuario indicado antes de permitir la generación de la nota."
+                       text="Se utiliza cuando un usuario devuelve equipamiento. Requiere seleccionar un Motivo (Fin de préstamo, Falla, Fin de contrato u Otro). Si el Motivo seleccionado es &quot;Falla&quot;, se abre automáticamente una ventana para indicar la causa de la falla (obligatoria) y un detalle adicional (opcional); cancelar esa ventana vuelve a dejar el Motivo sin seleccionar."
                        style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
 
                 <Label text="3.3  Fin de Contrato"
@@ -183,7 +203,13 @@
                        text="Variante de la devolución que indica explícitamente la finalización de la relación laboral del usuario con la institución. Se usa cuando el motivo de devolución es el egreso del empleado."
                        style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
 
-                <Label text="3.4  Entrega — Proveedor"
+                <Label text="3.4  Préstamo"
+                       style="-fx-font-size: 13px; -fx-font-weight: bold; -fx-text-fill: #334155;"/>
+                <Label wrapText="true"
+                       text="Se utiliza para una entrega temporal de equipamiento. En lugar de un Motivo, se solicita una fecha estimada de devolución (se sugiere automáticamente el próximo día hábil, editable)."
+                       style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
+
+                <Label text="3.5  Entrega — Proveedor"
                        style="-fx-font-size: 13px; -fx-font-weight: bold; -fx-text-fill: #334155;"/>
                 <Label wrapText="true"
                        text="Nota de recepción de equipamiento proveniente de un proveedor externo. Requiere CUIT del proveedor y Motivo (Compra, Garantía, Reparación u Otro). Disponible únicamente desde la pestaña &quot;Nota de Proveedor&quot;."
@@ -204,7 +230,7 @@
                 <Label text="4.2  Número de serie (S/N)"
                        style="-fx-font-size: 13px; -fx-font-weight: bold; -fx-text-fill: #334155;"/>
                 <Label wrapText="true"
-                       text="Campo obligatorio para ítems de tipo activo. Cuando el modelo seleccionado tiene un formato de S/N definido, el diálogo muestra debajo del campo la longitud esperada y un ejemplo visual del patrón (los caracteres fijos aparecen en negrita y las posiciones variables en cursiva gris). El botón &quot;Agregar&quot; permanece deshabilitado hasta que el S/N ingresado cumpla con la longitud y el formato requeridos."
+                       text="Campo obligatorio para ítems de tipo activo. Cuando el modelo seleccionado tiene un formato de S/N definido por un administrador (ver sección 10.4), el diálogo muestra debajo del campo la longitud esperada y un ejemplo visual del patrón (los caracteres fijos aparecen en negrita y las posiciones variables en cursiva gris). El botón &quot;Agregar&quot; permanece deshabilitado hasta que el S/N ingresado cumpla con la longitud y el formato requeridos. Si el modelo no tiene un formato configurado, se acepta cualquier valor."
                        style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
                 <VBox spacing="3" style="-fx-padding: 0 0 0 12;">
                     <Label wrapText="true" text="•  Sin S/N: permite agregar el ítem sin número de serie en casos excepcionales. No está disponible para Notebooks, que siempre requieren S/N."
@@ -216,7 +242,7 @@
                 <Label text="4.3  Activo Fijo (A/F)"
                        style="-fx-font-size: 13px; -fx-font-weight: bold; -fx-text-fill: #334155;"/>
                 <Label wrapText="true"
-                       text="Campo opcional que se habilita marcando el checkbox &quot;N° Activo Fijo (A/F)&quot;. Se deben ingresar únicamente los dígitos significativos del número; la aplicación completa y formatea el valor automáticamente al guardar (por ejemplo: 435 → IT-00000435). Mientras se escribe, se muestra una previsualización del resultado final. El formato completo del Activo Fijo (prefijo, longitud y separadores) se configura desde la pantalla de Ajustes."
+                       text="Campo opcional que se habilita marcando el checkbox &quot;N° Activo Fijo (A/F)&quot;. Se deben ingresar únicamente los dígitos significativos del número; la aplicación completa y formatea el valor automáticamente al guardar (por ejemplo: 435 → IT-00000435). Mientras se escribe, se muestra una previsualización del resultado final. El formato completo del Activo Fijo (prefijo, longitud y separadores) se configura desde Ajustes (ver sección 10.1)."
                        style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
 
                 <Separator/>
@@ -243,40 +269,101 @@
                 <Separator/>
 
                 <!-- 6. BÚSQUEDA DE USUARIOS ────────────────────────────────── -->
-                <Label text="6.  Búsqueda de usuarios"
+                <Label text="6.  Búsqueda de usuarios en Active Directory"
                        style="-fx-font-size: 15px; -fx-font-weight: bold; -fx-text-fill: #0c8570;"/>
 
                 <Label wrapText="true"
-                       text="Desde el panel del destinatario en Notas de Usuario, el campo de búsqueda permite encontrar usuarios del directorio institucional por DNI, nombre completo o nombre de usuario. Comportamientos automáticos:"
+                       text="Desde el panel del destinatario en Notas de Usuario, el botón &quot;Buscar en AD&quot; permite encontrar usuarios del directorio institucional por DNI, nombre completo o nombre de usuario (se puede completar más de un campo a la vez para acotar la búsqueda). Mientras la búsqueda está en curso, el botón muestra un indicador de carga y el resto de la aplicación sigue utilizable con normalidad. Comportamientos automáticos:"
                        style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
                 <VBox spacing="3" style="-fx-padding: 0 0 0 12;">
                     <Label wrapText="true" text="•  DNI con puntos: el formato 35.123.456 se reconoce igual que 35123456."
                            style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
+                    <Label wrapText="true" text="•  Nombre completo: se puede escribir en cualquier orden (&quot;Nombre Apellido&quot; o &quot;Apellido Nombre&quot;) e incluso incompleto (por ejemplo &quot;Rodriguez Joa&quot; o &quot;Joaquin Rodrig&quot;) — la aplicación prueba automáticamente las variantes necesarias."
+                           style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
                     <Label wrapText="true" text="•  Nombre de usuario: se prueban automáticamente variantes de separador (juan.perez y juan-perez)."
                            style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
-                    <Label wrapText="true" text="•  Resultados múltiples: si la búsqueda devuelve más de un usuario, se muestra un selector para elegir el correcto."
+                    <Label wrapText="true" text="•  Resultados múltiples: si la búsqueda devuelve más de un usuario, se muestra un selector para elegir el correcto; al pasar el mouse sobre cada resultado se ven su DNI, correo y área."
                            style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
                 </VBox>
                 <Label wrapText="true"
-                       text="Al abrir la aplicación, el usuario de Windows con sesión activa se busca automáticamente en segundo plano y se precarga en el campo de técnico responsable."
+                       text="Al abrir la aplicación, el usuario de Windows con sesión activa se busca automáticamente en segundo plano y se precarga en Mi Perfil (ver sección 7)."
+                       style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
+                <Label wrapText="true"
+                       text="En casos muy puntuales, una búsqueda por DNI parcial puede no encontrar a una persona cuyo DNI completo sí existe en Active Directory, por cómo quedó cargado ese dato puntual en el directorio institucional. Si una búsqueda parcial no devuelve resultados esperados, probar con el DNI completo."
+                       style="-fx-font-size: 12px; -fx-text-fill: #94a3b8; -fx-font-style: italic;"/>
+
+                <Separator/>
+
+                <!-- 7. MI PERFIL ───────────────────────────────────────────── -->
+                <Label text="7.  Mi Perfil"
+                       style="-fx-font-size: 15px; -fx-font-weight: bold; -fx-text-fill: #0c8570;"/>
+
+                <Label wrapText="true"
+                       text="Muestra los datos del técnico que aparecen como responsable en cada nota generada: nombre, nombre de usuario, DNI y correo. Estos cuatro campos se completan automáticamente desde Active Directory a partir de la sesión de Windows activa al abrir la aplicación, y se muestran deshabilitados (no editables) en el uso normal."
+                       style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
+                <Label wrapText="true"
+                       text="El botón &quot;Actualizar Perfil desde AD&quot; vuelve a consultar Active Directory bajo demanda — útil si los datos no se cargaron correctamente al iniciar la aplicación, o si cambiaron en el directorio institucional. Si la actualización falla, un mensaje indica el motivo (no se pudo identificar el usuario de Windows, el usuario no existe en Active Directory, o no se pudo conectar con Active Directory) y sugiere pedirle a un administrador que complete los datos manualmente."
+                       style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
+                <Label wrapText="true"
+                       text="&quot;Nombre para mostrar&quot; es un campo aparte, siempre editable (no requiere modo administrador), que controla únicamente el saludo de la barra lateral (&quot;Hola, ...!&quot;) — no afecta las notas generadas. Se completa automáticamente con una sugerencia a partir del nombre completo, pero puede reemplazarse por el nombre que el técnico prefiera y guardarse con su propio botón &quot;Guardar&quot;. Vaciar el campo y guardar restablece la sugerencia automática. Esta preferencia se recuerda entre sesiones y no se pierde al actualizar el perfil desde AD."
+                       style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
+                <Label wrapText="true"
+                       text="Un administrador puede completar o corregir manualmente el nombre, usuario, DNI y correo activando el modo administrador (ver sección 11) — útil si Active Directory no tiene el dato correcto o si el equipo no está en el dominio institucional. Esta corrección manual se pierde al reiniciar la aplicación o al volver a actualizar desde AD."
                        style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
 
                 <Separator/>
 
-                <!-- 7. HISTORIAL DE NOTAS ──────────────────────────────────── -->
-                <Label text="7.  Historial de notas"
+                <!-- 8. HISTORIAL DE NOTAS ──────────────────────────────────── -->
+                <Label text="8.  Historial de notas"
                        style="-fx-font-size: 15px; -fx-font-weight: bold; -fx-text-fill: #0c8570;"/>
                 <Label wrapText="true"
-                       text="Cada nota generada queda registrada automáticamente. La sección Historial muestra el listado completo con fecha y hora de generación, tipo de nota, destinatario o proveedor, y estado de sincronización con GLPI. El botón &quot;Actualizar&quot; recarga el listado para reflejar los cambios más recientes. El historial se conserva entre sesiones y no se elimina al cerrar la aplicación."
+                       text="Cada nota generada queda registrada automáticamente. La sección Historial muestra el listado completo con fecha y hora de generación, tipo de nota, destinatario o proveedor, autor y estado de sincronización con GLPI. El historial se conserva entre sesiones y no se elimina al cerrar la aplicación."
                        style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
+                <Label wrapText="true"
+                       text="El panel de filtros permite acotar el listado por rango de fechas, tipo de nota, estado GLPI, autor, texto de destinatario o proveedor, y tipo/marca/modelo de equipo (en cascada). &quot;Buscar&quot; aplica los filtros cargados y &quot;Limpiar&quot; los restablece todos."
+                       style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
+                <Label wrapText="true"
+                       text="El botón &quot;Exportar&quot; genera el listado filtrado como CSV o Excel (.xlsx), con encabezados y columnas listos para abrir en una planilla de cálculo."
+                       style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
+                <Label wrapText="true"
+                       text="El listado se actualiza automáticamente cada vez que se ingresa a Historial, manteniendo los filtros que estuvieran aplicados — no es necesario volver a presionar &quot;Buscar&quot; para ver una nota generada recientemente."
+                       style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
+                <Label wrapText="true"
+                       text="Hacer doble clic sobre una fila abre una ventana con la vista previa de la nota y el detalle de cada ítem, incluyendo su estado GLPI (Pendiente, Sincronizado, Rechazado, o Sin GLPI para ítems no rastreados)."
+                       style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
+                <Label wrapText="true"
+                       text="En modo administrador, los ítems en estado Pendiente muestran además los botones &quot;Sincronizar&quot; y &quot;Rechazar&quot; dentro de esa misma ventana; rechazar un ítem requiere indicar un motivo. El listado del Historial se actualiza automáticamente después de cada acción."
+                       style="-fx-font-size: 12px; -fx-text-fill: #94a3b8; -fx-font-style: italic;"/>
 
                 <Separator/>
 
-                <!-- 8. AJUSTES ──────────────────────────────────────────────── -->
-                <Label text="8.  Ajustes"
+                <!-- 9. BASE DE DATOS ───────────────────────────────────────── -->
+                <Label text="9.  Base de Datos"
+                       style="-fx-font-size: 15px; -fx-font-weight: bold; -fx-text-fill: #0c8570;"/>
+                <Label wrapText="true"
+                       text="Sección de uso exclusivo para administradores (ver sección 11). Muestra el estado de la conexión a la base de datos compartida (servidor, nombre de base de datos y estado de conexión). &quot;✏ Editar&quot; permite configurar o modificar los datos de conexión; &quot;Probar conexión&quot; verifica la conectividad sin necesidad de abrir el formulario de edición. Si la base de datos compartida no está disponible, la aplicación sigue funcionando normalmente con la base de datos local del equipo."
+                       style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
+                <Label wrapText="true"
+                       text="Debajo, cuatro listas administran los catálogos que se usan al completar una nota: Tipos, Marcas y Modelos (equipamiento, en cascada) y Proveedores (lista independiente, usada por la pestaña Nota de Proveedor). Cada una permite agregar, renombrar o eliminar valores con los botones correspondientes."
+                       style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
+                <Label wrapText="true"
+                       text="Un proveedor agregado aquí queda disponible de inmediato en el desplegable &quot;PROVEEDOR&quot; de Nota de Proveedor (sección 2.2)."
+                       style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
+                <Label wrapText="true"
+                       text="La marca &quot;Generic&quot; no puede eliminarse: se utiliza como opción genérica en el catálogo y su eliminación rompería equipos ya cargados con esa marca."
+                       style="-fx-font-size: 12px; -fx-text-fill: #94a3b8; -fx-font-style: italic;"/>
+
+                <Separator/>
+
+                <!-- 10. AJUSTES ──────────────────────────────────────────────── -->
+                <Label text="10.  Ajustes"
                        style="-fx-font-size: 15px; -fx-font-weight: bold; -fx-text-fill: #0c8570;"/>
 
-                <Label text="8.1  Formato del Activo Fijo"
+                <Label wrapText="true"
+                       text="Salvo indicación contraria, todos los campos de esta sección son de solo lectura y solo pueden modificarse con el modo administrador activo (ver sección 11)."
+                       style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
+
+                <Label text="10.1  Formato del Activo Fijo"
                        style="-fx-font-size: 13px; -fx-font-weight: bold; -fx-text-fill: #334155;"/>
                 <Label wrapText="true"
                        text="Permite definir cómo se muestra y guarda el número de Activo Fijo en las notas. Los campos configurables son:"
@@ -295,17 +382,38 @@
                        text="Una previsualización en tiempo real muestra el resultado del formato configurado con un número de ejemplo."
                        style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
 
-                <Label text="8.2  Correo electrónico"
+                <Label text="10.2  Correo electrónico"
                        style="-fx-font-size: 13px; -fx-font-weight: bold; -fx-text-fill: #334155;"/>
                 <Label wrapText="true"
                        text="Para habilitar el envío de notas por correo, completar los campos de configuración SMTP: servidor, puerto y dirección del remitente. La contraseña se ingresa una sola vez y queda almacenada de forma segura en el equipo; no es necesario volver a ingresarla en sesiones posteriores. Una vez configurado, el botón &quot;Enviar por correo&quot; en la previsualización quedará habilitado."
                        style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
 
-                <Label text="8.3  Active Directory"
+                <Label text="10.3  Active Directory"
                        style="-fx-font-size: 13px; -fx-font-weight: bold; -fx-text-fill: #334155;"/>
                 <Label wrapText="true"
                        text="Para habilitar la búsqueda de usuarios en Active Directory (sección 6), completar la URL y el Token de la API en &quot;ACTIVE DIRECTORY API&quot;. El Token se ingresa una sola vez y queda almacenado de forma segura en el equipo; por seguridad, el campo no vuelve a mostrar el valor guardado, solo se completa si se desea reemplazarlo. Al guardar, la aplicación verifica la conexión antes de confirmar el cambio."
                        style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
+
+                <Label text="10.4  Validación de S/N por modelo"
+                       style="-fx-font-size: 13px; -fx-font-weight: bold; -fx-text-fill: #334155;"/>
+                <Label wrapText="true"
+                       text="El botón &quot;Ver tabla&quot; abre el listado completo de modelos de equipamiento tipo activo, junto con su patrón de validación de número de serie (si tiene uno definido) y un interruptor para activarlo o desactivarlo. Un campo de texto permite filtrar el listado por tipo, marca o modelo. Los modelos con la validación activa aparecen primero. Definir o modificar el patrón de un modelo determina qué números de serie se aceptan al agregar ese modelo a una nota (ver sección 4.2)."
+                       style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
+
+                <Separator/>
+
+                <!-- 11. MODO ADMINISTRADOR ─────────────────────────────────── -->
+                <Label text="11.  Modo administrador"
+                       style="-fx-font-size: 15px; -fx-font-weight: bold; -fx-text-fill: #0c8570;"/>
+                <Label wrapText="true"
+                       text="El modo administrador desbloquea, mientras está activo: la edición de todos los campos de Ajustes (sección 10) y de Mi Perfil (sección 7), la sección Base de Datos completa (sección 9), la edición de reglas de validación de S/N (sección 10.4), y los botones de sincronización/rechazo GLPI en el detalle de una nota del Historial (sección 8)."
+                       style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
+                <Label wrapText="true"
+                       text="Se activa desde Ajustes con el botón &quot;Activar modo administrador&quot;. La primera vez que se usa, la aplicación pide definir una contraseña de administrador; en los siguientes usos, simplemente la solicita para verificarla. El estado (Activo/Inactivo) se muestra junto al botón y también en la barra lateral."
+                       style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
+                <Label wrapText="true"
+                       text="Por seguridad, la sesión de administrador expira automáticamente después de 15 minutos sin actividad, volviendo todos los campos mencionados a su estado de solo lectura."
+                       style="-fx-font-size: 12px; -fx-text-fill: #94a3b8; -fx-font-style: italic;"/>
 
                 <!-- Espacio final -->
                 <Label text="" style="-fx-padding: 4 0;"/>
