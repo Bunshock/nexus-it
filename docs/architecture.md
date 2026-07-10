@@ -6,6 +6,93 @@
 
 The application follows a layered MVC architecture with a service abstraction layer that allows external dependencies (AD, GLPI, database) to be swapped without touching UI code.
 
+> **Keep the Mermaid diagrams current.** This file's class diagram (under [Service Abstraction](#service-abstraction-strategy-pattern)), the [Service Dependency Map](#service-dependency-map) flowchart, and the [System Architecture](#system-architecture-whole-app-overview) diagram below must be updated whenever a class/interface/implementation is added or removed, a controller starts/stops calling a service, or a new external system/resource is introduced — same "update docs with every feature" rule as `CLAUDE.md`'s Documentation requirements, called out here because it's easy to edit the prose above a diagram and forget the diagram itself is now stale.
+
+---
+
+## System Architecture (whole-app overview)
+
+The most detailed, literal version of "every class connected to every other class" isn't this diagram — it's the actual dependency graph, which you can regenerate any time with `jdeps` (bundled with the JDK):
+
+```bash
+cd desktop-app
+mvn -q compile
+jdeps -verbose:class -filter:package target/classes > jdeps-output.txt
+# or, for a rendered graph (requires Graphviz's `dot` on PATH):
+jdeps -verbose:class -dotoutput target/jdeps-dot target/classes
+dot -Tsvg target/jdeps-dot/note_app_for_it_frontend.dot -o class-graph.svg
+```
+
+That's exhaustive and always accurate, but Java-only — it can't see FXML/HTML/config file references (those are runtime string paths, not compile-time dependencies) or external systems. The diagram below is the hand-curated complement: grouped by layer, with the non-code connections `jdeps` can't find drawn in explicitly.
+
+```mermaid
+
+flowchart TB
+    subgraph UI["UI Layer — Controllers (see Package Structure below for the full list)"]
+        MainController
+        NoteGeneratorController
+        HistoryController
+        DatabaseSectionController
+        SettingsController
+        ProfileController
+        OtherControllers["...9 more controllers"]
+    end
+
+    subgraph SVC["Service Layer"]
+        ServiceLocator
+        IADServiceImpl["IADService impls"]
+        IEquipmentServiceImpl["IEquipmentService impls"]
+        IHistoryServiceImpl["IHistoryService impls"]
+        IEmailServiceImpl["IEmailService impls"]
+        AdminSession
+        ConfigService
+        AppKeyEncryptionService
+        TemplateEngine
+        NoteGenerationService
+        TechnicianSessionService
+        WindowsIdentityService
+    end
+
+    subgraph RES["Local Resources"]
+        AppConfigJson["config/app-config.json"]
+        MockEquipmentJson["config/mock-equipment.json (tests only)"]
+        HtmlTemplates["templates/*.html"]
+        FxmlViews["views/*.fxml"]
+        StylesCss["css/styles.css"]
+        NoteAppDb[("data/noteapp.db (SQLite)")]
+    end
+
+    subgraph EXT["External Systems"]
+        Postgres[("PostgreSQL — optional remote DB")]
+        ADApi["Active Directory REST API"]
+        GLPI["GLPI — stub, out of scope v1"]
+        SMTP["Gmail SMTP (STARTTLS)"]
+        Windows["Windows session (Secur32)"]
+    end
+
+    FxmlViews -.loaded once by ViewFactory into.-> UI
+    StylesCss -.styles.-> FxmlViews
+
+    UI --> SVC
+
+    IADServiceImpl --> ADApi
+    IEquipmentServiceImpl -.mock only.-> MockEquipmentJson
+    IEquipmentServiceImpl --> NoteAppDb
+    IEquipmentServiceImpl --> Postgres
+    IHistoryServiceImpl --> NoteAppDb
+    IHistoryServiceImpl --> Postgres
+    IEmailServiceImpl --> SMTP
+    ConfigService --> AppConfigJson
+    TemplateEngine --> HtmlTemplates
+    AppKeyEncryptionService --> NoteAppDb
+    TechnicianSessionService --> IADServiceImpl
+    TechnicianSessionService --> NoteAppDb
+    WindowsIdentityService --> Windows
+    AdminSession --> NoteAppDb
+```
+
+**Reading this diagram**: every arrow crossing a subgraph boundary is real — a controller calling `ServiceLocator`, a service reading/writing a file or making a network call. Arrows *within* the UI and Service subgraphs are intentionally omitted here (that's what the [Service Dependency Map](#service-dependency-map) and the [service class diagram](#service-abstraction-strategy-pattern) are for) — this diagram's job is the big picture: which layer talks to which external thing, not which specific controller calls which specific method.
+
 ---
 
 ## Package Structure
@@ -35,6 +122,7 @@ desktop-app/src/main/java/com/bunshock/note_app_for_it_frontend/
 │   ├── CountableItem.java            — Equipment item with quantity (JavaFX properties)
 │   ├── EquipmentBrand.java           — Brand entity
 │   ├── EquipmentModel.java           — Model entity (belongs to a BRAND_TYPE_LINK)
+│   ├── EquipmentProvider.java        — Provider entity (flat, no type/brand/model structure)
 │   ├── EquipmentType.java            — Type entity with isAsset flag
 │   ├── EquipmentItem.java            — Base class for AssetItem and CountableItem
 │   ├── GlpiStatus.java               — Enum: N_A, PENDING, SYNCED, REJECTED
@@ -80,6 +168,83 @@ desktop-app/src/main/java/com/bunshock/note_app_for_it_frontend/
 
 ### Service Abstraction (Strategy Pattern)
 Every external dependency has an interface (`IADService`, `IEquipmentService`, `IGLPIService`, `IEmailService`, `IHistoryService`). Concrete implementations are wired in `ServiceLocator.initialize()`. Swapping from mock to real is a one-line change in `ServiceLocator`.
+
+```mermaid
+
+classDiagram
+    direction LR
+
+    class IADService {
+        <<interface>>
+        +search(dni, name, username) List~ADUser~
+        +isConfigured() bool
+    }
+    class AdApiService
+    class MockADService
+    IADService <|.. AdApiService
+    IADService <|.. MockADService
+
+    class IEquipmentService {
+        <<interface>>
+        +getAllTypes() List~EquipmentType~
+        +getBrandsForType(typeId) List~EquipmentBrand~
+        +getModelsForBrandAndType(brandId, typeId) List~EquipmentModel~
+        +getAllProviders() List~EquipmentProvider~
+        +getSnValidation(modelId) Optional~SnValidation~
+        +addType(name, isAsset)
+        +addBrand(name) addModel(name, brandId, typeId) addProvider(name)
+        +removeType(id) removeBrand(id) removeModel(id) removeProvider(id)
+        +renameType(id, name) renameBrand(id, name) renameModel(id, name) renameProvider(id, name)
+    }
+    class SqliteEquipmentService
+    class MockEquipmentService
+    class CachingEquipmentService
+    IEquipmentService <|.. SqliteEquipmentService
+    IEquipmentService <|.. MockEquipmentService
+    IEquipmentService <|.. CachingEquipmentService
+    CachingEquipmentService ..> IEquipmentService : wraps primary (remote) + local
+
+    class IHistoryService {
+        <<interface>>
+        +getFiltered(HistoryFilter) List~NoteReport~
+        +save(NoteReport) int
+        +getById(id) NoteReport
+        +getDistinctItemTypes() getDistinctItemBrands() getDistinctItemModels()
+    }
+    class SqliteHistoryService
+    class CachingHistoryService
+    IHistoryService <|.. SqliteHistoryService
+    IHistoryService <|.. CachingHistoryService
+    CachingHistoryService ..> IHistoryService : wraps primary (remote) + local
+
+    class IGLPIService {
+        <<interface>>
+    }
+    class GLPIServiceStub
+    IGLPIService <|.. GLPIServiceStub
+
+    class IEmailService {
+        <<interface>>
+        +sendNote(recipient, subject, htmlBody)
+    }
+    class GmailEmailService
+    IEmailService <|.. GmailEmailService
+
+    class ServiceLocator {
+        <<singleton>>
+        +getAdService() IADService
+        +getEquipmentService() IEquipmentService
+        +getHistoryService() IHistoryService
+        +getGlpiService() IGLPIService
+        +getEmailService() IEmailService
+        +initialize()
+    }
+    ServiceLocator --> IADService : wires AdApiService
+    ServiceLocator --> IEquipmentService : wires Caching or Sqlite impl
+    ServiceLocator --> IHistoryService : wires Caching or Sqlite impl
+    ServiceLocator --> IGLPIService : wires GLPIServiceStub
+    ServiceLocator --> IEmailService : wires GmailEmailService
+```
 
 ### Active Directory Integration (AdApiService)
 `AdApiService` (singleton, `configure(baseUrl, apiToken)` / `isConfigured()`) is the active `IADService` implementation, calling `<baseUrl>/api/v1/ad/users` with `dni`/`name`/`username` query params (server-side ANDs whatever is supplied) and an `Authorization: Bearer <token>` header. `MockADService` is test-only now — `ServiceLocator` always wires `AdApiService`.
@@ -194,26 +359,44 @@ User fills form fields
 
 ## Service Dependency Map
 
-```
-MainController          → ServiceLocator → IADService
-                                         → IGLPIService
-NoteGeneratorController → NoteGenerationService → TemplateEngine
-NotePreviewController   → ServiceLocator → IEmailService
-                                         → IHistoryService
-                                         → IGLPIService
-NoteDetailController    → ServiceLocator → IHistoryService (GLPI status updates)
-                        → AdminSession   (gates Sync/Reject buttons per item)
-ItemDialogController    → ServiceLocator → IEquipmentService
-HistoryController       → ServiceLocator → IHistoryService (filtered queries + distinct values)
-                        → AdminSession   (adminMode flag passed to NoteDetailController)
-DatabaseSectionController → ServiceLocator → IEquipmentService
-                          → RemoteDatabaseService
-SettingsController      → ConfigService
-                        → AppKeyEncryptionService
-                        → DatabaseService
-                        → AdminSession / AdminAuthService
-ProfileController       → DatabaseService
-UserNoteController      → ServiceLocator → IADService
-                        → ConfigService  (Motivo options)
-ProviderNoteController  → ConfigService  (Motivo options)
+Every arrow below is a real compile-time dependency (constructor/field reference or a `ServiceLocator.getInstance().getXxxService()` call) — not a data-flow guess. Regenerate this diagram whenever a controller starts or stops calling a service (see the note at the top of this file).
+
+```mermaid
+
+flowchart LR
+    MainController --> ServiceLocator
+    ServiceLocator --> IADService
+    ServiceLocator --> IGLPIService
+
+    NoteGeneratorController --> NoteGenerationService --> TemplateEngine
+
+    NotePreviewController --> ServiceLocator
+    ServiceLocator --> IEmailService
+    ServiceLocator --> IHistoryService
+
+    NoteDetailController -->|GLPI status updates| ServiceLocator
+    NoteDetailController -->|gates Sync/Reject buttons| AdminSession
+
+    ItemDialogController --> ServiceLocator
+    ServiceLocator --> IEquipmentService
+
+    HistoryController -->|filtered queries + distinct values| ServiceLocator
+    HistoryController -->|adminMode flag to NoteDetailController| AdminSession
+
+    DatabaseSectionController --> ServiceLocator
+    DatabaseSectionController --> RemoteDatabaseService
+
+    SettingsController --> ConfigService
+    SettingsController --> AppKeyEncryptionService
+    SettingsController --> DatabaseService
+    SettingsController --> AdminSession
+    SettingsController --> AdminAuthService
+
+    ProfileController --> DatabaseService
+
+    UserNoteController --> ServiceLocator
+    UserNoteController -->|Motivo options| ConfigService
+
+    ProviderNoteController -->|Motivo options| ConfigService
+    ProviderNoteController -->|provider catalog| ServiceLocator
 ```

@@ -186,7 +186,7 @@ cd desktop-app
 mvn test
 ```
 
-140 unit tests covering: template engine, A/F formatting, AD search (mock and real REST client), equipment cascade logic, caching service fallback behavior, remote DB connection handling, and more — see `CLAUDE.md`'s Testing requirements section for the full class list.
+182 unit tests covering: template engine, A/F formatting, AD search (mock and real REST client), equipment cascade logic, caching service fallback behavior, remote DB connection handling, and more — see `CLAUDE.md`'s Testing requirements section for the full class list.
 
 ---
 
@@ -196,9 +196,9 @@ mvn test
 
 - **5 note profiles**: Entrega, Devolución, Fin de Contrato, Préstamo, Entrega - Proveedor
 - Motivo dropdown (configurable per profile type) — mandatory for Entrega, Devolución, Fin de Contrato, and Provider notes
+- Provider notes select the provider from an admin-managed catalog (see [Database Section](#database-section-base-de-datos)) — not free text, to keep naming consistent across notes; generation is blocked with an inline message if none is selected
 - HTML template rendering with `{{TOKEN}}` substitution and `{{#ITEMS}}` loops
 - Preview popup: choose Print / Send Email / Sync GLPI before generating
-- Provider notes select the provider from an admin-managed catalog (see [Database Section](#database-section-base-de-datos)) — not free text, to keep naming consistent across notes; generation is blocked with an inline message if none is selected
 
 ### Equipment Management
 

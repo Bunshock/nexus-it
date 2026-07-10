@@ -37,7 +37,7 @@ Project-level instructions for Claude Code. These override defaults and apply to
 - Every implemented feature must have tests. Write test files **and run them** before marking a task done.
 - Desktop app: **JUnit 5 + TestFX** (`src/test/java/...`)
 - Run: `mvn test` from `desktop-app/`
-- Current test count: 145 tests, all passing.
+- Current test count: 182 tests, all passing.
 - Test classes: `TemplateEngineTest`, `AfFormatterTest`, `MockADServiceTest`, `AdApiServiceTest`, `AppKeyEncryptionServiceTest`, `MockEquipmentServiceTest`, `CachingServiceTest`, `GlpiStatusTest`, `NoteGenerationServiceTest`, `AdminSessionTest`, `RemoteDatabaseServiceTest`, `SqliteHistoryServiceTest`, `HistoryControllerTest`, `InputValidationTest`, `TechnicianSessionServiceTest`, `SettingsControllerTest`
 
 ---
@@ -55,6 +55,8 @@ After every feature implementation, update all of these before closing the task:
 | `docs/requirements.md` | Functional/non-functional requirements and user stories |
 
 All documentation in English.
+
+**Mermaid diagrams are part of "keep updated" too** (added 2026-07-10) — `docs/database.md`'s ER diagrams and `docs/architecture.md`'s service-layer class diagram + Service Dependency Map flowchart. A new table needs a new/updated ER diagram; a new service interface/implementation or a controller starting/stopping a service call needs the class diagram / dependency flowchart updated in the same commit. Both files have their own maintenance-reminder blockquote near the top — read it before editing either file.
 
 ---
 
@@ -134,7 +136,7 @@ Every external dependency has an interface (`IADService`, `IEquipmentService`, `
 | Devolución | `DEVOLUCIÓN` | NOTE_ENTREGA_DEVOLUCION | `devolucion.html` | Mandatory | |
 | Fin de Contrato | `ENTREGA PERMANENTE` | NOTE_ENTREGA_DEVOLUCION | `entrega - fin de contrato.html` | Mandatory | |
 | Préstamo | `PRÉSTAMO` | NOTE_ENTREGA_DEVOLUCION | `prestamo.html` | — | Captures an expected return date instead of Motivo (stored in the same `motivo` column) |
-| Entrega - Proveedor | `Entrega - Proveedor` | NOTE_PROVEEDOR | `proveedor.html` | Mandatory | Has CUIT field |
+| Entrega - Proveedor | `Entrega - Proveedor` | NOTE_PROVEEDOR | `proveedor.html` | Mandatory | Has CUIT field; provider name selected from the `PROVIDER` catalog, not free text — see [Provider catalog](#provider-catalog-equipmentprovider) |
 
 "Recambio" is **not a note type** — it was removed entirely (2026-07-03) from `HistoryController.PROFILE_TYPE_OPTIONS` and every `toDisplayName()` switch (`NoteGenerationService`, `HistoryController`, `NoteDetailController`). It never had a live generation flow (no UI button ever produced it) and was only ever a filter-dropdown/display-name leftover. Do not reintroduce it.
 
@@ -210,7 +212,7 @@ Types, brands, `typeBrands` junction entries, models, `snValidations`. Loaded by
 
 ## SQLite tables
 
-`TYPE`, `BRAND`, `BRAND_TYPE_LINK`, `MODEL`, `SN_VALIDATION`, `NOTE_REPORT`, `NOTE_ENTREGA_DEVOLUCION`, `NOTE_PROVEEDOR`, `NOTE_ITEM`, `TECHNICIAN_PROFILE`, `APP_SETTINGS`
+`TYPE`, `BRAND`, `BRAND_TYPE_LINK`, `MODEL`, `SN_VALIDATION`, `PROVIDER`, `NOTE_REPORT`, `NOTE_ENTREGA_DEVOLUCION`, `NOTE_PROVEEDOR`, `NOTE_ITEM`, `TECHNICIAN_PROFILE`, `APP_SETTINGS`
 
 `NOTE_ENTREGA_DEVOLUCION` has `failure_cause`/`failure_details` columns (Devolución's Falla flow — always `NULL` for other note types). `NOTE_PROVEEDOR` has `responsible_name`/`responsible_dni` columns (the provider's own receiving person — see [Two-signature layout](#two-signature-layout)). `NOTE_REPORT` has `technician_name`/`technician_dni` columns (see [Technician identity](#technician-identity--session-only-sourced-from-windowsad)) alongside the older, now-legacy `technician_id` FK to `TECHNICIAN_PROFILE`. `SqliteHistoryService`'s history queries `COALESCE(r.technician_name, tp.name) AS author_name` (and same for `dni`) — new notes read straight off `NOTE_REPORT`, old notes fall back to the `TECHNICIAN_PROFILE` join. Both the SQLite (`DatabaseService`) and PostgreSQL (`RemoteDatabaseService.ensureSchema()`) DDL must stay in sync — see [SQLite schema mirrors PostgreSQL](#sqlite-schema-mirrors-postgresql).
 

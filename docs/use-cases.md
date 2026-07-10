@@ -41,11 +41,13 @@ Same as UC-01 but with profile "FIN DE CONTRATO". Used for employees leaving the
 
 **Main Flow:**
 1. Technician selects "NOTA PARA PROVEEDOR"
-2. Selects provider name and enters CUIT
+2. Selects a provider from the "PROVEEDOR" dropdown (populated from the provider catalog — see UC-09; not free text) and enters CUIT
 3. Selects Motivo (Compra, Garantía, Reparación, Otro)
 4. Optionally enables "Recibe en representación" and fills responsible person data
 5. Adds equipment items
 6. Generates note
+
+**Alternate Flow — No provider selected:** "Generar Nota" is blocked with an inline "Debe seleccionar un proveedor" message until a provider is chosen. **Fixed 2026-07-10**: the provider dropdown used to be entirely non-functional (unpopulated, non-editable `ComboBox`) — every provider note generated through the live UI silently saved with a blank provider name. It's now backed by the provider catalog (UC-09) with this validation added since selection is meaningful.
 
 ---
 
@@ -105,28 +107,31 @@ Same as UC-01 but with profile "FIN DE CONTRATO". Used for employees leaving the
 
 **Main Flow:**
 1. History section loads; table shows all past reports (date, profile type, recipient, author, equipment count, GLPI sync status)
-2. Technician applies optional filters: date range (DESDE/HASTA), note type (multi-select), GLPI status (multi-select), recipient/provider text, equipment type/brand/model (cascading multi-select)
+2. Technician applies optional filters: date range (DESDE/HASTA), note type (multi-select), GLPI status (multi-select), author text, recipient/provider text, equipment type/brand/model (cascading multi-select)
 3. Clicking "Buscar" or changing any filter reloads the table with matching results
 4. Double-clicking a row opens the note detail popup (UC-12)
 5. Technician can click "Limpiar" to reset all filters
 6. Technician can export the current results via "Exportar" → CSV or Excel
+7. Every time the technician navigates to Historial (including returning to it after visiting another section), the table automatically reloads with whatever filters are currently set — a note generated since the last visit appears without needing to click "Buscar" manually
 
 **Alternate Flow A — Admin mode active:** GLPI Sync/Reject buttons appear in the detail popup for PENDING items (see UC-12)  
 **Alternate Flow B — No matching records:** Table shows empty placeholder
 
+**Note:** Step 7 was added 2026-07-10 — before this fix, the History section (like every section) is loaded once and cached for the session by `ViewFactory`, so revisiting it after generating a new note showed stale results until the technician manually clicked "Buscar".
+
 ---
 
-## UC-09 — Manage Equipment Catalog (Database Section)
+## UC-09 — Manage Equipment Catalog and Provider List (Database Section)
 
-**Actor:** IT Technician  
+**Actor:** IT Administrator (add/rename/remove); IT Technician (view only)  
 **Trigger:** Clicks "Base de Datos" in the sidebar
 
 **Main Flow:**
-1. Three lists shown: Types, Brands, Models
-2. Selecting a Type filters the Brands list
-3. Selecting a Brand filters the Models list
-4. Technician can add items (duplicate check on save) or remove items
-5. "Generic" brand is protected from deletion
+1. Four lists shown: Types, Brands, Models, Proveedores
+2. Selecting a Type filters the Brands list; selecting a Brand filters the Models list (Proveedores is a flat, independent list — no cascade)
+3. Add/Renombrar/Eliminar on any list prompts for the admin password if admin mode isn't already active (same `requireAdmin` gate as Configuración's fields)
+4. "Generic" brand is protected from deletion
+5. A provider added here immediately becomes selectable in Nota de Proveedor's "PROVEEDOR" dropdown (UC-04) — including for that tab if it was already open earlier in the session, which re-fetches the provider list every time it's shown
 
 **Alternate Flow — Remote DB:** Technician enters DB URL; app verifies connectivity before accepting
 
@@ -145,7 +150,7 @@ Same as UC-01 but with profile "FIN DE CONTRATO". Used for employees leaving the
 3. Configures GLPI API URL and API Key (key stored encrypted via AppKeyEncryptionService, never in app-config.json)
 4. Configures Active Directory API URL and Token (token stored encrypted via AppKeyEncryptionService, write-only — never redisplayed once saved)
 5. Clicks "Guardar Configuración" → URL/format fields saved to app-config.json, credentials saved encrypted to DB; a status message appears next to the save button
-6. Configuration content (A/F, SMTP, GLPI, AD, S/N validation entry point, Admin mode) scrolls independently within its own panel — the save button always stays visible in a fixed footer below it
+6. Configuration content (A/F, SMTP, GLPI, AD, S/N validation entry point, Admin mode) scrolls independently within its own panel — the "CONFIGURACIÓN" header and the save button both stay fixed in place; only the card list between them scrolls
 
 **Alternate Flow A — Admin mode inactive:** all input fields and the save button are disabled (greyed out); technician can view current values but not change them
 
@@ -226,11 +231,13 @@ Same as UC-01 but with profile "FIN DE CONTRATO". Used for employees leaving the
 
 **Main Flow:**
 1. At app startup, the app reads the Windows session's UPN (domain email), derives the AD username from it, and looks up that user in Active Directory; Name, Username, Email, and DNI are held in memory for the current session only — never persisted to disk
-2. Technician opens "Mi Perfil"; the four fields show the current session values, read-only (grayed out)
+2. Technician opens "Mi Perfil"; the four identity fields show the current session values, read-only (grayed out)
 3. Technician clicks "Actualizar Perfil desde AD" to re-run the lookup on demand (e.g. if it failed at startup, or AD data changed)
 4. Sidebar welcome message ("Hola, {nombre}!" / "Usuario: {username}") updates immediately to reflect any change
+5. A separate "Nombre para mostrar" field, always editable (no admin mode required), lets the technician set a personal greeting-name preference used only for the sidebar welcome message. It's pre-filled with a suggested default (the last word of the AD full name — the given name, since AD's stored order is "Apellido Nombre"). Clicking its own "Guardar" persists the preference locally, keyed by the technician's username, so it survives app restarts and AD refreshes
+6. Clearing the field to blank and saving reverts the welcome message to the suggested default
 
-**Alternate Flow A — AD lookup fails:** A warning popup (and Profile's status label) distinguishes "user not found in AD" from "could not connect to AD" from "no Windows domain session available"; fields stay empty and read-only until a successful refresh or an admin override. Sidebar shows "Perfil no configurado" under the welcome message.  
-**Alternate Flow B — Admin mode active:** Fields become editable; Administrator can manually enter or correct Name, Username, DNI, and Email; "Guardar" commits the override for the current session only — lost on the next AD refresh or app restart, not written to any database table.
+**Alternate Flow A — AD lookup fails:** A warning popup (and Profile's status label) distinguishes "user not found in AD" from "could not connect to AD" from "no Windows domain session available"; the four identity fields stay empty and read-only until a successful refresh or an admin override. Sidebar shows "Perfil no configurado" under the welcome message. The "Nombre para mostrar" field is unaffected by this failure (it's independent of AD identity), but can't be saved without a resolved username to key it by.
+**Alternate Flow B — Admin mode active:** The four identity fields become editable; Administrator can manually enter or correct Name, Username, DNI, and Email; "Guardar" commits the override for the current session only — lost on the next AD refresh or app restart, not written to any database table.
 
-**Note:** Technician identity is session-only and is never stored in a database table. When a note is generated, the current session's Name and DNI are copied as plain text directly onto that note's history record (not a reference to a shared profile row), so historical notes stay accurate even if the technician's AD identity changes later.
+**Note:** The four AD identity fields (Name, Username, Email, DNI) are session-only and never stored in a database table. When a note is generated, the current session's Name and DNI are copied as plain text directly onto that note's history record (not a reference to a shared profile row), so historical notes stay accurate even if the technician's AD identity changes later. The "Nombre para mostrar" preference is the one exception — it's a personal display preference independent of AD identity, so it's persisted locally (`APP_SETTINGS`, keyed by username) and deliberately survives both AD refreshes and app restarts.

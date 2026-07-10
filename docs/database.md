@@ -1,6 +1,6 @@
 ## Database Schema (ERD)
 
-The local SQLite database lives at `data/noteapp.db` (created at first run). The schema mirrors the planned PostgreSQL structure so migrating requires only a JDBC driver swap and connection string change.
+The local SQLite database lives at `data/noteapp.db` (created at first run). The schema mirrors the PostgreSQL structure `RemoteDatabaseService.ensureSchema()` creates on a remote database, so switching is only a JDBC driver swap and connection string change — no manual migration. See `desktop-app/database/postgresql/` for ready-to-run PostgreSQL schema and starting-data scripts, and that folder's `README.md` for a full remote-server setup walkthrough.
 
 #### Equipment catalog tables
 
@@ -45,6 +45,19 @@ erDiagram
         int expected_length
         string regex_pattern "optional"
         int is_active "1 = enforce; 0 = skip"
+    }
+```
+
+#### Provider table
+
+Independent of the equipment catalog above — no FK relationship, just a flat, admin-managed list backing Nota de Proveedor's "PROVEEDOR" dropdown (`IEquipmentService.getAllProviders()`/`addProvider()`/`renameProvider()`/`removeProvider()`). Added 2026-07-10 to fix the dropdown, which was previously unpopulated and non-functional.
+
+```mermaid
+
+erDiagram
+    PROVIDER {
+        int id PK
+        string name "UNIQUE"
     }
 ```
 
@@ -122,15 +135,20 @@ erDiagram
 | `ad_api_token` | Base64-encoded AES-256/GCM ciphertext | AD API bearer token, encrypted via `AppKeyEncryptionService` |
 | `db_username` | Base64-encoded AES-256/GCM ciphertext | Remote DB username, encrypted via `AppKeyEncryptionService` |
 | `db_password` | Base64-encoded AES-256/GCM ciphertext | Remote DB password, encrypted via `AppKeyEncryptionService` |
+| `display_name_pref:<username>` | Plaintext | Technician's personal greeting-name preference for the sidebar welcome message, one row per technician username. Set via `TechnicianSessionService.setDisplayNamePreference()`, `ProfileController`'s "NOMBRE PARA MOSTRAR" field. Not a secret — stored unencrypted, unlike the rows above. |
 
 `smtp_password`, `glpi_api_key`, `db_password`, and `ad_api_token` can ship pre-configured: `app-config.json`'s `defaults` object holds pre-encrypted values that `ServiceLocator.provisionDefaultSecrets()` copies into this table on first startup, only if that key isn't already set (see README.md's "Pre-configuring default secrets").
 
-```sql
-APP_SETTINGS (
-    key   TEXT PRIMARY KEY,
-    value TEXT
-)
+```mermaid
+
+erDiagram
+    APP_SETTINGS {
+        string key PK "e.g. smtp_password, db_host, display_name_pref:jperez"
+        string value "plaintext or AES-256/GCM ciphertext, depending on key — see table above"
+    }
 ```
+
+Schema-less key-value table — see the table above for the actual keys in use; this diagram shows only its two columns, not its rows.
 
 ---
 
