@@ -262,11 +262,18 @@ public class NoteGeneratorController {
         }
     }
 
+    // Matches UserNoteController's FEEDBACK_HOLD/FEEDBACK_FADE so the equipment-table error
+    // fades away at the same speed as the Motivo/recipient-field errors shown alongside it
+    // when Generar Nota is clicked — duplicated per this codebase's no-shared-abstraction
+    // convention rather than referencing UserNoteController's constants directly.
+    private static final Duration TABLE_ERROR_HOLD = Duration.millis(2000);
+    private static final Duration TABLE_ERROR_FADE = Duration.millis(650);
+
     private void showTableError(String message) {
         lblTableStatus.setText(message);
         lblTableStatus.setOpacity(1.0);
-        FadeTransition fade = new FadeTransition(Duration.millis(400), lblTableStatus);
-        fade.setDelay(Duration.millis(2000));
+        FadeTransition fade = new FadeTransition(TABLE_ERROR_FADE, lblTableStatus);
+        fade.setDelay(TABLE_ERROR_HOLD);
         fade.setFromValue(1.0);
         fade.setToValue(0.0);
         fade.setOnFinished(e -> lblTableStatus.setText(""));

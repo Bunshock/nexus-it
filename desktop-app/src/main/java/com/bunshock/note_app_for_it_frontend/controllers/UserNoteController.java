@@ -187,8 +187,11 @@ public class UserNoteController {
         label.setText(message);
         label.setStyle("-fx-text-fill: " + hexColor + "; -fx-font-weight: bold;");
         label.setOpacity(1.0);
-        FadeTransition fade = new FadeTransition(Duration.millis(400), label);
-        fade.setDelay(Duration.millis(2000));
+        // Same timing as triggerFeedback()'s FEEDBACK_HOLD/FEEDBACK_FADE below, so the Motivo/
+        // Fecha error and the recipient-field error (both shown when Generar Nota is clicked)
+        // fade away together instead of at visibly different speeds.
+        FadeTransition fade = new FadeTransition(FEEDBACK_FADE, label);
+        fade.setDelay(FEEDBACK_HOLD);
         fade.setFromValue(1.0);
         fade.setToValue(0.0);
         fade.setOnFinished(e -> {

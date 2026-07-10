@@ -7,6 +7,7 @@ import com.bunshock.note_app_for_it_frontend.models.EquipmentProvider;
 import com.bunshock.note_app_for_it_frontend.services.ConfigService;
 import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;
 
+import javafx.animation.FadeTransition;
 import javafx.collections.FXCollections;
 import javafx.fxml.FXML;
 import javafx.scene.control.CheckBox;
@@ -15,6 +16,7 @@ import javafx.scene.control.Label;
 import javafx.scene.control.TextField;
 import javafx.scene.control.TextFormatter;
 import javafx.scene.layout.VBox;
+import javafx.util.Duration;
 
 public class ProviderNoteController {
 
@@ -22,6 +24,11 @@ public class ProviderNoteController {
         Pattern.compile("^\\p{L}+( \\p{L}+)*$");
     private static final Pattern DNI_PATTERN =
         Pattern.compile("^\\d{7,8}$");
+
+    // Matches UserNoteController's FEEDBACK_HOLD/FEEDBACK_FADE so every validation error shown
+    // when Generar Nota is clicked fades away at the same speed, across all three note forms.
+    private static final Duration ERROR_HOLD = Duration.millis(2000);
+    private static final Duration ERROR_FADE = Duration.millis(650);
 
     @FXML private ComboBox<EquipmentProvider> cmbProviderSearch;
     @FXML private TextField txtCuit;
@@ -94,13 +101,27 @@ public class ProviderNoteController {
     }
 
     private void showProviderError(String message) {
-        lblProviderStatus.setStyle("-fx-text-fill: #ef4444; -fx-font-weight: bold;");
-        lblProviderStatus.setText(message);
+        fadeOutError(lblProviderStatus, message);
     }
 
     private void showResponsibleError(String message) {
-        lblResponsibleStatus.setStyle("-fx-text-fill: #ef4444; -fx-font-weight: bold;");
-        lblResponsibleStatus.setText(message);
+        fadeOutError(lblResponsibleStatus, message);
+    }
+
+    private void fadeOutError(Label label, String message) {
+        label.setStyle("-fx-text-fill: #ef4444; -fx-font-weight: bold;");
+        label.setText(message);
+        label.setOpacity(1.0);
+        FadeTransition fade = new FadeTransition(ERROR_FADE, label);
+        fade.setDelay(ERROR_HOLD);
+        fade.setFromValue(1.0);
+        fade.setToValue(0.0);
+        fade.setOnFinished(e -> {
+            label.setText("");
+            label.setStyle("");
+            label.setOpacity(1.0);
+        });
+        fade.play();
     }
 
     public String getProviderName() {
