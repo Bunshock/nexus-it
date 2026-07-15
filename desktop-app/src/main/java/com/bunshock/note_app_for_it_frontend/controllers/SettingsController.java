@@ -3,8 +3,11 @@ package com.bunshock.note_app_for_it_frontend.controllers;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
+import java.util.function.Predicate;
 
 import com.bunshock.note_app_for_it_frontend.models.AppConfig;
 import com.bunshock.note_app_for_it_frontend.models.SnValidationRow;
@@ -18,6 +21,7 @@ import com.bunshock.note_app_for_it_frontend.services.IEquipmentService;
 import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;
 import com.bunshock.note_app_for_it_frontend.services.TechnicianSessionService;
 
+import javafx.animation.FadeTransition;
 import javafx.application.Platform;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
@@ -29,9 +33,12 @@ import javafx.geometry.Pos;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
+import javafx.scene.control.CustomMenuItem;
 import javafx.scene.control.Label;
+import javafx.scene.control.MenuButton;
 import javafx.scene.control.PasswordField;
 import javafx.scene.control.Separator;
+import javafx.scene.control.SeparatorMenuItem;
 import javafx.scene.control.TableCell;
 import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableView;
@@ -42,6 +49,7 @@ import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import javafx.stage.Modality;
 import javafx.stage.Stage;
+import javafx.util.Duration;
 import javafx.stage.StageStyle;
 
 public class SettingsController {
@@ -73,7 +81,10 @@ public class SettingsController {
     @FXML private Label  lblAdminStatus;
 
     // ── S/N validation panel fields ───────────────────────────────────
-    @FXML private TextField                              txtSnFilter;
+    @FXML private MenuButton                             mnuSnType;
+    @FXML private MenuButton                             mnuSnBrand;
+    @FXML private MenuButton                             mnuSnModel;
+    @FXML private MenuButton                             mnuSnActive;
     @FXML private TableView<SnValidationRow>             tblSnValidation;
     @FXML private TableColumn<SnValidationRow, String>   colSnType;
     @FXML private TableColumn<SnValidationRow, String>   colSnBrand;
@@ -81,6 +92,14 @@ public class SettingsController {
     @FXML private TableColumn<SnValidationRow, String>   colSnRegex;
     @FXML private TableColumn<SnValidationRow, Boolean>  colSnActive;
     @FXML private TableColumn<SnValidationRow, Void>     colSnEdit;
+
+    private static final List<String> SN_ACTIVE_OPTIONS = List.of("Sí", "No");
+
+    private final Set<String> selSnTypes  = new LinkedHashSet<>();
+    private final Set<String> selSnBrands = new LinkedHashSet<>();
+    private final Set<String> selSnModels = new LinkedHashSet<>();
+    private final Set<String> selSnActive = new LinkedHashSet<>();
+    private boolean suppressSnCallbacks = false;
 
     private IEquipmentService equipmentService;
     private ObservableList<SnValidationRow> allSnRows;
@@ -164,8 +183,7 @@ public class SettingsController {
         try {
             config.afFormat.length = Integer.parseInt(txtAfLength.getText().trim());
         } catch (NumberFormatException e) {
-            lblSaveStatus.setStyle("-fx-text-fill: #ef4444;");
-            lblSaveStatus.setText("La longitud de A/F debe ser un número");
+            triggerSaveStatus("La longitud de A/F debe ser un número", "#ef4444");
             return;
         }
 
@@ -194,11 +212,9 @@ public class SettingsController {
 
             try {
                 ConfigService.getInstance().save();
-                lblSaveStatus.setStyle("-fx-text-fill: #0c8570;");
-                lblSaveStatus.setText("Configuración guardada");
+                triggerSaveStatus("Configuración guardada", "#0c8570");
             } catch (Exception e) {
-                lblSaveStatus.setStyle("-fx-text-fill: #ef4444;");
-                lblSaveStatus.setText("Error al guardar la configuración");
+                triggerSaveStatus("Error al guardar la configuración", "#ef4444");
             }
         };
 
@@ -291,9 +307,35 @@ public class SettingsController {
             ps.setString(2, encrypted);
             ps.executeUpdate();
         } catch (Exception e) {
-            lblSaveStatus.setStyle("-fx-text-fill: #ef4444;");
-            lblSaveStatus.setText("Error al guardar la configuración");
+            triggerSaveStatus("Error al guardar la configuración", "#ef4444");
         }
+    }
+
+    private static final Duration SAVE_STATUS_HOLD = Duration.millis(2000);
+    private static final Duration SAVE_STATUS_FADE = Duration.millis(650);
+
+    // Mirrors DatabaseSectionController.triggerFieldError's hold-then-fade timing — previously
+    // lblSaveStatus just set text/style directly with no animation at all, so the confirmation
+    // (or error) sat on screen indefinitely instead of fading like every other status message.
+    private void triggerSaveStatus(String message, String hexColor) {
+        if (lblSaveStatus.getUserData() instanceof FadeTransition previous) previous.stop();
+
+        lblSaveStatus.setText(message);
+        lblSaveStatus.setStyle("-fx-text-fill: " + hexColor + ";");
+        lblSaveStatus.setOpacity(1.0);
+
+        FadeTransition fade = new FadeTransition(SAVE_STATUS_FADE, lblSaveStatus);
+        fade.setDelay(SAVE_STATUS_HOLD);
+        fade.setFromValue(1.0);
+        fade.setToValue(0.0);
+        fade.setOnFinished(e -> {
+            lblSaveStatus.setText("");
+            lblSaveStatus.setStyle("");
+            lblSaveStatus.setOpacity(1.0);
+            lblSaveStatus.setUserData(null);
+        });
+        lblSaveStatus.setUserData(fade);
+        fade.play();
     }
 
     // ── Admin mode toggle ─────────────────────────────────────────────
@@ -418,32 +460,12 @@ public class SettingsController {
             }
         });
 
-        txtSnFilter.textProperty().addListener((obs, old, val) -> {
-            if (filteredSnRows == null) return;
-            String lower = val == null ? "" : val.toLowerCase();
-            filteredSnRows.setPredicate(r ->
-                lower.isEmpty()
-                || r.getTypeName().toLowerCase().contains(lower)
-                || r.getBrandName().toLowerCase().contains(lower)
-                || r.getModelName().toLowerCase().contains(lower)
-                || r.getRegex().toLowerCase().contains(lower));
-        });
     }
 
     private void loadSnValidationData() {
         List<SnValidationRow> rows = equipmentService.getAllSnValidationRows();
         allSnRows = FXCollections.observableArrayList(rows);
         filteredSnRows = new FilteredList<>(allSnRows, r -> true);
-
-        String current = txtSnFilter.getText();
-        if (current != null && !current.isBlank()) {
-            String lower = current.toLowerCase();
-            filteredSnRows.setPredicate(r ->
-                r.getTypeName().toLowerCase().contains(lower)
-                || r.getBrandName().toLowerCase().contains(lower)
-                || r.getModelName().toLowerCase().contains(lower)
-                || r.getRegex().toLowerCase().contains(lower));
-        }
 
         Comparator<SnValidationRow> order = Comparator
             .<SnValidationRow, Boolean>comparing(r -> !r.isActive())
@@ -453,6 +475,138 @@ public class SettingsController {
 
         SortedList<SnValidationRow> sorted = new SortedList<>(filteredSnRows, order);
         tblSnValidation.setItems(sorted);
+
+        refreshSnFilterMenus();
+    }
+
+    // ── S/N validation filter menus ───────────────────────────────────
+
+    @FXML
+    private void handleClearSnFilters() {
+        suppressSnCallbacks = true;
+        selSnTypes.clear();
+        selSnBrands.clear();
+        selSnModels.clear();
+        selSnActive.clear();
+        suppressSnCallbacks = false;
+        refreshSnFilterMenus();
+    }
+
+    private void onSnTypeChanged() {
+        selSnBrands.clear();
+        selSnModels.clear();
+        refreshSnFilterMenus();
+    }
+
+    private void onSnBrandChanged() {
+        selSnModels.clear();
+        refreshSnFilterMenus();
+    }
+
+    // Rebuilds all four menus from the current allSnRows + selection sets — used both for a
+    // fresh load/edit-save reload (selections untouched, so filters survive editing a row) and
+    // after a cascade reset (caller clears the downstream sets first). Brand options are scoped
+    // to the selected Type(s), Model options to the selected Type(s) and Brand(s), mirroring
+    // HistoryController's item-type/brand/model cascade.
+    private void refreshSnFilterMenus() {
+        List<String> types = distinctSnValues(r -> true, SnValidationRow::getTypeName);
+        populateSnMenu(mnuSnType, types, selSnTypes, this::onSnTypeChanged);
+
+        List<String> brands = distinctSnValues(
+            r -> selSnTypes.isEmpty() || selSnTypes.contains(r.getTypeName()),
+            SnValidationRow::getBrandName);
+        populateSnMenu(mnuSnBrand, brands, selSnBrands, this::onSnBrandChanged);
+
+        List<String> models = distinctSnValues(
+            r -> (selSnTypes.isEmpty() || selSnTypes.contains(r.getTypeName()))
+                && (selSnBrands.isEmpty() || selSnBrands.contains(r.getBrandName())),
+            SnValidationRow::getModelName);
+        populateSnMenu(mnuSnModel, models, selSnModels, this::applySnFilter);
+
+        populateSnMenu(mnuSnActive, SN_ACTIVE_OPTIONS, selSnActive, this::applySnFilter);
+
+        applySnFilter();
+    }
+
+    private List<String> distinctSnValues(Predicate<SnValidationRow> include,
+            java.util.function.Function<SnValidationRow, String> nameFn) {
+        return allSnRows.stream()
+            .filter(include)
+            .map(nameFn)
+            .distinct()
+            .sorted(String.CASE_INSENSITIVE_ORDER)
+            .toList();
+    }
+
+    private void applySnFilter() {
+        if (filteredSnRows == null) return;
+        filteredSnRows.setPredicate(r ->
+            (selSnTypes.isEmpty()  || selSnTypes.contains(r.getTypeName()))
+            && (selSnBrands.isEmpty() || selSnBrands.contains(r.getBrandName()))
+            && (selSnModels.isEmpty() || selSnModels.contains(r.getModelName()))
+            && (selSnActive.isEmpty() || selSnActive.contains(r.isActive() ? "Sí" : "No")));
+    }
+
+    // Duplicated from HistoryController's populateMenu/updateMenuLabel (multi-select checkbox
+    // MenuButton with a "Todas" select-all item) per this codebase's no-shared-abstraction rule.
+    private void populateSnMenu(MenuButton btn, List<String> options, Set<String> selected, Runnable onChange) {
+        btn.getItems().clear();
+
+        CheckBox todasChk = new CheckBox("Todas");
+        todasChk.setSelected(selected.isEmpty());
+        todasChk.getStyleClass().add("menu-filter-checkbox");
+        btn.getItems().add(new CustomMenuItem(todasChk, false));
+        btn.getItems().add(new SeparatorMenuItem());
+
+        boolean[] lock = {false};
+
+        for (String opt : options) {
+            CheckBox chk = new CheckBox(opt);
+            chk.setSelected(selected.contains(opt));
+            chk.getStyleClass().add("menu-filter-checkbox");
+            btn.getItems().add(new CustomMenuItem(chk, false));
+
+            chk.selectedProperty().addListener((obs, old, newVal) -> {
+                if (lock[0] || suppressSnCallbacks) return;
+                lock[0] = true;
+                if (newVal) {
+                    selected.add(opt);
+                    todasChk.setSelected(false);
+                } else {
+                    selected.remove(opt);
+                    if (selected.isEmpty()) todasChk.setSelected(true);
+                }
+                lock[0] = false;
+                updateSnMenuLabel(btn, selected);
+                if (!suppressSnCallbacks) onChange.run();
+            });
+        }
+
+        todasChk.selectedProperty().addListener((obs, old, newVal) -> {
+            if (lock[0] || suppressSnCallbacks || !newVal) return;
+            lock[0] = true;
+            selected.clear();
+            btn.getItems().stream()
+                .filter(it -> it instanceof CustomMenuItem)
+                .map(it -> ((CustomMenuItem) it).getContent())
+                .filter(n -> n instanceof CheckBox && n != todasChk)
+                .forEach(n -> ((CheckBox) n).setSelected(false));
+            lock[0] = false;
+            updateSnMenuLabel(btn, selected);
+            if (!suppressSnCallbacks) onChange.run();
+        });
+
+        updateSnMenuLabel(btn, selected);
+    }
+
+    private void updateSnMenuLabel(MenuButton btn, Set<String> selected) {
+        if (selected.isEmpty()) {
+            btn.setText("Todas");
+        } else if (selected.size() == 1) {
+            btn.setText(selected.iterator().next());
+        } else {
+            btn.setText(selected.size() + " seleccionados");
+        }
     }
 
     // ── Admin auth ────────────────────────────────────────────────────

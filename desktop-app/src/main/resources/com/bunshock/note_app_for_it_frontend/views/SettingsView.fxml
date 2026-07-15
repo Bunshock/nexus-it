@@ -191,10 +191,31 @@
                   style="-fx-background-color: white; -fx-background-radius: 10; -fx-padding: 15 20 20 20;">
                 <children>
 
-                    <!-- Filter -->
-                    <TextField fx:id="txtSnFilter"
-                               promptText="Filtrar por tipo, marca o modelo..."
-                               styleClass="form-input-main" maxWidth="Infinity"/>
+                    <!-- Filters -->
+                    <HBox spacing="12" alignment="BOTTOM_LEFT">
+                        <VBox spacing="3">
+                            <Label text="TIPO" styleClass="input-label-small"/>
+                            <MenuButton fx:id="mnuSnType" text="Todas"
+                                        prefWidth="160" prefHeight="32" styleClass="filter-menu-button"/>
+                        </VBox>
+                        <VBox spacing="3">
+                            <Label text="MARCA" styleClass="input-label-small"/>
+                            <MenuButton fx:id="mnuSnBrand" text="Todas"
+                                        prefWidth="160" prefHeight="32" styleClass="filter-menu-button"/>
+                        </VBox>
+                        <VBox spacing="3">
+                            <Label text="MODELO" styleClass="input-label-small"/>
+                            <MenuButton fx:id="mnuSnModel" text="Todas"
+                                        prefWidth="160" prefHeight="32" styleClass="filter-menu-button"/>
+                        </VBox>
+                        <VBox spacing="3">
+                            <Label text="ACTIVO" styleClass="input-label-small"/>
+                            <MenuButton fx:id="mnuSnActive" text="Todas"
+                                        prefWidth="120" prefHeight="32" styleClass="filter-menu-button"/>
+                        </VBox>
+                        <Button text="Limpiar filtros" onAction="#handleClearSnFilters"
+                                styleClass="button-secondary" prefHeight="32"/>
+                    </HBox>
 
                     <!-- Table -->
                     <TableView fx:id="tblSnValidation" VBox.vgrow="ALWAYS" styleClass="modern-table, equipment-table">
