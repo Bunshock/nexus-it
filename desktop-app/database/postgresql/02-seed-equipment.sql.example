@@ -1,51 +1,62 @@
--- Generador de Notas IT — PostgreSQL starting data (equipment catalog + provider catalog)
+-- Generador de Notas IT — PostgreSQL starting data (equipment catalog + S/N validation +
+-- provider catalog)
 --
 -- This is a TEMPLATE with placeholder rows, not real data — mirroring how
--- config/app-config.json.example works for app-config.json. Copy this file to
--- 02-seed-equipment.sql (gitignored) and replace the example rows below with your
--- organization's actual equipment catalog and provider list before running it. Never commit
--- real inventory or business-partner data to this repository.
+-- config/app-config.json.example works for app-config.json, and the same pattern as
+-- database/sqlite/starter-template.sql.example (the equivalent template for the local SQLite
+-- database). Copy this file to 02-seed-equipment.sql (gitignored) and replace the example rows
+-- below with your organization's actual equipment catalog, S/N validation rules, and provider
+-- list before running it. Never commit real inventory, S/N pattern, or business-partner data to
+-- this repository.
 --
 -- Run this AFTER 01-schema.sql (or after launching the app once against this database, which
 -- creates the schema automatically via RemoteDatabaseService.ensureSchema()).
 --
--- Idempotent: safe to re-run. Types/Brands/Brand-Type-Links use their existing UNIQUE
--- constraints (ON CONFLICT DO NOTHING); MODEL has no unique constraint in the schema (matching
--- SqliteEquipmentService's own behavior), so models are guarded with NOT EXISTS instead.
---
--- Does NOT touch S/N validation — that's configured separately, per model, through the app's
--- own UI (Configuración → Validación de S/N por modelo, admin mode), not a SQL script. See this
--- folder's README.md for why.
+-- Idempotent: safe to re-run. Types/Brands/Brand-Type-Links/Models all use their existing
+-- UNIQUE constraints (ON CONFLICT DO NOTHING) — MODEL's is a unique index on
+-- (brand_type_id, name) that RemoteDatabaseService.ensureSchema() creates alongside the table,
+-- same as the local SQLite schema. (On an installation where that index failed to create,
+-- because pre-existing duplicate (brand_type_id, name) rows already existed when it was
+-- attempted — see ensureSchema()'s own comment — ON CONFLICT here would error instead of
+-- silently skipping; not a concern for this script's actual use case of seeding a brand-new,
+-- empty database, where the index is always created successfully.) S/N validation rows are
+-- replaced (delete-then-insert) per model, so editing a rule and re-running updates it rather
+-- than duplicating it.
 
 BEGIN;
 
 INSERT INTO BRAND (name) VALUES ('Generic') ON CONFLICT (name) DO NOTHING;
 
 CREATE TEMP TABLE _seed_rows (
-    type_name  TEXT NOT NULL,
-    is_asset   INTEGER NOT NULL,
-    brand_name TEXT NOT NULL,
-    model_name TEXT
+    type_name       TEXT NOT NULL,
+    is_asset        INTEGER NOT NULL,
+    requires_serial INTEGER NOT NULL,
+    brand_name      TEXT NOT NULL,
+    model_name      TEXT
 ) ON COMMIT DROP;
 
--- {type, is_asset(1/0), brand, model or NULL} — NULL model = no specific model; every
--- resulting brand-type combination also gets an "Otro / Genérico" catch-all model, added below.
+-- {type, is_asset(1/0), requires_serial(1/0), brand, model or NULL} — NULL model = no specific
+-- model. The catalog only holds real, curated entries; a "Genérico / Otro" fallback option is
+-- provided by the app itself at the UI layer (ItemDialogController.GENERIC_MODEL) whenever a
+-- brand+type has no configured model here — this script deliberately does NOT insert a catch-all
+-- model row. requires_serial=1 disables the "Sin S/N" checkbox for that type in the app
+-- (ItemDialogController) — only meaningful when is_asset=1.
 --
 -- EXAMPLE ROWS ONLY — replace with your organization's real catalog. A few illustrate the
--- pattern: an asset type with two brands and specific models (NOTEBOOK), an asset type with a
--- model-less brand (MONITOR/Genérico, still gets the catch-all "Otro / Genérico" model), and a
--- countable (non-asset) type (MOUSE).
-INSERT INTO _seed_rows (type_name, is_asset, brand_name, model_name) VALUES
-('NOTEBOOK', 1, 'Marca Ejemplo A', 'Modelo Ejemplo 14'),
-('NOTEBOOK', 1, 'Marca Ejemplo A', 'Modelo Ejemplo 15'),
-('NOTEBOOK', 1, 'Marca Ejemplo B', 'Modelo Ejemplo Pro'),
-('MONITOR', 1, 'Genérico', NULL),
-('MOUSE', 0, 'Marca Ejemplo A', 'Modelo Ejemplo Inalámbrico'),
-('HEADSET', 0, 'Genérico', NULL);
+-- pattern: an asset type with two brands and specific models that always requires S/N (NOTEBOOK),
+-- an asset type with a model-less brand where the app supplies the fallback model option
+-- (MONITOR/Genérico), and a countable (non-asset) type (MOUSE).
+INSERT INTO _seed_rows (type_name, is_asset, requires_serial, brand_name, model_name) VALUES
+('NOTEBOOK', 1, 1, 'Marca Ejemplo A', 'Modelo Ejemplo 14'),
+('NOTEBOOK', 1, 1, 'Marca Ejemplo A', 'Modelo Ejemplo 15'),
+('NOTEBOOK', 1, 1, 'Marca Ejemplo B', 'Modelo Ejemplo Pro'),
+('MONITOR', 1, 0, 'Genérico', NULL),
+('MOUSE', 0, 0, 'Marca Ejemplo A', 'Modelo Ejemplo Inalámbrico'),
+('HEADSET', 0, 0, 'Genérico', NULL);
 
 -- Types
-INSERT INTO TYPE (name, is_asset)
-SELECT DISTINCT type_name, is_asset FROM _seed_rows
+INSERT INTO TYPE (name, is_asset, requires_serial)
+SELECT DISTINCT type_name, is_asset, requires_serial FROM _seed_rows
 ON CONFLICT (name) DO NOTHING;
 
 -- Brands
@@ -69,18 +80,46 @@ JOIN TYPE t ON t.name = s.type_name
 JOIN BRAND b ON b.name = s.brand_name
 JOIN BRAND_TYPE_LINK btl ON btl.type_id = t.id AND btl.brand_id = b.id
 WHERE s.model_name IS NOT NULL
-AND NOT EXISTS (
-    SELECT 1 FROM MODEL m WHERE m.brand_type_id = btl.id AND m.name = s.model_name
+ON CONFLICT (brand_type_id, name) DO NOTHING;
+
+-- S/N validation rules — one rule per model, matching the exact regex an asset's serial number
+-- must satisfy when added through the app (ItemDialogController), same as configuring it via
+-- Configuración → Validación de S/N por modelo → Ver tabla (admin mode), just in bulk instead of
+-- one at a time. A model with no rule here simply accepts any S/N value, same as today.
+--
+-- EXAMPLE ROWS ONLY — replace with your organization's real patterns. Matches the two NOTEBOOK
+-- models seeded above as an example: both require an 11-character uppercase-alphanumeric S/N.
+-- description is optional (shown as a hint in the app) — pass NULL to omit it.
+CREATE TEMP TABLE _seed_sn_rules (
+    type_name     TEXT NOT NULL,
+    brand_name    TEXT NOT NULL,
+    model_name    TEXT NOT NULL,
+    regex_pattern TEXT NOT NULL,
+    description   TEXT,
+    is_active     INTEGER NOT NULL DEFAULT 1
+) ON COMMIT DROP;
+
+INSERT INTO _seed_sn_rules (type_name, brand_name, model_name, regex_pattern, description, is_active) VALUES
+('NOTEBOOK', 'Marca Ejemplo A', 'Modelo Ejemplo 14', '^[A-Z0-9]{11}$', '11 caracteres, letras mayúsculas y números', 1),
+('NOTEBOOK', 'Marca Ejemplo A', 'Modelo Ejemplo 15', '^[A-Z0-9]{11}$', '11 caracteres, letras mayúsculas y números', 1);
+
+DELETE FROM SN_VALIDATION
+WHERE model_id IN (
+    SELECT m.id
+    FROM _seed_sn_rules r
+    JOIN TYPE t ON t.name = r.type_name
+    JOIN BRAND b ON b.name = r.brand_name
+    JOIN BRAND_TYPE_LINK btl ON btl.type_id = t.id AND btl.brand_id = b.id
+    JOIN MODEL m ON m.brand_type_id = btl.id AND m.name = r.model_name
 );
 
--- "Otro / Genérico" catch-all model for every brand-type link (including brand-type
--- combinations whose only seed row had a NULL model), mirroring seedEquipmentData()'s final step
-INSERT INTO MODEL (brand_type_id, name)
-SELECT btl.id, 'Otro / Genérico'
-FROM BRAND_TYPE_LINK btl
-WHERE NOT EXISTS (
-    SELECT 1 FROM MODEL m WHERE m.brand_type_id = btl.id AND m.name = 'Otro / Genérico'
-);
+INSERT INTO SN_VALIDATION (model_id, regex_pattern, description, is_active)
+SELECT m.id, r.regex_pattern, r.description, r.is_active
+FROM _seed_sn_rules r
+JOIN TYPE t ON t.name = r.type_name
+JOIN BRAND b ON b.name = r.brand_name
+JOIN BRAND_TYPE_LINK btl ON btl.type_id = t.id AND btl.brand_id = b.id
+JOIN MODEL m ON m.brand_type_id = btl.id AND m.name = r.model_name;
 
 -- Providers (Nota de Proveedor's "PROVEEDOR" dropdown, managed at Configuración → Base de
 -- Datos → Proveedores, admin mode) — EXAMPLE ROWS ONLY, replace with your organization's

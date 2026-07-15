@@ -12,6 +12,7 @@
     "devolucion" : [ "Fin de préstamo", "Falla", "Fin de contrato", "Otro" ]
   },
   "fallaOptions" : [ "Pantalla rota", "No enciende", "Daño por líquido", "Batería agotada / no carga", "Falla de software / sistema operativo", "Componente faltante o dañado", "Otro" ],
+  "failureTriggerMotivo" : "Falla",
   "smtp" : {
     "host" : "smtp.gmail.com",
     "port" : 587,
@@ -23,13 +24,16 @@
   "glpiApi" : {
     "baseUrl" : ""
   },
-  "database" : {
-    "baseUrl" : ""
+  "remoteDatabase" : {
+    "host" : "",
+    "port" : 5432,
+    "dbName" : ""
   },
   "noteItemLimit" : 8,
   "defaults" : {
     "smtpPassword" : "",
     "glpiApiKey" : "",
+    "dbUsername" : "",
     "dbPassword" : "",
     "adApiToken" : ""
   }

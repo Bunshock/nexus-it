@@ -75,26 +75,36 @@ public class ServiceLocator {
     }
 
     /**
-     * Copies pre-encrypted default secrets (config.defaults) into APP_SETTINGS on first
-     * run only — never overwrites a value an admin already configured via Settings.
+     * Copies non-secret remote DB fields (config.remoteDatabase) and pre-encrypted default
+     * secrets (config.defaults) into APP_SETTINGS on first run only — never overwrites a
+     * value an admin already configured via Settings / Base de Datos.
      */
-    private void provisionDefaultSecrets(AppConfig config) {
+    void provisionDefaultSecrets(AppConfig config) {
+        if (config.remoteDatabase != null
+                && config.remoteDatabase.host != null
+                && !config.remoteDatabase.host.isBlank()) {
+            provisionIfMissing("db_host", config.remoteDatabase.host);
+            provisionIfMissing("db_port", String.valueOf(config.remoteDatabase.port));
+            provisionIfMissing("db_name", config.remoteDatabase.dbName);
+        }
+
         if (config.defaults == null) return;
         provisionIfMissing("smtp_password", config.defaults.smtpPassword);
         provisionIfMissing("glpi_api_key", config.defaults.glpiApiKey);
+        provisionIfMissing("db_username", config.defaults.dbUsername);
         provisionIfMissing("db_password", config.defaults.dbPassword);
         provisionIfMissing("ad_api_token", config.defaults.adApiToken);
     }
 
-    private void provisionIfMissing(String key, String preEncryptedDefault) {
-        if (preEncryptedDefault == null || preEncryptedDefault.isBlank()) return;
+    void provisionIfMissing(String key, String value) {
+        if (value == null || value.isBlank()) return;
         String existing = loadSetting(key);
         if (existing != null && !existing.isBlank()) return;
         try (Connection c = DatabaseService.getInstance().getConnection();
              PreparedStatement ps = c.prepareStatement(
                  "INSERT INTO APP_SETTINGS (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value")) {
             ps.setString(1, key);
-            ps.setString(2, preEncryptedDefault);
+            ps.setString(2, value);
             ps.executeUpdate();
         } catch (Exception e) {
             // Best-effort — a failed default provisioning just leaves that setting

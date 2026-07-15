@@ -13,9 +13,10 @@
 BEGIN;
 
 CREATE TABLE IF NOT EXISTS TYPE (
-    id       SERIAL PRIMARY KEY,
-    name     TEXT NOT NULL UNIQUE,
-    is_asset INTEGER NOT NULL DEFAULT 1
+    id              SERIAL PRIMARY KEY,
+    name            TEXT NOT NULL UNIQUE,
+    is_asset        INTEGER NOT NULL DEFAULT 1,
+    requires_serial INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS BRAND (
@@ -105,6 +106,23 @@ CREATE TABLE IF NOT EXISTS NOTE_ITEM (
 -- CREATE TABLE IF NOT EXISTS silently no-ops on a database that already has the table from an
 -- older schema version, so columns added later must be migrated here too — kept in sync with
 -- RemoteDatabaseService.ensureSchema()'s own migration block.
+
+-- requires_serial replaces ItemDialogController's old hardcoded "Notebook".equals(type.getName())
+-- check. Only backfill requires_serial=1 for the existing Notebook-named type on the run that
+-- actually adds the column (matching RemoteDatabaseService.ensureSchema()'s information_schema
+-- check in Java) — otherwise re-running this script would silently re-enable the flag for anyone
+-- who deliberately turned it off for a type literally named "notebook" via the app's admin UI.
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE lower(table_name) = 'type' AND lower(column_name) = 'requires_serial'
+    ) THEN
+        ALTER TABLE TYPE ADD COLUMN requires_serial INTEGER NOT NULL DEFAULT 0;
+        UPDATE TYPE SET requires_serial = 1 WHERE LOWER(name) = 'notebook';
+    END IF;
+END $$;
+
 ALTER TABLE NOTE_ENTREGA_DEVOLUCION ADD COLUMN IF NOT EXISTS failure_cause TEXT;
 ALTER TABLE NOTE_ENTREGA_DEVOLUCION ADD COLUMN IF NOT EXISTS failure_details TEXT;
 ALTER TABLE NOTE_PROVEEDOR ADD COLUMN IF NOT EXISTS responsible_name TEXT;
