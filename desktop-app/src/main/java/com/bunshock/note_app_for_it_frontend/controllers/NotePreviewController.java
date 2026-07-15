@@ -13,7 +13,6 @@ import com.bunshock.note_app_for_it_frontend.models.CountableItem;
 import com.bunshock.note_app_for_it_frontend.models.NoteReport;
 import com.bunshock.note_app_for_it_frontend.models.GlpiStatus;
 import com.bunshock.note_app_for_it_frontend.models.NoteReportItem;
-import com.bunshock.note_app_for_it_frontend.services.IEmailService;
 import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;
 
 import javafx.fxml.FXML;
@@ -74,11 +73,11 @@ public class NotePreviewController {
 
         webPreview.getEngine().loadContent(html);
 
-        IEmailService email = ServiceLocator.getInstance().getEmailService();
-        if (!email.isConfigured()) {
-            chkEmail.setDisable(true);
-            chkEmail.setText("Enviar por correo (no configurado)");
-        }
+        // Email sending is not ready for real use yet (untested end-to-end) — always disabled
+        // regardless of SMTP configuration, not just when unconfigured. See TODO memory
+        // "email-send-feature-todo" for what's left before this can be re-enabled.
+        chkEmail.setDisable(true);
+        chkEmail.setText("Enviar por correo (no disponible)");
     }
 
     @FXML
