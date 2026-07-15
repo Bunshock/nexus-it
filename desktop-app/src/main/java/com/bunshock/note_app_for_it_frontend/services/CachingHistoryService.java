@@ -64,4 +64,22 @@ public class CachingHistoryService implements IHistoryService {
         try { return primary.getDistinctItemModels(types, brands); } catch (Exception e) { return local.getDistinctItemModels(types, brands); }
     }
 
+    @Override
+    public List<String> getMostUsedTypeNames(int windowDays, int minUses, int limit) {
+        try { return primary.getMostUsedTypeNames(windowDays, minUses, limit); }
+        catch (Exception e) { return local.getMostUsedTypeNames(windowDays, minUses, limit); }
+    }
+
+    @Override
+    public List<String> getMostUsedBrandNames(String typeName, int windowDays, int minUses, int limit) {
+        try { return primary.getMostUsedBrandNames(typeName, windowDays, minUses, limit); }
+        catch (Exception e) { return local.getMostUsedBrandNames(typeName, windowDays, minUses, limit); }
+    }
+
+    @Override
+    public List<String> getMostUsedModelNames(String typeName, String brandName, int windowDays, int minUses, int limit) {
+        try { return primary.getMostUsedModelNames(typeName, brandName, windowDays, minUses, limit); }
+        catch (Exception e) { return local.getMostUsedModelNames(typeName, brandName, windowDays, minUses, limit); }
+    }
+
 }

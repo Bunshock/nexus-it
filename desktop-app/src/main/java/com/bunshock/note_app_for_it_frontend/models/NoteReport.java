@@ -25,6 +25,7 @@ public class NoteReport {
     private String authorDni;
     private String recipientDisplay;
     private int assetItemCount;
+    private int countableItemCount;
     private int pendingItemCount;
     private int syncedItemCount;
     private int rejectedItemCount;
@@ -87,6 +88,9 @@ public class NoteReport {
 
     public int getAssetItemCount() { return assetItemCount; }
     public void setAssetItemCount(int assetItemCount) { this.assetItemCount = assetItemCount; }
+
+    public int getCountableItemCount() { return countableItemCount; }
+    public void setCountableItemCount(int countableItemCount) { this.countableItemCount = countableItemCount; }
 
     public int getPendingItemCount() { return pendingItemCount; }
     public void setPendingItemCount(int pendingItemCount) { this.pendingItemCount = pendingItemCount; }

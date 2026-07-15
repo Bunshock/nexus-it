@@ -158,6 +158,24 @@ class SqliteHistoryServiceTest {
         assertEquals("Entrega", all.get(0).getProfileType());
         assertEquals("Juan Perez", all.get(0).getRecipientDisplay());
         assertEquals(1, all.get(0).getAssetItemCount());
+        // getAll()/getFiltered() only ever populate the SQL-aggregated counts, never the full
+        // items list (that's a separate, per-note query — see getById()) — so
+        // getCountableItemCount() must come from its own aggregate column, not from
+        // items.size() - assetItemCount, which silently evaluated to <= 0 here before this was
+        // added (History's "Equipos" column consumes this same field, see HistoryController).
+        assertEquals(1, all.get(0).getCountableItemCount());
+    }
+
+    @Test
+    void getAllCountsCountableOnlyReportCorrectly() {
+        NoteReport r = userReport("Entrega", LocalDateTime.of(2026, 3, 2, 10, 0), "Ana Diaz",
+            List.of(countableItem("MOUSE", "GENIUS", "DX-120", 2),
+                    countableItem("HEADSET", "GENIUS", "HS-04", 1)));
+        service.save(r);
+
+        NoteReport summary = service.getAll().get(0);
+        assertEquals(0, summary.getAssetItemCount());
+        assertEquals(2, summary.getCountableItemCount());
     }
 
     @Test
@@ -400,6 +418,68 @@ class SqliteHistoryServiceTest {
     @Test
     void getByIdReturnsNullForUnknownId() {
         assertNull(service.getById(999));
+    }
+
+    // ── Most-used items ──────────────────────────────────────────────────────
+
+    @Test
+    void mostUsedTypeNamesReturnsTypesMeetingThreshold() {
+        service.save(userReport("Entrega", LocalDateTime.now(), "A",
+            List.of(assetItem("NOTEBOOK", "DELL", "LATITUDE", "SN1", "AF1", GlpiStatus.N_A))));
+        service.save(userReport("Entrega", LocalDateTime.now(), "B",
+            List.of(assetItem("NOTEBOOK", "DELL", "LATITUDE", "SN2", "AF2", GlpiStatus.N_A))));
+        service.save(userReport("Entrega", LocalDateTime.now(), "C",
+            List.of(assetItem("MONITOR", "SAMSUNG", "S22", "SN3", "AF3", GlpiStatus.N_A))));
+
+        assertEquals(List.of("NOTEBOOK"), service.getMostUsedTypeNames(30, 2, 3));
+    }
+
+    @Test
+    void mostUsedTypeNamesExcludesUsesOutsideWindow() {
+        service.save(userReport("Entrega", LocalDateTime.now().minusDays(60), "A",
+            List.of(assetItem("NOTEBOOK", "DELL", "LATITUDE", "SN1", "AF1", GlpiStatus.N_A))));
+        service.save(userReport("Entrega", LocalDateTime.now().minusDays(60), "B",
+            List.of(assetItem("NOTEBOOK", "DELL", "LATITUDE", "SN2", "AF2", GlpiStatus.N_A))));
+
+        assertTrue(service.getMostUsedTypeNames(30, 2, 3).isEmpty());
+    }
+
+    @Test
+    void mostUsedTypeNamesOrderedByUsageCountDescendingAndRespectsLimit() {
+        for (int i = 0; i < 2; i++) service.save(userReport("Entrega", LocalDateTime.now(), "M" + i,
+            List.of(assetItem("MONITOR", "SAMSUNG", "S22", "SNm" + i, "AFm" + i, GlpiStatus.N_A))));
+        for (int i = 0; i < 4; i++) service.save(userReport("Entrega", LocalDateTime.now(), "N" + i,
+            List.of(assetItem("NOTEBOOK", "DELL", "LATITUDE", "SNn" + i, "AFn" + i, GlpiStatus.N_A))));
+
+        assertEquals(List.of("NOTEBOOK", "MONITOR"), service.getMostUsedTypeNames(30, 2, 3));
+        assertEquals(List.of("NOTEBOOK"), service.getMostUsedTypeNames(30, 2, 1));
+    }
+
+    @Test
+    void mostUsedBrandNamesScopedToParentType() {
+        service.save(userReport("Entrega", LocalDateTime.now(), "A",
+            List.of(assetItem("NOTEBOOK", "DELL", "LATITUDE", "SN1", "AF1", GlpiStatus.N_A))));
+        service.save(userReport("Entrega", LocalDateTime.now(), "B",
+            List.of(assetItem("NOTEBOOK", "DELL", "LATITUDE", "SN2", "AF2", GlpiStatus.N_A))));
+        service.save(userReport("Entrega", LocalDateTime.now(), "C",
+            List.of(assetItem("MONITOR", "LG", "23EA53V", "SN3", "AF3", GlpiStatus.N_A))));
+        service.save(userReport("Entrega", LocalDateTime.now(), "D",
+            List.of(assetItem("MONITOR", "LG", "23EA53V", "SN4", "AF4", GlpiStatus.N_A))));
+
+        assertEquals(List.of("DELL"), service.getMostUsedBrandNames("NOTEBOOK", 30, 2, 3));
+        assertEquals(List.of("LG"), service.getMostUsedBrandNames("MONITOR", 30, 2, 3));
+    }
+
+    @Test
+    void mostUsedModelNamesScopedToParentTypeAndBrand() {
+        service.save(userReport("Entrega", LocalDateTime.now(), "A",
+            List.of(assetItem("NOTEBOOK", "DELL", "LATITUDE", "SN1", "AF1", GlpiStatus.N_A))));
+        service.save(userReport("Entrega", LocalDateTime.now(), "B",
+            List.of(assetItem("NOTEBOOK", "DELL", "LATITUDE", "SN2", "AF2", GlpiStatus.N_A))));
+        service.save(userReport("Entrega", LocalDateTime.now(), "C",
+            List.of(assetItem("NOTEBOOK", "DELL", "XPS", "SN3", "AF3", GlpiStatus.N_A))));
+
+        assertEquals(List.of("LATITUDE"), service.getMostUsedModelNames("NOTEBOOK", "DELL", 30, 2, 3));
     }
 
     // ── GLPI status update ────────────────────────────────────────────────────

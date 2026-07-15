@@ -290,8 +290,13 @@ public class HistoryController {
             new SimpleStringProperty(orEmpty(d.getValue().getAuthorName())));
         colGItems.setCellValueFactory(d -> {
             NoteReport r = d.getValue();
+            // getItems() isn't populated on these summary rows (mapSummary() only loads the
+            // aggregate counts below, not the full item list — that's loaded separately when
+            // opening a note's detail popup), so this must read the SQL-aggregated counts
+            // directly rather than deriving countables from items.size() - assets, which always
+            // evaluated to <= 0 here and silently hid every countable-only or mixed note.
             int assets = r.getAssetItemCount();
-            int countables = (r.getItems() != null ? r.getItems().size() : 0) - assets;
+            int countables = r.getCountableItemCount();
             String label = assets > 0
                 ? assets + "A" + (countables > 0 ? " / " + countables + "C" : "")
                 : (countables > 0 ? countables + "C" : "—");

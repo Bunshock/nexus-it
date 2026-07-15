@@ -24,7 +24,8 @@ public class SqliteHistoryService implements IHistoryService {
                SUM(CASE WHEN i.is_asset = 1 AND i.glpi_status = 'PENDING'  THEN 1 ELSE 0 END) AS pending_count,
                SUM(CASE WHEN i.is_asset = 1 AND i.glpi_status = 'SYNCED'   THEN 1 ELSE 0 END) AS synced_count,
                SUM(CASE WHEN i.is_asset = 1 AND i.glpi_status = 'REJECTED' THEN 1 ELSE 0 END) AS rejected_count,
-               SUM(CASE WHEN i.is_asset = 1                                 THEN 1 ELSE 0 END) AS asset_count
+               SUM(CASE WHEN i.is_asset = 1                                 THEN 1 ELSE 0 END) AS asset_count,
+               SUM(CASE WHEN i.is_asset = 0                                 THEN 1 ELSE 0 END) AS countable_count
         FROM NOTE_REPORT r
         LEFT JOIN TECHNICIAN_PROFILE  tp ON tp.id            = r.technician_id
         LEFT JOIN NOTE_ENTREGA_DEVOLUCION e ON e.note_report_id = r.id
@@ -295,6 +296,7 @@ public class SqliteHistoryService implements IHistoryService {
         r.setAuthorDni(rs.getString("author_dni"));
         r.setRecipientDisplay(rs.getString("recipient"));
         r.setAssetItemCount(rs.getInt("asset_count"));
+        r.setCountableItemCount(rs.getInt("countable_count"));
         r.setPendingItemCount(rs.getInt("pending_count"));
         r.setSyncedItemCount(rs.getInt("synced_count"));
         r.setRejectedItemCount(rs.getInt("rejected_count"));
@@ -377,6 +379,70 @@ public class SqliteHistoryService implements IHistoryService {
             items.add(item);
         }
         return items;
+    }
+
+    // ── Most-used items (pinned in ItemDialogView's Type/Brand/Model combos) ───
+
+    @Override
+    public List<String> getMostUsedTypeNames(int windowDays, int minUses, int limit) {
+        String sql = """
+            SELECT ni.type_name AS name, COUNT(*) AS cnt
+            FROM NOTE_ITEM ni
+            JOIN NOTE_REPORT r ON r.id = ni.note_id
+            WHERE ni.type_name IS NOT NULL AND r.created_at >= ?
+            GROUP BY ni.type_name
+            HAVING COUNT(*) >= ?
+            ORDER BY cnt DESC
+            LIMIT ?
+            """;
+        return queryMostUsed(sql, List.of(cutoff(windowDays), minUses, limit));
+    }
+
+    @Override
+    public List<String> getMostUsedBrandNames(String typeName, int windowDays, int minUses, int limit) {
+        String sql = """
+            SELECT ni.brand_name AS name, COUNT(*) AS cnt
+            FROM NOTE_ITEM ni
+            JOIN NOTE_REPORT r ON r.id = ni.note_id
+            WHERE ni.brand_name IS NOT NULL AND ni.type_name = ? AND r.created_at >= ?
+            GROUP BY ni.brand_name
+            HAVING COUNT(*) >= ?
+            ORDER BY cnt DESC
+            LIMIT ?
+            """;
+        return queryMostUsed(sql, List.of(typeName, cutoff(windowDays), minUses, limit));
+    }
+
+    @Override
+    public List<String> getMostUsedModelNames(String typeName, String brandName, int windowDays, int minUses, int limit) {
+        String sql = """
+            SELECT ni.model_name AS name, COUNT(*) AS cnt
+            FROM NOTE_ITEM ni
+            JOIN NOTE_REPORT r ON r.id = ni.note_id
+            WHERE ni.model_name IS NOT NULL AND ni.type_name = ? AND ni.brand_name = ? AND r.created_at >= ?
+            GROUP BY ni.model_name
+            HAVING COUNT(*) >= ?
+            ORDER BY cnt DESC
+            LIMIT ?
+            """;
+        return queryMostUsed(sql, List.of(typeName, brandName, cutoff(windowDays), minUses, limit));
+    }
+
+    private String cutoff(int windowDays) {
+        return LocalDateTime.now().minusDays(windowDays).toString();
+    }
+
+    private List<String> queryMostUsed(String sql, List<Object> params) {
+        try (Connection c = connector.get();
+             PreparedStatement ps = c.prepareStatement(sql)) {
+            for (int i = 0; i < params.size(); i++) ps.setObject(i + 1, params.get(i));
+            ResultSet rs = ps.executeQuery();
+            List<String> result = new ArrayList<>();
+            while (rs.next()) result.add(rs.getString("name"));
+            return result;
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to load most-used items", e);
+        }
     }
 
     // ── GLPI status update ────────────────────────────────────────────────────
