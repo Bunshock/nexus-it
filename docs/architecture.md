@@ -193,6 +193,7 @@ classDiagram
         +addBrand(name) addModel(name, brandId, typeId) addProvider(name)
         +removeType(id) removeBrand(id) removeModel(id) removeProvider(id)
         +renameType(id, name) renameBrand(id, name) renameModel(id, name) renameProvider(id, name)
+        +setRequiresSerial(typeId, requiresSerial)
     }
     class SqliteEquipmentService
     class MockEquipmentService
@@ -208,6 +209,7 @@ classDiagram
         +save(NoteReport) int
         +getById(id) NoteReport
         +getDistinctItemTypes() getDistinctItemBrands() getDistinctItemModels()
+        +getMostUsedTypeNames(days, minUses, limit) getMostUsedBrandNames(type, ...) getMostUsedModelNames(type, brand, ...)
     }
     class SqliteHistoryService
     class CachingHistoryService
@@ -278,11 +280,13 @@ classDiagram
 Templates live in `src/main/resources/.../templates/`. `NoteGenerationService` selects the correct template based on note profile type and builds the token maps from form data.
 
 ### Credential Encryption (AppKeyEncryptionService)
-`AppKeyEncryptionService` (AES-256/GCM, `javax.crypto`) encrypts/decrypts the four shared organizational secrets — `smtp_password`, `glpi_api_key`, `db_password`/`db_username`, `ad_api_token` — stored as Base64 in the `APP_SETTINGS` SQLite table. Replaced `WindowsDPAPIService` on 2026-07-08: DPAPI ties every encrypted value to the specific Windows account that encrypted it, which made pre-configuring these fleet-wide shared credentials across many technician machines impractical without visiting each one (none of these four are actually *personal* per-technician secrets — they're all IT-department-owned service credentials identical across every installation). `AppKeyEncryptionService` uses one fixed key embedded in the app, shared across every installation.
+`AppKeyEncryptionService` (AES-256/GCM, `javax.crypto`) encrypts/decrypts five shared organizational secrets — `smtp_password`, `glpi_api_key`, `db_username`, `db_password`, `ad_api_token` — stored as Base64 in the `APP_SETTINGS` SQLite table. Replaced `WindowsDPAPIService` on 2026-07-08: DPAPI ties every encrypted value to the specific Windows account that encrypted it, which made pre-configuring these fleet-wide shared credentials across many technician machines impractical without visiting each one (none of these are actually *personal* per-technician secrets — they're all IT-department-owned service credentials identical across every installation). `AppKeyEncryptionService` uses one fixed key embedded in the app, shared across every installation.
 
 **Explicit accepted trade-off** (discussed with and decided by the user, not a default/oversight): this is materially weaker than DPAPI against a determined local attacker — the key can be extracted from the installed app by decompiling it, and the same key decrypts every installation's secrets, not just one machine's. It stops casual plaintext exposure (opening `noteapp.db` in a browser/viewer) but not a deliberate extraction attempt. If a proper installer is built later, generate a unique key per deployment at packaging time instead of reusing one static key indefinitely (tracked as a known follow-up).
 
-**Zero-touch pre-configuration**: `app-config.json`'s `defaults` object (`smtpPassword`, `glpiApiKey`, `dbPassword`, `adApiToken`) holds pre-encrypted values, generated via `utils.AppKeyEncryptionGenerator` (mirrors `AdminPasswordHashGenerator`'s existing CLI pattern). `ServiceLocator.provisionDefaultSecrets()` copies any of these into `APP_SETTINGS` on first startup, only for keys not already set — an admin's later edit via Settings always takes precedence and is never overwritten by a shipped default.
+**Zero-touch pre-configuration**: `app-config.json`'s `defaults` object (`smtpPassword`, `glpiApiKey`, `dbUsername`, `dbPassword`, `adApiToken`) holds pre-encrypted values, generated via `utils.AppKeyEncryptionGenerator` (mirrors `AdminPasswordHashGenerator`'s existing CLI pattern). `ServiceLocator.provisionDefaultSecrets()` copies any of these into `APP_SETTINGS` on first startup, only for keys not already set — an admin's later edit via Settings/Base de Datos always takes precedence and is never overwritten by a shipped default. `dbUsername` was added 2026-07-13 alongside `remoteDatabase` below — before that there was no `defaults` field for it at all.
+
+**Pre-configuring a remote database before first startup** (added 2026-07-13): `app-config.json`'s top-level `remoteDatabase` object (`host`, `port` default `5432`, `dbName`) holds the **non-secret** connection fields — these are plaintext, matching how `db_host`/`db_port`/`db_name` are already stored unencrypted in `APP_SETTINGS`. `ServiceLocator.provisionDefaultSecrets()` copies them in the same one-shot, never-overwrite way as `defaults`, but only when `remoteDatabase.host` is non-blank (an empty host means "not configured," so port/dbName are skipped too rather than leaving a half-populated, host-less connection). Combined with `defaults.dbUsername`/`dbPassword`, this lets an installer ship with a shared remote PostgreSQL fully wired up — no admin has to open Base de Datos → Editar at all on a fresh machine. This replaced the old `database.baseUrl` field (`AppConfig.database`, an `ApiEndpoint` like `adApi`/`glpiApi`) that was declared but **never actually read anywhere in the code** — a dead leftover from before `RemoteDatabaseService`'s JDBC host/port/dbName/username/password connection model existed, confirmed unused by a full-codebase grep before removal.
 
 ### SQLite Local Database
 `DatabaseService` initializes a local `data/noteapp.db` on first run. The schema mirrors the planned PostgreSQL structure exactly (same table names and column types), so migration will require only a JDBC driver swap and connection string change. The `Generic` brand is inserted as protected default data on initialization.

@@ -27,7 +27,7 @@ mvn clean javafx:run
 
 > **Always use `mvn clean javafx:run`**, not just `mvn javafx:run`. The IDE (VS Code / Eclipse) can leave stale `.class` files in `target/` that Maven reuses without recompiling, causing runtime errors.
 
-> **Never commit `desktop-app/data/noteapp.db`.** It's a runtime artifact created fresh on first launch and is already listed in `.gitignore`. If your local clone fails on startup with an error like `SQLITE_ERROR ... table NOTE_ITEM has no column named ...`, you likely have a stale database file left over from an old checkout — delete `desktop-app/data/noteapp.db` and re-run `mvn clean javafx:run` to regenerate it.
+> **Never commit `desktop-app/data/noteapp.db`.** It's a runtime artifact created fresh on first launch and is already listed in `.gitignore`. If your local clone fails on startup with an error like `SQLITE_ERROR ... table NOTE_ITEM has no column named ...`, you likely have a stale database file left over from an old checkout — delete `desktop-app/data/noteapp.db` and re-run `mvn clean javafx:run` to regenerate it. The regenerated database starts genuinely empty (schema only, no demo data) — see `desktop-app/database/sqlite/README.md` if you want the optional example catalog/history dataset loaded instead of starting from a blank slate.
 
 > **`desktop-app/config/app-config.json` is gitignored** — it holds real per-deployment values (internal AD API URL, SMTP sender address) that must never reach git history. `config/app-config.json.example` is the committed template with placeholder values; copy it once per machine and edit the copy. If you pull changes to `app-config.json.example` (new keys), diff it against your local `app-config.json` and merge the new keys in manually.
 
@@ -57,13 +57,16 @@ Two JSON files in `desktop-app/config/` control runtime behavior. **Do not commi
 | `smtp.senderAddress` | Sender email address |
 | `adApi.baseUrl` | REST API URL for AD lookups |
 | `glpiApi.baseUrl` | GLPI REST API URL |
+| `remoteDatabase.host` | Remote PostgreSQL host — not a secret; leave `""` to keep the app on local SQLite |
+| `remoteDatabase.port` | Remote PostgreSQL port (defaults to `5432`) |
+| `remoteDatabase.dbName` | Remote PostgreSQL database name |
 | `noteItemLimit` | Max items per note before showing a warning |
 
-SMTP password and GLPI API key are stored encrypted in the local SQLite database (`AppKeyEncryptionService`, AES-256/GCM) — never in this file.
+SMTP password and GLPI API key are stored encrypted in the local SQLite database (`AppKeyEncryptionService`, AES-256/GCM) — never in this file. Same for the remote database's username/password — see below.
 
 ### Pre-configuring default secrets (zero-touch first run)
 
-`app-config.json`'s `defaults` object lets a fresh install ship with `smtpPassword`, `glpiApiKey`, `dbPassword`, and `adApiToken` already configured — no technician or admin has to type anything in Settings on first launch. Each value must be **pre-encrypted**, never plaintext:
+`app-config.json`'s `defaults` object lets a fresh install ship with `smtpPassword`, `glpiApiKey`, `dbUsername`, `dbPassword`, and `adApiToken` already configured — no technician or admin has to type anything in Settings on first launch. Each value must be **pre-encrypted**, never plaintext:
 
 ```bash
 cd desktop-app
@@ -72,17 +75,23 @@ mvn exec:java -Dexec.mainClass="com.bunshock.note_app_for_it_frontend.utils.AppK
 ```
 
 ```json
+"remoteDatabase": {
+  "host": "db.example.org",
+  "port": 5432,
+  "dbName": "notas_it"
+},
 "defaults": {
   "smtpPassword": "<ciphertext from the generator>",
   "glpiApiKey": "",
-  "dbPassword": "",
+  "dbUsername": "<ciphertext from the generator>",
+  "dbPassword": "<ciphertext from the generator>",
   "adApiToken": "<ciphertext from the generator>"
 }
 ```
 
-On first startup, any of these four whose `APP_SETTINGS` key isn't already set gets copied in from `defaults` — once an admin edits a value via Settings, that always takes precedence and the shipped default is never consulted again for that key. Leave a field as `""` if you don't want to pre-configure it.
+On first startup, any of these whose `APP_SETTINGS` key isn't already set gets copied in — `remoteDatabase.host`/`port`/`dbName` (plaintext, only if `host` is non-blank) and the five `defaults` entries (pre-encrypted). Once an admin edits a value via Settings or Base de Datos, that always takes precedence and the shipped default is never consulted again for that key. Leave a field as `""` if you don't want to pre-configure it. This is the only way to have the app connect to a shared remote database with zero manual setup on a fresh machine — see [Remote database (PostgreSQL)](#remote-database-postgresql) below for the equivalent one-time manual setup via the UI.
 
-**Security note**: all four secrets share one fixed encryption key embedded in the app (`AppKeyEncryptionService`) — this trades some security for zero-touch deployability across many machines (see `CLAUDE.md`'s Known issues/gotchas for the full trade-off discussion). Anyone with the installed application can, in principle, extract this key and decrypt these values from any copy of `data/noteapp.db` — this is materially weaker than the previous per-account Windows DPAPI approach, and was an explicit, discussed decision, not an oversight.
+**Security note**: all five secrets share one fixed encryption key embedded in the app (`AppKeyEncryptionService`) — this trades some security for zero-touch deployability across many machines (see `CLAUDE.md`'s Known issues/gotchas for the full trade-off discussion). Anyone with the installed application can, in principle, extract this key and decrypt these values from any copy of `data/noteapp.db` — this is materially weaker than the previous per-account Windows DPAPI approach, and was an explicit, discussed decision, not an oversight.
 
 ### Active Directory (AD) API
 
@@ -125,9 +134,11 @@ Saving tests the connection in the background (using the currently resolved tech
 
 ### Remote database (PostgreSQL)
 
-The app runs fully on local SQLite by default. To point it at a shared PostgreSQL instance instead, go to **Base de Datos** → **✏ Editar** (admin mode required) and enter host, port, database name, username, and password — stored in `data/noteapp.db`'s `APP_SETTINGS` table (host/port/name in plaintext, username/password encrypted via `AppKeyEncryptionService`). Saving tests the connection before persisting, same confirm-on-failure flow as the AD API above. The **Probar conexión** button re-checks connectivity on demand without opening the edit dialog. If the remote database is unreachable, the app automatically falls back to local SQLite (write-through cache: writes go to remote first, then local; reads try remote first, fall back to local).
+The app runs fully on local SQLite by default. To point it at a shared PostgreSQL instance instead, go to **Base de Datos** → **✏ Editar** (admin mode required) and enter host, port, database name, username, and password — stored in `data/noteapp.db`'s `APP_SETTINGS` table (host/port/name in plaintext, username/password encrypted via `AppKeyEncryptionService`). Saving tests the connection before persisting, same confirm-on-failure flow as the AD API above. Alternatively, pre-configure all five in `app-config.json` before the very first launch (see [Pre-configuring default secrets](#pre-configuring-default-secrets-zero-touch-first-run) above) so a fresh install connects with zero manual setup. The **Probar conexión** button re-checks connectivity on demand without opening the edit dialog, and reports the remote and local databases independently: "ESTADO REMOTO" shows orange ("no configurada") if no remote database is set up at all, red if one is configured but unreachable, or green if it connects successfully; "ESTADO LOCAL" always tests and reports the local SQLite database separately. If the remote database is unreachable, the app automatically falls back to local SQLite (write-through cache: writes go to remote first, then local; reads try remote first, fall back to local).
 
 The app creates its own schema automatically on first connect (`RemoteDatabaseService.ensureSchema()`) — a fresh, empty PostgreSQL database is all that's required. **`desktop-app/database/postgresql/`** has ready-to-run scripts for setting one up, including starting data for the equipment catalog (Type/Brand/Model) and the provider catalog (Nota de Proveedor's dropdown), and a full remote-server setup walkthrough (creating the DB/role, allowing remote connections, running the scripts) — see that folder's `README.md`. The seed script is a **template** with placeholder rows only, not real data (same pattern as `app-config.json.example`) — copy it and fill in your organization's actual catalog before running it; never commit the real, filled-in file (already gitignored). S/N validation rules are configured through the app's own UI, not a SQL script — same README explains why.
+
+**Already built up a real catalog locally before setting up a remote server?** `CatalogMigrationTool` (`mvn exec:java -Dexec.mainClass="com.bunshock.note_app_for_it_frontend.utils.CatalogMigrationTool"` from `desktop-app/`) copies the equipment catalog — Type, Brand, Brand-Type links, Model, S/N validation rules, Provider — from the local `data/noteapp.db` into a PostgreSQL database, correctly remapping autoincrement ids instead of copying them as-is. It creates the schema itself and prompts interactively for the connection details; safe to re-run as more local data is added. See `desktop-app/database/postgresql/README.md` for details. History isn't migrated by this tool — only the equipment catalog.
 
 ### `config/mock-equipment.json`
 
@@ -256,13 +267,13 @@ mvn test
 - Active Directory API URL and Token (token encrypted via `AppKeyEncryptionService`, write-only field — never redisplayed once saved); saving tests the connection first and asks for confirmation if it fails
 - Settings content scrolls independently in a fixed-height panel — the "CONFIGURACIÓN" header and the "Guardar Configuración" footer both stay fixed in place; only the card list in between scrolls
 - All configuration fields and the "Guardar Configuración" button are read-only/disabled unless admin mode is active
-- **S/N Validation table** (admin-protected): view all asset-type models with their regex pattern and active toggle; active rules sort to the top; filterable by type, brand, or model
+- **S/N Validation table** (admin-protected): view all asset-type models with their regex pattern and active toggle; active rules sort to the top; multi-select Tipo/Marca/Modelo/Activo dropdown filters (same pattern as History's filters, Tipo→Marca→Modelo cascading) with a "Limpiar filtros" reset button
 - **Admin mode**: password-protected session (SHA-256 hash in SQLite); unlocks general configuration editing, S/N validation edits, GLPI sync actions, and DB connection changes; auto-expires after 15 minutes of inactivity
 
 ### Mi Perfil (technician identity)
 
 - Name, Username, DNI, and Email resolved automatically from Active Directory via the current Windows session at startup, and on demand via "Actualizar Perfil desde AD" — read-only, editable only in admin mode, never persisted to disk
-- **Nombre para mostrar**: a separate, always-editable field (no admin mode required) controlling only the sidebar welcome greeting ("Hola, ...!"). Pre-filled with a suggested default (the last word of the AD full name); persisted locally per technician username so it survives restarts and AD refreshes. Clearing it and saving reverts to the suggested default
+- **Nombre para mostrar**: a separate, always-editable field (no admin mode required, max 20 characters) controlling only the sidebar welcome greeting ("Hola, ...!"). Pre-filled with a suggested default (the last word of the AD full name); persisted locally per technician username so it survives restarts and AD refreshes. Clearing it and saving reverts to the suggested default — or use the square ↺ reset button next to the field to do both in one click
 - Sidebar welcome message updates immediately on any change (AD refresh, admin override, or a saved display-name preference) — no restart needed
 
 ### Security

@@ -162,7 +162,7 @@
 - **US 5.5** - **S/N Validation Management**: As an administrator, I want to view and toggle per-model S/N validation rules in Settings so that I can control which models enforce regex patterns without editing config files.
     - ***Acceptance Criteria***:
         - Table shows type, brand, model, regex pattern, and active toggle for all asset-type models.
-        - Active rows sort to the top; a text filter allows searching by type, brand, or model.
+        - Active rows sort to the top; multi-select Tipo/Marca/Modelo/Activo dropdown filters (same pattern as History's filters) narrow the list, with Tipo→Marca→Modelo cascading and a "Limpiar filtros" button to reset them.
         - Toggling active state is admin-protected.
 
 - **US 5.6** - **Admin GLPI Sync via Note Detail**: As an administrator, I want to sync or reject individual PENDING items directly from the note detail popup so that I can manage GLPI status without a separate admin panel.

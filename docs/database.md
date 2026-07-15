@@ -19,6 +19,7 @@ erDiagram
         int id PK
         string name
         int is_asset "1 = asset (S/N + A/F); 0 = countable (quantity)"
+        int requires_serial "1 = S/N mandatory, 'Sin S/N' checkbox disabled in ItemDialogView"
     }
 
     BRAND {
@@ -36,7 +37,7 @@ erDiagram
     MODEL {
         int id PK
         int brand_type_id FK
-        string name
+        string name "UNIQUE(brand_type_id, name) index — same name OK under a different brand/type"
     }
 
     SN_VALIDATION {

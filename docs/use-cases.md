@@ -217,8 +217,9 @@ Same as UC-01 but with profile "FIN DE CONTRATO". Used for employees leaving the
 1. Admin activates admin mode (UC-13) if not already active
 2. Clicks "Ver tabla" — admin panel slides in showing all asset-type models with their regex and active toggle
 3. Admin enables or disables a rule via the toggle; change is persisted immediately to SQLite
-4. Admin uses the text filter to search by type, brand, or model
-5. Clicks "← Volver" to return to Configuración
+4. Admin narrows the list using the Tipo/Marca/Modelo/Activo multi-select filter dropdowns (same checkbox-list "Todas" pattern as Historial's filters, UC-12) — Marca options are scoped to the selected Tipo(s), and Modelo options to the selected Tipo(s) and Marca(s); "Activo" filters by whether the row's validation is currently enabled (Sí/No, either or both)
+5. "Limpiar filtros" resets all four dropdowns back to "Todas"
+6. Clicks "← Volver" to return to Configuración
 
 ---
 
@@ -234,8 +235,8 @@ Same as UC-01 but with profile "FIN DE CONTRATO". Used for employees leaving the
 2. Technician opens "Mi Perfil"; the four identity fields show the current session values, read-only (grayed out)
 3. Technician clicks "Actualizar Perfil desde AD" to re-run the lookup on demand (e.g. if it failed at startup, or AD data changed)
 4. Sidebar welcome message ("Hola, {nombre}!" / "Usuario: {username}") updates immediately to reflect any change
-5. A separate "Nombre para mostrar" field, always editable (no admin mode required), lets the technician set a personal greeting-name preference used only for the sidebar welcome message. It's pre-filled with a suggested default (the last word of the AD full name — the given name, since AD's stored order is "Apellido Nombre"). Clicking its own "Guardar" persists the preference locally, keyed by the technician's username, so it survives app restarts and AD refreshes
-6. Clearing the field to blank and saving reverts the welcome message to the suggested default
+5. A separate "Nombre para mostrar" field (max 20 characters), always editable (no admin mode required), lets the technician set a personal greeting-name preference used only for the sidebar welcome message. It's pre-filled with a suggested default (the last word of the AD full name — the given name, since AD's stored order is "Apellido Nombre"). Clicking its own "Guardar" persists the preference locally, keyed by the technician's username, so it survives app restarts and AD refreshes
+6. Clearing the field to blank and saving reverts the welcome message to the suggested default. A square reset button (↺) next to the field does this in one click — it clears the field and saves, equivalent to step 6 without manually emptying the field first
 
 **Alternate Flow A — AD lookup fails:** A warning popup (and Profile's status label) distinguishes "user not found in AD" from "could not connect to AD" from "no Windows domain session available"; the four identity fields stay empty and read-only until a successful refresh or an admin override. Sidebar shows "Perfil no configurado" under the welcome message. The "Nombre para mostrar" field is unaffected by this failure (it's independent of AD identity), but can't be saved without a resolved username to key it by.
 **Alternate Flow B — Admin mode active:** The four identity fields become editable; Administrator can manually enter or correct Name, Username, DNI, and Email; "Guardar" commits the override for the current session only — lost on the next AD refresh or app restart, not written to any database table.
