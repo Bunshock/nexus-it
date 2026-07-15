@@ -4,7 +4,9 @@ import java.io.IOException;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.regex.Pattern;
 
 import com.bunshock.note_app_for_it_frontend.models.ADUser;
@@ -23,10 +25,12 @@ import javafx.scene.control.Button;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.DatePicker;
 import javafx.scene.control.Label;
+import javafx.scene.control.ListCell;
 import javafx.scene.control.ProgressIndicator;
 import javafx.scene.control.TextField;
 import javafx.scene.control.TextFormatter;
 import javafx.scene.control.ToggleButton;
+import javafx.scene.control.Tooltip;
 import javafx.scene.control.ToggleGroup;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
@@ -51,6 +55,7 @@ public class UserNoteController {
     @FXML private VBox vboxMotivo;
     @FXML private ComboBox<String> cmbMotivo;
     @FXML private Label lblMotivoStatus;
+    @FXML private Label lblFailureSummary;
 
     @FXML private VBox vboxFechaTentativa;
     @FXML private DatePicker dtpFechaTentativa;
@@ -69,22 +74,96 @@ public class UserNoteController {
     private String failureCause;
     private String failureDetails;
 
+    // Explicit confirmation flag, tracked alongside failureCause/failureDetails rather than
+    // inferred from failureCause's nullness — set true only by setFailureDetails() (a real
+    // Guardar in FailureDetailView), false only by clearFailureDetails(). Keeps "has Falla been
+    // confirmed for this session" unambiguous regardless of what cause/details actually contain.
+    private boolean failureConfirmed;
+
+    // "Full Motivo memory per type" — each note type remembers its own last-selected Motivo
+    // across type switches, instead of resetting to unselected every time (the old behavior).
+    // Keyed by the type ToggleButton itself, not by the motivoOptions map key, since Entrega
+    // and Fin de Contrato share the same "entrega" options list but should remember independently.
+    private final Map<ToggleButton, String> lastMotivoByType = new HashMap<>();
+
+    // True only for the duration of loadMotivoOptions()'s programmatic cmbMotivo.setValue(...)
+    // restore call. The cmbMotivo listener uses this — not just failureConfirmed — to recognize
+    // "this value change is a restore, not a genuine user pick" and skip the popup-open/
+    // clearFailureDetails side effects entirely, regardless of any other state.
+    private boolean restoringMotivo;
+
+    // Kept as a field (not a local in the cell factory lambda) so setFailureDetails()/
+    // clearFailureDetails() can force an immediate re-render — ComboBox never re-invokes the
+    // button cell on its own just because failureCause changed externally; only a genuine
+    // value change does that. updateItem() is protected on Cell, so the refresh trigger has
+    // to be a method on this class itself, not called on the field from outside.
+    private class MotivoCell extends ListCell<String> {
+        private final boolean isButtonCell;
+        MotivoCell(boolean isButtonCell) {
+            this.isButtonCell = isButtonCell;
+        }
+        @Override
+        protected void updateItem(String motivo, boolean empty) {
+            super.updateItem(motivo, empty);
+            if (empty || motivo == null) {
+                // A custom button cell takes over promptText rendering entirely — JavaFX only
+                // auto-shows it for the default internal cell. Only the button cell (not the
+                // popup list's own empty/padding rows) should ever show it here.
+                setText(isButtonCell ? cmbMotivo.getPromptText() : null);
+            } else {
+                setText(motivoDisplayText(motivo));
+            }
+        }
+        void refresh() {
+            updateItem(getItem(), getItem() == null);
+        }
+    }
+
+    private MotivoCell motivoButtonCell;
+
     public void initialize() {
+        lblFailureSummary.setTooltip(new Tooltip("Editar detalles de Falla"));
+
+        cmbMotivo.setCellFactory(lv -> new MotivoCell(false));
+        motivoButtonCell = new MotivoCell(true);
+        cmbMotivo.setButtonCell(motivoButtonCell);
+
         userNoteTypeGroup.selectedToggleProperty().addListener((obs, oldToggle, newToggle) -> {
             if (newToggle == null) {
                 oldToggle.setSelected(true);
                 return;
             }
-            if (newToggle != btnTypeDevolucion) clearFailureDetails();
             updateMotivoVisibility((ToggleButton) newToggle);
         });
 
         cmbMotivo.valueProperty().addListener((obs, old, motivo) -> {
-            if (btnTypeDevolucion.isSelected() && "Falla".equals(motivo)) {
-                openFailureDetailDialog();
-            } else if (!"Falla".equals(motivo)) {
+            // A programmatic reload (loadMotivoOptions(), which sets restoringMotivo for its
+            // *entire* body — not just the final setValue()) must be completely invisible to
+            // this listener, including the lastMotivoByType bookkeeping below: setItems() alone
+            // can fire this listener with an intermediate null on a fully-skinned ComboBox (a
+            // real Stage/Scene is required to reproduce this — a bare FXMLLoader.load() in a
+            // test never installs a Skin, which is exactly why this slipped through testing
+            // once already). Without this early return, that intermediate null would overwrite
+            // the "Falla" entry in lastMotivoByType before loadMotivoOptions() ever reads it
+            // back, silently losing the remembered selection.
+            if (restoringMotivo) return;
+
+            ToggleButton currentType = (ToggleButton) userNoteTypeGroup.getSelectedToggle();
+            if (currentType != null) lastMotivoByType.put(currentType, motivo);
+
+            // Falla-detail handling only ever applies to Devolución's own Motivo — restoring a
+            // different type's remembered Motivo (e.g. switching to Entrega) must not touch
+            // failureCause/failureDetails, since those now persist across type switches too.
+            if (!btnTypeDevolucion.isSelected()) return;
+
+            if (isFailureTriggerMotivo(motivo)) {
+                if (!failureConfirmed) {
+                    openFailureDetailDialog();
+                }
+            } else {
                 clearFailureDetails();
             }
+            refreshFailureIndicators();
         });
 
         txtUserName.setTextFormatter(new TextFormatter<>(change -> {
@@ -96,9 +175,19 @@ public class UserNoteController {
             return newText.length() <= 8 && newText.matches("\\d*") ? change : null;
         }));
 
-        loadMotivoOptions("entrega");
         updateMotivoVisibility(btnTypeEntrega);
         btnTypeEntrega.setSelected(true);
+    }
+
+    private boolean isFailureTriggerMotivo(String motivo) {
+        return ConfigService.getInstance().getConfig().failureTriggerMotivo.equals(motivo);
+    }
+
+    private String motivoDisplayText(String motivo) {
+        if (btnTypeDevolucion.isSelected() && isFailureTriggerMotivo(motivo) && failureConfirmed) {
+            return motivo + " - " + failureCause;
+        }
+        return motivo;
     }
 
     private void updateMotivoVisibility(ToggleButton selected) {
@@ -114,11 +203,12 @@ public class UserNoteController {
 
         if (showMotivo) {
             String key = selected == btnTypeDevolucion ? "devolucion" : "entrega";
-            loadMotivoOptions(key);
+            loadMotivoOptions(key, selected);
         }
         if (showFechaTentativa && dtpFechaTentativa.getValue() == null) {
             dtpFechaTentativa.setValue(nextWorkingDay());
         }
+        refreshFailureIndicators();
     }
 
     private LocalDate nextWorkingDay() {
@@ -129,10 +219,39 @@ public class UserNoteController {
         return next;
     }
 
-    private void loadMotivoOptions(String key) {
+    private void loadMotivoOptions(String key, ToggleButton forType) {
         List<String> options = ConfigService.getInstance().getConfig().motivoOptions.getOrDefault(key, List.of());
-        cmbMotivo.setItems(FXCollections.observableArrayList(options));
-        cmbMotivo.getSelectionModel().clearSelection();
+        // Captured before touching cmbMotivo at all, and restoringMotivo guards the whole
+        // reload (setItems included) — see the long comment on the valueProperty listener for why.
+        String remembered = lastMotivoByType.get(forType);
+        restoringMotivo = true;
+        try {
+            cmbMotivo.setItems(FXCollections.observableArrayList(options));
+            if (remembered != null && options.contains(remembered)) {
+                cmbMotivo.setValue(remembered);
+            } else {
+                cmbMotivo.getSelectionModel().clearSelection();
+            }
+        } finally {
+            restoringMotivo = false;
+        }
+    }
+
+    // Updates both the "⚙ Editar" indicator's visibility and the Motivo combobox's own
+    // displayed text (button cell) — the ComboBox doesn't automatically refresh its button
+    // cell just because failureCause/failureConfirmed changed externally, so this forces it.
+    private void refreshFailureIndicators() {
+        boolean show = btnTypeDevolucion.isSelected()
+            && failureConfirmed
+            && isFailureTriggerMotivo(cmbMotivo.getValue());
+        lblFailureSummary.setManaged(show);
+        lblFailureSummary.setVisible(show);
+        motivoButtonCell.refresh();
+    }
+
+    @FXML
+    private void handleEditFailureDetails() {
+        openFailureDetailDialog();
     }
 
     public String getSelectedNoteType() {
@@ -165,7 +284,7 @@ public class UserNoteController {
             triggerLabelFeedback(lblMotivoStatus, "El motivo es obligatorio", "#ef4444");
             valid = false;
         }
-        if (btnTypeDevolucion.isSelected() && "Falla".equals(getMotivo())
+        if (btnTypeDevolucion.isSelected() && isFailureTriggerMotivo(getMotivo())
                 && (failureCause == null || failureCause.isBlank())) {
             triggerLabelFeedback(lblMotivoStatus, "Debe completar los detalles de la falla", "#ef4444");
             valid = false;
@@ -208,15 +327,24 @@ public class UserNoteController {
     public void setFailureDetails(String cause, String details) {
         this.failureCause = cause;
         this.failureDetails = details;
+        this.failureConfirmed = true;
+        refreshFailureIndicators();
     }
 
     private void clearFailureDetails() {
         failureCause = null;
         failureDetails = null;
+        failureConfirmed = false;
+        refreshFailureIndicators();
     }
 
     public void onFailureDialogCancelled() {
-        cmbMotivo.getSelectionModel().clearSelection();
+        // Only revert Motivo when cancelling a brand-new Falla selection that was never
+        // confirmed. Cancelling out of an edit — reopened via the "Editar" link on an
+        // already-saved Falla — must leave the existing data untouched.
+        if (!failureConfirmed) {
+            cmbMotivo.getSelectionModel().clearSelection();
+        }
     }
 
     private void openFailureDetailDialog() {
@@ -229,9 +357,26 @@ public class UserNoteController {
             ctrl.prefill(failureCause, failureDetails);
 
             Stage stage = new Stage();
+            stage.initStyle(StageStyle.TRANSPARENT);
             stage.initModality(Modality.APPLICATION_MODAL);
-            stage.setTitle("Detalles de Falla");
-            stage.setScene(new Scene(root));
+            Scene dialogScene = new Scene(root);
+            dialogScene.setFill(Color.TRANSPARENT);
+            dialogScene.getStylesheets().add(getClass().getResource(
+                "/com/bunshock/note_app_for_it_frontend/css/styles.css").toExternalForm());
+            stage.setScene(dialogScene);
+
+            // Same setOnShown-based positioning as showUserSelectionDialog() (no fixed Scene
+            // size here either) — anchored to cmbMotivo, to its right, instead of btnBuscarAD.
+            stage.setOpacity(0);
+            stage.setOnShown(e -> {
+                javafx.geometry.Bounds combo = cmbMotivo.localToScreen(cmbMotivo.getBoundsInLocal());
+                javafx.geometry.Rectangle2D screen = javafx.stage.Screen.getPrimary().getVisualBounds();
+                double x = Math.min(combo.getMaxX() + 12, screen.getMaxX() - stage.getWidth());
+                double y = Math.min(combo.getMinY(), screen.getMaxY() - stage.getHeight());
+                stage.setX(Math.max(screen.getMinX(), x));
+                stage.setY(Math.max(screen.getMinY(), y));
+                stage.setOpacity(1);
+            });
             stage.show();
         } catch (IOException e) {
             e.printStackTrace();
@@ -455,14 +600,15 @@ public class UserNoteController {
         txtUserName.clear();
         txtUserAccount.clear();
         lblUserEmail.setText("email: ");
-        cmbMotivo.getSelectionModel().clearSelection();
-        dtpFechaTentativa.setValue(nextWorkingDay());
-        clearFailureDetails();
         resetFieldStyles();
         lblADStatus.setText("");
     }
 
     public void clearAllFields() {
         handleClearUserFields();
+        lastMotivoByType.clear();
+        cmbMotivo.getSelectionModel().clearSelection();
+        dtpFechaTentativa.setValue(nextWorkingDay());
+        clearFailureDetails();
     }
 }

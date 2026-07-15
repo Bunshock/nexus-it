@@ -7,6 +7,7 @@ import org.controlsfx.control.PopOver;
 
 import com.bunshock.note_app_for_it_frontend.models.ADUser;
 
+import javafx.animation.PauseTransition;
 import javafx.collections.FXCollections;
 import javafx.fxml.FXML;
 import javafx.scene.control.Button;
@@ -15,6 +16,7 @@ import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
 import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
+import javafx.util.Duration;
 
 public class ADUserSelectionController {
 
@@ -37,13 +39,25 @@ public class ADUserSelectionController {
         setupCellFactory();
     }
 
+    // How long the mouse must stay over a row before the PopOver appears. Without this, a
+    // virtualized ListView firing mouseEntered/mouseExited on every cell that slides under a
+    // stationary cursor during a scrollbar drag triggers a full PopOver show()/hide() (a real
+    // animated popup Stage) per row — that's what made scrolling feel laggy/stuttery.
+    private static final Duration POPOVER_HOVER_DELAY = Duration.millis(400);
+
     private void setupCellFactory() {
         lstResults.setCellFactory(lv -> new ListCell<ADUser>() {
             private final PopOver popOver = new PopOver();
+            private final PauseTransition hoverDelay = new PauseTransition(POPOVER_HOVER_DELAY);
+
+            { hoverDelay.setOnFinished(e -> popOver.show(this)); }
 
             @Override
             protected void updateItem(ADUser user, boolean empty) {
                 super.updateItem(user, empty);
+
+                hoverDelay.stop();
+                if (popOver.isShowing()) popOver.hide();
 
                 if (empty || user == null) {
                     setText(null);
@@ -82,11 +96,12 @@ public class ADUserSelectionController {
 
                     this.setOnMouseEntered(event -> {
                         if (!popOver.isShowing()) {
-                            popOver.show(this);
+                            hoverDelay.playFromStart();
                         }
                     });
 
                     this.setOnMouseExited(event -> {
+                        hoverDelay.stop();
                         if (popOver.isShowing()) {
                             popOver.hide();
                         }
@@ -120,6 +135,9 @@ public class ADUserSelectionController {
 
     @FXML
     public void initialize() {
+        lstResults.getSelectionModel().selectedItemProperty()
+            .addListener((obs, old, sel) -> btnSelect.setDisable(sel == null));
+
         // Double-click shortcut for user selection
         lstResults.setOnMouseClicked(event -> {
             if (event.getClickCount() == 2 && lstResults.getSelectionModel().getSelectedItem() != null) {

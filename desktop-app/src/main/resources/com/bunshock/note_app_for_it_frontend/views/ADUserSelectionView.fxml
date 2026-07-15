@@ -30,7 +30,7 @@
                     <HBox alignment="CENTER_RIGHT" spacing="12">
                         <children>
                             <Button fx:id="btnCancel" text="Cancelar" onAction="#handleCancel" styleClass="button-secondary"/>
-                            <Button fx:id="btnSelect" text="Cargar Usuario" onAction="#handleSelection" styleClass="button-primary"/>
+                            <Button fx:id="btnSelect" text="Cargar Usuario" onAction="#handleSelection" styleClass="button-primary" disable="true"/>
                         </children>
                     </HBox>
                 </children>

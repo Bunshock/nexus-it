@@ -38,10 +38,13 @@
         <!-- Motivo: directly below movement type -->
         <VBox fx:id="vboxMotivo" spacing="4" managed="false" visible="false">
             <children>
-                <HBox alignment="CENTER_LEFT">
+                <HBox alignment="CENTER_LEFT" spacing="6">
                     <children>
                         <Label text="MOTIVO" styleClass="input-label-small"/>
                         <Region HBox.hgrow="ALWAYS"/>
+                        <Label fx:id="lblFailureSummary" text="⚙ Editar" styleClass="input-label-small"
+                               managed="false" visible="false" onMouseClicked="#handleEditFailureDetails"
+                               style="-fx-text-fill: #0c8570; -fx-cursor: hand;"/>
                         <Label fx:id="lblMotivoStatus" text="" styleClass="input-label-small"/>
                     </children>
                 </HBox>
@@ -95,7 +98,7 @@
         <VBox spacing="2">
             <children>
                 <Label text="NOMBRE COMPLETO" styleClass="input-label-small"/>
-                <TextField fx:id="txtUserName" styleClass="form-input-main"/>
+                <TextField fx:id="txtUserName" styleClass="form-input-main" onAction="#handleADSearch"/>
             </children>
         </VBox>
 
@@ -103,7 +106,7 @@
         <VBox spacing="2">
             <children>
                 <Label text="DNI" styleClass="input-label-small"/>
-                <TextField fx:id="txtUserDni" styleClass="form-input-main"/>
+                <TextField fx:id="txtUserDni" styleClass="form-input-main" onAction="#handleADSearch"/>
             </children>
         </VBox>
 
@@ -111,7 +114,7 @@
         <VBox spacing="2">
             <children>
                 <Label text="USERNAME" styleClass="input-label-small"/>
-                <TextField fx:id="txtUserAccount" styleClass="form-input-main"/>
+                <TextField fx:id="txtUserAccount" styleClass="form-input-main" onAction="#handleADSearch"/>
                 <Label fx:id="lblUserEmail" text="email: "
                        style="-fx-text-fill: #94a3b8; -fx-font-size: 11px; -fx-font-style: italic; -fx-padding: 0 0 0 5;"/>
             </children>
