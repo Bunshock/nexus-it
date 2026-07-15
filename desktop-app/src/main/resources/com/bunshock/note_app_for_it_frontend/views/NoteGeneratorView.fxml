@@ -63,7 +63,7 @@
                         <!-- Asset items table: grows to fill available height -->
                         <VBox spacing="5" VBox.vgrow="ALWAYS">
                             <children>
-                                <Label text="Equipos con S/N (Notebooks, Monitores, etc.)" styleClass="table-section-caption"/>
+                                <Label text="EQUIPOS CON S/N (NOTEBOOKS, MONITORES, ETC.)" styleClass="input-label-small"/>
                                 <TableView fx:id="tblAssets" styleClass="modern-table, equipment-table" VBox.vgrow="ALWAYS">
                                     <placeholder>
                                         <Label text="No hay ítems cargados. Haga click en '+ Agregar Equipo'."/>
@@ -87,7 +87,7 @@
                         <!-- Countable items table: grows to fill available height -->
                         <VBox spacing="5" VBox.vgrow="ALWAYS">
                             <children>
-                                <Label text="Periféricos y otros (Por Cantidad)" styleClass="table-section-caption"/>
+                                <Label text="PERIFÉRICOS Y OTROS (POR CANTIDAD)" styleClass="input-label-small"/>
                                 <TableView fx:id="tblCountables" styleClass="modern-table, equipment-table" VBox.vgrow="ALWAYS">
                                     <placeholder>
                                         <Label text="No hay ítems cargados. Haga click en '+ Agregar Equipo'."/>

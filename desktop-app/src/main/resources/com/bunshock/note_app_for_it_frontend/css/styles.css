@@ -1,5 +1,78 @@
 /* --- Common styles - START --- */
 
+/* Window frame — border + rounded corners (the drop shadow itself is applied programmatically
+   in MainController, since combining a Node.clip with an Effect on the same node clips the
+   shadow away; see MainController.applyWindowFrame()). Removed entirely while maximized
+   (.maximized modifier) so a maximized window fills the screen edge-to-edge with square corners
+   instead of a rounded shape cutting into the screen or leaving a border-width gap. */
+.app-window-frame {
+    -fx-border-color: rgba(0,0,0,0.15);
+    -fx-border-width: 1;
+    -fx-border-radius: 10;
+    -fx-background-radius: 10;
+}
+
+.app-window-frame.maximized {
+    -fx-border-width: 0;
+    -fx-border-radius: 0;
+    -fx-background-radius: 0;
+}
+
+/* Custom title bar (replaces native OS chrome, StageStyle.TRANSPARENT — see App.java). Darker
+   than .sidebar's #0c8570 on purpose, so the title bar reads as a distinct row instead of
+   blending into the sidebar directly below it. */
+.app-title-bar {
+    -fx-background-color: #0a6b5c;
+}
+
+.app-title-bar-label {
+    -fx-text-fill: white;
+    -fx-font-size: 12px;
+    -fx-font-weight: bold;
+    -fx-padding: 0 0 0 8;
+}
+
+/* Admin-mode badge — moved here from the sidebar's welcome block (2026-07-14): that block sat
+   inside a fixed-height-budget VBox (see App.java's window-height comments), so showing/hiding
+   this label shifted the welcome text's centered position and, on tight screens, could push the
+   sidebar's required height past what was available. The title bar is a fixed-height row that
+   never grows, so a badge here has no such side effect. Same color as the original
+   (#0e9a82), shrunk to fit the shorter title bar. */
+.title-bar-admin-badge {
+    -fx-background-color: #0e9a82;
+    -fx-text-fill: white;
+    -fx-font-size: 9px;
+    -fx-font-weight: bold;
+    -fx-letter-spacing: 1.5px;
+    -fx-padding: 3 8;
+    -fx-background-radius: 3;
+}
+
+.title-bar-button {
+    -fx-background-color: transparent;
+    -fx-background-radius: 0;
+    -fx-text-fill: white;
+    -fx-font-size: 12px;
+    -fx-cursor: hand;
+    -fx-padding: 0;
+    -fx-min-width: 42;
+    -fx-max-width: 42;
+    -fx-min-height: 36;
+    -fx-max-height: 36;
+}
+
+.title-bar-button:hover {
+    -fx-background-color: rgba(255,255,255,0.18);
+}
+
+.title-bar-button:pressed {
+    -fx-background-color: rgba(255,255,255,0.30);
+}
+
+.title-bar-button-close:hover {
+    -fx-background-color: #e53935;
+}
+
 /* Section label (used for sub-section headings inside content cards) */
 .section-label {
     -fx-font-weight: bold;
@@ -105,6 +178,34 @@
 }
 
 .button-secondary-medium:pressed {
+    -fx-translate-y: 1px;
+    -fx-effect: none;
+}
+
+/* Square icon-only button placed alongside a text field (e.g. reset "Nombre para mostrar") */
+.button-square-reset {
+    -fx-background-color: white;
+    -fx-border-color: #cbd5e1;
+    -fx-border-width: 1.5;
+    -fx-border-radius: 4;
+    -fx-background-radius: 4;
+    -fx-text-fill: #64748b;
+    -fx-font-size: 14px;
+    -fx-cursor: hand;
+    -fx-min-width: 34;
+    -fx-max-width: 34;
+    -fx-min-height: 34;
+    -fx-max-height: 34;
+    -fx-padding: 0;
+    -fx-alignment: CENTER;
+}
+
+.button-square-reset:hover {
+    -fx-border-color: #0c8570;
+    -fx-text-fill: #0c8570;
+}
+
+.button-square-reset:pressed {
     -fx-translate-y: 1px;
     -fx-effect: none;
 }
@@ -409,6 +510,16 @@
     -fx-font-family: "Segoe UI", sans-serif;
 }
 
+/* Sidebar Username - unresolved-profile warning state ("Perfil no configurado") */
+.user-username.username-unresolved {
+    -fx-text-fill: #f59e0b;
+}
+
+.username-warning-icon {
+    -fx-text-fill: #f59e0b;
+    -fx-font-size: 11px;
+}
+
 /* Sidebar button */
 .nav-button {
     -fx-background-color: rgba(255, 255, 255, 0.03);
@@ -512,15 +623,6 @@
 }
 
 /* -- Equipment table style - START --  */
-
-/* Table small description (as title) */
-.table-section-caption {
-    -fx-text-fill: #475569;
-    -fx-font-size: 13px;
-    -fx-font-weight: bold;
-    -fx-letter-spacing: 1px;
-    -fx-padding: 0 0 5 0;
-}
 
 /* Equipment table */
 .modern-table {

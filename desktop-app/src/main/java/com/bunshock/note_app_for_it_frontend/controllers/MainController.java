@@ -18,15 +18,20 @@ import javafx.application.Platform;
 import javafx.concurrent.ScheduledService;
 import javafx.concurrent.Task;
 import javafx.fxml.FXML;
+import javafx.geometry.Insets;
 import javafx.geometry.Pos;
+import javafx.scene.Cursor;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.ProgressIndicator;
 import javafx.scene.control.Tooltip;
+import javafx.scene.effect.DropShadow;
 import javafx.scene.effect.GaussianBlur;
 import javafx.scene.input.KeyCode;
+import javafx.scene.input.MouseButton;
+import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
@@ -35,6 +40,7 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Circle;
+import javafx.scene.shape.Rectangle;
 import javafx.stage.Modality;
 import javafx.stage.Stage;
 import javafx.stage.StageStyle;
@@ -51,6 +57,7 @@ public class MainController {
 
     @FXML private Label lblWelcome;
     @FXML private Label lblUsername;
+    @FXML private Label lblUsernameWarningIcon;
     @FXML private Label lblAdminIndicator;
 
     @FXML private Circle circleAD;
@@ -63,6 +70,11 @@ public class MainController {
     @FXML private StackPane contentArea;
     @FXML private javafx.scene.control.ToggleGroup navigationGroup;
 
+    @FXML private HBox titleBar;
+    @FXML private Button btnMinimizeWindow;
+    @FXML private Button btnMaximizeRestoreWindow;
+    @FXML private Button btnCloseWindow;
+
     private final ViewFactory viewFactory = new ViewFactory();
 
     public void initialize() {
@@ -72,8 +84,11 @@ public class MainController {
         showSection(viewFactory.getGeneratorView());
         // Deferred: initialize() runs during FXMLLoader.load(), before App.start() calls
         // stage.show() — centerOnContent()'s localToScreen() needs the window already
-        // shown to position the overlay correctly, so this must wait one pulse.
+        // shown to position the overlay correctly, so this must wait one pulse. setupWindowChrome()
+        // needs the same deferral, for the same reason (rootPane.getScene().getWindow() is null
+        // until App.start() attaches the scene, which happens after initialize() returns).
         Platform.runLater(this::runStartupChecks);
+        Platform.runLater(this::setupWindowChrome);
 
         navigationGroup.selectedToggleProperty().addListener((obs, old, newVal) -> {
             if (newVal == null) old.setSelected(true);
@@ -90,6 +105,17 @@ public class MainController {
         String username = session.getUsername();
         lblWelcome.setText(displayName != null ? "Hola " + displayName + "!" : "Hola!");
         lblUsername.setText(username != null ? "Usuario: " + username : "Perfil no configurado");
+
+        boolean unresolved = username == null;
+        if (unresolved) {
+            if (!lblUsername.getStyleClass().contains("username-unresolved")) {
+                lblUsername.getStyleClass().add("username-unresolved");
+            }
+        } else {
+            lblUsername.getStyleClass().remove("username-unresolved");
+        }
+        lblUsernameWarningIcon.setVisible(unresolved);
+        lblUsernameWarningIcon.setManaged(unresolved);
     }
 
     /**
@@ -303,8 +329,10 @@ public class MainController {
             rootPane.setEffect(null);
             TechnicianSessionService session = TechnicianSessionService.getInstance();
             if (!session.isResolved()) {
-                showWarningNotice("Perfil de técnico no disponible",
-                    session.getLastError() + " Puede reintentar desde Mi Perfil con \"Actualizar Perfil desde AD\".");
+                // showAndWait() throws IllegalStateException if called synchronously from
+                // this animation-finished handler (still inside the pulse) - defer one pulse.
+                Platform.runLater(() -> showWarningNotice("Perfil de técnico no disponible",
+                    session.getLastError() + " Puede reintentar desde Mi Perfil con \"Actualizar Perfil desde AD\"."));
             }
         });
         fadeOut.play();
@@ -487,4 +515,225 @@ public class MainController {
     @FXML private void handleShowSettings()  { showSection(viewFactory.getSettingsView()); }
     @FXML private void handleShowAbout()     { showSection(viewFactory.getAboutView()); }
     @FXML private void handleShowProfile()   { showSection(viewFactory.getProfileView()); }
+
+    // ── Custom title bar (App.java sets StageStyle.UNDECORATED — no native chrome, so drag-to-
+    // move, edge resize, and minimize/maximize/close all have to be reimplemented by hand here) ──
+
+    private static final double RESIZE_MARGIN = 6;
+
+    // Must match App.java's WINDOW_SHADOW_MARGIN (the wrapper's initial padding) — this is the
+    // value that padding gets toggled back to when un-maximizing. Reduced from 20 — see
+    // App.java's comment on its own copy of this constant for why.
+    private static final double WINDOW_SHADOW_MARGIN = 12;
+    // Rectangle.arcWidth/arcHeight are corner *diameters*, not radii — 20 here gives the same
+    // ~10px visual corner radius as .app-window-frame's CSS -fx-background-radius/-fx-border-radius.
+    private static final double WINDOW_CORNER_ARC = 20;
+
+    private enum ResizeDirection { E, W, S, SE, SW }
+
+    private double dragAnchorX, dragAnchorY;
+    private double resizeStartScreenX, resizeStartScreenY;
+    private double resizeStartWidth, resizeStartHeight, resizeStartStageX;
+    private ResizeDirection activeResizeDirection;
+    private Rectangle windowClip;
+
+    private void setupWindowChrome() {
+        Stage stage = (Stage) rootPane.getScene().getWindow();
+        StackPane windowWrapper = (StackPane) rootPane.getParent();
+
+        windowClip = new Rectangle();
+        windowClip.setArcWidth(WINDOW_CORNER_ARC);
+        windowClip.setArcHeight(WINDOW_CORNER_ARC);
+        windowClip.widthProperty().bind(rootPane.widthProperty());
+        windowClip.heightProperty().bind(rootPane.heightProperty());
+
+        setupTitleBarDrag(stage);
+        setupEdgeResize(stage);
+        applyWindowFrame(windowWrapper, stage.isMaximized());
+        stage.maximizedProperty().addListener((obs, was, isNow) -> applyWindowFrame(windowWrapper, isNow));
+    }
+
+    // Node.clip and Node.effect don't combine cleanly on the same node — a DropShadow needs to
+    // bleed outside the node's own bounds, but a clip cuts rendering to exactly those bounds, so
+    // the shadow gets clipped away. Splitting them onto two nodes avoids that: windowWrapper (the
+    // StackPane from App.java) carries the shadow, unclipped; rootPane carries the rounded-corner
+    // clip. Both — plus the wrapper's padding and rootPane's ".maximized" CSS modifier — are
+    // removed together while maximized, so a maximized window fills the screen edge-to-edge with
+    // square corners instead of a rounded shape or shadow gap cutting into the screen.
+    private void applyWindowFrame(StackPane windowWrapper, boolean maximized) {
+        updateMaximizeGlyph(maximized);
+        if (maximized) {
+            windowWrapper.setPadding(Insets.EMPTY);
+            windowWrapper.setEffect(null);
+            rootPane.setClip(null);
+            if (!rootPane.getStyleClass().contains("maximized")) rootPane.getStyleClass().add("maximized");
+        } else {
+            windowWrapper.setPadding(new Insets(WINDOW_SHADOW_MARGIN));
+            // Radius/offset scaled down to match WINDOW_SHADOW_MARGIN's smaller padding (was
+            // 24/6 against a 20px margin) — a shadow that bleeds further than the padding gives
+            // it room for just gets clipped at the wrapper's own edge.
+            DropShadow shadow = new DropShadow();
+            shadow.setColor(Color.rgb(0, 0, 0, 0.35));
+            shadow.setRadius(14);
+            shadow.setOffsetY(4);
+            windowWrapper.setEffect(shadow);
+            rootPane.setClip(windowClip);
+            rootPane.getStyleClass().remove("maximized");
+        }
+    }
+
+    private void setupTitleBarDrag(Stage stage) {
+        titleBar.setOnMousePressed(e -> {
+            if (e.getButton() != MouseButton.PRIMARY) return;
+            dragAnchorX = e.getSceneX();
+            dragAnchorY = e.getSceneY();
+        });
+        titleBar.setOnMouseDragged(e -> {
+            if (e.getButton() != MouseButton.PRIMARY || stage.isMaximized()) return;
+            stage.setX(e.getScreenX() - dragAnchorX);
+            stage.setY(e.getScreenY() - dragAnchorY);
+        });
+        titleBar.setOnMouseClicked(e -> {
+            if (e.getButton() == MouseButton.PRIMARY && e.getClickCount() == 2) handleMaximizeRestoreWindow();
+        });
+    }
+
+    // Only the right, bottom, and bottom-corner edges are resize-draggable — the top edge is the
+    // title bar (drag-to-move, not resize) and adding top/top-corner resize zones would fight
+    // that same 6px strip for two different gestures. Right/bottom-only is a common simplification
+    // for custom title bars and still covers the actual day-to-day resize need.
+    private void setupEdgeResize(Stage stage) {
+        rootPane.setOnMouseMoved(e -> updateResizeCursor(stage, e));
+        rootPane.setOnMouseExited(e -> { if (activeResizeDirection == null) rootPane.setCursor(Cursor.DEFAULT); });
+        rootPane.setOnMousePressed(e -> {
+            activeResizeDirection = resolveDirection(stage, e);
+            if (activeResizeDirection == null) return;
+            resizeStartScreenX = e.getScreenX();
+            resizeStartScreenY = e.getScreenY();
+            resizeStartWidth   = stage.getWidth();
+            resizeStartHeight  = stage.getHeight();
+            resizeStartStageX  = stage.getX();
+        });
+        rootPane.setOnMouseDragged(e -> {
+            if (activeResizeDirection == null) return;
+            applyResize(stage, e.getScreenX() - resizeStartScreenX, e.getScreenY() - resizeStartScreenY);
+        });
+        rootPane.setOnMouseReleased(e -> activeResizeDirection = null);
+    }
+
+    private ResizeDirection resolveDirection(Stage stage, MouseEvent e) {
+        if (stage.isMaximized()) return null;
+        boolean east  = e.getX() >= rootPane.getWidth()  - RESIZE_MARGIN;
+        boolean west  = e.getX() <= RESIZE_MARGIN;
+        boolean south = e.getY() >= rootPane.getHeight() - RESIZE_MARGIN;
+        if (south && east) return ResizeDirection.SE;
+        if (south && west) return ResizeDirection.SW;
+        if (east)  return ResizeDirection.E;
+        if (west)  return ResizeDirection.W;
+        if (south) return ResizeDirection.S;
+        return null;
+    }
+
+    private void updateResizeCursor(Stage stage, MouseEvent e) {
+        if (activeResizeDirection != null) return;
+        ResizeDirection dir = resolveDirection(stage, e);
+        if (dir == null) { rootPane.setCursor(Cursor.DEFAULT); return; }
+        switch (dir) {
+            case E, W -> rootPane.setCursor(Cursor.H_RESIZE);
+            case S    -> rootPane.setCursor(Cursor.V_RESIZE);
+            case SE   -> rootPane.setCursor(Cursor.SE_RESIZE);
+            case SW   -> rootPane.setCursor(Cursor.SW_RESIZE);
+        }
+    }
+
+    private void applyResize(Stage stage, double dx, double dy) {
+        double newWidth  = resizeStartWidth;
+        double newHeight = resizeStartHeight;
+
+        switch (activeResizeDirection) {
+            case E  -> newWidth = resizeStartWidth + dx;
+            case W  -> newWidth = resizeStartWidth - dx;
+            case S  -> newHeight = resizeStartHeight + dy;
+            case SE -> { newWidth = resizeStartWidth + dx; newHeight = resizeStartHeight + dy; }
+            case SW -> { newWidth = resizeStartWidth - dx; newHeight = resizeStartHeight + dy; }
+        }
+
+        newWidth  = Math.max(newWidth, stage.getMinWidth());
+        newHeight = Math.max(newHeight, stage.getMinHeight());
+
+        // Dragging the west edge moves the window's X as it shrinks/grows — recomputed from the
+        // final (possibly clamped-to-min-width) newWidth so the window edge tracks the cursor
+        // exactly, instead of drifting once the min-width clamp kicks in.
+        if (activeResizeDirection == ResizeDirection.W || activeResizeDirection == ResizeDirection.SW) {
+            stage.setX(resizeStartStageX + (resizeStartWidth - newWidth));
+        }
+        stage.setWidth(newWidth);
+        stage.setHeight(newHeight);
+    }
+
+    // Drawn as small Rectangle shapes rather than a Unicode glyph (e.g. "▢"/"❐", which rendered
+    // as an ugly, inconsistent glyph next to the plain "─"/"✕" used for minimize/close) or a
+    // CSS-styled Region (a first attempt at this — a bordered Region ended up invisible with a
+    // stray white square around it instead, most likely a CSS-cascade issue from styling via
+    // -fx-style string; unclear exactly which rule won). Rectangle.setFill()/setStroke() are set
+    // directly via the Java API, not CSS, so there's no stylesheet cascade to fight — the
+    // rendered shape is exactly what's set here, full stop. Restore uses the classic
+    // two-overlapping-squares convention.
+    private void updateMaximizeGlyph(boolean maximized) {
+        if (maximized) {
+            // Both squares are fill=TRANSPARENT (outline only) — an earlier version filled the
+            // front square with the title bar's flat background color to "punch a hole" in the
+            // back square, the classic restore-icon trick. But .title-bar-button's :hover/
+            // :pressed states change the BUTTON's own background to a lighter overlay while
+            // this graphic's fill stayed a static solid color, so hovering/pressing showed a
+            // visibly mismatched patch sitting on top of the lighter background — reported as
+            // "malformed." Two hollow outlines have no background to match, so they render
+            // identically regardless of the button's state.
+            Rectangle back = new Rectangle(8, 8);
+            back.setFill(Color.TRANSPARENT);
+            back.setStroke(Color.WHITE);
+            back.setStrokeWidth(1);
+            Rectangle front = new Rectangle(8, 8);
+            front.setFill(Color.TRANSPARENT);
+            front.setStroke(Color.WHITE);
+            front.setStrokeWidth(1);
+            StackPane icon = new StackPane(back, front);
+            StackPane.setAlignment(back, Pos.TOP_RIGHT);
+            StackPane.setAlignment(front, Pos.BOTTOM_LEFT);
+            // maxSize, not just prefSize: the button (42x36) is much bigger than this 11x11
+            // icon, and StackPane's default max size is unbounded — without an explicit cap,
+            // the button's layout pass happily stretches it to fill more of that space, pulling
+            // the two corner-aligned squares apart into visibly separate corners instead of
+            // overlapping. Only affects this StackPane-wrapped restore icon, not the plain
+            // maximize Rectangle below — a bare Shape isn't Resizable, so it can't be stretched.
+            icon.setMinSize(11, 11);
+            icon.setPrefSize(11, 11);
+            icon.setMaxSize(11, 11);
+            icon.setMouseTransparent(true);
+            btnMaximizeRestoreWindow.setGraphic(icon);
+        } else {
+            Rectangle square = new Rectangle(10, 10);
+            square.setFill(Color.TRANSPARENT);
+            square.setStroke(Color.WHITE);
+            square.setStrokeWidth(1);
+            square.setMouseTransparent(true);
+            btnMaximizeRestoreWindow.setGraphic(square);
+        }
+    }
+
+    @FXML
+    private void handleMinimizeWindow() {
+        ((Stage) rootPane.getScene().getWindow()).setIconified(true);
+    }
+
+    @FXML
+    private void handleMaximizeRestoreWindow() {
+        Stage stage = (Stage) rootPane.getScene().getWindow();
+        stage.setMaximized(!stage.isMaximized());
+    }
+
+    @FXML
+    private void handleCloseWindow() {
+        ((Stage) rootPane.getScene().getWindow()).close();
+    }
 }

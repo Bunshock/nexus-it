@@ -6,15 +6,44 @@ import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;
 
 import javafx.application.Application;
 import javafx.fxml.FXMLLoader;
+import javafx.geometry.Insets;
 import javafx.geometry.Rectangle2D;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
 import javafx.scene.image.Image;
+import javafx.scene.layout.StackPane;
+import javafx.scene.paint.Color;
 import javafx.stage.Screen;
 import javafx.stage.Stage;
+import javafx.stage.StageStyle;
 
 
 public class App extends Application {
+
+    // Must match MainView.fxml's <top> titleBar HBox's prefHeight. Added on top of the window
+    // height budget below (not carved out of it) — see the height calculation comment for why.
+    // Reduced from 40 to 32 to close the Generar Nota shortfall (see WINDOW_SHADOW_MARGIN's
+    // comment), then nudged back up to 36 — user missed the taller bar and asked for a middle
+    // ground; 36 costs ~4 more px of shortfall than 32 did, still far below the original 28px
+    // regression on a typical screen.
+    private static final double TITLE_BAR_HEIGHT = 36;
+
+    // Must match MainController.WINDOW_SHADOW_MARGIN — the padding reserved around rootPane for
+    // its drop shadow to render into (StageStyle.TRANSPARENT). Added on top of the window height/
+    // width budget for the same reason as TITLE_BAR_HEIGHT: it isn't visible app content, so it
+    // must not shrink what NoteGeneratorView etc. actually get to lay out in.
+    //
+    // Reduced from 20 (title bar 40->32 too): the height clamp below is capped at visualBounds
+    // (screen minus taskbar) to guarantee the window never covers the taskbar, but visualBounds
+    // only ever has ~5% headroom above the existing 0.95 factor — and TITLE_BAR_HEIGHT +
+    // 2*WINDOW_SHADOW_MARGIN both get added on top of that budget, so whatever they total is
+    // exactly how much of NoteGeneratorView's needed height silently gets clamped away on an
+    // ordinary screen. Padding a fixed height bump on top doesn't fix this — it either still
+    // gets clamped (no-op) or, if the clamp is loosened enough to let it through, starts
+    // covering the taskbar again (tried, reverted). Shrinking the chrome overhead itself is the
+    // only screen-size-independent fix: smaller overhead means less of it needs to be clamped
+    // away, regardless of what any particular monitor's headroom happens to be.
+    private static final double WINDOW_SHADOW_MARGIN = 12;
 
     @Override
     public void init() throws Exception {
@@ -28,14 +57,46 @@ public class App extends Application {
         Parent root = FXMLLoader.load(getClass().getResource("views/MainView.fxml"));
 
         Rectangle2D visualBounds = Screen.getPrimary().getVisualBounds();
-        double width  = visualBounds.getWidth()  * 0.85;
-        double height = visualBounds.getHeight() * 0.95;
+        double width = visualBounds.getWidth() * 0.85 + 2 * WINDOW_SHADOW_MARGIN;
+        // BorderPane's left (sidebar) and center rows share whatever height is left after the
+        // top title bar, so the 85%/95%-of-screen budget this app was already tuned around
+        // (NoteGeneratorView's left column sits right at that edge) needs the title bar's
+        // height and the shadow margin added on top, not carved out of it — otherwise center's
+        // min-height can exceed the shrunk row and force the whole row (sidebar included)
+        // taller than the visible window. Clamped to visualBounds (screen minus taskbar, never
+        // the full screen — see WINDOW_SHADOW_MARGIN's comment for why that clamp choice
+        // matters and why the chrome overhead above was shrunk instead of just adding more
+        // height on top of it).
+        double height = Math.min(
+            visualBounds.getHeight() * 0.95 + TITLE_BAR_HEIGHT + 2 * WINDOW_SHADOW_MARGIN,
+            visualBounds.getHeight());
 
-        Scene scene = new Scene(root, width, height);
+        // rootPane (MainView.fxml's BorderPane) is wrapped in a transparent, padded StackPane —
+        // same "shadow needs room outside the visible content" technique every dialog in this
+        // app already uses (see SettingsController.buildDialogScene, etc.). MainController reads
+        // this wrapper back via rootPane.getParent() to toggle the padding/shadow/rounded-corner
+        // clip off when maximized (see MainController.setupWindowChrome()).
+        StackPane windowWrapper = new StackPane(root);
+        windowWrapper.setStyle("-fx-background-color: transparent;");
+        windowWrapper.setPadding(new Insets(WINDOW_SHADOW_MARGIN));
+
+        Scene scene = new Scene(windowWrapper, width, height);
+        scene.setFill(Color.TRANSPARENT);
         stage.setScene(scene);
 
         stage.getIcons().add(new Image(getClass().getResourceAsStream("images/favicon.png")));
-        
+
+        // Native OS chrome is intentionally replaced by MainView.fxml's own title bar
+        // (MainController.setupWindowChrome() wires drag-to-move, edge resize, the
+        // minimize/maximize/close buttons, and the shadow/rounded-corner window frame) — the
+        // title is still set here for the taskbar/Alt+Tab entry, it just isn't rendered by the
+        // OS anymore. TRANSPARENT (rather than UNDECORATED) is required for the drop shadow and
+        // rounded corners to render at all — an UNDECORATED stage is always an opaque rectangle.
+        stage.initStyle(StageStyle.TRANSPARENT);
+        stage.setResizable(true);
+        stage.setMinWidth(900);
+        stage.setMinHeight(600);
+
         stage.setTitle("Universidad Siglo 21 - Soporte IT - Registro de Movimientos y Generación de Notas");
 
         stage.centerOnScreen();
