@@ -2,6 +2,8 @@ package com.bunshock.note_app_for_it_frontend.services;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 
@@ -60,9 +62,10 @@ public class RemoteDatabaseService {
         try (Connection c = getConnection(); Statement stmt = c.createStatement()) {
             stmt.executeUpdate("""
                 CREATE TABLE IF NOT EXISTS TYPE (
-                    id       SERIAL PRIMARY KEY,
-                    name     TEXT NOT NULL UNIQUE,
-                    is_asset INTEGER NOT NULL DEFAULT 1
+                    id              SERIAL PRIMARY KEY,
+                    name            TEXT NOT NULL UNIQUE,
+                    is_asset        INTEGER NOT NULL DEFAULT 1,
+                    requires_serial INTEGER NOT NULL DEFAULT 0
                 )""");
             stmt.executeUpdate("""
                 CREATE TABLE IF NOT EXISTS BRAND (
@@ -82,6 +85,16 @@ public class RemoteDatabaseService {
                     brand_type_id INTEGER NOT NULL REFERENCES BRAND_TYPE_LINK(id),
                     name          TEXT NOT NULL
                 )""");
+            // Wrapped locally: an existing database with pre-existing duplicate (brand_type_id,
+            // name) rows would fail this statement — swallow it and degrade to app-layer-only
+            // enforcement (SqliteEquipmentService.addModel/renameModel) rather than aborting the
+            // whole ensureSchema() run, same "fail safely" pattern as the ALTER...ADD COLUMN calls below.
+            try {
+                stmt.executeUpdate(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS idx_model_brand_type_name ON MODEL(brand_type_id, name)");
+            } catch (SQLException duplicatesExist) {
+                // pre-existing duplicate model names for the same brand+type — see comment above
+            }
             stmt.executeUpdate("""
                 CREATE TABLE IF NOT EXISTS SN_VALIDATION (
                     id            SERIAL PRIMARY KEY,
@@ -151,6 +164,14 @@ public class RemoteDatabaseService {
 
             // CREATE TABLE IF NOT EXISTS silently no-ops on a database that already has the
             // table from an older schema version, so columns added later must be migrated here too.
+            boolean hadRequiresSerial = columnExists(c, "type", "requires_serial");
+            stmt.executeUpdate("ALTER TABLE TYPE ADD COLUMN IF NOT EXISTS requires_serial INTEGER NOT NULL DEFAULT 0");
+            if (!hadRequiresSerial) {
+                // Backfill the type that used to be hardcoded as "always requires S/N"
+                // (ItemDialogController's old "Notebook".equals(...) check) so existing
+                // databases keep today's behavior instead of silently losing the rule.
+                stmt.executeUpdate("UPDATE TYPE SET requires_serial = 1 WHERE LOWER(name) = 'notebook'");
+            }
             stmt.executeUpdate("ALTER TABLE NOTE_ENTREGA_DEVOLUCION ADD COLUMN IF NOT EXISTS failure_cause TEXT");
             stmt.executeUpdate("ALTER TABLE NOTE_ENTREGA_DEVOLUCION ADD COLUMN IF NOT EXISTS failure_details TEXT");
             stmt.executeUpdate("ALTER TABLE NOTE_PROVEEDOR ADD COLUMN IF NOT EXISTS responsible_name TEXT");
@@ -161,6 +182,17 @@ public class RemoteDatabaseService {
             stmt.executeUpdate("ALTER TABLE NOTE_ITEM ADD COLUMN IF NOT EXISTS glpi_status TEXT NOT NULL DEFAULT 'N_A'");
             stmt.executeUpdate("ALTER TABLE NOTE_ITEM ADD COLUMN IF NOT EXISTS glpi_rejection_reason TEXT");
             stmt.executeUpdate("ALTER TABLE NOTE_ITEM ADD COLUMN IF NOT EXISTS glpi_status_updated_at TEXT");
+        }
+    }
+
+    private boolean columnExists(Connection c, String table, String column) throws SQLException {
+        try (PreparedStatement ps = c.prepareStatement(
+                "SELECT 1 FROM information_schema.columns WHERE lower(table_name) = ? AND lower(column_name) = ?")) {
+            ps.setString(1, table.toLowerCase());
+            ps.setString(2, column.toLowerCase());
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next();
+            }
         }
     }
 }
