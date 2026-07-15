@@ -5,7 +5,9 @@ import java.util.regex.Pattern;
 import com.bunshock.note_app_for_it_frontend.services.AdminSession;
 import com.bunshock.note_app_for_it_frontend.services.TechnicianSessionService;
 
+import javafx.animation.Animation;
 import javafx.animation.FadeTransition;
+import javafx.animation.SequentialTransition;
 import javafx.application.Platform;
 import javafx.fxml.FXML;
 import javafx.scene.control.Button;
@@ -31,9 +33,12 @@ public class ProfileController {
     @FXML private Button btnSave;
     @FXML private Button btnRefreshFromAd;
 
+    private static final int DISPLAY_NAME_MAX_LENGTH = 20;
+
     @FXML private TextField txtDisplayName;
     @FXML private Label lblDisplayNameStatus;
     @FXML private Button btnSaveDisplayName;
+    @FXML private Button btnResetDisplayName;
 
     public void initialize() {
         txtProfileName.setTextFormatter(new TextFormatter<>(change -> {
@@ -46,10 +51,12 @@ public class ProfileController {
         }));
         txtDisplayName.setTextFormatter(new TextFormatter<>(change -> {
             String newText = change.getControlNewText();
+            if (newText.length() > DISPLAY_NAME_MAX_LENGTH) return null;
             return newText.isEmpty() || newText.matches("[\\p{L} ]*") ? change : null;
         }));
 
         TechnicianSessionService.getInstance().addOnChangeListener(this::populateFieldsFromSession);
+        TechnicianSessionService.getInstance().addOnDisplayNameChangeListener(this::populateDisplayNameField);
         AdminSession.getInstance().addOnActivateListener(this::updateEditability);
         AdminSession.getInstance().addOnDeactivateListener(this::updateEditability);
 
@@ -75,6 +82,14 @@ public class ProfileController {
         } else {
             lblProfileStatus.setText("");
         }
+    }
+
+    // Separate from populateFieldsFromSession() (and its own listener, see initialize()) so that
+    // saving/resetting "Nombre para mostrar" doesn't also re-flash lblProfileStatus with the AD
+    // identity confirmation message — both used to route through the same onChangeListeners
+    // notification, which fired every time either changed.
+    private void populateDisplayNameField() {
+        txtDisplayName.setText(orEmpty(TechnicianSessionService.getInstance().getDisplayName()));
     }
 
     private void updateEditability() {
@@ -145,14 +160,45 @@ public class ProfileController {
         flashStatus(lblDisplayNameStatus, "Nombre para mostrar actualizado", "#0c8570");
     }
 
+    @FXML
+    private void handleResetDisplayName() {
+        txtDisplayName.clear();
+        handleSaveDisplayName();
+    }
+
+    private static final Duration STATUS_FADE_IN  = Duration.millis(200);
+    private static final Duration STATUS_HOLD     = Duration.millis(2000);
+    private static final Duration STATUS_FADE_OUT = Duration.millis(650);
+
+    // Keeps the existing fade-in pulse (responsiveness feedback on every status change,
+    // including a same-message repeat) and adds a hold + fade-out afterward, matching
+    // UserNoteController.triggerFeedback / DatabaseSectionController.triggerFieldError's timing
+    // so a save confirmation doesn't just sit on screen forever like it used to.
     private void flashStatus(Label label, String message, String hexColor) {
+        if (label.getUserData() instanceof Animation previous) previous.stop();
+
         label.setStyle("-fx-text-fill: " + hexColor + "; -fx-font-weight: bold;");
         label.setText(message);
         label.setOpacity(0.2);
-        FadeTransition fade = new FadeTransition(Duration.millis(200), label);
-        fade.setFromValue(0.2);
-        fade.setToValue(1.0);
-        fade.play();
+
+        FadeTransition fadeIn = new FadeTransition(STATUS_FADE_IN, label);
+        fadeIn.setFromValue(0.2);
+        fadeIn.setToValue(1.0);
+
+        FadeTransition fadeOut = new FadeTransition(STATUS_FADE_OUT, label);
+        fadeOut.setDelay(STATUS_HOLD);
+        fadeOut.setFromValue(1.0);
+        fadeOut.setToValue(0.0);
+        fadeOut.setOnFinished(e -> {
+            label.setText("");
+            label.setStyle("");
+            label.setOpacity(1.0);
+            label.setUserData(null);
+        });
+
+        SequentialTransition seq = new SequentialTransition(fadeIn, fadeOut);
+        label.setUserData(seq);
+        seq.play();
     }
 
     private String orEmpty(String s) { return s != null ? s : ""; }

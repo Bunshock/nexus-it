@@ -34,6 +34,7 @@ public class TechnicianSessionService {
     private volatile String displayNamePreference;
 
     private final List<Runnable> onChangeListeners = new ArrayList<>();
+    private final List<Runnable> onDisplayNameChangeListeners = new ArrayList<>();
 
     private TechnicianSessionService() {}
 
@@ -109,15 +110,21 @@ public class TechnicianSessionService {
      * "Apellido Nombre" (see AdApiService.normalizeName()), so the last word is the given name.
      */
     public String getDisplayName() {
-        if (displayNamePreference != null && !displayNamePreference.isBlank()) return displayNamePreference;
+        // Snapshot the volatile field into a local once — reading it twice (a null/blank check,
+        // then using it again) is a check-then-act race: another thread's clear()/
+        // applyManualOverride(null,...) can null it out in between, turning the second read into
+        // an NPE. A local read is a single, consistent snapshot no other thread can invalidate.
+        String preference = displayNamePreference;
+        if (preference != null && !preference.isBlank()) return preference;
         return defaultDisplayName();
     }
 
     private String defaultDisplayName() {
-        if (name == null || name.isBlank()) return null;
-        String[] words = name.trim().split("\\s+");
+        String currentName = name;
+        if (currentName == null || currentName.isBlank()) return null;
+        String[] words = currentName.trim().split("\\s+");
         String last = words[words.length - 1];
-        return last.isEmpty() ? name : Character.toUpperCase(last.charAt(0)) + last.substring(1).toLowerCase();
+        return last.isEmpty() ? currentName : Character.toUpperCase(last.charAt(0)) + last.substring(1).toLowerCase();
     }
 
     /**
@@ -135,7 +142,12 @@ public class TechnicianSessionService {
             saveSetting(displayNamePreferenceKey(username), trimmed);
             displayNamePreference = trimmed;
         }
-        notifyListeners();
+        // Its own listener list, separate from onChangeListeners — this preference is
+        // independent of AD identity (see class doc), so notifying it must not re-trigger
+        // ProfileController's identity-refresh confirmation message (lblProfileStatus), which
+        // used to fire on every display-name save/reset since both routed through the same
+        // notifyListeners()/populateFieldsFromSession() callback.
+        notifyDisplayNameListeners();
     }
 
     private void loadDisplayNamePreference() {
@@ -186,8 +198,16 @@ public class TechnicianSessionService {
         Platform.runLater(() -> listeners.forEach(Runnable::run));
     }
 
+    private void notifyDisplayNameListeners() {
+        List<Runnable> listeners = new ArrayList<>(onDisplayNameChangeListeners);
+        Platform.runLater(() -> listeners.forEach(Runnable::run));
+    }
+
     public void addOnChangeListener(Runnable listener) { onChangeListeners.add(listener); }
     public void removeOnChangeListener(Runnable listener) { onChangeListeners.remove(listener); }
+
+    public void addOnDisplayNameChangeListener(Runnable listener) { onDisplayNameChangeListeners.add(listener); }
+    public void removeOnDisplayNameChangeListener(Runnable listener) { onDisplayNameChangeListeners.remove(listener); }
 
     public String getName() { return name; }
     public String getUsername() { return username; }

@@ -13,7 +13,7 @@
 
         <VBox spacing="10" style="-fx-background-color: white; -fx-background-radius: 10; -fx-padding: 15 20 20 20;">
             <children>
-                <Label text="Estos datos se obtienen automáticamente desde Active Directory a partir de la sesión de Windows y se usan para completar los campos del técnico en las notas. Solo son editables en modo administrador."
+                <Label text="Estos datos se obtienen automáticamente desde Active Directory a partir de la sesión de Windows y se usan para completar los campos del técnico en las notas."
                        wrapText="true"
                        style="-fx-text-fill: #64748b; -fx-font-size: 12px;"/>
 
@@ -51,7 +51,7 @@
 
         <VBox spacing="10" style="-fx-background-color: white; -fx-background-radius: 10; -fx-padding: 15 20 20 20;">
             <children>
-                <Label text="Nombre que se muestra en el saludo de la barra lateral (&quot;Hola, ...!&quot;). Si se deja vacío, se usa un nombre sugerido a partir del nombre completo de Active Directory."
+                <Label text="Nombre que se muestra en el saludo de la barra lateral (&quot;Hola ...!&quot;). Si se deja vacío, se usa un nombre sugerido a partir del nombre completo de Active Directory."
                        wrapText="true"
                        style="-fx-text-fill: #64748b; -fx-font-size: 12px;"/>
 
@@ -60,7 +60,17 @@
                 <VBox spacing="2" maxWidth="360">
                     <children>
                         <Label text="NOMBRE PARA MOSTRAR" styleClass="input-label-small"/>
-                        <TextField fx:id="txtDisplayName" styleClass="form-input-main"/>
+                        <HBox spacing="6" alignment="CENTER_LEFT">
+                            <children>
+                                <TextField fx:id="txtDisplayName" styleClass="form-input-main" HBox.hgrow="ALWAYS"/>
+                                <Button fx:id="btnResetDisplayName" text="↺" onAction="#handleResetDisplayName"
+                                        styleClass="button-square-reset">
+                                    <tooltip>
+                                        <Tooltip text="Restablecer al nombre sugerido"/>
+                                    </tooltip>
+                                </Button>
+                            </children>
+                        </HBox>
                     </children>
                 </VBox>
 
