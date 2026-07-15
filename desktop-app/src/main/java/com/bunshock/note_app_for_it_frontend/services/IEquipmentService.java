@@ -16,6 +16,8 @@ public interface IEquipmentService {
 
     List<EquipmentBrand> getBrandsForType(int typeId);
 
+    List<EquipmentBrand> getAllBrands();
+
     List<EquipmentModel> getModelsForBrandAndType(int brandId, int typeId);
 
     List<EquipmentProvider> getAllProviders();
@@ -45,6 +47,8 @@ public interface IEquipmentService {
     void removeProvider(int providerId);
 
     void renameType(int typeId, String newName);
+
+    void setRequiresSerial(int typeId, boolean requiresSerial);
 
     void renameBrand(int brandId, String newName);
 

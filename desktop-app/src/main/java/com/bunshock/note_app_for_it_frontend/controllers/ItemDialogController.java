@@ -4,6 +4,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.OptionalInt;
+import java.util.function.Function;
+import java.util.function.IntConsumer;
+import java.util.function.IntSupplier;
 import java.util.regex.Pattern;
 
 import com.bunshock.note_app_for_it_frontend.models.AppConfig;
@@ -15,6 +18,7 @@ import com.bunshock.note_app_for_it_frontend.models.EquipmentType;
 import com.bunshock.note_app_for_it_frontend.models.SnValidation;
 import com.bunshock.note_app_for_it_frontend.services.ConfigService;
 import com.bunshock.note_app_for_it_frontend.services.IEquipmentService;
+import com.bunshock.note_app_for_it_frontend.services.IHistoryService;
 import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;
 
 import javafx.animation.FadeTransition;
@@ -66,16 +70,29 @@ public class ItemDialogController {
     @FXML private Button btnSave;
 
     private static final int GENERIC_ID = 99;
-    private static final EquipmentBrand GENERIC_BRAND = new EquipmentBrand(GENERIC_ID, "Generic");
-    private static final EquipmentModel GENERIC_MODEL = new EquipmentModel(-1, -1, "Generic");
+    private static final String GENERIC_LABEL = "Genérico / Otro";
+    private static final EquipmentBrand GENERIC_BRAND = new EquipmentBrand(GENERIC_ID, GENERIC_LABEL);
+    private static final EquipmentModel GENERIC_MODEL = new EquipmentModel(-1, -1, GENERIC_LABEL);
+
+    // "Most used" pinning at the top of Type/Brand/Model combos — see CLAUDE.md's
+    // "Most-used item pinning" section for the reasoning behind these numbers.
+    private static final int MOST_USED_WINDOW_DAYS = 30;
+    private static final int MOST_USED_MIN_USES = 2;
+    private static final int MOST_USED_LIMIT = 3;
 
     private NoteGeneratorController parentController;
     private IEquipmentService equipmentService;
+    private IHistoryService historyService;
     private AssetItem editingAsset;
     private CountableItem editingCountable;
 
+    private int pinnedTypeCount;
+    private int pinnedBrandCount;
+    private int pinnedModelCount;
+
     public void initialize() {
         equipmentService = ServiceLocator.getInstance().getEquipmentService();
+        historyService = ServiceLocator.getInstance().getHistoryService();
         txtQty.setTextFormatter(new TextFormatter<>(change -> {
             String newText = change.getControlNewText();
             if (newText.isEmpty()) return change;
@@ -83,10 +100,14 @@ public class ItemDialogController {
             return null;
         }));
 
-        cmbType.setItems(FXCollections.observableArrayList(equipmentService.getAllTypes()));
-        applyGenericCellFactory(cmbType);
-        applyGenericCellFactory(cmbBrand);
-        applyGenericCellFactory(cmbModel);
+        List<String> mostUsedTypes = historyService.getMostUsedTypeNames(
+            MOST_USED_WINDOW_DAYS, MOST_USED_MIN_USES, MOST_USED_LIMIT);
+        cmbType.setItems(FXCollections.observableArrayList(reorderWithPinned(
+            equipmentService.getAllTypes(), mostUsedTypes, EquipmentType::getName,
+            count -> pinnedTypeCount = count)));
+        applyGenericCellFactory(cmbType, () -> pinnedTypeCount);
+        applyGenericCellFactory(cmbBrand, () -> pinnedBrandCount);
+        applyGenericCellFactory(cmbModel, () -> pinnedModelCount);
 
         cmbType.valueProperty().addListener((obs, old, type) -> onTypeSelected(type));
         cmbBrand.valueProperty().addListener((obs, old, brand) -> onBrandSelected(brand));
@@ -118,7 +139,11 @@ public class ItemDialogController {
 
     }
 
-    private <T> void applyGenericCellFactory(ComboBox<T> combo) {
+    private static final String DIVIDER_STYLE =
+        "-fx-border-color: #e2e8f0 transparent transparent transparent; -fx-border-width: 1 0 0 0;";
+    private static final String GENERIC_STYLE = "-fx-font-style: italic; -fx-text-fill: #94a3b8;";
+
+    private <T> void applyGenericCellFactory(ComboBox<T> combo, IntSupplier pinnedCountSupplier) {
         combo.setCellFactory(lv -> new ListCell<>() {
             @Override
             protected void updateItem(T item, boolean empty) {
@@ -128,9 +153,19 @@ public class ItemDialogController {
                     setStyle("");
                 } else {
                     setText(item.toString());
-                    setStyle("Generic".equals(item.toString())
-                        ? "-fx-font-style: italic; -fx-text-fill: #94a3b8;"
-                        : "");
+                    boolean isGeneric = GENERIC_LABEL.equals(item.toString());
+                    String style = isGeneric ? GENERIC_STYLE : "";
+                    int pinnedCount = pinnedCountSupplier.getAsInt();
+                    // Two independent dividers can appear in the same list: one above the first
+                    // "rest" item after the pinned most-used items (top), and one above the
+                    // Genérico/Otro fallback, which addType/onBrandSelected always appends last
+                    // (bottom) — mirrors the pinned-items separator, just at the other end.
+                    if (pinnedCount > 0 && getIndex() == pinnedCount) {
+                        style += DIVIDER_STYLE;
+                    } else if (isGeneric) {
+                        style += DIVIDER_STYLE;
+                    }
+                    setStyle(style);
                 }
             }
         });
@@ -143,12 +178,35 @@ public class ItemDialogController {
                     setStyle("-fx-text-fill: #9ca3af;");
                 } else {
                     setText(item.toString());
-                    setStyle("Generic".equals(item.toString())
-                        ? "-fx-font-style: italic; -fx-text-fill: #94a3b8;"
-                        : "");
+                    setStyle(GENERIC_LABEL.equals(item.toString()) ? GENERIC_STYLE : "");
                 }
             }
         });
+    }
+
+    // Moves items whose name matches mostUsedNames (in rank order) to the front of the
+    // list, reports how many were pinned via pinnedCountSetter, and leaves the list
+    // untouched (pinnedCount = 0, no separator) when nothing qualifies as "most used" —
+    // per the requirement that an unconfigured combobox looks like a normal one.
+    private <T> List<T> reorderWithPinned(List<T> allItems, List<String> mostUsedNames,
+            Function<T, String> nameFn, IntConsumer pinnedCountSetter) {
+        List<T> pinned = new ArrayList<>();
+        for (String name : mostUsedNames) {
+            allItems.stream()
+                .filter(item -> nameFn.apply(item).equalsIgnoreCase(name))
+                .findFirst()
+                .ifPresent(pinned::add);
+        }
+        if (pinned.isEmpty()) {
+            pinnedCountSetter.accept(0);
+            return allItems;
+        }
+        List<T> rest = new ArrayList<>(allItems);
+        rest.removeAll(pinned);
+        List<T> result = new ArrayList<>(pinned);
+        result.addAll(rest);
+        pinnedCountSetter.accept(pinned.size());
+        return result;
     }
 
     private void onTypeSelected(EquipmentType type) {
@@ -168,10 +226,13 @@ public class ItemDialogController {
         }
 
         List<EquipmentBrand> brands = new ArrayList<>(equipmentService.getBrandsForType(type.getId()));
-        if (brands.stream().noneMatch(b -> "Generic".equals(b.getName()))) {
+        if (brands.stream().noneMatch(b -> GENERIC_LABEL.equals(b.getName()))) {
             brands.add(GENERIC_BRAND);
         }
-        cmbBrand.setItems(FXCollections.observableArrayList(brands));
+        List<String> mostUsedBrands = historyService.getMostUsedBrandNames(
+            type.getName(), MOST_USED_WINDOW_DAYS, MOST_USED_MIN_USES, MOST_USED_LIMIT);
+        cmbBrand.setItems(FXCollections.observableArrayList(reorderWithPinned(
+            brands, mostUsedBrands, EquipmentBrand::getName, count -> pinnedBrandCount = count)));
 
         showFieldsForType(type.isAsset());
         updateSinSnForType(type);
@@ -180,12 +241,13 @@ public class ItemDialogController {
 
     private void updateSinSnForType(EquipmentType type) {
         if (type == null || !type.isAsset()) return;
-        boolean isNotebook = "Notebook".equals(type.getName());
-        chkSinSN.setDisable(isNotebook);
-        if (isNotebook) {
+        boolean requiresSerial = type.isRequiresSerial();
+        chkSinSN.setDisable(requiresSerial);
+        if (requiresSerial) {
             chkSinSN.setSelected(false);
             txtSerial.setDisable(false);
-            chkSinSN.setTooltip(new Tooltip("Los Notebooks siempre requieren número de serie"));
+            txtSerial.setPromptText("Ingrese S/N...");
+            chkSinSN.setTooltip(new Tooltip("Este tipo de equipo siempre requiere número de serie"));
         } else {
             chkSinSN.setTooltip(new Tooltip("Marcar solo en casos excepcionales"));
         }
@@ -203,10 +265,13 @@ public class ItemDialogController {
 
         List<EquipmentModel> models = new ArrayList<>(
             equipmentService.getModelsForBrandAndType(brand.getId(), type.getId()));
-        if (models.stream().noneMatch(m -> "Generic".equals(m.getName()))) {
+        if (models.stream().noneMatch(m -> GENERIC_LABEL.equals(m.getName()))) {
             models.add(GENERIC_MODEL);
         }
-        cmbModel.setItems(FXCollections.observableArrayList(models));
+        List<String> mostUsedModels = historyService.getMostUsedModelNames(
+            type.getName(), brand.getName(), MOST_USED_WINDOW_DAYS, MOST_USED_MIN_USES, MOST_USED_LIMIT);
+        cmbModel.setItems(FXCollections.observableArrayList(reorderWithPinned(
+            models, mostUsedModels, EquipmentModel::getName, count -> pinnedModelCount = count)));
         cmbModel.setDisable(false);
         clearSnLabels();
     }
@@ -244,9 +309,11 @@ public class ItemDialogController {
         txtSerial.setDisable(sinSN);
         if (sinSN) {
             txtSerial.clear();
+            txtSerial.setPromptText("Deshabilitado");
             clearSnLabels();
             btnSave.setDisable(false);
         } else {
+            txtSerial.setPromptText("Ingrese S/N...");
             validateSnLength();
         }
     }
@@ -258,8 +325,10 @@ public class ItemDialogController {
         if (!enabled) {
             txtAF.clear();
             txtAF.setStyle("");
+            txtAF.setPromptText("Deshabilitado");
             flowAfPattern.getChildren().clear();
         } else {
+            txtAF.setPromptText("Ingrese A/F...");
             refreshAfFlow(null);
         }
     }

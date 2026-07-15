@@ -35,11 +35,16 @@
                     <Label fx:id="lblDbName" text="—"
                            style="-fx-text-fill: #94a3b8; -fx-font-size: 13px;"
                            GridPane.rowIndex="1" GridPane.columnIndex="1"/>
-                    <Label text="ESTADO" styleClass="input-label-small"
+                    <Label text="ESTADO REMOTO" styleClass="input-label-small"
                            GridPane.rowIndex="2" GridPane.columnIndex="0"/>
                     <Label fx:id="lblConnectionStatus" text="Sin verificar"
                            style="-fx-text-fill: #94a3b8; -fx-font-size: 13px;"
                            GridPane.rowIndex="2" GridPane.columnIndex="1"/>
+                    <Label text="ESTADO LOCAL" styleClass="input-label-small"
+                           GridPane.rowIndex="3" GridPane.columnIndex="0"/>
+                    <Label fx:id="lblLocalConnectionStatus" text="Sin verificar"
+                           style="-fx-text-fill: #94a3b8; -fx-font-size: 13px;"
+                           GridPane.rowIndex="3" GridPane.columnIndex="1"/>
                 </GridPane>
             </children>
         </VBox>
@@ -58,7 +63,7 @@
                     </HBox>
                     <ListView fx:id="listTypes" VBox.vgrow="ALWAYS" styleClass="modern-list"/>
                     <HBox spacing="8">
-                        <Button text="Renombrar" onAction="#handleRenameType" styleClass="button-secondary"
+                        <Button text="Editar" onAction="#handleEditType" styleClass="button-secondary"
                                 maxWidth="Infinity" HBox.hgrow="ALWAYS"/>
                         <Button text="Eliminar" onAction="#handleRemoveType" styleClass="button-secondary"
                                 maxWidth="Infinity" HBox.hgrow="ALWAYS"/>
@@ -77,7 +82,7 @@
                     </HBox>
                     <ListView fx:id="listBrands" VBox.vgrow="ALWAYS" styleClass="modern-list"/>
                     <HBox spacing="8">
-                        <Button text="Renombrar" onAction="#handleRenameBrand" styleClass="button-secondary"
+                        <Button text="Editar" onAction="#handleEditBrand" styleClass="button-secondary"
                                 maxWidth="Infinity" HBox.hgrow="ALWAYS"/>
                         <Button text="Eliminar" onAction="#handleRemoveBrand" styleClass="button-secondary"
                                 maxWidth="Infinity" HBox.hgrow="ALWAYS"/>
@@ -96,7 +101,7 @@
                     </HBox>
                     <ListView fx:id="listModels" VBox.vgrow="ALWAYS" styleClass="modern-list"/>
                     <HBox spacing="8">
-                        <Button text="Renombrar" onAction="#handleRenameModel" styleClass="button-secondary"
+                        <Button text="Editar" onAction="#handleEditModel" styleClass="button-secondary"
                                 maxWidth="Infinity" HBox.hgrow="ALWAYS"/>
                         <Button text="Eliminar" onAction="#handleRemoveModel" styleClass="button-secondary"
                                 maxWidth="Infinity" HBox.hgrow="ALWAYS"/>
@@ -115,7 +120,7 @@
                     </HBox>
                     <ListView fx:id="listProviders" VBox.vgrow="ALWAYS" styleClass="modern-list"/>
                     <HBox spacing="8">
-                        <Button text="Renombrar" onAction="#handleRenameProvider" styleClass="button-secondary"
+                        <Button text="Editar" onAction="#handleEditProvider" styleClass="button-secondary"
                                 maxWidth="Infinity" HBox.hgrow="ALWAYS"/>
                         <Button text="Eliminar" onAction="#handleRemoveProvider" styleClass="button-secondary"
                                 maxWidth="Infinity" HBox.hgrow="ALWAYS"/>

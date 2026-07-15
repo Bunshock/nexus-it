@@ -39,6 +39,11 @@ public class CachingEquipmentService implements IEquipmentService {
     }
 
     @Override
+    public List<EquipmentBrand> getAllBrands() {
+        try { return primary.getAllBrands(); } catch (Exception e) { return local.getAllBrands(); }
+    }
+
+    @Override
     public List<EquipmentProvider> getAllProviders() {
         try { return primary.getAllProviders(); } catch (Exception e) { return local.getAllProviders(); }
     }
@@ -119,6 +124,12 @@ public class CachingEquipmentService implements IEquipmentService {
     public void renameType(int typeId, String newName) {
         primary.renameType(typeId, newName);
         try { local.renameType(typeId, newName); } catch (Exception ignored) {}
+    }
+
+    @Override
+    public void setRequiresSerial(int typeId, boolean requiresSerial) {
+        primary.setRequiresSerial(typeId, requiresSerial);
+        try { local.setRequiresSerial(typeId, requiresSerial); } catch (Exception ignored) {}
     }
 
     @Override

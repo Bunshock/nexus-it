@@ -46,7 +46,8 @@ public class MockEquipmentService implements IEquipmentService {
 
         for (JsonNode n : root.get("types")) {
             int id = n.get("id").asInt();
-            types.add(new EquipmentType(id, n.get("name").asText(), n.get("isAsset").asBoolean()));
+            boolean requiresSerial = n.has("requiresSerial") && n.get("requiresSerial").asBoolean();
+            types.add(new EquipmentType(id, n.get("name").asText(), n.get("isAsset").asBoolean(), requiresSerial));
             if (id >= nextTypeId) nextTypeId = id + 1;
         }
 
@@ -98,6 +99,11 @@ public class MockEquipmentService implements IEquipmentService {
         return brands.stream()
             .filter(b -> brandIds.contains(b.getId()))
             .toList();
+    }
+
+    @Override
+    public List<EquipmentBrand> getAllBrands() {
+        return List.copyOf(brands);
     }
 
     @Override
@@ -157,7 +163,7 @@ public class MockEquipmentService implements IEquipmentService {
 
     @Override
     public void addType(String name, boolean isAsset) {
-        types.add(new EquipmentType(nextTypeId++, name, isAsset));
+        types.add(new EquipmentType(nextTypeId++, name, isAsset, false));
     }
 
     @Override
@@ -229,7 +235,18 @@ public class MockEquipmentService implements IEquipmentService {
         for (int i = 0; i < types.size(); i++) {
             if (types.get(i).getId() == typeId) {
                 EquipmentType old = types.get(i);
-                types.set(i, new EquipmentType(old.getId(), newName.trim(), old.isAsset()));
+                types.set(i, new EquipmentType(old.getId(), newName.trim(), old.isAsset(), old.isRequiresSerial()));
+                return;
+            }
+        }
+    }
+
+    @Override
+    public void setRequiresSerial(int typeId, boolean requiresSerial) {
+        for (int i = 0; i < types.size(); i++) {
+            if (types.get(i).getId() == typeId) {
+                EquipmentType old = types.get(i);
+                types.set(i, new EquipmentType(old.getId(), old.getName(), old.isAsset(), requiresSerial));
                 return;
             }
         }

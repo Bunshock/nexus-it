@@ -4,7 +4,6 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.util.List;
 import java.util.Optional;
 
 import com.bunshock.note_app_for_it_frontend.models.EquipmentBrand;
@@ -19,6 +18,7 @@ import com.bunshock.note_app_for_it_frontend.services.IEquipmentService;
 import com.bunshock.note_app_for_it_frontend.services.RemoteDatabaseService;
 import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;
 
+import javafx.animation.FadeTransition;
 import javafx.application.Platform;
 import javafx.collections.FXCollections;
 import javafx.fxml.FXML;
@@ -35,12 +35,14 @@ import javafx.scene.control.TextField;
 import javafx.scene.input.KeyCode;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import javafx.stage.Modality;
 import javafx.stage.Stage;
 import javafx.stage.StageStyle;
+import javafx.util.Duration;
 
 public class DatabaseSectionController {
 
@@ -48,6 +50,7 @@ public class DatabaseSectionController {
     @FXML private Label lblDbServer;
     @FXML private Label lblDbName;
     @FXML private Label lblConnectionStatus;
+    @FXML private Label lblLocalConnectionStatus;
     @FXML private ListView<EquipmentType>  listTypes;
     @FXML private ListView<EquipmentBrand> listBrands;
     @FXML private ListView<EquipmentModel> listModels;
@@ -92,6 +95,8 @@ public class DatabaseSectionController {
         }
         lblConnectionStatus.setText("Sin verificar");
         lblConnectionStatus.setStyle("-fx-text-fill: #94a3b8; -fx-font-size: 13px;");
+        lblLocalConnectionStatus.setText("Sin verificar");
+        lblLocalConnectionStatus.setStyle("-fx-text-fill: #94a3b8; -fx-font-size: 13px;");
     }
 
     @FXML
@@ -99,26 +104,32 @@ public class DatabaseSectionController {
         requireAdmin(this::openEditConnectionDialog);
     }
 
+    // Tests and reports both databases independently every time — previously this only ever
+    // tested one or the other (remote if configured, local otherwise), so clicking "Probar
+    // conexión" with no remote database configured silently reported the *local* database's
+    // status as if that were the answer, with no indication that the remote side was never
+    // configured in the first place.
     @FXML
     private void handleTestConnection() {
         RemoteDatabaseService remote = RemoteDatabaseService.getInstance();
-        if (remote.isConfigured()) {
-            if (remote.testConnection()) {
-                lblConnectionStatus.setStyle("-fx-text-fill: #22c55e; -fx-font-size: 13px;");
-                lblConnectionStatus.setText("✓ Conexión remota activa");
-            } else {
-                lblConnectionStatus.setStyle("-fx-text-fill: #ef4444; -fx-font-size: 13px;");
-                lblConnectionStatus.setText("✗ Servidor remoto configurado no disponible — usando base de datos local");
-            }
+        if (!remote.isConfigured()) {
+            lblConnectionStatus.setStyle("-fx-text-fill: #f59e0b; -fx-font-size: 13px;");
+            lblConnectionStatus.setText("⚠ Base de datos remota no configurada");
+        } else if (remote.testConnection()) {
+            lblConnectionStatus.setStyle("-fx-text-fill: #22c55e; -fx-font-size: 13px;");
+            lblConnectionStatus.setText("✓ Conexión remota activa");
         } else {
-            try (Connection c = DatabaseService.getInstance().getConnection()) {
-                c.createStatement().execute("SELECT 1");
-                lblConnectionStatus.setStyle("-fx-text-fill: #22c55e; -fx-font-size: 13px;");
-                lblConnectionStatus.setText("✓ Base de datos local activa");
-            } catch (Exception e) {
-                lblConnectionStatus.setStyle("-fx-text-fill: #ef4444; -fx-font-size: 13px;");
-                lblConnectionStatus.setText("✗ Error: " + e.getMessage());
-            }
+            lblConnectionStatus.setStyle("-fx-text-fill: #ef4444; -fx-font-size: 13px;");
+            lblConnectionStatus.setText("✗ Servidor remoto configurado no disponible");
+        }
+
+        try (Connection c = DatabaseService.getInstance().getConnection()) {
+            c.createStatement().execute("SELECT 1");
+            lblLocalConnectionStatus.setStyle("-fx-text-fill: #22c55e; -fx-font-size: 13px;");
+            lblLocalConnectionStatus.setText("✓ Base de datos local activa");
+        } catch (Exception e) {
+            lblLocalConnectionStatus.setStyle("-fx-text-fill: #ef4444; -fx-font-size: 13px;");
+            lblLocalConnectionStatus.setText("✗ Error: " + e.getMessage());
         }
     }
 
@@ -260,17 +271,14 @@ public class DatabaseSectionController {
     @FXML private void handleAddProvider(){ requireAdmin(this::openAddProviderDialog); }
 
     @FXML
-    private void handleRenameType() {
+    private void handleEditType() {
         EquipmentType sel = listTypes.getSelectionModel().getSelectedItem();
         if (sel == null) return;
-        requireAdmin(() -> openRenameDialog(sel.getName(), newName -> {
-            equipmentService.renameType(sel.getId(), newName);
-            refreshTypes();
-        }));
+        requireAdmin(() -> openEditTypeDialog(sel));
     }
 
     @FXML
-    private void handleRenameBrand() {
+    private void handleEditBrand() {
         EquipmentBrand sel = listBrands.getSelectionModel().getSelectedItem();
         if (sel == null) return;
         requireAdmin(() -> openRenameDialog(sel.getName(), newName -> {
@@ -281,7 +289,7 @@ public class DatabaseSectionController {
     }
 
     @FXML
-    private void handleRenameModel() {
+    private void handleEditModel() {
         EquipmentModel sel = listModels.getSelectionModel().getSelectedItem();
         if (sel == null) return;
         requireAdmin(() -> openRenameDialog(sel.getName(), newName -> {
@@ -293,7 +301,7 @@ public class DatabaseSectionController {
     }
 
     @FXML
-    private void handleRenameProvider() {
+    private void handleEditProvider() {
         EquipmentProvider sel = listProviders.getSelectionModel().getSelectedItem();
         if (sel == null) return;
         requireAdmin(() -> openRenameDialog(sel.getName(), newName -> {
@@ -355,6 +363,63 @@ public class DatabaseSectionController {
 
     // ── Equipment dialogs ────────────────────────────────────────────
 
+    private CheckBox buildRequiresSerialCheckbox(boolean selected) {
+        Label bold = new Label("  Siempre");
+        bold.setStyle("-fx-font-weight: bold; -fx-font-size: 12px;");
+        Label rest = new Label(" requerir número de serie");
+        rest.setStyle("-fx-font-size: 12px;");
+        HBox labelBox = new HBox(bold, rest);
+        labelBox.setAlignment(Pos.CENTER_LEFT);
+
+        CheckBox chk = new CheckBox();
+        chk.setGraphic(labelBox);
+        chk.setSelected(selected);
+        return chk;
+    }
+
+    // Same timing as UserNoteController's triggerFeedback()/triggerLabelFeedback(), so every
+    // inline validation error in the app holds then fades at the same speed.
+    private static final Duration FIELD_ERROR_HOLD = Duration.millis(2000);
+    private static final Duration FIELD_ERROR_FADE = Duration.millis(650);
+
+    private Label buildErrorLabel() {
+        Label lbl = new Label();
+        lbl.getStyleClass().add("input-label-small");
+        return lbl;
+    }
+
+    // Places the error label on the same line as the field's own header label (right-aligned,
+    // like UserNoteView's MOTIVO row) instead of below the field, so a validation error never
+    // grows the dialog's height.
+    private HBox buildFieldHeaderRow(Label headerLabel, Label errorLabel) {
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+        HBox row = new HBox(headerLabel, spacer, errorLabel);
+        row.setAlignment(Pos.CENTER_LEFT);
+        return row;
+    }
+
+    private void triggerFieldError(Label errorLabel, String message) {
+        if (errorLabel.getUserData() instanceof FadeTransition previous) previous.stop();
+
+        errorLabel.setText(message);
+        errorLabel.setStyle("-fx-text-fill: #ef4444; -fx-font-weight: bold;");
+        errorLabel.setOpacity(1.0);
+
+        FadeTransition fade = new FadeTransition(FIELD_ERROR_FADE, errorLabel);
+        fade.setDelay(FIELD_ERROR_HOLD);
+        fade.setFromValue(1.0);
+        fade.setToValue(0.0);
+        fade.setOnFinished(e -> {
+            errorLabel.setText("");
+            errorLabel.setStyle("");
+            errorLabel.setOpacity(1.0);
+            errorLabel.setUserData(null);
+        });
+        errorLabel.setUserData(fade);
+        fade.play();
+    }
+
     private void openAddTypeDialog() {
         Stage stage = buildDialogStage();
         centerOnContent(stage);
@@ -363,12 +428,19 @@ public class DatabaseSectionController {
         lblTitle.getStyleClass().add("section-label");
 
         Label lblN = new Label("NOMBRE"); lblN.getStyleClass().add("input-label-small");
+        Label lblError = buildErrorLabel();
         TextField tfName = new TextField();
         tfName.setPromptText("Ej: LAPTOP"); tfName.getStyleClass().add("form-input-main");
 
         CheckBox chkAsset = new CheckBox("Es un activo (tiene número de serie)");
         chkAsset.setSelected(true);
         chkAsset.setStyle("-fx-font-size: 12px;");
+
+        CheckBox chkRequiresSerial = buildRequiresSerialCheckbox(false);
+        chkAsset.selectedProperty().addListener((obs, old, isAsset) -> {
+            chkRequiresSerial.setDisable(!isAsset);
+            if (!isAsset) chkRequiresSerial.setSelected(false);
+        });
 
         Button btnCancel = new Button("Cancelar");
         btnCancel.getStyleClass().add("button-secondary");
@@ -378,8 +450,23 @@ public class DatabaseSectionController {
         btnSave.getStyleClass().add("button-primary");
         btnSave.setOnAction(e -> {
             String name = tfName.getText().trim();
-            if (name.isEmpty()) return;
-            equipmentService.addType(name, chkAsset.isSelected());
+            if (name.isEmpty()) {
+                triggerFieldError(lblError, "El nombre no puede estar vacío");
+                return;
+            }
+            boolean isAsset = chkAsset.isSelected();
+            try {
+                equipmentService.addType(name, isAsset);
+            } catch (Exception ex) {
+                triggerFieldError(lblError, ex.getMessage());
+                return;
+            }
+            if (isAsset && chkRequiresSerial.isSelected()) {
+                equipmentService.getAllTypes().stream()
+                    .filter(t -> t.getName().equalsIgnoreCase(name))
+                    .findFirst()
+                    .ifPresent(t -> equipmentService.setRequiresSerial(t.getId(), true));
+            }
             refreshTypes();
             stage.close();
         });
@@ -388,7 +475,59 @@ public class DatabaseSectionController {
         buttons.setAlignment(Pos.CENTER_RIGHT);
 
         VBox root = buildDialogRoot(380);
-        root.getChildren().addAll(lblTitle, new VBox(2, lblN, tfName), chkAsset, buttons);
+        root.getChildren().addAll(lblTitle, new VBox(2, buildFieldHeaderRow(lblN, lblError), tfName), chkAsset, chkRequiresSerial, buttons);
+
+        buildAndShow(stage, root, tfName);
+    }
+
+    private void openEditTypeDialog(EquipmentType type) {
+        Stage stage = buildDialogStage();
+        centerOnContent(stage);
+
+        Label lblTitle = new Label("Editar tipo de equipo");
+        lblTitle.getStyleClass().add("section-label");
+
+        Label lblN = new Label("NOMBRE"); lblN.getStyleClass().add("input-label-small");
+        Label lblError = buildErrorLabel();
+        TextField tfName = new TextField(type.getName());
+        tfName.getStyleClass().add("form-input-main");
+
+        CheckBox chkRequiresSerial = buildRequiresSerialCheckbox(type.isRequiresSerial());
+
+        Button btnCancel = new Button("Cancelar");
+        btnCancel.getStyleClass().add("button-secondary");
+        btnCancel.setOnAction(e -> stage.close());
+
+        Button btnSave = new Button("Guardar");
+        btnSave.getStyleClass().add("button-primary");
+        btnSave.setOnAction(e -> {
+            String newName = tfName.getText().trim();
+            if (newName.isEmpty()) {
+                triggerFieldError(lblError, "El nombre no puede estar vacío");
+                return;
+            }
+            if (!newName.equals(type.getName())) {
+                try {
+                    equipmentService.renameType(type.getId(), newName);
+                } catch (Exception ex) {
+                    triggerFieldError(lblError, ex.getMessage());
+                    return;
+                }
+            }
+            if (type.isAsset()) {
+                equipmentService.setRequiresSerial(type.getId(), chkRequiresSerial.isSelected());
+            }
+            refreshTypes();
+            stage.close();
+        });
+
+        HBox buttons = new HBox(8, btnCancel, btnSave);
+        buttons.setAlignment(Pos.CENTER_RIGHT);
+
+        VBox root = buildDialogRoot(380);
+        root.getChildren().addAll(lblTitle, new VBox(2, buildFieldHeaderRow(lblN, lblError), tfName));
+        if (type.isAsset()) root.getChildren().add(chkRequiresSerial);
+        root.getChildren().add(buttons);
 
         buildAndShow(stage, root, tfName);
     }
@@ -401,6 +540,7 @@ public class DatabaseSectionController {
         lblTitle.getStyleClass().add("section-label");
 
         Label lblT = new Label("TIPO DE EQUIPO"); lblT.getStyleClass().add("input-label-small");
+        Label lblErrorType = buildErrorLabel();
         ComboBox<EquipmentType> cmbType = new ComboBox<>();
         cmbType.setItems(FXCollections.observableArrayList(equipmentService.getAllTypes()));
         cmbType.setPromptText("Seleccione un tipo...");
@@ -410,6 +550,7 @@ public class DatabaseSectionController {
         if (preType != null) cmbType.setValue(preType);
 
         Label lblN = new Label("NOMBRE"); lblN.getStyleClass().add("input-label-small");
+        Label lblErrorName = buildErrorLabel();
         TextField tfName = new TextField();
         tfName.setPromptText("Ej: LENOVO"); tfName.getStyleClass().add("form-input-main");
 
@@ -422,8 +563,20 @@ public class DatabaseSectionController {
         btnSave.setOnAction(e -> {
             EquipmentType type = cmbType.getValue();
             String name = tfName.getText().trim();
-            if (type == null || name.isEmpty()) return;
-            equipmentService.addBrandForType(name, type.getId());
+            if (type == null) {
+                triggerFieldError(lblErrorType, "Debe seleccionar un tipo de equipo");
+                return;
+            }
+            if (name.isEmpty()) {
+                triggerFieldError(lblErrorName, "El nombre no puede estar vacío");
+                return;
+            }
+            try {
+                equipmentService.addBrandForType(name, type.getId());
+            } catch (Exception ex) {
+                triggerFieldError(lblErrorName, ex.getMessage());
+                return;
+            }
             EquipmentType selType = listTypes.getSelectionModel().getSelectedItem();
             if (selType != null && selType.getId() == type.getId())
                 refreshBrandsForType(type.getId());
@@ -435,7 +588,8 @@ public class DatabaseSectionController {
 
         VBox root = buildDialogRoot(380);
         root.getChildren().addAll(lblTitle,
-            new VBox(2, lblT, cmbType), new VBox(2, lblN, tfName), buttons);
+            new VBox(2, buildFieldHeaderRow(lblT, lblErrorType), cmbType),
+            new VBox(2, buildFieldHeaderRow(lblN, lblErrorName), tfName), buttons);
 
         buildAndShow(stage, root, tfName);
     }
@@ -448,6 +602,7 @@ public class DatabaseSectionController {
         lblTitle.getStyleClass().add("section-label");
 
         Label lblT = new Label("TIPO DE EQUIPO"); lblT.getStyleClass().add("input-label-small");
+        Label lblErrorType = buildErrorLabel();
         ComboBox<EquipmentType> cmbType = new ComboBox<>();
         cmbType.setItems(FXCollections.observableArrayList(equipmentService.getAllTypes()));
         cmbType.setPromptText("Seleccione un tipo...");
@@ -455,6 +610,7 @@ public class DatabaseSectionController {
         cmbType.getStyleClass().add("form-input-main");
 
         Label lblB = new Label("MARCA"); lblB.getStyleClass().add("input-label-small");
+        Label lblErrorBrand = buildErrorLabel();
         ComboBox<EquipmentBrand> cmbBrand = new ComboBox<>();
         cmbBrand.setPromptText("Seleccione primero un tipo...");
         cmbBrand.setMaxWidth(Double.MAX_VALUE);
@@ -479,6 +635,7 @@ public class DatabaseSectionController {
         }
 
         Label lblN = new Label("NOMBRE"); lblN.getStyleClass().add("input-label-small");
+        Label lblErrorName = buildErrorLabel();
         TextField tfName = new TextField();
         tfName.setPromptText("Ej: ThinkBook 16 G8"); tfName.getStyleClass().add("form-input-main");
 
@@ -492,8 +649,24 @@ public class DatabaseSectionController {
             EquipmentType  type  = cmbType.getValue();
             EquipmentBrand brand = cmbBrand.getValue();
             String name = tfName.getText().trim();
-            if (type == null || brand == null || name.isEmpty()) return;
-            equipmentService.addModel(name, brand.getId(), type.getId());
+            if (type == null) {
+                triggerFieldError(lblErrorType, "Debe seleccionar un tipo de equipo");
+                return;
+            }
+            if (brand == null) {
+                triggerFieldError(lblErrorBrand, "Debe seleccionar una marca");
+                return;
+            }
+            if (name.isEmpty()) {
+                triggerFieldError(lblErrorName, "El nombre no puede estar vacío");
+                return;
+            }
+            try {
+                equipmentService.addModel(name, brand.getId(), type.getId());
+            } catch (Exception ex) {
+                triggerFieldError(lblErrorName, ex.getMessage());
+                return;
+            }
             EquipmentType  selT = listTypes.getSelectionModel().getSelectedItem();
             EquipmentBrand selB = listBrands.getSelectionModel().getSelectedItem();
             if (selT != null && selB != null
@@ -507,8 +680,9 @@ public class DatabaseSectionController {
 
         VBox root = buildDialogRoot(400);
         root.getChildren().addAll(lblTitle,
-            new VBox(2, lblT, cmbType), new VBox(2, lblB, cmbBrand),
-            new VBox(2, lblN, tfName), buttons);
+            new VBox(2, buildFieldHeaderRow(lblT, lblErrorType), cmbType),
+            new VBox(2, buildFieldHeaderRow(lblB, lblErrorBrand), cmbBrand),
+            new VBox(2, buildFieldHeaderRow(lblN, lblErrorName), tfName), buttons);
 
         buildAndShow(stage, root, tfName);
     }
@@ -521,6 +695,7 @@ public class DatabaseSectionController {
         lblTitle.getStyleClass().add("section-label");
 
         Label lblN = new Label("NOMBRE"); lblN.getStyleClass().add("input-label-small");
+        Label lblError = buildErrorLabel();
         TextField tfName = new TextField();
         tfName.setPromptText("Ej: TechCorp S.A."); tfName.getStyleClass().add("form-input-main");
 
@@ -532,8 +707,16 @@ public class DatabaseSectionController {
         btnSave.getStyleClass().add("button-primary");
         btnSave.setOnAction(e -> {
             String name = tfName.getText().trim();
-            if (name.isEmpty()) return;
-            equipmentService.addProvider(name);
+            if (name.isEmpty()) {
+                triggerFieldError(lblError, "El nombre no puede estar vacío");
+                return;
+            }
+            try {
+                equipmentService.addProvider(name);
+            } catch (Exception ex) {
+                triggerFieldError(lblError, ex.getMessage());
+                return;
+            }
             refreshProviders();
             stage.close();
         });
@@ -542,7 +725,7 @@ public class DatabaseSectionController {
         buttons.setAlignment(Pos.CENTER_RIGHT);
 
         VBox root = buildDialogRoot(380);
-        root.getChildren().addAll(lblTitle, new VBox(2, lblN, tfName), buttons);
+        root.getChildren().addAll(lblTitle, new VBox(2, buildFieldHeaderRow(lblN, lblError), tfName), buttons);
 
         buildAndShow(stage, root, tfName);
     }
@@ -555,6 +738,7 @@ public class DatabaseSectionController {
         lblTitle.getStyleClass().add("section-label");
 
         Label lblN = new Label("NUEVO NOMBRE"); lblN.getStyleClass().add("input-label-small");
+        Label lblError = buildErrorLabel();
         TextField tfName = new TextField(currentName);
         tfName.getStyleClass().add("form-input-main");
 
@@ -566,8 +750,17 @@ public class DatabaseSectionController {
         btnSave.getStyleClass().add("button-primary");
         btnSave.setOnAction(e -> {
             String newName = tfName.getText().trim();
-            if (newName.isEmpty() || newName.equals(currentName)) { stage.close(); return; }
-            onSave.accept(newName);
+            if (newName.isEmpty()) {
+                triggerFieldError(lblError, "El nombre no puede estar vacío");
+                return;
+            }
+            if (newName.equals(currentName)) { stage.close(); return; }
+            try {
+                onSave.accept(newName);
+            } catch (Exception ex) {
+                triggerFieldError(lblError, ex.getMessage());
+                return;
+            }
             stage.close();
         });
 
@@ -575,7 +768,7 @@ public class DatabaseSectionController {
         buttons.setAlignment(Pos.CENTER_RIGHT);
 
         VBox root = buildDialogRoot(360);
-        root.getChildren().addAll(lblTitle, new VBox(2, lblN, tfName), buttons);
+        root.getChildren().addAll(lblTitle, new VBox(2, buildFieldHeaderRow(lblN, lblError), tfName), buttons);
 
         Scene scene = buildDialogScene(root);
         scene.setOnKeyPressed(ev -> { if (ev.getCode() == KeyCode.ESCAPE) stage.close(); });

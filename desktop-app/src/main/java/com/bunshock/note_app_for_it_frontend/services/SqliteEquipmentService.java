@@ -35,9 +35,11 @@ public class SqliteEquipmentService implements IEquipmentService {
     public List<EquipmentType> getAllTypes() {
         List<EquipmentType> result = new ArrayList<>();
         try (Connection c = connector.get();
-             ResultSet rs = c.createStatement().executeQuery("SELECT id, name, is_asset FROM TYPE ORDER BY name")) {
+             ResultSet rs = c.createStatement().executeQuery(
+                 "SELECT id, name, is_asset, requires_serial FROM TYPE ORDER BY name")) {
             while (rs.next()) {
-                result.add(new EquipmentType(rs.getInt("id"), rs.getString("name"), rs.getInt("is_asset") == 1));
+                result.add(new EquipmentType(rs.getInt("id"), rs.getString("name"),
+                    rs.getInt("is_asset") == 1, rs.getInt("requires_serial") == 1));
             }
         } catch (SQLException e) {
             throw new RuntimeException("Failed to load types", e);
@@ -61,6 +63,20 @@ public class SqliteEquipmentService implements IEquipmentService {
             }
         } catch (SQLException e) {
             throw new RuntimeException("Failed to load brands for type " + typeId, e);
+        }
+        return result;
+    }
+
+    @Override
+    public List<EquipmentBrand> getAllBrands() {
+        List<EquipmentBrand> result = new ArrayList<>();
+        try (Connection c = connector.get();
+             ResultSet rs = c.createStatement().executeQuery("SELECT id, name FROM BRAND ORDER BY name")) {
+            while (rs.next()) {
+                result.add(new EquipmentBrand(rs.getInt("id"), rs.getString("name")));
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to load brands", e);
         }
         return result;
     }
@@ -204,23 +220,55 @@ public class SqliteEquipmentService implements IEquipmentService {
 
     @Override
     public void renameType(int typeId, String newName) {
-        try (Connection c = connector.get();
-             PreparedStatement ps = c.prepareStatement("UPDATE TYPE SET name = ? WHERE id = ?")) {
-            ps.setString(1, newName.trim());
-            ps.setInt(2, typeId);
-            ps.executeUpdate();
+        try (Connection c = connector.get()) {
+            String trimmed = newName.trim();
+            try (PreparedStatement chk = c.prepareStatement(
+                    "SELECT 1 FROM TYPE WHERE LOWER(name) = LOWER(?) AND id != ?")) {
+                chk.setString(1, trimmed);
+                chk.setInt(2, typeId);
+                if (chk.executeQuery().next()) {
+                    throw new IllegalArgumentException("Ya existe un tipo con ese nombre");
+                }
+            }
+            try (PreparedStatement ps = c.prepareStatement("UPDATE TYPE SET name = ? WHERE id = ?")) {
+                ps.setString(1, trimmed);
+                ps.setInt(2, typeId);
+                ps.executeUpdate();
+            }
         } catch (SQLException e) {
             throw new RuntimeException("Failed to rename type", e);
         }
     }
 
     @Override
-    public void renameBrand(int brandId, String newName) {
+    public void setRequiresSerial(int typeId, boolean requiresSerial) {
         try (Connection c = connector.get();
-             PreparedStatement ps = c.prepareStatement("UPDATE BRAND SET name = ? WHERE id = ?")) {
-            ps.setString(1, newName.trim());
-            ps.setInt(2, brandId);
+             PreparedStatement ps = c.prepareStatement("UPDATE TYPE SET requires_serial = ? WHERE id = ?")) {
+            ps.setInt(1, requiresSerial ? 1 : 0);
+            ps.setInt(2, typeId);
             ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to update requires_serial for type", e);
+        }
+    }
+
+    @Override
+    public void renameBrand(int brandId, String newName) {
+        try (Connection c = connector.get()) {
+            String trimmed = newName.trim();
+            try (PreparedStatement chk = c.prepareStatement(
+                    "SELECT 1 FROM BRAND WHERE LOWER(name) = LOWER(?) AND id != ?")) {
+                chk.setString(1, trimmed);
+                chk.setInt(2, brandId);
+                if (chk.executeQuery().next()) {
+                    throw new IllegalArgumentException("Ya existe una marca con ese nombre");
+                }
+            }
+            try (PreparedStatement ps = c.prepareStatement("UPDATE BRAND SET name = ? WHERE id = ?")) {
+                ps.setString(1, trimmed);
+                ps.setInt(2, brandId);
+                ps.executeUpdate();
+            }
         } catch (SQLException e) {
             throw new RuntimeException("Failed to rename brand", e);
         }
@@ -228,23 +276,56 @@ public class SqliteEquipmentService implements IEquipmentService {
 
     @Override
     public void renameModel(int modelId, String newName) {
-        try (Connection c = connector.get();
-             PreparedStatement ps = c.prepareStatement("UPDATE MODEL SET name = ? WHERE id = ?")) {
-            ps.setString(1, newName.trim());
-            ps.setInt(2, modelId);
-            ps.executeUpdate();
+        try (Connection c = connector.get()) {
+            String trimmed = newName.trim();
+            int brandTypeId;
+            try (PreparedStatement sel = c.prepareStatement("SELECT brand_type_id FROM MODEL WHERE id = ?")) {
+                sel.setInt(1, modelId);
+                ResultSet rs = sel.executeQuery();
+                if (!rs.next()) throw new IllegalArgumentException("Modelo no encontrado");
+                brandTypeId = rs.getInt(1);
+            }
+            if (modelNameExists(c, brandTypeId, trimmed, modelId)) {
+                throw new IllegalArgumentException("Ya existe un modelo con ese nombre para esta marca y tipo");
+            }
+            try (PreparedStatement ps = c.prepareStatement("UPDATE MODEL SET name = ? WHERE id = ?")) {
+                ps.setString(1, trimmed);
+                ps.setInt(2, modelId);
+                ps.executeUpdate();
+            }
         } catch (SQLException e) {
             throw new RuntimeException("Failed to rename model", e);
         }
     }
 
+    private boolean modelNameExists(Connection c, int brandTypeId, String name, int excludeModelId) throws SQLException {
+        try (PreparedStatement ps = c.prepareStatement(
+                "SELECT 1 FROM MODEL WHERE brand_type_id = ? AND LOWER(name) = LOWER(?) AND id != ?")) {
+            ps.setInt(1, brandTypeId);
+            ps.setString(2, name);
+            ps.setInt(3, excludeModelId);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next();
+            }
+        }
+    }
+
     @Override
     public void addType(String name, boolean isAsset) {
-        try (Connection c = connector.get();
-             PreparedStatement ps = c.prepareStatement("INSERT INTO TYPE (name, is_asset) VALUES (?, ?) ON CONFLICT (name) DO NOTHING")) {
-            ps.setString(1, name.trim());
-            ps.setInt(2, isAsset ? 1 : 0);
-            ps.executeUpdate();
+        try (Connection c = connector.get()) {
+            String trimmed = name.trim();
+            try (PreparedStatement chk = c.prepareStatement(
+                    "SELECT 1 FROM TYPE WHERE LOWER(name) = LOWER(?)")) {
+                chk.setString(1, trimmed);
+                if (chk.executeQuery().next()) {
+                    throw new IllegalArgumentException("Ya existe un tipo con ese nombre");
+                }
+            }
+            try (PreparedStatement ins = c.prepareStatement("INSERT INTO TYPE (name, is_asset) VALUES (?, ?)")) {
+                ins.setString(1, trimmed);
+                ins.setInt(2, isAsset ? 1 : 0);
+                ins.executeUpdate();
+            }
         } catch (SQLException e) {
             throw new RuntimeException("Failed to add type", e);
         }
@@ -265,10 +346,15 @@ public class SqliteEquipmentService implements IEquipmentService {
     public void addModel(String name, int brandId, int typeId) {
         try (Connection c = connector.get()) {
             int brandTypeId = ensureBrandTypeLink(c, brandId, typeId);
-            PreparedStatement ps = c.prepareStatement("INSERT INTO MODEL (brand_type_id, name) VALUES (?, ?)");
-            ps.setInt(1, brandTypeId);
-            ps.setString(2, name.trim());
-            ps.executeUpdate();
+            String trimmed = name.trim();
+            if (modelNameExists(c, brandTypeId, trimmed, -1)) {
+                throw new IllegalArgumentException("Ya existe un modelo con ese nombre para esta marca y tipo");
+            }
+            try (PreparedStatement ps = c.prepareStatement("INSERT INTO MODEL (brand_type_id, name) VALUES (?, ?)")) {
+                ps.setInt(1, brandTypeId);
+                ps.setString(2, trimmed);
+                ps.executeUpdate();
+            }
         } catch (SQLException e) {
             throw new RuntimeException("Failed to add model", e);
         }
@@ -276,10 +362,19 @@ public class SqliteEquipmentService implements IEquipmentService {
 
     @Override
     public void addProvider(String name) {
-        try (Connection c = connector.get();
-             PreparedStatement ps = c.prepareStatement("INSERT INTO PROVIDER (name) VALUES (?) ON CONFLICT (name) DO NOTHING")) {
-            ps.setString(1, name.trim());
-            ps.executeUpdate();
+        try (Connection c = connector.get()) {
+            String trimmed = name.trim();
+            try (PreparedStatement chk = c.prepareStatement(
+                    "SELECT 1 FROM PROVIDER WHERE LOWER(name) = LOWER(?)")) {
+                chk.setString(1, trimmed);
+                if (chk.executeQuery().next()) {
+                    throw new IllegalArgumentException("Ya existe un proveedor con ese nombre");
+                }
+            }
+            try (PreparedStatement ins = c.prepareStatement("INSERT INTO PROVIDER (name) VALUES (?)")) {
+                ins.setString(1, trimmed);
+                ins.executeUpdate();
+            }
         } catch (SQLException e) {
             throw new RuntimeException("Failed to add provider", e);
         }
@@ -353,11 +448,21 @@ public class SqliteEquipmentService implements IEquipmentService {
 
     @Override
     public void renameProvider(int providerId, String newName) {
-        try (Connection c = connector.get();
-             PreparedStatement ps = c.prepareStatement("UPDATE PROVIDER SET name = ? WHERE id = ?")) {
-            ps.setString(1, newName.trim());
-            ps.setInt(2, providerId);
-            ps.executeUpdate();
+        try (Connection c = connector.get()) {
+            String trimmed = newName.trim();
+            try (PreparedStatement chk = c.prepareStatement(
+                    "SELECT 1 FROM PROVIDER WHERE LOWER(name) = LOWER(?) AND id != ?")) {
+                chk.setString(1, trimmed);
+                chk.setInt(2, providerId);
+                if (chk.executeQuery().next()) {
+                    throw new IllegalArgumentException("Ya existe un proveedor con ese nombre");
+                }
+            }
+            try (PreparedStatement ps = c.prepareStatement("UPDATE PROVIDER SET name = ? WHERE id = ?")) {
+                ps.setString(1, trimmed);
+                ps.setInt(2, providerId);
+                ps.executeUpdate();
+            }
         } catch (SQLException e) {
             throw new RuntimeException("Failed to rename provider", e);
         }

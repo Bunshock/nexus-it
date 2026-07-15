@@ -1,6 +1,6 @@
 {
   "types": [
-    { "id": 1, "name": "Notebook",   "isAsset": true  },
+    { "id": 1, "name": "Notebook",   "isAsset": true,  "requiresSerial": true },
     { "id": 2, "name": "Monitor",    "isAsset": true  },
     { "id": 3, "name": "Teclado",    "isAsset": false },
     { "id": 4, "name": "Mouse",      "isAsset": false },

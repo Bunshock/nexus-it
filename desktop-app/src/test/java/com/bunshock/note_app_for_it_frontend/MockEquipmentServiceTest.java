@@ -32,6 +32,45 @@ class MockEquipmentServiceTest {
     }
 
     @Test
+    void notebookRequiresSerialByDefault() {
+        EquipmentType notebook = service.getAllTypes().stream()
+            .filter(t -> t.getName().equalsIgnoreCase("Notebook"))
+            .findFirst().orElse(null);
+        assertNotNull(notebook);
+        assertTrue(notebook.isRequiresSerial());
+    }
+
+    @Test
+    void setRequiresSerialIsReflectedInGetAllTypes() {
+        EquipmentType monitor = service.getAllTypes().stream()
+            .filter(t -> t.getName().equalsIgnoreCase("Monitor"))
+            .findFirst().orElseThrow();
+        assertFalse(monitor.isRequiresSerial());
+
+        service.setRequiresSerial(monitor.getId(), true);
+
+        EquipmentType updated = service.getAllTypes().stream()
+            .filter(t -> t.getId() == monitor.getId())
+            .findFirst().orElseThrow();
+        assertTrue(updated.isRequiresSerial());
+    }
+
+    @Test
+    void renameTypePreservesRequiresSerialFlag() {
+        EquipmentType notebook = service.getAllTypes().stream()
+            .filter(t -> t.getName().equalsIgnoreCase("Notebook"))
+            .findFirst().orElseThrow();
+
+        service.renameType(notebook.getId(), "Laptop");
+
+        EquipmentType renamed = service.getAllTypes().stream()
+            .filter(t -> t.getId() == notebook.getId())
+            .findFirst().orElseThrow();
+        assertEquals("Laptop", renamed.getName());
+        assertTrue(renamed.isRequiresSerial());
+    }
+
+    @Test
     void headsetIsNotAsset() {
         EquipmentType headset = service.getAllTypes().stream()
             .filter(t -> t.getName().equalsIgnoreCase("Headset"))
