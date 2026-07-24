@@ -75,4 +75,26 @@ class TemplateEngineTest {
             Map.of("ITEMS", List.of(Map.of("TYPE", "Notebook"))));
         assertEquals("BeforeAfter", result);
     }
+
+    // A different, named loop key nested inside another loop's block — used by the note item
+    // tables, where a one-entry-or-empty "HAS_X" loop wraps a table (header included) and a
+    // separate per-item "X" loop repeats just the rows, so the whole table can vanish when
+    // the item list is empty instead of only hiding individual rows.
+    @Test
+    void nestedLoopInsideOuterBlockExpandsAgainstTheSameLoopsMap() {
+        String template = "{{#HAS_ITEMS}}<table>{{#ITEMS}}<tr>{{TYPE}}</tr>{{/ITEMS}}</table>{{/HAS_ITEMS}}";
+        String result = engine.render(template, Map.of(), Map.of(
+            "HAS_ITEMS", List.of(Map.of()),
+            "ITEMS", List.of(Map.of("TYPE", "Notebook"), Map.of("TYPE", "Monitor"))));
+        assertEquals("<table><tr>Notebook</tr><tr>Monitor</tr></table>", result);
+    }
+
+    @Test
+    void nestedLoopWrapperHidesWholeBlockWhenOuterLoopIsEmpty() {
+        String template = "Before{{#HAS_ITEMS}}<table>{{#ITEMS}}<tr>{{TYPE}}</tr>{{/ITEMS}}</table>{{/HAS_ITEMS}}After";
+        String result = engine.render(template, Map.of(), Map.of(
+            "HAS_ITEMS", List.of(),
+            "ITEMS", List.of(Map.of("TYPE", "Notebook"))));
+        assertEquals("BeforeAfter", result);
+    }
 }

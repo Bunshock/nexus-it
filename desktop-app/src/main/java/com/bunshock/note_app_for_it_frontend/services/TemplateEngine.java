@@ -16,6 +16,9 @@ public class TemplateEngine {
      * Renders a template string by replacing {{TOKEN}} placeholders and expanding every
      * {{#LOOP}}...{{/LOOP}} block found. Each loop key is looked up in {@code loops}; a key
      * with no entry (or an empty list) expands to nothing, which doubles as a conditional block.
+     * Loop blocks may nest a different key inside them (e.g. a one-entry-or-empty "existence"
+     * loop wrapping a real per-item loop, so a whole section — header included — can disappear
+     * when its item list is empty) — see {@link #expandLoops}.
      *
      * @param template raw HTML template content
      * @param tokens   map of token name → replacement value
@@ -28,6 +31,10 @@ public class TemplateEngine {
         return result;
     }
 
+    // Recurses into each matched block before replacing its own-scope tokens, so a nested
+    // {{#OTHER_KEY}}...{{/OTHER_KEY}} loop inside this block is resolved against the same full
+    // loops map first. Existing single-level usages (no nested loop tags in their block) are
+    // unaffected — the recursive call simply finds no matches and returns the block unchanged.
     private String expandLoops(String template, Map<String, List<Map<String, String>>> loops) {
         Matcher m = LOOP_PATTERN.matcher(template);
         StringBuffer sb = new StringBuffer();
@@ -36,7 +43,8 @@ public class TemplateEngine {
             List<Map<String, String>> items = loops.getOrDefault(m.group(1), List.of());
             StringBuilder expanded = new StringBuilder();
             for (Map<String, String> itemTokens : items) {
-                expanded.append(replaceTokens(block, itemTokens));
+                String nested = expandLoops(block, loops);
+                expanded.append(replaceTokens(nested, itemTokens));
             }
             m.appendReplacement(sb, Matcher.quoteReplacement(expanded.toString()));
         }

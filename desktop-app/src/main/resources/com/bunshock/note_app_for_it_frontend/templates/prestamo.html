@@ -122,40 +122,48 @@
                 text-align: justify;
             }
 
-            /* --- Item List Styles (Black Box) --- */
+            /* --- Item Section (bordered container around both tables) --- */
 
-            .items-list-container {
-                width: 100%;
-                margin-top: 20px;
-                margin-bottom: 20px;
-                border: 2px solid black;
-                border-radius: 5px;
+            .items-section {
+                border: 1.5pt solid black;
+                border-radius: 8px;
+                padding: 18px 16px 6px;
+                margin: 18px 0;
+                position: relative;
                 page-break-inside: avoid;
             }
 
-            .item-entry {
-                padding-left: 15px;
-                padding-top: 10px;
-                padding-bottom: 10px;
-                border-bottom: 0.5px solid black;
-                page-break-inside: avoid;
-            }
-
-            .item-entry:last-child {
-                border-bottom: none;
-            }
-
-            .item-property {
-                font-size: 11pt;
-                margin-bottom: 1px;
-                line-height: 1.3;
-            }
-
-            .item-label {
+            .items-section-tab {
+                position: absolute;
+                top: -11px;
+                left: 14px;
+                background: #fff;
+                padding: 0 8px;
+                font-size: 10.5pt;
                 font-weight: bold;
-                margin-right: 5px;
-                display: inline-block;
-                min-width: 130px;
+                letter-spacing: 0.04em;
+                text-transform: uppercase;
+            }
+
+            .note-table {
+                width: 100%;
+                border-collapse: collapse;
+                margin-bottom: 12px;
+            }
+
+            .note-table + .note-table {
+                margin-top: 22px;
+            }
+
+            .note-table th, .note-table td {
+                text-align: left;
+                font-size: 11pt;
+                padding: 6px 8px;
+                border-bottom: 1px solid black;
+            }
+
+            .note-table th {
+                border-bottom: 2px solid black;
             }
 
             /* --- Separator Line below text --- */
@@ -180,25 +188,62 @@
                 width: 48%;
             }
 
-            .signature-section .outro-text {
-                margin-bottom: 5px;
-            }
-
             .signature-box {
                 width: 100%;
+                border: 1.4pt solid black;
+                border-radius: 6px;
+                padding: 14px 14px 10px;
+                position: relative;
+            }
+
+            .signature-tab {
+                position: absolute;
+                top: -9px;
+                left: 12px;
+                background: #fff;
+                padding: 0 6px;
+                font-size: 10pt;
+                font-weight: bold;
             }
 
             /* The "Sign Here" line */
 
             .sign-line-graphic {
                 border-top: 1px solid black;
-                width: 40%; /* Length of the signature line */
-                margin-bottom: 10px;
+                width: 70%; /* Length of the signature line */
+                margin: 26px 0 8px;
             }
 
             .sign-data {
                 font-size: 11pt;
                 line-height: 1.5;
+            }
+
+            /* Groups the two signature rows below (Entrega / Devolución) under a labeled
+               divider — only prestamo.html has two signature rows, since it's the only note
+               type whose equipment comes back later instead of staying with the recipient. */
+            .signature-group-label {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                margin: 16px 0 8px;
+            }
+
+            .signature-group-label.first {
+                margin-top: 0;
+            }
+
+            .signature-group-label .stripe {
+                width: 3px;
+                height: 12px;
+                background: black;
+            }
+
+            .signature-group-label span {
+                font-size: 10pt;
+                font-weight: bold;
+                letter-spacing: 0.06em;
+                text-transform: uppercase;
             }
 
             @media print {
@@ -229,7 +274,7 @@
                     <div class="header-center">
                         <div class="area-name">Oficina de Soporte IT</div>
 
-                        <div class="template-name">{{TEMPLATE_NAME}}</div>
+                        <div class="template-name">Tipo de nota: {{TEMPLATE_NAME}}</div>
                     </div>
 
                     <div class="header-right">{{DATE}}</div>
@@ -237,33 +282,47 @@
 
                 <div class="intro-text">
                     <p>
-                        En la sede Campus de la Universidad Siglo 21, en el día de la fecha, el área de Soporte IT
+                        En la sede {{SEDE}} de la Universidad Siglo 21, en el día de la fecha, el área de Soporte IT
                         realiza el préstamo a <strong>{{NAME}}</strong>, DNI: <strong>{{DNI}}</strong> de los siguientes componentes:
                     </p>
+                </div>
+
+                <div class="items-section">
+                    <span class="items-section-tab">Lista de equipamiento</span>
+
+                    {{#HAS_ASSET_ITEMS}}
+                    <table class="note-table">
+                        <thead>
+                            <tr><th>Tipo</th><th>Marca</th><th>Modelo</th><th>N° Serie</th><th>N° Activo Fijo</th><th>Detalles</th></tr>
+                        </thead>
+                        <tbody>
+                            {{#ASSET_ITEMS}}<tr><td>{{TYPE}}</td><td>{{BRAND}}</td><td>{{MODEL}}</td><td>{{SERIAL}}</td><td>{{ASSET_TAG}}</td><td>{{DETAILS}}</td></tr>
+                            {{/ASSET_ITEMS}}
+                        </tbody>
+                    </table>
+                    {{/HAS_ASSET_ITEMS}}
+
+                    {{#HAS_COUNTABLE_ITEMS}}
+                    <table class="note-table">
+                        <thead>
+                            <tr><th>Tipo</th><th>Marca</th><th>Modelo</th><th>Cantidad</th><th>Detalles</th></tr>
+                        </thead>
+                        <tbody>
+                            {{#COUNTABLE_ITEMS}}<tr><td>{{TYPE}}</td><td>{{BRAND}}</td><td>{{MODEL}}</td><td>{{QUANTITY}}</td><td>{{DETAILS}}</td></tr>
+                            {{/COUNTABLE_ITEMS}}
+                        </tbody>
+                    </table>
+                    {{/HAS_COUNTABLE_ITEMS}}
+                </div>
+
+                <div class="outro-text">
                     <p>
                         <strong>Fecha tentativa de devolución:</strong> {{EXPECTED_RETURN_DATE}}
                     </p>
+                    {{#HAS_AREA_EVENT}}<p><strong>Área / Evento:</strong> {{AREA_EVENT}}</p>{{/HAS_AREA_EVENT}}
                 </div>
 
-                <div class="items-list-container">
-                    {{#ITEMS}}
-
-                    <div class="item-entry">
-                        <div class="item-property"><span class="item-label">Tipo:</span> {{TYPE}}</div>
-
-                        <div class="item-property">
-                            <span class="item-label">Marca | Modelo:</span> {{BRAND}} | {{MODEL}}
-                        </div>
-
-                        <div class="item-property"><span class="item-label">N° Serie:</span> {{SERIAL}}</div>
-
-                        <div class="item-property"><span class="item-label">N° Activo Fijo:</span> {{ASSET_TAG}}</div>
-
-                        <div class="item-property"><span class="item-label">Detalles:</span> {{DETAILS}}</div>
-                    </div>
-
-                    {{/ITEMS}}
-                </div>
+                <div class="section-separator"></div>
 
                 <div class="outro-text">
                     <p>
@@ -276,45 +335,77 @@
                 <div class="outro-text">
                     <p>
                         No siendo para más se da por finalizada la nota, firmando al pie la recepción conforme de los
-                        componentes. Se confeccionan dos copias, una para el empleado y otra para el área responsable.
-                        Para consultas generales, por favor comunicarse vía mail: <strong>soporteit@ues21.edu.ar</strong>
+                        componentes. Para consultas generales, por favor comunicarse vía mail: <strong>soporteit@ues21.edu.ar</strong>
                     </p>
                 </div>
 
                 <div class="section-separator"></div>
             </div>
 
+            <div class="signature-group-label first">
+                <span class="stripe"></span>
+                <span>Entrega</span>
+            </div>
             <div class="signature-row">
 
                 <div class="signature-section">
-                    <div class="outro-text">
-                        <p><b>Recibe:</b></p>
-                    </div>
                     <div class="signature-box">
+                        <span class="signature-tab">Quien recibe</span>
+                        <div class="sign-line-graphic"></div>
                         <div class="sign-data">
-                            <strong>Firma:</strong> __________________________<br />
-                            <strong>Nombre:</strong> {{NAME}}<br />
+                            <strong>Aclaración:</strong> {{NAME}}<br />
                             <strong>DNI:</strong> {{DNI}}
                         </div>
                     </div>
                 </div>
 
                 <div class="signature-section">
-                    <div class="outro-text">
-                        <p><b>Técnico responsable:</b></p>
-                    </div>
                     <div class="signature-box">
+                        <span class="signature-tab">Soporte IT</span>
+                        <div class="sign-line-graphic"></div>
                         <div class="sign-data">
-                            <strong>Firma:</strong> __________________________<br />
-                            <strong>Nombre:</strong> {{TECHNICIAN_NAME}}<br />
+                            <strong>Aclaración:</strong> {{TECHNICIAN_NAME}}<br />
                             <strong>DNI:</strong> {{TECHNICIAN_DNI}}
                         </div>
                     </div>
                 </div>
 
-            </div> <div style="margin-top: 20px; font-size: 11pt;">
-                <strong>Fecha:</strong> {{DATE}}
             </div>
+
+            <div class="signature-group-label">
+                <span class="stripe"></span>
+                <span>Devolución</span>
+            </div>
+            <div class="signature-row">
+
+                <div class="signature-section">
+                    <div class="signature-box">
+                        <span class="signature-tab">Quien devuelve</span>
+                        <div class="sign-line-graphic"></div>
+                        <div class="sign-data">
+                            <strong>Aclaración:</strong><br />
+                            <strong>DNI:</strong>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="signature-section">
+                    <div class="signature-box">
+                        <span class="signature-tab">Soporte IT</span>
+                        <div class="sign-line-graphic"></div>
+                        <div class="sign-data">
+                            <strong>Aclaración:</strong><br />
+                            <strong>DNI:</strong>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+            <div style="margin-top: 12px; font-size: 11pt;">
+                <strong>Fecha real de devolución:</strong>
+            </div>
+
         </div>
     </body>
 </html>
