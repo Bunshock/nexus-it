@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?import javafx.scene.layout.*?>
+<?import javafx.scene.control.*?>
+
+<VBox spacing="20" xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1"
+      fx:controller="com.bunshock.note_app_for_it_frontend.controllers.RemitoNoteController">
+    <children>
+
+        <!-- Destinatario -->
+        <VBox spacing="10">
+            <children>
+                <HBox alignment="CENTER_LEFT">
+                    <children>
+                        <Label text="DATOS DEL DESTINATARIO" styleClass="section-label"/>
+                        <Region HBox.hgrow="ALWAYS"/>
+                        <Label fx:id="lblDestinatarioStatus" text="" styleClass="input-label-small"/>
+                    </children>
+                </HBox>
+
+                <VBox spacing="2">
+                    <children>
+                        <Label text="NOMBRE" styleClass="input-label-small"/>
+                        <TextField fx:id="txtDestinatarioName" styleClass="form-input-main"/>
+                    </children>
+                </VBox>
+
+                <VBox spacing="2">
+                    <children>
+                        <Label text="ÁREA" styleClass="input-label-small"/>
+                        <TextField fx:id="txtDestinatarioArea" styleClass="form-input-main"/>
+                    </children>
+                </VBox>
+
+                <VBox spacing="2">
+                    <children>
+                        <Label text="SEDE" styleClass="input-label-small"/>
+                        <TextField fx:id="txtDestinatarioSede" styleClass="form-input-main"/>
+                    </children>
+                </VBox>
+            </children>
+        </VBox>
+
+        <Separator style="-fx-opacity: 0.5;"/>
+
+        <!-- Remitente: the IT Support coordinator sending the shipment — not necessarily the
+             technician generating the note. Nombre is manual (no default); Área/Sede are
+             editable too, but pre-filled from app-config.json's remito.remitenteArea/Sede. -->
+        <VBox spacing="10">
+            <children>
+                <HBox alignment="CENTER_LEFT">
+                    <children>
+                        <Label text="DATOS DEL REMITENTE" styleClass="section-label"/>
+                        <Region HBox.hgrow="ALWAYS"/>
+                        <Label fx:id="lblRemitenteStatus" text="" styleClass="input-label-small"/>
+                    </children>
+                </HBox>
+
+                <VBox spacing="2">
+                    <children>
+                        <Label text="NOMBRE" styleClass="input-label-small"/>
+                        <TextField fx:id="txtRemitenteName" styleClass="form-input-main"/>
+                    </children>
+                </VBox>
+
+                <VBox spacing="2">
+                    <children>
+                        <Label text="ÁREA" styleClass="input-label-small"/>
+                        <TextField fx:id="txtRemitenteArea" styleClass="form-input-main"/>
+                    </children>
+                </VBox>
+
+                <VBox spacing="2">
+                    <children>
+                        <Label text="SEDE" styleClass="input-label-small"/>
+                        <TextField fx:id="txtRemitenteSede" styleClass="form-input-main"/>
+                    </children>
+                </VBox>
+            </children>
+        </VBox>
+
+    </children>
+</VBox>

@@ -3,7 +3,6 @@ package com.bunshock.note_app_for_it_frontend.services;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -19,23 +18,22 @@ import com.bunshock.note_app_for_it_frontend.models.NoteReportItem;
 
 public class NoteGenerationService {
 
-    private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("dd/MM/yyyy");
-    private static final DateTimeFormatter DT_FMT   = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
+    private static final DateTimeFormatter DT_FMT = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
 
     private final TemplateEngine engine = new TemplateEngine();
 
     public String generateUserNote(String profileType,
                                    String userName, String userDni, String userEmail,
                                    String motivo,
-                                   String technicianName, String technicianDni,
-                                   String failureCause, String failureDetails,
+                                   String technicianName, String technicianDni, String sede,
+                                   String failureCause, String failureDetails, String areaEvento,
                                    List<AssetItem> assets, List<CountableItem> countables,
                                    String observations) throws IOException {
         String template = loadTemplate(resolveTemplateName(profileType));
 
         Map<String, String> tokens = new LinkedHashMap<>();
         tokens.put("TEMPLATE_NAME", toDisplayName(profileType));
-        tokens.put("DATE", LocalDate.now().format(DATE_FMT));
+        tokens.put("DATE", LocalDateTime.now().format(DT_FMT));
         tokens.put("NAME", userName);
         tokens.put("DNI", userDni);
         tokens.put("EMAIL", userEmail);
@@ -45,11 +43,16 @@ public class NoteGenerationService {
         tokens.put("EXPECTED_RETURN_DATE", motivo != null ? motivo : "");
         tokens.put("TECHNICIAN_NAME", technicianName);
         tokens.put("TECHNICIAN_DNI", technicianDni);
+        tokens.put("SEDE", sede != null ? sede : "");
         tokens.put("OBSERVATIONS", observations);
 
         Map<String, List<Map<String, String>>> loops = new LinkedHashMap<>();
-        loops.put("ITEMS", buildItemTokensFromLive(assets, countables));
+        loops.put("ASSET_ITEMS", buildAssetItemTokens(assets));
+        loops.put("HAS_ASSET_ITEMS", presenceFlag(!assets.isEmpty()));
+        loops.put("COUNTABLE_ITEMS", buildCountableItemTokens(countables));
+        loops.put("HAS_COUNTABLE_ITEMS", presenceFlag(!countables.isEmpty()));
         loops.put("FAILURE", failureLoop(failureCause, failureDetails));
+        loops.put("HAS_AREA_EVENT", areaEventLoop(areaEvento));
 
         return engine.render(template, tokens, loops);
     }
@@ -57,14 +60,14 @@ public class NoteGenerationService {
     public String generateProviderNote(String providerName, String cuit,
                                        String responsibleName, String responsibleDni,
                                        String motivo,
-                                       String technicianName, String technicianDni,
+                                       String technicianName, String technicianDni, String sede,
                                        List<AssetItem> assets, List<CountableItem> countables,
                                        String observations) throws IOException {
         String template = loadTemplate("proveedor.html");
 
         Map<String, String> tokens = new LinkedHashMap<>();
         tokens.put("TEMPLATE_NAME", "Entrega - Proveedor");
-        tokens.put("DATE", LocalDate.now().format(DATE_FMT));
+        tokens.put("DATE", LocalDateTime.now().format(DT_FMT));
         tokens.put("COMPANY_NAME", providerName);
         tokens.put("CUIT", cuit);
         tokens.put("RESPONSIBLE_NAME", responsibleName);
@@ -72,10 +75,40 @@ public class NoteGenerationService {
         tokens.put("REASON", motivo != null ? motivo : "");
         tokens.put("TECHNICIAN_NAME", technicianName);
         tokens.put("TECHNICIAN_DNI", technicianDni);
+        tokens.put("SEDE", sede != null ? sede : "");
         tokens.put("OBSERVATIONS", observations);
 
         Map<String, List<Map<String, String>>> loops = new LinkedHashMap<>();
-        loops.put("ITEMS", buildItemTokensFromLive(assets, countables));
+        loops.put("ASSET_ITEMS", buildAssetItemTokens(assets));
+        loops.put("HAS_ASSET_ITEMS", presenceFlag(!assets.isEmpty()));
+        loops.put("COUNTABLE_ITEMS", buildCountableItemTokens(countables));
+        loops.put("HAS_COUNTABLE_ITEMS", presenceFlag(!countables.isEmpty()));
+
+        return engine.render(template, tokens, loops);
+    }
+
+    public String generateRemitoNote(String destinatarioName, String destinatarioArea, String destinatarioSede,
+                                     String remitenteName, String remitenteArea, String remitenteSede,
+                                     String sede,
+                                     List<AssetItem> assets, List<CountableItem> countables) throws IOException {
+        String template = loadTemplate("remito.html");
+
+        Map<String, String> tokens = new LinkedHashMap<>();
+        tokens.put("TEMPLATE_NAME", "Remito de Envío");
+        tokens.put("DATE", LocalDateTime.now().format(DT_FMT));
+        tokens.put("DESTINATARIO_NAME", destinatarioName);
+        tokens.put("DESTINATARIO_AREA", destinatarioArea);
+        tokens.put("DESTINATARIO_SEDE", destinatarioSede);
+        tokens.put("REMITENTE_NAME", remitenteName);
+        tokens.put("REMITENTE_AREA", remitenteArea);
+        tokens.put("REMITENTE_SEDE", remitenteSede);
+        tokens.put("SEDE", sede != null ? sede : "");
+
+        Map<String, List<Map<String, String>>> loops = new LinkedHashMap<>();
+        loops.put("ASSET_ITEMS", buildAssetItemTokens(assets));
+        loops.put("HAS_ASSET_ITEMS", presenceFlag(!assets.isEmpty()));
+        loops.put("COUNTABLE_ITEMS", buildCountableItemTokens(countables));
+        loops.put("HAS_COUNTABLE_ITEMS", presenceFlag(!countables.isEmpty()));
 
         return engine.render(template, tokens, loops);
     }
@@ -84,6 +117,8 @@ public class NoteGenerationService {
     public String generateFromStoredReport(NoteReport report) throws IOException {
         String templateName = report.getProviderName() != null
             ? "proveedor.html"
+            : report.getDestinatarioName() != null
+            ? "remito.html"
             : resolveTemplateName(report.getProfileType());
         String template = loadTemplate(templateName);
 
@@ -101,48 +136,67 @@ public class NoteGenerationService {
         tokens.put("EXPECTED_RETURN_DATE", motivo);
         tokens.put("TECHNICIAN_NAME", orEmpty(report.getAuthorName()));
         tokens.put("TECHNICIAN_DNI",  orEmpty(report.getAuthorDni()));
-        tokens.put("OBSERVATIONS", "");
+        tokens.put("SEDE", orEmpty(report.getSede()));
+        tokens.put("OBSERVATIONS", orEmpty(report.getObservations()));
         tokens.put("COMPANY_NAME", orEmpty(report.getProviderName()));
         tokens.put("CUIT", orEmpty(report.getCuit()));
         tokens.put("RESPONSIBLE_NAME", orEmpty(report.getResponsibleName()));
         tokens.put("RESPONSIBLE_DNI", orEmpty(report.getResponsibleDni()));
+        tokens.put("DESTINATARIO_NAME", orEmpty(report.getDestinatarioName()));
+        tokens.put("DESTINATARIO_AREA", orEmpty(report.getDestinatarioArea()));
+        tokens.put("DESTINATARIO_SEDE", orEmpty(report.getDestinatarioSede()));
+        tokens.put("REMITENTE_NAME", orEmpty(report.getRemitenteName()));
+        tokens.put("REMITENTE_AREA", orEmpty(report.getRemitenteArea()));
+        tokens.put("REMITENTE_SEDE", orEmpty(report.getRemitenteSede()));
 
-        List<Map<String, String>> itemTokens = new ArrayList<>();
+        List<Map<String, String>> assetTokens = new ArrayList<>();
+        List<Map<String, String>> countableTokens = new ArrayList<>();
         if (report.getItems() != null) {
             for (NoteReportItem item : report.getItems()) {
                 Map<String, String> t = new LinkedHashMap<>();
-                t.put("TYPE",       orEmpty(item.getTypeName()));
-                t.put("BRAND",      orEmpty(item.getBrandName()));
-                t.put("MODEL",      orEmpty(item.getModelName()));
-                if (item.isAsset()) {
-                    t.put("SERIAL",     orEmpty(item.getSerialNumber()));
-                    t.put("ASSET_TAG",  orEmpty(item.getAf()));
-                } else {
-                    int qty = item.getQuantity();
-                    t.put("SERIAL",     qty > 1 ? "Cant: " + qty : "");
-                    t.put("ASSET_TAG",  "");
-                }
+                t.put("TYPE",  orEmpty(item.getTypeName()));
+                t.put("BRAND", orEmpty(item.getBrandName()));
+                t.put("MODEL", orEmpty(item.getModelName()));
                 t.put("DETAILS", orEmpty(item.getObservations()));
-                itemTokens.add(t);
+                if (item.isAsset()) {
+                    t.put("SERIAL",    orEmpty(item.getSerialNumber()));
+                    t.put("ASSET_TAG", orEmpty(item.getAf()));
+                    assetTokens.add(t);
+                } else {
+                    t.put("QUANTITY", String.valueOf(item.getQuantity()));
+                    countableTokens.add(t);
+                }
             }
         }
 
         Map<String, List<Map<String, String>>> loops = new LinkedHashMap<>();
-        loops.put("ITEMS", itemTokens);
+        loops.put("ASSET_ITEMS", assetTokens);
+        loops.put("HAS_ASSET_ITEMS", presenceFlag(!assetTokens.isEmpty()));
+        loops.put("COUNTABLE_ITEMS", countableTokens);
+        loops.put("HAS_COUNTABLE_ITEMS", presenceFlag(!countableTokens.isEmpty()));
         loops.put("FAILURE", failureLoop(report.getFailureCause(), report.getFailureDetails()));
+        loops.put("HAS_AREA_EVENT", areaEventLoop(report.getAreaEvento()));
 
         return engine.render(template, tokens, loops);
     }
 
-    private List<Map<String, String>> failureLoop(String failureCause, String failureDetails) {
-        if (failureCause == null || failureCause.isBlank()) return List.of();
-        return List.of(Map.of(
-            "FAILURE_CAUSE", failureCause,
-            "FAILURE_DETAILS", failureDetails != null ? failureDetails : ""));
+    private List<Map<String, String>> areaEventLoop(String areaEvento) {
+        if (areaEvento == null || areaEvento.isBlank()) return List.of();
+        return List.of(Map.of("AREA_EVENT", areaEvento));
     }
 
-    private List<Map<String, String>> buildItemTokensFromLive(List<AssetItem> assets,
-                                                               List<CountableItem> countables) {
+    private List<Map<String, String>> failureLoop(String failureCause, String failureDetails) {
+        if (failureCause == null || failureCause.isBlank()) return List.of();
+        // Details are optional (only the cause combobox is mandatory) — the " — " separator
+        // is only meaningful when there's actually a details string to attach it to; otherwise
+        // it would print as a dangling "No enciende — " with nothing after it.
+        String text = failureDetails != null && !failureDetails.isBlank()
+            ? failureCause + " — " + failureDetails
+            : failureCause;
+        return List.of(Map.of("FAILURE_TEXT", text));
+    }
+
+    private List<Map<String, String>> buildAssetItemTokens(List<AssetItem> assets) {
         List<Map<String, String>> result = new ArrayList<>();
         for (AssetItem a : assets) {
             Map<String, String> t = new LinkedHashMap<>();
@@ -154,18 +208,28 @@ public class NoteGenerationService {
             t.put("DETAILS", a.getObservations().get());
             result.add(t);
         }
+        return result;
+    }
+
+    private List<Map<String, String>> buildCountableItemTokens(List<CountableItem> countables) {
+        List<Map<String, String>> result = new ArrayList<>();
         for (CountableItem c : countables) {
             Map<String, String> t = new LinkedHashMap<>();
             t.put("TYPE", c.getType().get());
             t.put("BRAND", c.getBrand().get());
             t.put("MODEL", c.getModel().get());
-            int qty = c.getQuantity().get();
-            t.put("SERIAL", qty > 1 ? "Cant: " + qty : "");
-            t.put("ASSET_TAG", "");
+            t.put("QUANTITY", String.valueOf(c.getQuantity().get()));
             t.put("DETAILS", c.getObservations().get());
             result.add(t);
         }
         return result;
+    }
+
+    // Backs the "HAS_X" nested-loop wrapper keys (see TemplateEngine's nested-loop support) —
+    // a single dummy entry when present, or an empty list, so {{#HAS_X}}...{{/HAS_X}} can wrap
+    // a whole table (header included) and make it vanish entirely when that item list is empty.
+    private List<Map<String, String>> presenceFlag(boolean present) {
+        return present ? List.of(Map.of()) : List.of();
     }
 
     private String toDisplayName(String profileType) {
@@ -179,6 +243,8 @@ public class NoteGenerationService {
             case "ENTREGA PERMANENTE"  -> "Fin de contrato";
             case "FIN DE CONTRATO"     -> "Fin de contrato";
             case "ENTREGA - PROVEEDOR" -> "Entrega - Proveedor";
+            case "REMITO DE ENVÍO"     -> "Remito de Envío";
+            case "REMITO DE ENVIO"     -> "Remito de Envío";
             default                    -> profileType;
         };
     }

@@ -1,0 +1,230 @@
+<!doctype html>
+
+<html lang="es">
+    <head>
+        <meta charset="UTF-8" />
+
+        <title>Remito de Envío</title>
+
+        <style>
+            /* A4 Paper Setup — landscape, unlike every other template in this app, matching
+               the physical source document (Remito de Transporte spreadsheet) this was
+               modeled on. */
+
+            @page {
+                size: A4 landscape;
+                margin: 10mm;
+            }
+
+            * {
+                box-sizing: border-box;
+            }
+
+            body {
+                font-family: "Calibri", Helvetica, Arial, sans-serif;
+                margin: 0;
+                padding: 0;
+                color: #000;
+                background-color: #fff;
+
+                width: 297mm;
+                height: 210mm;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+            }
+
+            .page-container {
+                display: contents;
+            }
+
+            /* Main Frame */
+
+            .main-frame {
+                height: 190mm;
+                width: 277mm;
+
+                border: 2px solid black;
+                padding: 20px;
+                box-sizing: border-box;
+            }
+
+            /* --- Header: logo far-left, big title next to it, org name + date stacked
+                 top-right — mirrors the source spreadsheet's own arrangement, unlike every
+                 other template's centered header. --- */
+
+            .header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                border: 2px solid black;
+                border-radius: 15px;
+                padding: 15px;
+                margin-bottom: 10px;
+                height: 25mm;
+            }
+
+            .header-left {
+                width: 12%;
+                text-align: center;
+            }
+
+            .logo-img {
+                width: 100%;
+                max-width: 60px;
+                height: auto;
+                object-fit: contain;
+            }
+
+            .header-title {
+                flex-grow: 1;
+                padding-left: 16px;
+                font-size: 22pt;
+                font-weight: bold;
+            }
+
+            .header-right {
+                width: 180px;
+                text-align: right;
+                font-size: 10pt;
+            }
+
+            .header-right .org-name {
+                font-weight: bold;
+            }
+
+            .header-right .date-line {
+                margin-top: 4px;
+            }
+
+            /* --- Destinatario / Remitente blocks: stacked, left-aligned, deliberately not
+                 full-width — mirrors the source spreadsheet's own left-side-only layout. --- */
+
+            .party-info {
+                font-size: 11pt;
+                line-height: 1.6;
+                margin-bottom: 14px;
+                max-width: 55%;
+            }
+
+            /* --- Item Section (bordered container around both tables) --- */
+
+            .items-section {
+                border: 1.5pt solid black;
+                border-radius: 8px;
+                padding: 18px 16px 6px;
+                margin: 18px 0;
+                position: relative;
+                page-break-inside: avoid;
+            }
+
+            .items-section-tab {
+                position: absolute;
+                top: -11px;
+                left: 14px;
+                background: #fff;
+                padding: 0 8px;
+                font-size: 10.5pt;
+                font-weight: bold;
+                letter-spacing: 0.04em;
+                text-transform: uppercase;
+            }
+
+            .note-table {
+                width: 100%;
+                border-collapse: collapse;
+                margin-bottom: 12px;
+            }
+
+            .note-table + .note-table {
+                margin-top: 22px;
+            }
+
+            .note-table th, .note-table td {
+                text-align: left;
+                font-size: 11pt;
+                padding: 6px 8px;
+                border-bottom: 1px solid black;
+            }
+
+            .note-table th {
+                border-bottom: 2px solid black;
+            }
+
+            @media print {
+                html, body {
+                    height: 100%;
+                    margin: 0 !important;
+                    padding: 0 !important;
+                    overflow: hidden;
+                }
+
+                body {
+                    zoom: 0.95;
+                }
+            }
+        </style>
+    </head>
+
+    <body>
+        <div class="main-frame">
+            <div class="header">
+                <div class="header-left">
+                    <img src="logo.jpg" alt="Logo" class="logo-img" />
+                </div>
+
+                <div class="header-title">{{TEMPLATE_NAME}}</div>
+
+                <div class="header-right">
+                    <div class="org-name">Oficina de Soporte IT</div>
+                    <div class="date-line">{{DATE}}</div>
+                    <div class="date-line">Sede: {{SEDE}}</div>
+                </div>
+            </div>
+
+            <div class="party-info">
+                <p>
+                    <strong>Destinatario:</strong> {{DESTINATARIO_NAME}}<br />
+                    <strong>Área:</strong> {{DESTINATARIO_AREA}}<br />
+                    <strong>Sede:</strong> {{DESTINATARIO_SEDE}}
+                </p>
+            </div>
+
+            <div class="party-info">
+                <p>
+                    <strong>Remitente:</strong> {{REMITENTE_NAME}}<br />
+                    <strong>Área:</strong> {{REMITENTE_AREA}}<br />
+                    <strong>Sede:</strong> {{REMITENTE_SEDE}}
+                </p>
+            </div>
+
+            <div class="items-section">
+                <span class="items-section-tab">Lista de equipamiento</span>
+
+                {{#HAS_ASSET_ITEMS}}
+                <table class="note-table">
+                    <thead>
+                        <tr><th>Tipo</th><th>Marca</th><th>Modelo</th><th>N° Serie</th><th>N° Activo Fijo</th><th>Detalles</th></tr>
+                    </thead>
+                    <tbody>
+                        {{#ASSET_ITEMS}}<tr><td>{{TYPE}}</td><td>{{BRAND}}</td><td>{{MODEL}}</td><td>{{SERIAL}}</td><td>{{ASSET_TAG}}</td><td>{{DETAILS}}</td></tr>
+                        {{/ASSET_ITEMS}}
+                    </tbody>
+                </table>
+                {{/HAS_ASSET_ITEMS}}
+
+                {{#HAS_COUNTABLE_ITEMS}}
+                <table class="note-table">
+                    <thead>
+                        <tr><th>Tipo</th><th>Marca</th><th>Modelo</th><th>Cantidad</th><th>Detalles</th></tr>
+                    </thead>
+                    <tbody>
+                        {{#COUNTABLE_ITEMS}}<tr><td>{{TYPE}}</td><td>{{BRAND}}</td><td>{{MODEL}}</td><td>{{QUANTITY}}</td><td>{{DETAILS}}</td></tr>
+                        {{/COUNTABLE_ITEMS}}
+                    </tbody>
+                </table>
+                {{/HAS_COUNTABLE_ITEMS}}
+            </div>
+        </div>
+    </body>
+</html>
