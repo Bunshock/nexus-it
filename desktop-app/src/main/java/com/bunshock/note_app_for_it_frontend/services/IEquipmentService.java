@@ -7,6 +7,7 @@ import com.bunshock.note_app_for_it_frontend.models.EquipmentBrand;
 import com.bunshock.note_app_for_it_frontend.models.EquipmentModel;
 import com.bunshock.note_app_for_it_frontend.models.EquipmentProvider;
 import com.bunshock.note_app_for_it_frontend.models.EquipmentType;
+import com.bunshock.note_app_for_it_frontend.models.Sede;
 import com.bunshock.note_app_for_it_frontend.models.SnValidation;
 import com.bunshock.note_app_for_it_frontend.models.SnValidationRow;
 
@@ -21,6 +22,8 @@ public interface IEquipmentService {
     List<EquipmentModel> getModelsForBrandAndType(int brandId, int typeId);
 
     List<EquipmentProvider> getAllProviders();
+
+    List<Sede> getAllSedes();
 
     Optional<SnValidation> getSnValidation(int modelId);
 
@@ -38,6 +41,8 @@ public interface IEquipmentService {
 
     void addProvider(String name);
 
+    void addSede(String name);
+
     void removeType(int typeId);
 
     void removeBrand(int brandId);
@@ -45,6 +50,8 @@ public interface IEquipmentService {
     void removeModel(int modelId);
 
     void removeProvider(int providerId);
+
+    void removeSede(int sedeId);
 
     void renameType(int typeId, String newName);
 
@@ -55,4 +62,6 @@ public interface IEquipmentService {
     void renameModel(int modelId, String newName);
 
     void renameProvider(int providerId, String newName);
+
+    void renameSede(int sedeId, String newName);
 }

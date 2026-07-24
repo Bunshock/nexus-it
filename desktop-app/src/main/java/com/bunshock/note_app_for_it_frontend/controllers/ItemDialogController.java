@@ -69,10 +69,30 @@ public class ItemDialogController {
     @FXML private TextField txtObs;
     @FXML private Button btnSave;
 
-    private static final int GENERIC_ID = 99;
-    private static final String GENERIC_LABEL = "Genérico / Otro";
-    private static final EquipmentBrand GENERIC_BRAND = new EquipmentBrand(GENERIC_ID, GENERIC_LABEL);
-    private static final EquipmentModel GENERIC_MODEL = new EquipmentModel(-1, -1, GENERIC_LABEL);
+    private static final String DEFAULT_GENERIC_LABEL = "Genérico / Otro";
+
+    // BRAND has no structural way to mark "this is the fallback row" the way EquipmentModel
+    // does (brandTypeId == null) — no scoping FK to leave null — so it's still identified by
+    // name. Duplicated from SqliteEquipmentService's identical helper per this codebase's
+    // no-shared-abstraction convention.
+    private String genericLabel() {
+        try {
+            AppConfig.CatalogConfig catalog = ConfigService.getInstance().getConfig().catalog;
+            if (catalog != null && catalog.genericLabel != null && !catalog.genericLabel.isBlank()) {
+                return catalog.genericLabel.trim();
+            }
+        } catch (IllegalStateException notLoaded) {
+            // ConfigService not loaded in this context (e.g. some test setups) — use the default
+        }
+        return DEFAULT_GENERIC_LABEL;
+    }
+
+    // EquipmentModel is identified structurally (brandTypeId == null); everything else
+    // (EquipmentBrand) still falls back to a name comparison.
+    private boolean isGenericItem(Object item) {
+        if (item instanceof EquipmentModel model) return model.isGlobalGeneric();
+        return genericLabel().equals(item.toString());
+    }
 
     // "Most used" pinning at the top of Type/Brand/Model combos — see CLAUDE.md's
     // "Most-used item pinning" section for the reasoning behind these numbers.
@@ -80,7 +100,7 @@ public class ItemDialogController {
     private static final int MOST_USED_MIN_USES = 2;
     private static final int MOST_USED_LIMIT = 3;
 
-    private NoteGeneratorController parentController;
+    private ItemDialogHost parentController;
     private IEquipmentService equipmentService;
     private IHistoryService historyService;
     private AssetItem editingAsset;
@@ -90,9 +110,13 @@ public class ItemDialogController {
     private int pinnedBrandCount;
     private int pinnedModelCount;
 
+    private static final int OBSERVATIONS_MAX_LENGTH = 200;
+
     public void initialize() {
         equipmentService = ServiceLocator.getInstance().getEquipmentService();
         historyService = ServiceLocator.getInstance().getHistoryService();
+        txtObs.setTextFormatter(new TextFormatter<>(change ->
+            change.getControlNewText().length() <= OBSERVATIONS_MAX_LENGTH ? change : null));
         txtQty.setTextFormatter(new TextFormatter<>(change -> {
             String newText = change.getControlNewText();
             if (newText.isEmpty()) return change;
@@ -153,7 +177,7 @@ public class ItemDialogController {
                     setStyle("");
                 } else {
                     setText(item.toString());
-                    boolean isGeneric = GENERIC_LABEL.equals(item.toString());
+                    boolean isGeneric = isGenericItem(item);
                     String style = isGeneric ? GENERIC_STYLE : "";
                     int pinnedCount = pinnedCountSupplier.getAsInt();
                     // Two independent dividers can appear in the same list: one above the first
@@ -178,7 +202,7 @@ public class ItemDialogController {
                     setStyle("-fx-text-fill: #9ca3af;");
                 } else {
                     setText(item.toString());
-                    setStyle(GENERIC_LABEL.equals(item.toString()) ? GENERIC_STYLE : "");
+                    setStyle(isGenericItem(item) ? GENERIC_STYLE : "");
                 }
             }
         });
@@ -226,8 +250,11 @@ public class ItemDialogController {
         }
 
         List<EquipmentBrand> brands = new ArrayList<>(equipmentService.getBrandsForType(type.getId()));
-        if (brands.stream().noneMatch(b -> GENERIC_LABEL.equals(b.getName()))) {
-            brands.add(GENERIC_BRAND);
+        if (brands.stream().noneMatch(b -> genericLabel().equals(b.getName()))) {
+            equipmentService.getAllBrands().stream()
+                .filter(b -> genericLabel().equals(b.getName()))
+                .findFirst()
+                .ifPresent(brands::add);
         }
         List<String> mostUsedBrands = historyService.getMostUsedBrandNames(
             type.getName(), MOST_USED_WINDOW_DAYS, MOST_USED_MIN_USES, MOST_USED_LIMIT);
@@ -263,11 +290,12 @@ public class ItemDialogController {
             return;
         }
 
+        // getModelsForBrandAndType() always includes the global generic model regardless of
+        // brand/type — no BRAND_TYPE_LINK needs to exist first, even for a brand+type
+        // combination that's never been linked before (e.g. the global Genérico/Otro brand
+        // itself, or a real brand picked for a type it's never been paired with).
         List<EquipmentModel> models = new ArrayList<>(
             equipmentService.getModelsForBrandAndType(brand.getId(), type.getId()));
-        if (models.stream().noneMatch(m -> GENERIC_LABEL.equals(m.getName()))) {
-            models.add(GENERIC_MODEL);
-        }
         List<String> mostUsedModels = historyService.getMostUsedModelNames(
             type.getName(), brand.getName(), MOST_USED_WINDOW_DAYS, MOST_USED_MIN_USES, MOST_USED_LIMIT);
         cmbModel.setItems(FXCollections.observableArrayList(reorderWithPinned(
@@ -479,7 +507,7 @@ public class ItemDialogController {
         return "X";
     }
 
-    public void setParentController(NoteGeneratorController parent) {
+    public void setParentController(ItemDialogHost parent) {
         this.parentController = parent;
     }
 
@@ -666,9 +694,11 @@ public class ItemDialogController {
 
     private void doSave() {
         EquipmentType type = cmbType.getValue();
+        EquipmentBrand brand = cmbBrand.getValue();
+        EquipmentModel model = cmbModel.getValue();
         String typeName  = type.getName();
-        String brandName = cmbBrand.getValue().getName();
-        String modelName = cmbModel.getValue().getName();
+        String brandName = brand.getName();
+        String modelName = model.getName();
         String obs = txtObs.getText().trim();
 
         if (type.isAsset()) {
@@ -681,11 +711,15 @@ public class ItemDialogController {
                 editingAsset.getType().set(typeName);
                 editingAsset.getBrand().set(brandName);
                 editingAsset.getModel().set(modelName);
+                editingAsset.setTypeId(type.getId());
+                editingAsset.setBrandId(brand.getId());
+                editingAsset.setModelId(model.getId());
                 editingAsset.getSerial().set(sn);
                 editingAsset.getAf().set(af);
                 editingAsset.getObservations().set(obs);
             } else {
-                parentController.addAsset(new AssetItem(typeName, brandName, modelName, obs, sn, af));
+                parentController.addAsset(new AssetItem(typeName, brandName, modelName, obs, sn, af,
+                    type.getId(), brand.getId(), model.getId()));
             }
         } else {
                 String qtyText = txtQty.getText().trim();
@@ -694,10 +728,14 @@ public class ItemDialogController {
                 editingCountable.getType().set(typeName);
                 editingCountable.getBrand().set(brandName);
                 editingCountable.getModel().set(modelName);
+                editingCountable.setTypeId(type.getId());
+                editingCountable.setBrandId(brand.getId());
+                editingCountable.setModelId(model.getId());
                 editingCountable.getQuantity().set(qty);
                 editingCountable.getObservations().set(obs);
             } else {
-                parentController.addCountable(new CountableItem(typeName, brandName, modelName, qty, obs));
+                parentController.addCountable(new CountableItem(typeName, brandName, modelName, qty, obs,
+                    type.getId(), brand.getId(), model.getId()));
             }
         }
 

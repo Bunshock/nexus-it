@@ -8,6 +8,7 @@ import java.sql.Statement;
 import java.util.List;
 
 import com.bunshock.note_app_for_it_frontend.models.EquipmentBrand;
+import com.bunshock.note_app_for_it_frontend.models.EquipmentModel;
 import com.bunshock.note_app_for_it_frontend.models.EquipmentType;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -21,10 +22,11 @@ class SqliteEquipmentServiceTest {
     Path tempDir;
 
     private SqliteEquipmentService service;
+    private String url;
 
     @BeforeEach
     void setUp() throws SQLException {
-        String url = "jdbc:sqlite:" + tempDir.resolve("equipment-test.db").toAbsolutePath();
+        url = "jdbc:sqlite:" + tempDir.resolve("equipment-test.db").toAbsolutePath();
         createSchema(url);
         service = new SqliteEquipmentService(() -> {
             try { return DriverManager.getConnection(url); }
@@ -39,12 +41,14 @@ class SqliteEquipmentServiceTest {
                     id   INTEGER PRIMARY KEY AUTOINCREMENT,
                     name TEXT NOT NULL UNIQUE,
                     is_asset INTEGER NOT NULL DEFAULT 1,
-                    requires_serial INTEGER NOT NULL DEFAULT 0
+                    requires_serial INTEGER NOT NULL DEFAULT 0,
+                    deprecated INTEGER NOT NULL DEFAULT 0
                 )""");
             stmt.executeUpdate("""
                 CREATE TABLE BRAND (
                     id   INTEGER PRIMARY KEY AUTOINCREMENT,
-                    name TEXT NOT NULL UNIQUE
+                    name TEXT NOT NULL UNIQUE,
+                    deprecated INTEGER NOT NULL DEFAULT 0
                 )""");
             stmt.executeUpdate("""
                 CREATE TABLE BRAND_TYPE_LINK (
@@ -56,15 +60,27 @@ class SqliteEquipmentServiceTest {
             stmt.executeUpdate("""
                 CREATE TABLE MODEL (
                     id            INTEGER PRIMARY KEY AUTOINCREMENT,
-                    brand_type_id INTEGER NOT NULL REFERENCES BRAND_TYPE_LINK(id),
-                    name          TEXT NOT NULL
+                    brand_type_id INTEGER REFERENCES BRAND_TYPE_LINK(id),
+                    name          TEXT NOT NULL,
+                    deprecated    INTEGER NOT NULL DEFAULT 0
                 )""");
             stmt.executeUpdate(
                 "CREATE UNIQUE INDEX idx_model_brand_type_name ON MODEL(brand_type_id, name)");
+            stmt.executeUpdate(
+                "CREATE UNIQUE INDEX idx_model_global_generic_name ON MODEL(name) WHERE brand_type_id IS NULL");
+            stmt.executeUpdate(
+                "CREATE UNIQUE INDEX idx_model_single_active_generic ON MODEL(deprecated) WHERE brand_type_id IS NULL AND deprecated = 0");
             stmt.executeUpdate("""
                 CREATE TABLE PROVIDER (
                     id   INTEGER PRIMARY KEY AUTOINCREMENT,
-                    name TEXT NOT NULL UNIQUE
+                    name TEXT NOT NULL UNIQUE,
+                    deprecated INTEGER NOT NULL DEFAULT 0
+                )""");
+            stmt.executeUpdate("""
+                CREATE TABLE SEDE (
+                    id   INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL UNIQUE,
+                    deprecated INTEGER NOT NULL DEFAULT 0
                 )""");
         }
     }
@@ -155,6 +171,9 @@ class SqliteEquipmentServiceTest {
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
             () -> service.addModel("latitude", dell.getId(), notebook.getId()));
         assertTrue(ex.getMessage().contains("Ya existe"));
+        // Just LATITUDE — the global "Genérico / Otro" model (brand_type_id IS NULL) would also
+        // be unioned in by getModelsForBrandAndType() if one existed, but this test's own schema
+        // copy never seeds it (unlike the real app's insertDefaultData()/migration).
         assertEquals(1, service.getModelsForBrandAndType(dell.getId(), notebook.getId()).size());
     }
 
@@ -209,9 +228,265 @@ class SqliteEquipmentServiceTest {
             () -> service.renameProvider(distribuidoraId, "techcorp s.a."));
     }
 
+    // ── Sede ─────────────────────────────────────────────────────────────────
+
+    @Test
+    void addSedeRejectsCaseInsensitiveDuplicate() {
+        service.addSede("Campus Córdoba");
+
+        assertThrows(IllegalArgumentException.class, () -> service.addSede("campus córdoba"));
+        assertEquals(1, service.getAllSedes().size());
+    }
+
+    @Test
+    void renameSedeRejectsCaseInsensitiveDuplicate() {
+        service.addSede("Campus Córdoba");
+        service.addSede("Campus Buenos Aires");
+        int baId = service.getAllSedes().stream()
+            .filter(s -> s.getName().equals("Campus Buenos Aires")).findFirst().orElseThrow().getId();
+
+        assertThrows(IllegalArgumentException.class,
+            () -> service.renameSede(baId, "campus córdoba"));
+    }
+
+    @Test
+    void renamingSedeDeprecatesOldRowAndReactivatesOrInsertsNew() throws SQLException {
+        service.addSede("Campus Córdoba");
+        int oldId = service.getAllSedes().get(0).getId();
+
+        service.renameSede(oldId, "Campus Norte");
+
+        assertTrue(isDeprecated("SEDE", oldId));
+        assertEquals(1, service.getAllSedes().size());
+        assertEquals("Campus Norte", service.getAllSedes().get(0).getName());
+    }
+
+    @Test
+    void removeSedeDeprecatesRatherThanDeletes() throws SQLException {
+        service.addSede("Campus Córdoba");
+        int id = service.getAllSedes().get(0).getId();
+
+        service.removeSede(id);
+
+        assertTrue(isDeprecated("SEDE", id));
+        assertEquals(0, service.getAllSedes().size());
+    }
+
     private EquipmentType findType(String name) {
         return service.getAllTypes().stream()
             .filter(t -> t.getName().equals(name))
             .findFirst().orElseThrow();
+    }
+
+    // ── Rename cascade (Type/Brand) ─────────────────────────────────────────
+    // Highest-risk new logic in the catalog-FK redesign: renaming a Type/Brand deprecates the
+    // row every BRAND_TYPE_LINK using it points at, so an equivalent link (and every active
+    // model under it) must be cloned forward onto the new id, or the active catalog would
+    // silently lose everything configured under the old name.
+
+    @Test
+    void renameTypeClonesEveryLinkedBrandsActiveModelsToTheNewTypeId() throws SQLException {
+        service.addType("NOTEBOOK", true);
+        EquipmentType notebook = findType("NOTEBOOK");
+        service.addBrandForType("DELL", notebook.getId());
+        service.addBrandForType("HP", notebook.getId());
+        EquipmentBrand dell = service.getBrandsForType(notebook.getId()).stream()
+            .filter(b -> b.getName().equals("DELL")).findFirst().orElseThrow();
+        EquipmentBrand hp = service.getBrandsForType(notebook.getId()).stream()
+            .filter(b -> b.getName().equals("HP")).findFirst().orElseThrow();
+        service.addModel("LATITUDE", dell.getId(), notebook.getId());
+        service.addModel("XPS", dell.getId(), notebook.getId());
+        service.addModel("ELITEBOOK", hp.getId(), notebook.getId());
+
+        int oldTypeId = notebook.getId();
+        service.renameType(oldTypeId, "LAPTOP");
+
+        assertTrue(isDeprecated("TYPE", oldTypeId));
+        assertTrue(service.getAllTypes().stream().noneMatch(t -> t.getName().equals("NOTEBOOK")),
+            "old name must no longer be offered as an active type");
+
+        EquipmentType laptop = findType("LAPTOP");
+        List<EquipmentBrand> laptopBrands = service.getBrandsForType(laptop.getId());
+        assertEquals(2, laptopBrands.size());
+
+        EquipmentBrand dellUnderLaptop = laptopBrands.stream()
+            .filter(b -> b.getName().equals("DELL")).findFirst().orElseThrow();
+        List<String> dellModels = service.getModelsForBrandAndType(dellUnderLaptop.getId(), laptop.getId())
+            .stream().map(EquipmentModel::getName).toList();
+        assertEquals(2, dellModels.size());
+        assertTrue(dellModels.containsAll(List.of("LATITUDE", "XPS")));
+
+        EquipmentBrand hpUnderLaptop = laptopBrands.stream()
+            .filter(b -> b.getName().equals("HP")).findFirst().orElseThrow();
+        List<String> hpModels = service.getModelsForBrandAndType(hpUnderLaptop.getId(), laptop.getId())
+            .stream().map(EquipmentModel::getName).toList();
+        assertEquals(1, hpModels.size());
+        assertTrue(hpModels.contains("ELITEBOOK"));
+    }
+
+    @Test
+    void renameBrandClonesActiveModelsAcrossEveryTypeItWasLinkedTo() throws SQLException {
+        service.addType("NOTEBOOK", true);
+        service.addType("MONITOR", true);
+        EquipmentType notebook = findType("NOTEBOOK");
+        EquipmentType monitor = findType("MONITOR");
+        service.addBrandForType("DELL", notebook.getId());
+        service.addBrandForType("DELL", monitor.getId());
+        EquipmentBrand dellForNotebook = service.getBrandsForType(notebook.getId()).get(0);
+        EquipmentBrand dellForMonitor = service.getBrandsForType(monitor.getId()).get(0);
+        assertEquals(dellForNotebook.getId(), dellForMonitor.getId(),
+            "addBrandForType() reuses the same BRAND row by name across different types");
+        service.addModel("LATITUDE", dellForNotebook.getId(), notebook.getId());
+        service.addModel("S22", dellForMonitor.getId(), monitor.getId());
+
+        int oldBrandId = dellForNotebook.getId();
+        service.renameBrand(oldBrandId, "DELL INC");
+
+        assertTrue(isDeprecated("BRAND", oldBrandId));
+        EquipmentBrand dellIncForNotebook = service.getBrandsForType(notebook.getId()).stream()
+            .filter(b -> b.getName().equals("DELL INC")).findFirst().orElseThrow();
+        EquipmentBrand dellIncForMonitor = service.getBrandsForType(monitor.getId()).stream()
+            .filter(b -> b.getName().equals("DELL INC")).findFirst().orElseThrow();
+
+        List<String> notebookModels = service.getModelsForBrandAndType(dellIncForNotebook.getId(), notebook.getId())
+            .stream().map(EquipmentModel::getName).toList();
+        assertTrue(notebookModels.contains("LATITUDE"));
+
+        List<String> monitorModels = service.getModelsForBrandAndType(dellIncForMonitor.getId(), monitor.getId())
+            .stream().map(EquipmentModel::getName).toList();
+        assertTrue(monitorModels.contains("S22"));
+    }
+
+    @Test
+    void renamingBackToADeprecatedNameReactivatesTheOriginalRowInsteadOfDuplicating() {
+        service.addType("NOTEBOOK", true);
+        int originalId = findType("NOTEBOOK").getId();
+
+        service.renameType(originalId, "LAPTOP");
+        int renamedId = findType("LAPTOP").getId();
+
+        service.renameType(renamedId, "NOTEBOOK");
+        EquipmentType reactivated = findType("NOTEBOOK");
+
+        assertEquals(originalId, reactivated.getId(),
+            "renaming back to the original name should reactivate the original row, not insert a new one");
+        assertEquals(1, service.getAllTypes().size(),
+            "only one active TYPE row should exist — no duplicate left behind");
+    }
+
+    // ── Generic brand never gets a BRAND_TYPE_LINK ──────────────────────────────
+    // Before 2026-07-23, picking the generic brand for a type lazily created a real link —
+    // vestigial now that the generic brand is offered for every type via client-side synthesis
+    // instead, and a surviving link makes that one type render it differently (sorted
+    // alphabetically among real brands via the JOIN) than every other type (always appended
+    // last via synthesis) — see DatabaseServiceMigrationTest's cleanup-migration test for the
+    // other half of this fix.
+
+    @Test
+    void addBrandForTypeDoesNotLinkTheGenericBrand() throws SQLException {
+        service.addType("NOTEBOOK", true);
+        int notebookId = findType("NOTEBOOK").getId();
+
+        service.addBrandForType("Genérico / Otro", notebookId);
+
+        EquipmentBrand generic = service.getAllBrands().stream()
+            .filter(b -> b.getName().equals("Genérico / Otro")).findFirst().orElseThrow();
+        try (Connection c = DriverManager.getConnection(url);
+             java.sql.PreparedStatement ps = c.prepareStatement(
+                 "SELECT COUNT(*) FROM BRAND_TYPE_LINK WHERE brand_id = ? AND type_id = ?")) {
+            ps.setInt(1, generic.getId());
+            ps.setInt(2, notebookId);
+            try (java.sql.ResultSet rs = ps.executeQuery()) {
+                rs.next();
+                assertEquals(0, rs.getInt(1), "no BRAND_TYPE_LINK should be created for the generic brand");
+            }
+        }
+        // A real brand added the normal way still gets linked as usual.
+        service.addBrandForType("DELL", notebookId);
+        assertEquals(1, service.getBrandsForType(notebookId).size());
+        assertEquals("DELL", service.getBrandsForType(notebookId).get(0).getName());
+    }
+
+    // ── Global generic model (brand_type_id IS NULL) ────────────────────────────
+    // The single "Genérico / Otro" model is not scoped to any BRAND_TYPE_LINK — it's a real
+    // row, structurally identified by a null brand_type_id, offered for every brand+type
+    // combination regardless of whether that combination has ever been linked.
+
+    @Test
+    void globalGenericModelIsOfferedForEveryBrandAndTypeCombination() throws SQLException {
+        int genericId = insertGlobalGenericModel("Genérico / Otro");
+        service.addType("NOTEBOOK", true);
+        service.addType("MONITOR", true);
+        service.addBrandForType("DELL", findType("NOTEBOOK").getId());
+        EquipmentBrand dell = service.getBrandsForType(findType("NOTEBOOK").getId()).get(0);
+        service.addModel("LATITUDE", dell.getId(), findType("NOTEBOOK").getId());
+
+        List<EquipmentModel> dellNotebookModels =
+            service.getModelsForBrandAndType(dell.getId(), findType("NOTEBOOK").getId());
+        assertTrue(dellNotebookModels.stream().anyMatch(m -> m.getId() == genericId));
+
+        // Never linked at all — no BRAND_TYPE_LINK for (brandId=999, typeId=MONITOR) exists,
+        // yet the global model is still offered.
+        List<EquipmentModel> neverLinked =
+            service.getModelsForBrandAndType(999, findType("MONITOR").getId());
+        assertEquals(1, neverLinked.size());
+        assertEquals(genericId, neverLinked.get(0).getId());
+        assertTrue(neverLinked.get(0).isGlobalGeneric());
+    }
+
+    @Test
+    void removeModelRefusesToDeleteTheGlobalGenericModel() throws SQLException {
+        int genericId = insertGlobalGenericModel("Genérico / Otro");
+
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+            () -> service.removeModel(genericId));
+        assertTrue(ex.getMessage().contains("genérico"));
+        assertFalse(isDeprecated("MODEL", genericId));
+    }
+
+    @Test
+    void renameModelOnTheGlobalGenericModelStaysGlobalAndDeprecatesTheOldRow() throws SQLException {
+        int genericId = insertGlobalGenericModel("Genérico / Otro");
+        service.addType("NOTEBOOK", true);
+        service.addBrandForType("DELL", findType("NOTEBOOK").getId());
+        EquipmentBrand dell = service.getBrandsForType(findType("NOTEBOOK").getId()).get(0);
+        // A same-named real model under an actual link must not collide with the global rename
+        // below — uniqueness for the global row is scoped to "brand_type_id IS NULL" only.
+        service.addModel("Sin Especificar", dell.getId(), findType("NOTEBOOK").getId());
+
+        service.renameModel(genericId, "Sin Especificar");
+
+        assertTrue(isDeprecated("MODEL", genericId));
+        List<EquipmentModel> stillOffered = service.getModelsForBrandAndType(999, 999);
+        assertEquals(1, stillOffered.size());
+        assertEquals("Sin Especificar", stillOffered.get(0).getName());
+        assertTrue(stillOffered.get(0).isGlobalGeneric());
+        assertNotEquals(genericId, stillOffered.get(0).getId());
+    }
+
+    private int insertGlobalGenericModel(String name) throws SQLException {
+        try (Connection c = DriverManager.getConnection(url);
+             java.sql.PreparedStatement ps = c.prepareStatement(
+                 "INSERT INTO MODEL (brand_type_id, name, deprecated) VALUES (NULL, ?, 0)",
+                 Statement.RETURN_GENERATED_KEYS)) {
+            ps.setString(1, name);
+            ps.executeUpdate();
+            try (java.sql.ResultSet keys = ps.getGeneratedKeys()) {
+                keys.next();
+                return keys.getInt(1);
+            }
+        }
+    }
+
+    private boolean isDeprecated(String table, int id) throws SQLException {
+        try (Connection c = DriverManager.getConnection(url);
+             java.sql.PreparedStatement ps = c.prepareStatement(
+                 "SELECT deprecated FROM " + table + " WHERE id = ?")) {
+            ps.setInt(1, id);
+            try (java.sql.ResultSet rs = ps.executeQuery()) {
+                assertTrue(rs.next());
+                return rs.getInt(1) == 1;
+            }
+        }
     }
 }

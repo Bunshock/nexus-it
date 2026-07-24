@@ -14,14 +14,14 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import static org.junit.jupiter.api.Assertions.*;
 
-// CatalogMigrationTool is normally run against a real PostgreSQL target, which isn't available
+// CatalogMigrationTool is normally run against a real SQL Server target, which isn't available
 // in this test environment (no test infrastructure for it anywhere in this suite — see
-// RemoteDatabaseServiceTest, which only ever exercises unreachable-host failure paths). SQLite
-// (3.45.x here, via sqlite-jdbc) supports the same "INSERT ... ON CONFLICT ... DO UPDATE ...
-// RETURNING id" syntax the migrate*() methods use, so a second, separate SQLite database
-// standing in for "the remote database" still exercises the real upsert/id-remapping SQL as
-// literally written — this isn't a mock, it's the actual code path with a same-dialect stand-in
-// on the other end.
+// RemoteDatabaseServiceTest, which only ever exercises unreachable-host failure paths). Its
+// migrate*() methods are plain check-then-insert-or-update SQL (SELECT to find an existing row,
+// then INSERT or UPDATE — no SQL Server-specific MERGE/OUTPUT syntax), which SQLite executes
+// identically, so a second, separate SQLite database standing in for "the remote database" still
+// exercises the real upsert/id-remapping logic as literally written — this isn't a mock, it's the
+// actual code path with a same-dialect stand-in on the other end.
 class CatalogMigrationToolTest {
 
     @TempDir
@@ -40,7 +40,7 @@ class CatalogMigrationToolTest {
         // Seed the target with a row that consumes id=1 before migration ever runs, so a
         // migrated row landing on the SAME id as its source row would be a coincidence the test
         // can't trust — the target's ids are guaranteed to differ from the source's from the
-        // start, the same way a real Postgres SERIAL sequence starts independently of whatever
+        // start, the same way a real SQL Server IDENTITY column starts independently of whatever
         // ids SQLite happened to assign locally.
         try (Statement s = target.createStatement()) {
             s.executeUpdate("INSERT INTO TYPE (name, is_asset, requires_serial) VALUES ('Dummy', 1, 0)");
@@ -63,12 +63,14 @@ class CatalogMigrationToolTest {
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     name TEXT NOT NULL UNIQUE,
                     is_asset INTEGER NOT NULL DEFAULT 1,
-                    requires_serial INTEGER NOT NULL DEFAULT 0
+                    requires_serial INTEGER NOT NULL DEFAULT 0,
+                    deprecated INTEGER NOT NULL DEFAULT 0
                 )""");
             s.executeUpdate("""
                 CREATE TABLE BRAND (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    name TEXT NOT NULL UNIQUE
+                    name TEXT NOT NULL UNIQUE,
+                    deprecated INTEGER NOT NULL DEFAULT 0
                 )""");
             s.executeUpdate("""
                 CREATE TABLE BRAND_TYPE_LINK (
@@ -80,22 +82,24 @@ class CatalogMigrationToolTest {
             s.executeUpdate("""
                 CREATE TABLE MODEL (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    brand_type_id INTEGER NOT NULL REFERENCES BRAND_TYPE_LINK(id),
-                    name TEXT NOT NULL
+                    brand_type_id INTEGER REFERENCES BRAND_TYPE_LINK(id),
+                    name TEXT NOT NULL,
+                    deprecated INTEGER NOT NULL DEFAULT 0
                 )""");
             s.executeUpdate("CREATE UNIQUE INDEX idx_model_brand_type_name ON MODEL(brand_type_id, name)");
+            s.executeUpdate("CREATE UNIQUE INDEX idx_model_global_generic_name ON MODEL(name) WHERE brand_type_id IS NULL");
             s.executeUpdate("""
                 CREATE TABLE SN_VALIDATION (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     model_id INTEGER NOT NULL REFERENCES MODEL(id),
                     regex_pattern TEXT,
-                    description TEXT,
                     is_active INTEGER NOT NULL DEFAULT 1
                 )""");
             s.executeUpdate("""
                 CREATE TABLE PROVIDER (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    name TEXT NOT NULL UNIQUE
+                    name TEXT NOT NULL UNIQUE,
+                    deprecated INTEGER NOT NULL DEFAULT 0
                 )""");
         }
     }
@@ -110,7 +114,7 @@ class CatalogMigrationToolTest {
             s.executeUpdate("INSERT INTO BRAND_TYPE_LINK (id, type_id, brand_id) VALUES (2, 2, 2)");
             s.executeUpdate("INSERT INTO MODEL (id, brand_type_id, name) VALUES (1, 1, 'Latitude 5420')");
             s.executeUpdate("INSERT INTO MODEL (id, brand_type_id, name) VALUES (2, 2, 'Estandar')");
-            s.executeUpdate("INSERT INTO SN_VALIDATION (model_id, regex_pattern, description, is_active) VALUES (1, '^[A-Z0-9]{8}$', null, 1)");
+            s.executeUpdate("INSERT INTO SN_VALIDATION (model_id, regex_pattern, is_active) VALUES (1, '^[A-Z0-9]{8}$', 1)");
             s.executeUpdate("INSERT INTO PROVIDER (id, name) VALUES (1, 'Proveedor SA')");
         }
     }
@@ -161,6 +165,42 @@ class CatalogMigrationToolTest {
         }
         try (Statement s = target.createStatement();
              ResultSet rs = s.executeQuery("SELECT COUNT(*) FROM PROVIDER WHERE name = 'Proveedor SA'")) {
+            rs.next();
+            assertEquals(1, rs.getInt(1));
+        }
+    }
+
+    // A NULL brand_type_id (the single global "Genérico / Otro" model) has no BRAND_TYPE_LINK
+    // to remap at all — migrateModels() must match/insert it on the target via
+    // "brand_type_id IS NULL", not skip it as if its (nonexistent) link failed to migrate.
+    @Test
+    void migratesGlobalGenericModelWithoutABrandTypeLink() throws SQLException {
+        try (Statement s = source.createStatement()) {
+            s.executeUpdate("INSERT INTO TYPE (id, name, is_asset) VALUES (1, 'Notebook', 1)");
+            s.executeUpdate("INSERT INTO BRAND (id, name) VALUES (1, 'Dell')");
+            s.executeUpdate("INSERT INTO BRAND_TYPE_LINK (id, type_id, brand_id) VALUES (1, 1, 1)");
+            s.executeUpdate("INSERT INTO MODEL (id, brand_type_id, name) VALUES (1, 1, 'Latitude 5420')");
+            s.executeUpdate("INSERT INTO MODEL (id, brand_type_id, name, deprecated) VALUES (2, NULL, 'Genérico / Otro', 0)");
+        }
+
+        Map<Integer, Integer> typeIds = CatalogMigrationTool.migrateTypes(source, target);
+        Map<Integer, Integer> brandIds = CatalogMigrationTool.migrateBrands(source, target);
+        Map<Integer, Integer> linkIds = CatalogMigrationTool.migrateBrandTypeLinks(source, target, typeIds, brandIds);
+        Map<Integer, Integer> modelIds = CatalogMigrationTool.migrateModels(source, target, linkIds);
+
+        assertEquals(2, modelIds.size(), "the global generic model must not be skipped");
+        try (Statement s = target.createStatement();
+             ResultSet rs = s.executeQuery("SELECT brand_type_id FROM MODEL WHERE id = " + modelIds.get(2))) {
+            assertTrue(rs.next());
+            rs.getInt("brand_type_id");
+            assertTrue(rs.wasNull(), "the migrated row must keep brand_type_id NULL, not remap it to a link");
+        }
+
+        // Re-running must match the existing NULL-scoped row by name, not insert a duplicate.
+        Map<Integer, Integer> modelIdsAgain = CatalogMigrationTool.migrateModels(source, target, linkIds);
+        assertEquals(modelIds.get(2), modelIdsAgain.get(2));
+        try (Statement s = target.createStatement();
+             ResultSet rs = s.executeQuery("SELECT COUNT(*) FROM MODEL WHERE brand_type_id IS NULL")) {
             rs.next();
             assertEquals(1, rs.getInt(1));
         }

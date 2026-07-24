@@ -4,15 +4,20 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 
+import com.bunshock.note_app_for_it_frontend.models.AppConfig;
 import com.bunshock.note_app_for_it_frontend.models.EquipmentBrand;
 import com.bunshock.note_app_for_it_frontend.models.EquipmentModel;
 import com.bunshock.note_app_for_it_frontend.models.EquipmentProvider;
 import com.bunshock.note_app_for_it_frontend.models.EquipmentType;
+import com.bunshock.note_app_for_it_frontend.models.Sede;
 import com.bunshock.note_app_for_it_frontend.services.AdminAuthService;
 import com.bunshock.note_app_for_it_frontend.services.AdminSession;
 import com.bunshock.note_app_for_it_frontend.services.AppKeyEncryptionService;
+import com.bunshock.note_app_for_it_frontend.services.ConfigService;
 import com.bunshock.note_app_for_it_frontend.services.DatabaseService;
 import com.bunshock.note_app_for_it_frontend.services.IEquipmentService;
 import com.bunshock.note_app_for_it_frontend.services.RemoteDatabaseService;
@@ -28,10 +33,13 @@ import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
+import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
 import javafx.scene.control.PasswordField;
 import javafx.scene.control.Separator;
 import javafx.scene.control.TextField;
+import javafx.scene.control.ToggleButton;
+import javafx.scene.control.ToggleGroup;
 import javafx.scene.input.KeyCode;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
@@ -55,6 +63,16 @@ public class DatabaseSectionController {
     @FXML private ListView<EquipmentBrand> listBrands;
     @FXML private ListView<EquipmentModel> listModels;
     @FXML private ListView<EquipmentProvider> listProviders;
+    @FXML private ListView<Sede> listSedes;
+
+    // Toggle between the cascading Types/Brands/Models row and the flat/independent
+    // Providers/Sedes row — added 2026-07-24 once a 5th catalog list (Sedes) made a single
+    // shared row too cramped.
+    @FXML private ToggleGroup catalogGroup;
+    @FXML private ToggleButton btnEquipmentCatalog;
+    @FXML private ToggleButton btnOtherCatalogs;
+    @FXML private HBox rowEquipmentCatalog;
+    @FXML private HBox rowOtherCatalogs;
 
     private IEquipmentService equipmentService;
 
@@ -62,7 +80,18 @@ public class DatabaseSectionController {
         equipmentService = ServiceLocator.getInstance().getEquipmentService();
         loadConnectionDisplay();
         refreshTypes();
+        refreshSedes();
+
+        catalogGroup.selectedToggleProperty().addListener((obs, old, next) -> {
+            boolean showEquipment = next == btnEquipmentCatalog;
+            rowEquipmentCatalog.setVisible(showEquipment);
+            rowEquipmentCatalog.setManaged(showEquipment);
+            rowOtherCatalogs.setVisible(!showEquipment);
+            rowOtherCatalogs.setManaged(!showEquipment);
+        });
         refreshProviders();
+        applyGenericCellStyle(listBrands);
+        applyGenericCellStyle(listModels);
 
         listTypes.getSelectionModel().selectedItemProperty().addListener((obs, old, sel) -> {
             if (sel != null) refreshBrandsForType(sel.getId());
@@ -88,7 +117,7 @@ public class DatabaseSectionController {
             lblDbName.setText("—");
             lblDbName.setStyle("-fx-text-fill: #94a3b8; -fx-font-size: 13px;");
         } else {
-            lblDbServer.setText(host + ":" + (port != null && !port.isBlank() ? port : "5432"));
+            lblDbServer.setText(host + ":" + (port != null && !port.isBlank() ? port : "1433"));
             lblDbServer.setStyle("-fx-text-fill: #334155; -fx-font-size: 13px;");
             lblDbName.setText(name != null && !name.isBlank() ? name : "—");
             lblDbName.setStyle("-fx-text-fill: #334155; -fx-font-size: 13px;");
@@ -151,7 +180,7 @@ public class DatabaseSectionController {
         tfHost.setPromptText("Ej: 192.168.1.100"); tfHost.getStyleClass().add("form-input-main");
 
         Label lblP = new Label("PUERTO"); lblP.getStyleClass().add("input-label-small");
-        TextField tfPort = new TextField(curPort != null && !curPort.isBlank() ? curPort : "5432");
+        TextField tfPort = new TextField(curPort != null && !curPort.isBlank() ? curPort : "1433");
         tfPort.setPrefWidth(80); tfPort.getStyleClass().add("form-input-main");
 
         VBox hostBox = new VBox(2, lblH, tfHost); HBox.setHgrow(hostBox, Priority.ALWAYS);
@@ -179,7 +208,7 @@ public class DatabaseSectionController {
         btnSave.getStyleClass().add("button-primary");
         btnSave.setOnAction(e -> {
             String host   = tfHost.getText().trim();
-            String portStr = tfPort.getText().trim().isEmpty() ? "5432" : tfPort.getText().trim();
+            String portStr = tfPort.getText().trim().isEmpty() ? "1433" : tfPort.getText().trim();
             String name   = tfName.getText().trim();
             String user   = tfUser.getText().trim();
             String pass   = pfPass.getText();
@@ -192,7 +221,7 @@ public class DatabaseSectionController {
                 saveEncryptedSetting("db_password", pass);
                 int configuredPort;
                 try { configuredPort = Integer.parseInt(portStr); }
-                catch (NumberFormatException nfe) { configuredPort = 5432; }
+                catch (NumberFormatException nfe) { configuredPort = 1433; }
                 RemoteDatabaseService.getInstance().configure(host, configuredPort, name, user, pass);
                 loadConnectionDisplay();
                 stage.close();
@@ -251,24 +280,90 @@ public class DatabaseSectionController {
         listModels.setItems(FXCollections.observableArrayList());
     }
 
+    // The global generic brand isn't linked to every type (it doesn't need to be — see
+    // SqliteEquipmentService.addBrandForType()), so it's synthesized into the list here exactly
+    // like ItemDialogController.onTypeSelected() already does for the note-generation Item
+    // dialog — otherwise it would only appear for whichever type(s) happen to have a real,
+    // now-vestigial BRAND_TYPE_LINK, and be missing everywhere else.
     private void refreshBrandsForType(int typeId) {
-        listBrands.setItems(FXCollections.observableArrayList(equipmentService.getBrandsForType(typeId)));
+        List<EquipmentBrand> brands = new ArrayList<>(equipmentService.getBrandsForType(typeId));
+        if (brands.stream().noneMatch(b -> genericLabel().equals(b.getName()))) {
+            equipmentService.getAllBrands().stream()
+                .filter(b -> genericLabel().equals(b.getName()))
+                .findFirst()
+                .ifPresent(brands::add);
+        }
+        listBrands.setItems(FXCollections.observableArrayList(brands));
         listModels.setItems(FXCollections.observableArrayList());
     }
 
+    private static final String DEFAULT_GENERIC_LABEL = "Genérico / Otro";
+
+    // Duplicated from SqliteEquipmentService's/ItemDialogController's identical helper per this
+    // codebase's no-shared-abstraction convention.
+    private String genericLabel() {
+        try {
+            AppConfig.CatalogConfig catalog = ConfigService.getInstance().getConfig().catalog;
+            if (catalog != null && catalog.genericLabel != null && !catalog.genericLabel.isBlank()) {
+                return catalog.genericLabel.trim();
+            }
+        } catch (IllegalStateException notLoaded) {
+            // ConfigService not loaded in this context (e.g. some test setups) — use the default
+        }
+        return DEFAULT_GENERIC_LABEL;
+    }
+
+    // The global generic model comes back from getModelsForBrandAndType() sorted alphabetically
+    // among the real models (its own SQL just orders everything by name) — move it to the end
+    // here to match the Brand list's own bottom placement above, and the same "generic sits last"
+    // convention ItemDialogController's combo boxes already use.
     private void refreshModelsForBrandType(int brandId, int typeId) {
-        listModels.setItems(FXCollections.observableArrayList(
-            equipmentService.getModelsForBrandAndType(brandId, typeId)));
+        List<EquipmentModel> models = new ArrayList<>(
+            equipmentService.getModelsForBrandAndType(brandId, typeId));
+        EquipmentModel generic = models.stream()
+            .filter(m -> genericLabel().equals(m.getName()))
+            .findFirst().orElse(null);
+        if (generic != null) {
+            models.remove(generic);
+            models.add(generic);
+        }
+        listModels.setItems(FXCollections.observableArrayList(models));
+    }
+
+    private static final String GENERIC_STYLE = "-fx-font-style: italic; -fx-text-fill: #94a3b8;";
+
+    // Same italic/grey treatment ItemDialogController's combo boxes already give the generic
+    // fallback — applied here to listBrands/listModels so it reads consistently as "not a real
+    // catalog entry" in Base de Datos too.
+    private <T> void applyGenericCellStyle(ListView<T> listView) {
+        listView.setCellFactory(lv -> new ListCell<>() {
+            @Override
+            protected void updateItem(T item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    setText(null);
+                    setStyle("");
+                } else {
+                    setText(item.toString());
+                    setStyle(genericLabel().equals(item.toString()) ? GENERIC_STYLE : "");
+                }
+            }
+        });
     }
 
     private void refreshProviders() {
         listProviders.setItems(FXCollections.observableArrayList(equipmentService.getAllProviders()));
     }
 
+    private void refreshSedes() {
+        listSedes.setItems(FXCollections.observableArrayList(equipmentService.getAllSedes()));
+    }
+
     @FXML private void handleAddType()    { requireAdmin(this::openAddTypeDialog); }
     @FXML private void handleAddBrand()   { requireAdmin(this::openAddBrandDialog); }
     @FXML private void handleAddModel()   { requireAdmin(this::openAddModelDialog); }
     @FXML private void handleAddProvider(){ requireAdmin(this::openAddProviderDialog); }
+    @FXML private void handleAddSede()    { requireAdmin(this::openAddSedeDialog); }
 
     @FXML
     private void handleEditType() {
@@ -307,6 +402,16 @@ public class DatabaseSectionController {
         requireAdmin(() -> openRenameDialog(sel.getName(), newName -> {
             equipmentService.renameProvider(sel.getId(), newName);
             refreshProviders();
+        }));
+    }
+
+    @FXML
+    private void handleEditSede() {
+        Sede sel = listSedes.getSelectionModel().getSelectedItem();
+        if (sel == null) return;
+        requireAdmin(() -> openRenameDialog(sel.getName(), newName -> {
+            equipmentService.renameSede(sel.getId(), newName);
+            refreshSedes();
         }));
     }
 
@@ -357,6 +462,17 @@ public class DatabaseSectionController {
         requireAdmin(() -> {
             if (!confirmDelete(sel.getName())) return;
             try { equipmentService.removeProvider(sel.getId()); refreshProviders(); }
+            catch (Exception e) { showErrorDialog("Error al eliminar", e.getMessage()); }
+        });
+    }
+
+    @FXML
+    private void handleRemoveSede() {
+        Sede sel = listSedes.getSelectionModel().getSelectedItem();
+        if (sel == null) return;
+        requireAdmin(() -> {
+            if (!confirmDelete(sel.getName())) return;
+            try { equipmentService.removeSede(sel.getId()); refreshSedes(); }
             catch (Exception e) { showErrorDialog("Error al eliminar", e.getMessage()); }
         });
     }
@@ -718,6 +834,49 @@ public class DatabaseSectionController {
                 return;
             }
             refreshProviders();
+            stage.close();
+        });
+
+        HBox buttons = new HBox(8, btnCancel, btnSave);
+        buttons.setAlignment(Pos.CENTER_RIGHT);
+
+        VBox root = buildDialogRoot(380);
+        root.getChildren().addAll(lblTitle, new VBox(2, buildFieldHeaderRow(lblN, lblError), tfName), buttons);
+
+        buildAndShow(stage, root, tfName);
+    }
+
+    private void openAddSedeDialog() {
+        Stage stage = buildDialogStage();
+        centerOnContent(stage);
+
+        Label lblTitle = new Label("Nueva sede");
+        lblTitle.getStyleClass().add("section-label");
+
+        Label lblN = new Label("NOMBRE"); lblN.getStyleClass().add("input-label-small");
+        Label lblError = buildErrorLabel();
+        TextField tfName = new TextField();
+        tfName.setPromptText("Ej: Campus Córdoba"); tfName.getStyleClass().add("form-input-main");
+
+        Button btnCancel = new Button("Cancelar");
+        btnCancel.getStyleClass().add("button-secondary");
+        btnCancel.setOnAction(e -> stage.close());
+
+        Button btnSave = new Button("Agregar");
+        btnSave.getStyleClass().add("button-primary");
+        btnSave.setOnAction(e -> {
+            String name = tfName.getText().trim();
+            if (name.isEmpty()) {
+                triggerFieldError(lblError, "El nombre no puede estar vacío");
+                return;
+            }
+            try {
+                equipmentService.addSede(name);
+            } catch (Exception ex) {
+                triggerFieldError(lblError, ex.getMessage());
+                return;
+            }
+            refreshSedes();
             stage.close();
         });
 

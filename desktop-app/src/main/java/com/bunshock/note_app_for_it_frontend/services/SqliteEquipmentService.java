@@ -4,19 +4,41 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
+import java.sql.Types;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Supplier;
 
+import com.bunshock.note_app_for_it_frontend.models.AppConfig;
 import com.bunshock.note_app_for_it_frontend.models.EquipmentBrand;
 import com.bunshock.note_app_for_it_frontend.models.EquipmentModel;
 import com.bunshock.note_app_for_it_frontend.models.EquipmentProvider;
 import com.bunshock.note_app_for_it_frontend.models.EquipmentType;
+import com.bunshock.note_app_for_it_frontend.models.Sede;
 import com.bunshock.note_app_for_it_frontend.models.SnValidation;
 import com.bunshock.note_app_for_it_frontend.models.SnValidationRow;
 
 public class SqliteEquipmentService implements IEquipmentService {
+
+    private static final String DEFAULT_GENERIC_LABEL = "Genérico / Otro";
+
+    // BRAND has no structural way to mark "this is the fallback row" the way MODEL does
+    // (brand_type_id IS NULL) — no scoping FK to leave null — so it's still identified by name.
+    // Reads the live config value rather than a hardcoded constant so a renamed fallback brand
+    // stays protected as long as an admin keeps catalog.genericLabel in sync with the rename.
+    private String genericLabel() {
+        try {
+            AppConfig.CatalogConfig catalog = ConfigService.getInstance().getConfig().catalog;
+            if (catalog != null && catalog.genericLabel != null && !catalog.genericLabel.isBlank()) {
+                return catalog.genericLabel.trim();
+            }
+        } catch (IllegalStateException notLoaded) {
+            // ConfigService not loaded in this context (e.g. some test setups) — use the default
+        }
+        return DEFAULT_GENERIC_LABEL;
+    }
 
     private final Supplier<Connection> connector;
 
@@ -36,7 +58,7 @@ public class SqliteEquipmentService implements IEquipmentService {
         List<EquipmentType> result = new ArrayList<>();
         try (Connection c = connector.get();
              ResultSet rs = c.createStatement().executeQuery(
-                 "SELECT id, name, is_asset, requires_serial FROM TYPE ORDER BY name")) {
+                 "SELECT id, name, is_asset, requires_serial FROM TYPE WHERE deprecated = 0 ORDER BY name")) {
             while (rs.next()) {
                 result.add(new EquipmentType(rs.getInt("id"), rs.getString("name"),
                     rs.getInt("is_asset") == 1, rs.getInt("requires_serial") == 1));
@@ -53,7 +75,7 @@ public class SqliteEquipmentService implements IEquipmentService {
         String sql = """
             SELECT b.id, b.name FROM BRAND b
             JOIN BRAND_TYPE_LINK btl ON btl.brand_id = b.id
-            WHERE btl.type_id = ? ORDER BY b.name
+            WHERE btl.type_id = ? AND b.deprecated = 0 ORDER BY b.name
             """;
         try (Connection c = connector.get(); PreparedStatement ps = c.prepareStatement(sql)) {
             ps.setInt(1, typeId);
@@ -71,7 +93,8 @@ public class SqliteEquipmentService implements IEquipmentService {
     public List<EquipmentBrand> getAllBrands() {
         List<EquipmentBrand> result = new ArrayList<>();
         try (Connection c = connector.get();
-             ResultSet rs = c.createStatement().executeQuery("SELECT id, name FROM BRAND ORDER BY name")) {
+             ResultSet rs = c.createStatement().executeQuery(
+                 "SELECT id, name FROM BRAND WHERE deprecated = 0 ORDER BY name")) {
             while (rs.next()) {
                 result.add(new EquipmentBrand(rs.getInt("id"), rs.getString("name")));
             }
@@ -81,20 +104,28 @@ public class SqliteEquipmentService implements IEquipmentService {
         return result;
     }
 
+    // The global "Genérico / Otro" model (brand_type_id IS NULL) is unioned in regardless of the
+    // requested brand+type — it's not scoped to any particular combination, so it's offered for
+    // every one of them, whether or not that combination has ever had a real BRAND_TYPE_LINK.
     @Override
     public List<EquipmentModel> getModelsForBrandAndType(int brandId, int typeId) {
         List<EquipmentModel> result = new ArrayList<>();
         String sql = """
             SELECT m.id, m.brand_type_id, m.name FROM MODEL m
             JOIN BRAND_TYPE_LINK btl ON btl.id = m.brand_type_id
-            WHERE btl.type_id = ? AND btl.brand_id = ? ORDER BY m.name
+            WHERE btl.type_id = ? AND btl.brand_id = ? AND m.deprecated = 0
+            UNION
+            SELECT m.id, m.brand_type_id, m.name FROM MODEL m
+            WHERE m.brand_type_id IS NULL AND m.deprecated = 0
+            ORDER BY name
             """;
         try (Connection c = connector.get(); PreparedStatement ps = c.prepareStatement(sql)) {
             ps.setInt(1, typeId);
             ps.setInt(2, brandId);
             ResultSet rs = ps.executeQuery();
             while (rs.next()) {
-                result.add(new EquipmentModel(rs.getInt("id"), rs.getInt("brand_type_id"), rs.getString("name")));
+                result.add(new EquipmentModel(rs.getInt("id"),
+                    (Integer) rs.getObject("brand_type_id"), rs.getString("name")));
             }
         } catch (SQLException e) {
             throw new RuntimeException("Failed to load models", e);
@@ -106,7 +137,8 @@ public class SqliteEquipmentService implements IEquipmentService {
     public List<EquipmentProvider> getAllProviders() {
         List<EquipmentProvider> result = new ArrayList<>();
         try (Connection c = connector.get();
-             ResultSet rs = c.createStatement().executeQuery("SELECT id, name FROM PROVIDER ORDER BY name")) {
+             ResultSet rs = c.createStatement().executeQuery(
+                 "SELECT id, name FROM PROVIDER WHERE deprecated = 0 ORDER BY name")) {
             while (rs.next()) {
                 result.add(new EquipmentProvider(rs.getInt("id"), rs.getString("name")));
             }
@@ -117,8 +149,26 @@ public class SqliteEquipmentService implements IEquipmentService {
     }
 
     @Override
+    public List<Sede> getAllSedes() {
+        List<Sede> result = new ArrayList<>();
+        try (Connection c = connector.get();
+             ResultSet rs = c.createStatement().executeQuery(
+                 "SELECT id, name FROM SEDE WHERE deprecated = 0 ORDER BY name")) {
+            while (rs.next()) {
+                result.add(new Sede(rs.getInt("id"), rs.getString("name")));
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to load sedes", e);
+        }
+        return result;
+    }
+
+    @Override
     public Optional<SnValidation> getSnValidation(int modelId) {
-        String sql = "SELECT * FROM SN_VALIDATION WHERE model_id = ? AND is_active = 1 LIMIT 1";
+        // No LIMIT/TOP clause needed — upsertSnValidation()'s delete-then-insert already
+        // guarantees at most one row per model_id, and dropping it keeps this query dialect-
+        // neutral (SQL Server has no LIMIT; TOP has different placement syntax).
+        String sql = "SELECT * FROM SN_VALIDATION WHERE model_id = ? AND is_active = 1";
         try (Connection c = connector.get(); PreparedStatement ps = c.prepareStatement(sql)) {
             ps.setInt(1, modelId);
             ResultSet rs = ps.executeQuery();
@@ -126,7 +176,6 @@ public class SqliteEquipmentService implements IEquipmentService {
                 return Optional.of(new SnValidation(
                     rs.getInt("model_id"),
                     rs.getString("regex_pattern"),
-                    rs.getString("description"),
                     true
                 ));
             }
@@ -147,7 +196,7 @@ public class SqliteEquipmentService implements IEquipmentService {
             JOIN TYPE t ON t.id = btl.type_id
             JOIN BRAND b ON b.id = btl.brand_id
             LEFT JOIN SN_VALIDATION sv ON sv.model_id = m.id
-            WHERE t.is_asset = 1
+            WHERE t.is_asset = 1 AND t.deprecated = 0 AND b.deprecated = 0 AND m.deprecated = 0
             ORDER BY COALESCE(sv.is_active, 0) DESC, t.name, b.name, m.name
             """;
         List<SnValidationRow> rows = new ArrayList<>();
@@ -195,26 +244,47 @@ public class SqliteEquipmentService implements IEquipmentService {
     @Override
     public void addBrandForType(String brandName, int typeId) {
         try (Connection c = connector.get()) {
-            try (PreparedStatement ps = c.prepareStatement(
-                    "INSERT INTO BRAND (name) VALUES (?) ON CONFLICT (name) DO NOTHING")) {
-                ps.setString(1, brandName.trim());
-                ps.executeUpdate();
-            }
-            int brandId;
-            try (PreparedStatement ps = c.prepareStatement(
-                    "SELECT id FROM BRAND WHERE name = ?")) {
-                ps.setString(1, brandName.trim());
-                ResultSet rs = ps.executeQuery();
-                brandId = rs.getInt(1);
-            }
-            try (PreparedStatement ps = c.prepareStatement(
-                    "INSERT INTO BRAND_TYPE_LINK (type_id, brand_id) VALUES (?, ?) ON CONFLICT (type_id, brand_id) DO NOTHING")) {
-                ps.setInt(1, typeId);
-                ps.setInt(2, brandId);
-                ps.executeUpdate();
-            }
+            String trimmed = brandName.trim();
+            int brandId = findOrInsertBrand(c, trimmed);
+            // The global generic brand never needs (or should get) a BRAND_TYPE_LINK — it's
+            // already offered for every type via client-side synthesis
+            // (ItemDialogController.onTypeSelected(), DatabaseSectionController.
+            // refreshBrandsForType()). Creating a real link here would reproduce the exact
+            // per-type inconsistency the 2026-07-23 cleanup migration removes: that one type
+            // would show it via getBrandsForType()'s real JOIN (sorted alphabetically among
+            // real brands) while every other type shows it via synthesis (always appended last).
+            if (genericLabel().equalsIgnoreCase(trimmed)) return;
+            ensureBrandTypeLink(c, brandId, typeId);
         } catch (SQLException e) {
             throw new RuntimeException("Failed to add brand for type", e);
+        }
+    }
+
+    // Reuses (reactivates) a deprecated row with the same name rather than inserting a duplicate
+    // — name uniqueness on BRAND holds regardless of deprecated status (see rename methods below),
+    // so a straight INSERT here would violate that constraint the moment the same brand name was
+    // ever deprecated in the past (e.g. renamed away and back).
+    private int findOrInsertBrand(Connection c, String name) throws SQLException {
+        Integer active = findActiveIdExcluding(c, "BRAND", name, -1);
+        if (active != null) return active;
+
+        Integer deprecatedId = findDeprecatedId(c, "BRAND", name);
+        if (deprecatedId != null) {
+            try (PreparedStatement up = c.prepareStatement("UPDATE BRAND SET deprecated = 0 WHERE id = ?")) {
+                up.setInt(1, deprecatedId);
+                up.executeUpdate();
+            }
+            return deprecatedId;
+        }
+
+        try (PreparedStatement ins = c.prepareStatement(
+                "INSERT INTO BRAND (name, deprecated) VALUES (?, 0)", Statement.RETURN_GENERATED_KEYS)) {
+            ins.setString(1, name);
+            ins.executeUpdate();
+            try (ResultSet keys = ins.getGeneratedKeys()) {
+                keys.next();
+                return keys.getInt(1);
+            }
         }
     }
 
@@ -222,19 +292,57 @@ public class SqliteEquipmentService implements IEquipmentService {
     public void renameType(int typeId, String newName) {
         try (Connection c = connector.get()) {
             String trimmed = newName.trim();
-            try (PreparedStatement chk = c.prepareStatement(
-                    "SELECT 1 FROM TYPE WHERE LOWER(name) = LOWER(?) AND id != ?")) {
-                chk.setString(1, trimmed);
-                chk.setInt(2, typeId);
-                if (chk.executeQuery().next()) {
-                    throw new IllegalArgumentException("Ya existe un tipo con ese nombre");
+
+            String currentName;
+            boolean isAsset;
+            boolean requiresSerial;
+            try (PreparedStatement sel = c.prepareStatement(
+                    "SELECT name, is_asset, requires_serial FROM TYPE WHERE id = ?")) {
+                sel.setInt(1, typeId);
+                try (ResultSet rs = sel.executeQuery()) {
+                    if (!rs.next()) throw new IllegalArgumentException("Tipo no encontrado");
+                    currentName = rs.getString("name");
+                    isAsset = rs.getInt("is_asset") == 1;
+                    requiresSerial = rs.getInt("requires_serial") == 1;
                 }
             }
-            try (PreparedStatement ps = c.prepareStatement("UPDATE TYPE SET name = ? WHERE id = ?")) {
-                ps.setString(1, trimmed);
-                ps.setInt(2, typeId);
-                ps.executeUpdate();
+
+            if (trimmed.equalsIgnoreCase(currentName)) {
+                updateName(c, "TYPE", typeId, trimmed);
+                return;
             }
+            if (findActiveIdExcluding(c, "TYPE", trimmed, typeId) != null) {
+                throw new IllegalArgumentException("Ya existe un tipo con ese nombre");
+            }
+
+            int newTypeId;
+            Integer deprecatedId = findDeprecatedId(c, "TYPE", trimmed);
+            if (deprecatedId != null) {
+                try (PreparedStatement up = c.prepareStatement(
+                        "UPDATE TYPE SET deprecated = 0, is_asset = ?, requires_serial = ? WHERE id = ?")) {
+                    up.setInt(1, isAsset ? 1 : 0);
+                    up.setInt(2, requiresSerial ? 1 : 0);
+                    up.setInt(3, deprecatedId);
+                    up.executeUpdate();
+                }
+                newTypeId = deprecatedId;
+            } else {
+                try (PreparedStatement ins = c.prepareStatement(
+                        "INSERT INTO TYPE (name, is_asset, requires_serial, deprecated) VALUES (?, ?, ?, 0)",
+                        Statement.RETURN_GENERATED_KEYS)) {
+                    ins.setString(1, trimmed);
+                    ins.setInt(2, isAsset ? 1 : 0);
+                    ins.setInt(3, requiresSerial ? 1 : 0);
+                    ins.executeUpdate();
+                    try (ResultSet keys = ins.getGeneratedKeys()) {
+                        keys.next();
+                        newTypeId = keys.getInt(1);
+                    }
+                }
+            }
+
+            setDeprecated(c, "TYPE", typeId, true);
+            cascadeAfterTypeOrBrandRename(c, true, typeId, newTypeId);
         } catch (SQLException e) {
             throw new RuntimeException("Failed to rename type", e);
         }
@@ -256,19 +364,36 @@ public class SqliteEquipmentService implements IEquipmentService {
     public void renameBrand(int brandId, String newName) {
         try (Connection c = connector.get()) {
             String trimmed = newName.trim();
-            try (PreparedStatement chk = c.prepareStatement(
-                    "SELECT 1 FROM BRAND WHERE LOWER(name) = LOWER(?) AND id != ?")) {
-                chk.setString(1, trimmed);
-                chk.setInt(2, brandId);
-                if (chk.executeQuery().next()) {
-                    throw new IllegalArgumentException("Ya existe una marca con ese nombre");
+            String currentName = findNameById(c, "BRAND", brandId);
+            if (currentName == null) throw new IllegalArgumentException("Marca no encontrada");
+
+            if (trimmed.equalsIgnoreCase(currentName)) {
+                updateName(c, "BRAND", brandId, trimmed);
+                return;
+            }
+            if (findActiveIdExcluding(c, "BRAND", trimmed, brandId) != null) {
+                throw new IllegalArgumentException("Ya existe una marca con ese nombre");
+            }
+
+            int newBrandId;
+            Integer deprecatedId = findDeprecatedId(c, "BRAND", trimmed);
+            if (deprecatedId != null) {
+                setDeprecated(c, "BRAND", deprecatedId, false);
+                newBrandId = deprecatedId;
+            } else {
+                try (PreparedStatement ins = c.prepareStatement(
+                        "INSERT INTO BRAND (name, deprecated) VALUES (?, 0)", Statement.RETURN_GENERATED_KEYS)) {
+                    ins.setString(1, trimmed);
+                    ins.executeUpdate();
+                    try (ResultSet keys = ins.getGeneratedKeys()) {
+                        keys.next();
+                        newBrandId = keys.getInt(1);
+                    }
                 }
             }
-            try (PreparedStatement ps = c.prepareStatement("UPDATE BRAND SET name = ? WHERE id = ?")) {
-                ps.setString(1, trimmed);
-                ps.setInt(2, brandId);
-                ps.executeUpdate();
-            }
+
+            setDeprecated(c, "BRAND", brandId, true);
+            cascadeAfterTypeOrBrandRename(c, false, brandId, newBrandId);
         } catch (SQLException e) {
             throw new RuntimeException("Failed to rename brand", e);
         }
@@ -278,34 +403,85 @@ public class SqliteEquipmentService implements IEquipmentService {
     public void renameModel(int modelId, String newName) {
         try (Connection c = connector.get()) {
             String trimmed = newName.trim();
-            int brandTypeId;
-            try (PreparedStatement sel = c.prepareStatement("SELECT brand_type_id FROM MODEL WHERE id = ?")) {
+            Integer brandTypeId;
+            String currentName;
+            try (PreparedStatement sel = c.prepareStatement(
+                    "SELECT brand_type_id, name FROM MODEL WHERE id = ?")) {
                 sel.setInt(1, modelId);
-                ResultSet rs = sel.executeQuery();
-                if (!rs.next()) throw new IllegalArgumentException("Modelo no encontrado");
-                brandTypeId = rs.getInt(1);
+                try (ResultSet rs = sel.executeQuery()) {
+                    if (!rs.next()) throw new IllegalArgumentException("Modelo no encontrado");
+                    brandTypeId = (Integer) rs.getObject("brand_type_id");
+                    currentName = rs.getString("name");
+                }
             }
-            if (modelNameExists(c, brandTypeId, trimmed, modelId)) {
-                throw new IllegalArgumentException("Ya existe un modelo con ese nombre para esta marca y tipo");
+
+            if (trimmed.equalsIgnoreCase(currentName)) {
+                updateName(c, "MODEL", modelId, trimmed);
+                return;
             }
-            try (PreparedStatement ps = c.prepareStatement("UPDATE MODEL SET name = ? WHERE id = ?")) {
-                ps.setString(1, trimmed);
-                ps.setInt(2, modelId);
-                ps.executeUpdate();
+            if (activeModelIdExcluding(c, brandTypeId, trimmed, modelId) != null) {
+                throw new IllegalArgumentException(brandTypeId == null
+                    ? "Ya existe un modelo genérico con ese nombre"
+                    : "Ya existe un modelo con ese nombre para esta marca y tipo");
+            }
+
+            // Deprecate the old row BEFORE activating its replacement — for the global generic
+            // model (brandTypeId == null), idx_model_single_active_generic allows only one
+            // active row at a time, so activating a second one first (even briefly, within the
+            // same rename) would violate it. Harmless reordering for a normal scoped model too,
+            // since idx_model_brand_type_name keys on name and the two rows never share one.
+            setDeprecated(c, "MODEL", modelId, true);
+
+            Integer deprecatedId = findDeprecatedModelId(c, brandTypeId, trimmed);
+            if (deprecatedId != null) {
+                setDeprecated(c, "MODEL", deprecatedId, false);
+            } else {
+                insertModel(c, brandTypeId, trimmed, false);
             }
         } catch (SQLException e) {
             throw new RuntimeException("Failed to rename model", e);
         }
     }
 
-    private boolean modelNameExists(Connection c, int brandTypeId, String name, int excludeModelId) throws SQLException {
-        try (PreparedStatement ps = c.prepareStatement(
-                "SELECT 1 FROM MODEL WHERE brand_type_id = ? AND LOWER(name) = LOWER(?) AND id != ?")) {
-            ps.setInt(1, brandTypeId);
-            ps.setString(2, name);
-            ps.setInt(3, excludeModelId);
+    private void insertModel(Connection c, Integer brandTypeId, String name, boolean deprecated) throws SQLException {
+        try (PreparedStatement ins = c.prepareStatement(
+                "INSERT INTO MODEL (brand_type_id, name, deprecated) VALUES (?, ?, ?)")) {
+            if (brandTypeId == null) ins.setNull(1, Types.INTEGER);
+            else ins.setInt(1, brandTypeId);
+            ins.setString(2, name);
+            ins.setInt(3, deprecated ? 1 : 0);
+            ins.executeUpdate();
+        }
+    }
+
+    // brandTypeId == null scopes the lookup to the single global "Genérico / Otro" model
+    // (brand_type_id IS NULL) instead of a real BRAND_TYPE_LINK — the same scoped-uniqueness
+    // rule applies either way (a name may only ever live on one row at a time within its scope).
+    private Integer activeModelIdExcluding(Connection c, Integer brandTypeId, String name, int excludeModelId) throws SQLException {
+        String scope = brandTypeId == null ? "brand_type_id IS NULL" : "brand_type_id = ?";
+        String sql = "SELECT id FROM MODEL WHERE " + scope
+            + " AND LOWER(name) = LOWER(?) AND id != ? AND deprecated = 0";
+        try (PreparedStatement ps = c.prepareStatement(sql)) {
+            int idx = 1;
+            if (brandTypeId != null) ps.setInt(idx++, brandTypeId);
+            ps.setString(idx++, name);
+            ps.setInt(idx, excludeModelId);
             try (ResultSet rs = ps.executeQuery()) {
-                return rs.next();
+                return rs.next() ? rs.getInt(1) : null;
+            }
+        }
+    }
+
+    private Integer findDeprecatedModelId(Connection c, Integer brandTypeId, String name) throws SQLException {
+        String scope = brandTypeId == null ? "brand_type_id IS NULL" : "brand_type_id = ?";
+        String sql = "SELECT id FROM MODEL WHERE " + scope
+            + " AND LOWER(name) = LOWER(?) AND deprecated = 1";
+        try (PreparedStatement ps = c.prepareStatement(sql)) {
+            int idx = 1;
+            if (brandTypeId != null) ps.setInt(idx++, brandTypeId);
+            ps.setString(idx, name);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? rs.getInt(1) : null;
             }
         }
     }
@@ -314,14 +490,23 @@ public class SqliteEquipmentService implements IEquipmentService {
     public void addType(String name, boolean isAsset) {
         try (Connection c = connector.get()) {
             String trimmed = name.trim();
-            try (PreparedStatement chk = c.prepareStatement(
-                    "SELECT 1 FROM TYPE WHERE LOWER(name) = LOWER(?)")) {
-                chk.setString(1, trimmed);
-                if (chk.executeQuery().next()) {
-                    throw new IllegalArgumentException("Ya existe un tipo con ese nombre");
-                }
+            if (findActiveIdExcluding(c, "TYPE", trimmed, -1) != null) {
+                throw new IllegalArgumentException("Ya existe un tipo con ese nombre");
             }
-            try (PreparedStatement ins = c.prepareStatement("INSERT INTO TYPE (name, is_asset) VALUES (?, ?)")) {
+
+            Integer deprecatedId = findDeprecatedId(c, "TYPE", trimmed);
+            if (deprecatedId != null) {
+                try (PreparedStatement up = c.prepareStatement(
+                        "UPDATE TYPE SET deprecated = 0, is_asset = ?, requires_serial = 0 WHERE id = ?")) {
+                    up.setInt(1, isAsset ? 1 : 0);
+                    up.setInt(2, deprecatedId);
+                    up.executeUpdate();
+                }
+                return;
+            }
+
+            try (PreparedStatement ins = c.prepareStatement(
+                    "INSERT INTO TYPE (name, is_asset, deprecated) VALUES (?, ?, 0)")) {
                 ins.setString(1, trimmed);
                 ins.setInt(2, isAsset ? 1 : 0);
                 ins.executeUpdate();
@@ -333,10 +518,8 @@ public class SqliteEquipmentService implements IEquipmentService {
 
     @Override
     public void addBrand(String name) {
-        try (Connection c = connector.get();
-             PreparedStatement ps = c.prepareStatement("INSERT INTO BRAND (name) VALUES (?) ON CONFLICT (name) DO NOTHING")) {
-            ps.setString(1, name.trim());
-            ps.executeUpdate();
+        try (Connection c = connector.get()) {
+            findOrInsertBrand(c, name.trim());
         } catch (SQLException e) {
             throw new RuntimeException("Failed to add brand", e);
         }
@@ -347,10 +530,19 @@ public class SqliteEquipmentService implements IEquipmentService {
         try (Connection c = connector.get()) {
             int brandTypeId = ensureBrandTypeLink(c, brandId, typeId);
             String trimmed = name.trim();
-            if (modelNameExists(c, brandTypeId, trimmed, -1)) {
+
+            if (activeModelIdExcluding(c, brandTypeId, trimmed, -1) != null) {
                 throw new IllegalArgumentException("Ya existe un modelo con ese nombre para esta marca y tipo");
             }
-            try (PreparedStatement ps = c.prepareStatement("INSERT INTO MODEL (brand_type_id, name) VALUES (?, ?)")) {
+
+            Integer deprecatedId = findDeprecatedModelId(c, brandTypeId, trimmed);
+            if (deprecatedId != null) {
+                setDeprecated(c, "MODEL", deprecatedId, false);
+                return;
+            }
+
+            try (PreparedStatement ps = c.prepareStatement(
+                    "INSERT INTO MODEL (brand_type_id, name, deprecated) VALUES (?, ?, 0)")) {
                 ps.setInt(1, brandTypeId);
                 ps.setString(2, trimmed);
                 ps.executeUpdate();
@@ -364,14 +556,17 @@ public class SqliteEquipmentService implements IEquipmentService {
     public void addProvider(String name) {
         try (Connection c = connector.get()) {
             String trimmed = name.trim();
-            try (PreparedStatement chk = c.prepareStatement(
-                    "SELECT 1 FROM PROVIDER WHERE LOWER(name) = LOWER(?)")) {
-                chk.setString(1, trimmed);
-                if (chk.executeQuery().next()) {
-                    throw new IllegalArgumentException("Ya existe un proveedor con ese nombre");
-                }
+            if (findActiveIdExcluding(c, "PROVIDER", trimmed, -1) != null) {
+                throw new IllegalArgumentException("Ya existe un proveedor con ese nombre");
             }
-            try (PreparedStatement ins = c.prepareStatement("INSERT INTO PROVIDER (name) VALUES (?)")) {
+
+            Integer deprecatedId = findDeprecatedId(c, "PROVIDER", trimmed);
+            if (deprecatedId != null) {
+                setDeprecated(c, "PROVIDER", deprecatedId, false);
+                return;
+            }
+
+            try (PreparedStatement ins = c.prepareStatement("INSERT INTO PROVIDER (name, deprecated) VALUES (?, 0)")) {
                 ins.setString(1, trimmed);
                 ins.executeUpdate();
             }
@@ -380,29 +575,97 @@ public class SqliteEquipmentService implements IEquipmentService {
         }
     }
 
-    private int ensureBrandTypeLink(Connection c, int brandId, int typeId) throws SQLException {
-        PreparedStatement sel = c.prepareStatement(
-            "SELECT id FROM BRAND_TYPE_LINK WHERE type_id = ? AND brand_id = ?");
-        sel.setInt(1, typeId);
-        sel.setInt(2, brandId);
-        ResultSet rs = sel.executeQuery();
-        if (rs.next()) return rs.getInt("id");
+    @Override
+    public void addSede(String name) {
+        try (Connection c = connector.get()) {
+            String trimmed = name.trim();
+            if (findActiveIdExcluding(c, "SEDE", trimmed, -1) != null) {
+                throw new IllegalArgumentException("Ya existe una sede con ese nombre");
+            }
 
-        PreparedStatement ins = c.prepareStatement(
-            "INSERT INTO BRAND_TYPE_LINK (type_id, brand_id) VALUES (?, ?)",
-            PreparedStatement.RETURN_GENERATED_KEYS);
-        ins.setInt(1, typeId);
-        ins.setInt(2, brandId);
-        ins.executeUpdate();
-        return ins.getGeneratedKeys().getInt(1);
+            Integer deprecatedId = findDeprecatedId(c, "SEDE", trimmed);
+            if (deprecatedId != null) {
+                setDeprecated(c, "SEDE", deprecatedId, false);
+                return;
+            }
+
+            try (PreparedStatement ins = c.prepareStatement("INSERT INTO SEDE (name, deprecated) VALUES (?, 0)")) {
+                ins.setString(1, trimmed);
+                ins.executeUpdate();
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to add sede", e);
+        }
+    }
+
+    @Override
+    public void renameProvider(int providerId, String newName) {
+        try (Connection c = connector.get()) {
+            String trimmed = newName.trim();
+            String currentName = findNameById(c, "PROVIDER", providerId);
+            if (currentName == null) throw new IllegalArgumentException("Proveedor no encontrado");
+
+            if (trimmed.equalsIgnoreCase(currentName)) {
+                updateName(c, "PROVIDER", providerId, trimmed);
+                return;
+            }
+            if (findActiveIdExcluding(c, "PROVIDER", trimmed, providerId) != null) {
+                throw new IllegalArgumentException("Ya existe un proveedor con ese nombre");
+            }
+
+            Integer deprecatedId = findDeprecatedId(c, "PROVIDER", trimmed);
+            if (deprecatedId != null) {
+                setDeprecated(c, "PROVIDER", deprecatedId, false);
+            } else {
+                try (PreparedStatement ins = c.prepareStatement(
+                        "INSERT INTO PROVIDER (name, deprecated) VALUES (?, 0)")) {
+                    ins.setString(1, trimmed);
+                    ins.executeUpdate();
+                }
+            }
+
+            setDeprecated(c, "PROVIDER", providerId, true);
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to rename provider", e);
+        }
+    }
+
+    @Override
+    public void renameSede(int sedeId, String newName) {
+        try (Connection c = connector.get()) {
+            String trimmed = newName.trim();
+            String currentName = findNameById(c, "SEDE", sedeId);
+            if (currentName == null) throw new IllegalArgumentException("Sede no encontrada");
+
+            if (trimmed.equalsIgnoreCase(currentName)) {
+                updateName(c, "SEDE", sedeId, trimmed);
+                return;
+            }
+            if (findActiveIdExcluding(c, "SEDE", trimmed, sedeId) != null) {
+                throw new IllegalArgumentException("Ya existe una sede con ese nombre");
+            }
+
+            Integer deprecatedId = findDeprecatedId(c, "SEDE", trimmed);
+            if (deprecatedId != null) {
+                setDeprecated(c, "SEDE", deprecatedId, false);
+            } else {
+                try (PreparedStatement ins = c.prepareStatement(
+                        "INSERT INTO SEDE (name, deprecated) VALUES (?, 0)")) {
+                    ins.setString(1, trimmed);
+                    ins.executeUpdate();
+                }
+            }
+
+            setDeprecated(c, "SEDE", sedeId, true);
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to rename sede", e);
+        }
     }
 
     @Override
     public void removeType(int typeId) {
-        try (Connection c = connector.get();
-             PreparedStatement ps = c.prepareStatement("DELETE FROM TYPE WHERE id = ?")) {
-            ps.setInt(1, typeId);
-            ps.executeUpdate();
+        try (Connection c = connector.get()) {
+            setDeprecated(c, "TYPE", typeId, true);
         } catch (SQLException e) {
             throw new RuntimeException("Failed to remove type", e);
         }
@@ -411,25 +674,34 @@ public class SqliteEquipmentService implements IEquipmentService {
     @Override
     public void removeBrand(int brandId) {
         try (Connection c = connector.get()) {
-            ResultSet rs = c.createStatement().executeQuery(
-                "SELECT name FROM BRAND WHERE id = " + brandId);
-            if (rs.next() && "Generic".equalsIgnoreCase(rs.getString("name"))) {
-                throw new IllegalArgumentException("La marca 'Generic' no puede eliminarse");
+            String name = findNameById(c, "BRAND", brandId);
+            if (name != null && genericLabel().equalsIgnoreCase(name)) {
+                throw new IllegalArgumentException("La marca '" + genericLabel() + "' no puede eliminarse");
             }
-            PreparedStatement ps = c.prepareStatement("DELETE FROM BRAND WHERE id = ?");
-            ps.setInt(1, brandId);
-            ps.executeUpdate();
+            setDeprecated(c, "BRAND", brandId, true);
         } catch (SQLException e) {
             throw new RuntimeException("Failed to remove brand", e);
         }
     }
 
+    // The global generic model (brand_type_id IS NULL) can only ever be renamed, never removed —
+    // it can't be recreated on demand the way a real per-scope model can (there's nothing to
+    // scope it to), so removing it would leave every "no specific model" selection with nothing
+    // to point at.
     @Override
     public void removeModel(int modelId) {
-        try (Connection c = connector.get();
-             PreparedStatement ps = c.prepareStatement("DELETE FROM MODEL WHERE id = ?")) {
-            ps.setInt(1, modelId);
-            ps.executeUpdate();
+        try (Connection c = connector.get()) {
+            boolean isGlobalGeneric = false;
+            try (PreparedStatement sel = c.prepareStatement("SELECT brand_type_id FROM MODEL WHERE id = ?")) {
+                sel.setInt(1, modelId);
+                try (ResultSet rs = sel.executeQuery()) {
+                    if (rs.next()) isGlobalGeneric = rs.getObject("brand_type_id") == null;
+                }
+            }
+            if (isGlobalGeneric) {
+                throw new IllegalArgumentException("El modelo genérico global no puede eliminarse");
+            }
+            setDeprecated(c, "MODEL", modelId, true);
         } catch (SQLException e) {
             throw new RuntimeException("Failed to remove model", e);
         }
@@ -437,34 +709,143 @@ public class SqliteEquipmentService implements IEquipmentService {
 
     @Override
     public void removeProvider(int providerId) {
-        try (Connection c = connector.get();
-             PreparedStatement ps = c.prepareStatement("DELETE FROM PROVIDER WHERE id = ?")) {
-            ps.setInt(1, providerId);
-            ps.executeUpdate();
+        try (Connection c = connector.get()) {
+            setDeprecated(c, "PROVIDER", providerId, true);
         } catch (SQLException e) {
             throw new RuntimeException("Failed to remove provider", e);
         }
     }
 
     @Override
-    public void renameProvider(int providerId, String newName) {
+    public void removeSede(int sedeId) {
         try (Connection c = connector.get()) {
-            String trimmed = newName.trim();
-            try (PreparedStatement chk = c.prepareStatement(
-                    "SELECT 1 FROM PROVIDER WHERE LOWER(name) = LOWER(?) AND id != ?")) {
-                chk.setString(1, trimmed);
-                chk.setInt(2, providerId);
-                if (chk.executeQuery().next()) {
-                    throw new IllegalArgumentException("Ya existe un proveedor con ese nombre");
+            setDeprecated(c, "SEDE", sedeId, true);
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to remove sede", e);
+        }
+    }
+
+    private int ensureBrandTypeLink(Connection c, int brandId, int typeId) throws SQLException {
+        try (PreparedStatement sel = c.prepareStatement(
+                "SELECT id FROM BRAND_TYPE_LINK WHERE type_id = ? AND brand_id = ?")) {
+            sel.setInt(1, typeId);
+            sel.setInt(2, brandId);
+            try (ResultSet rs = sel.executeQuery()) {
+                if (rs.next()) return rs.getInt("id");
+            }
+        }
+
+        try (PreparedStatement ins = c.prepareStatement(
+                "INSERT INTO BRAND_TYPE_LINK (type_id, brand_id) VALUES (?, ?)",
+                Statement.RETURN_GENERATED_KEYS)) {
+            ins.setInt(1, typeId);
+            ins.setInt(2, brandId);
+            ins.executeUpdate();
+            try (ResultSet keys = ins.getGeneratedKeys()) {
+                keys.next();
+                return keys.getInt(1);
+            }
+        }
+    }
+
+    // A Type/Brand rename deprecates the row every BRAND_TYPE_LINK using it points at, which
+    // would otherwise silently orphan that link's active catalog (its models would still exist,
+    // but be unreachable from the UI since they hang off a link whose type/brand is now
+    // deprecated). For every such link, an equivalent link under the new id is ensured, and every
+    // still-active model under the old link is cloned forward onto it — idempotent, so re-running
+    // (e.g. two renames that happen to converge on the same combination) never duplicates rows.
+    private void cascadeAfterTypeOrBrandRename(Connection c, boolean isTypeRename, int oldId, int newId)
+            throws SQLException {
+        String linkColumn = isTypeRename ? "type_id" : "brand_id";
+        List<int[]> links = new ArrayList<>();
+        try (PreparedStatement sel = c.prepareStatement(
+                "SELECT id, type_id, brand_id FROM BRAND_TYPE_LINK WHERE " + linkColumn + " = ?")) {
+            sel.setInt(1, oldId);
+            try (ResultSet rs = sel.executeQuery()) {
+                while (rs.next()) {
+                    links.add(new int[] {rs.getInt("id"), rs.getInt("type_id"), rs.getInt("brand_id")});
                 }
             }
-            try (PreparedStatement ps = c.prepareStatement("UPDATE PROVIDER SET name = ? WHERE id = ?")) {
-                ps.setString(1, trimmed);
-                ps.setInt(2, providerId);
-                ps.executeUpdate();
+        }
+
+        for (int[] link : links) {
+            int oldLinkId = link[0];
+            int newTypeId = isTypeRename ? newId : link[1];
+            int newBrandId = isTypeRename ? link[2] : newId;
+            int newLinkId = ensureBrandTypeLink(c, newBrandId, newTypeId);
+            cloneActiveModelsForward(c, oldLinkId, newLinkId);
+        }
+    }
+
+    private void cloneActiveModelsForward(Connection c, int oldLinkId, int newLinkId) throws SQLException {
+        if (oldLinkId == newLinkId) return;
+        List<String> modelNames = new ArrayList<>();
+        try (PreparedStatement sel = c.prepareStatement(
+                "SELECT name FROM MODEL WHERE brand_type_id = ? AND deprecated = 0")) {
+            sel.setInt(1, oldLinkId);
+            try (ResultSet rs = sel.executeQuery()) {
+                while (rs.next()) modelNames.add(rs.getString("name"));
             }
-        } catch (SQLException e) {
-            throw new RuntimeException("Failed to rename provider", e);
+        }
+        for (String name : modelNames) {
+            if (activeModelIdExcluding(c, newLinkId, name, -1) == null) {
+                try (PreparedStatement ins = c.prepareStatement(
+                        "INSERT INTO MODEL (brand_type_id, name, deprecated) VALUES (?, ?, 0)")) {
+                    ins.setInt(1, newLinkId);
+                    ins.setString(2, name);
+                    ins.executeUpdate();
+                }
+            }
+        }
+    }
+
+    // Shared helpers — uniqueness on `name` holds across TYPE/BRAND/PROVIDER regardless of a
+    // row's deprecated status (a name may only ever live on one row at a time), so every
+    // add/rename above resolves against these before ever attempting an INSERT.
+    private Integer findActiveIdExcluding(Connection c, String table, String name, int excludeId) throws SQLException {
+        try (PreparedStatement ps = c.prepareStatement(
+                "SELECT id FROM " + table + " WHERE LOWER(name) = LOWER(?) AND id != ? AND deprecated = 0")) {
+            ps.setString(1, name);
+            ps.setInt(2, excludeId);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? rs.getInt(1) : null;
+            }
+        }
+    }
+
+    private Integer findDeprecatedId(Connection c, String table, String name) throws SQLException {
+        try (PreparedStatement ps = c.prepareStatement(
+                "SELECT id FROM " + table + " WHERE LOWER(name) = LOWER(?) AND deprecated = 1")) {
+            ps.setString(1, name);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? rs.getInt(1) : null;
+            }
+        }
+    }
+
+    private String findNameById(Connection c, String table, int id) throws SQLException {
+        try (PreparedStatement ps = c.prepareStatement("SELECT name FROM " + table + " WHERE id = ?")) {
+            ps.setInt(1, id);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? rs.getString(1) : null;
+            }
+        }
+    }
+
+    private void updateName(Connection c, String table, int id, String name) throws SQLException {
+        try (PreparedStatement ps = c.prepareStatement("UPDATE " + table + " SET name = ? WHERE id = ?")) {
+            ps.setString(1, name);
+            ps.setInt(2, id);
+            ps.executeUpdate();
+        }
+    }
+
+    private void setDeprecated(Connection c, String table, int id, boolean deprecated) throws SQLException {
+        try (PreparedStatement ps = c.prepareStatement(
+                "UPDATE " + table + " SET deprecated = ? WHERE id = ?")) {
+            ps.setInt(1, deprecated ? 1 : 0);
+            ps.setInt(2, id);
+            ps.executeUpdate();
         }
     }
 }

@@ -7,6 +7,7 @@ import com.bunshock.note_app_for_it_frontend.models.EquipmentBrand;
 import com.bunshock.note_app_for_it_frontend.models.EquipmentModel;
 import com.bunshock.note_app_for_it_frontend.models.EquipmentProvider;
 import com.bunshock.note_app_for_it_frontend.models.EquipmentType;
+import com.bunshock.note_app_for_it_frontend.models.Sede;
 import com.bunshock.note_app_for_it_frontend.models.SnValidation;
 import com.bunshock.note_app_for_it_frontend.models.SnValidationRow;
 
@@ -46,6 +47,11 @@ public class CachingEquipmentService implements IEquipmentService {
     @Override
     public List<EquipmentProvider> getAllProviders() {
         try { return primary.getAllProviders(); } catch (Exception e) { return local.getAllProviders(); }
+    }
+
+    @Override
+    public List<Sede> getAllSedes() {
+        try { return primary.getAllSedes(); } catch (Exception e) { return local.getAllSedes(); }
     }
 
     @Override
@@ -97,6 +103,12 @@ public class CachingEquipmentService implements IEquipmentService {
     }
 
     @Override
+    public void addSede(String name) {
+        primary.addSede(name);
+        try { local.addSede(name); } catch (Exception ignored) {}
+    }
+
+    @Override
     public void removeType(int typeId) {
         primary.removeType(typeId);
         try { local.removeType(typeId); } catch (Exception ignored) {}
@@ -118,6 +130,12 @@ public class CachingEquipmentService implements IEquipmentService {
     public void removeProvider(int providerId) {
         primary.removeProvider(providerId);
         try { local.removeProvider(providerId); } catch (Exception ignored) {}
+    }
+
+    @Override
+    public void removeSede(int sedeId) {
+        primary.removeSede(sedeId);
+        try { local.removeSede(sedeId); } catch (Exception ignored) {}
     }
 
     @Override
@@ -148,5 +166,11 @@ public class CachingEquipmentService implements IEquipmentService {
     public void renameProvider(int providerId, String newName) {
         primary.renameProvider(providerId, newName);
         try { local.renameProvider(providerId, newName); } catch (Exception ignored) {}
+    }
+
+    @Override
+    public void renameSede(int sedeId, String newName) {
+        primary.renameSede(sedeId, newName);
+        try { local.renameSede(sedeId, newName); } catch (Exception ignored) {}
     }
 }

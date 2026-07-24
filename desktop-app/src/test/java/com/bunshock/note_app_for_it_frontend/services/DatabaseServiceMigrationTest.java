@@ -1,0 +1,408 @@
+package com.bunshock.note_app_for_it_frontend.services;
+
+import java.lang.reflect.Method;
+import java.nio.file.Path;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
+
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import static org.junit.jupiter.api.Assertions.*;
+
+// DatabaseService.DB_URL is a hardcoded path (not swappable for a temp one — same constraint
+// noted on SqliteHistoryServiceTest's own schema copy), so migrateSchema()/addColumnIfMissing()
+// are invoked here via reflection against a temp SQLite database seeded with the pre-Préstamo
+// schema, reproducing exactly what an existing installation's data/noteapp.db looks like before
+// upgrading. Guards against the exact bug class CLAUDE.md documents: a column only added to
+// CREATE TABLE, forgotten in migrateSchema(), never lands on an existing database.
+class DatabaseServiceMigrationTest {
+
+    @TempDir
+    Path tempDir;
+
+    @Test
+    void migrateSchemaAddsPrestamoColumnsToAPreExistingDatabase() throws Exception {
+        String url = "jdbc:sqlite:" + tempDir.resolve("pre-prestamo.db").toAbsolutePath();
+
+        try (Connection c = DriverManager.getConnection(url); Statement stmt = c.createStatement()) {
+            stmt.executeUpdate("""
+                CREATE TABLE NOTE_ENTREGA_DEVOLUCION (
+                    note_report_id  INTEGER PRIMARY KEY,
+                    user_name       TEXT,
+                    user_dni        TEXT,
+                    user_email      TEXT,
+                    motivo          TEXT,
+                    failure_cause   TEXT,
+                    failure_details TEXT
+                )""");
+            stmt.executeUpdate("""
+                CREATE TABLE NOTE_ITEM (
+                    id                     INTEGER PRIMARY KEY AUTOINCREMENT,
+                    note_id                INTEGER NOT NULL,
+                    type_name              TEXT NOT NULL,
+                    brand_name             TEXT,
+                    model_name             TEXT,
+                    serial_number          TEXT,
+                    a_f                    TEXT,
+                    quantity               INTEGER NOT NULL DEFAULT 1,
+                    observations           TEXT,
+                    is_asset               INTEGER NOT NULL DEFAULT 0,
+                    glpi_status            TEXT NOT NULL DEFAULT 'N_A',
+                    glpi_rejection_reason  TEXT,
+                    glpi_status_updated_at TEXT
+                )""");
+            stmt.executeUpdate("""
+                CREATE TABLE TYPE (
+                    id   INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL UNIQUE
+                )""");
+            stmt.executeUpdate("""
+                CREATE TABLE NOTE_REPORT (
+                    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                    created_at   TEXT NOT NULL,
+                    profile_type TEXT NOT NULL
+                )""");
+            stmt.executeUpdate("""
+                CREATE TABLE NOTE_PROVEEDOR (
+                    note_report_id   INTEGER PRIMARY KEY,
+                    responsible_name TEXT,
+                    responsible_dni  TEXT
+                )""");
+
+            // Reproduces initialize()'s real ordering (createHistoryTables() runs before
+            // migrateSchema()) — this is exactly what caught a real bug live-testing against the
+            // actual data/noteapp.db: createHistoryTables()'s own CREATE TABLE IF NOT EXISTS for
+            // the 4 new subtype tables is NOT a no-op on an old wide-shape database (they never
+            // existed there at all), so by the time migrateNoteItemSchema() ran, those tables
+            // already existed — its own CREATE TABLE statements for them needed IF NOT EXISTS
+            // too, or this exact sequence throws "table already exists".
+            invokeCreateEquipmentTables(stmt);
+            invokeCreateHistoryTables(stmt);
+            invokeMigrateSchema(c, stmt);
+
+            assertTrue(hasColumn(c, "NOTE_ENTREGA_DEVOLUCION", "area_evento"));
+            assertTrue(hasColumn(c, "NOTE_REPORT", "observations"));
+            assertTrue(hasColumn(c, "NOTE_REPORT", "sede"));
+            // return_status/etc. landed on NOTE_ITEM only transiently — this fixture's NOTE_ITEM
+            // already had is_asset, so migrateNoteItemSchema() (called at the end of
+            // migrateSchema()) immediately split it into the 5-table shape in the same run;
+            // see migrateNoteItemSchemaSplitsWideTableIntoFiveTables() below for that behavior.
+            assertFalse(hasColumn(c, "NOTE_ITEM", "return_status"));
+            assertTrue(tableExists(c, "NOTE_ITEM_RETURN_TRACKING"));
+        }
+    }
+
+    // Covers all 4 quadrants of the old wide NOTE_ITEM shape: an asset that IS GLPI-tracked, an
+    // asset that ISN'T (Préstamo — glpi_status stayed 'N_A'), a countable that ISN'T return-tracked
+    // (non-Préstamo — return_status stayed 'N_A'), and a countable that IS (Préstamo).
+    @Test
+    void migrateNoteItemSchemaSplitsWideTableIntoFiveTables() throws Exception {
+        String url = "jdbc:sqlite:" + tempDir.resolve("wide-note-item.db").toAbsolutePath();
+
+        try (Connection c = DriverManager.getConnection(url); Statement stmt = c.createStatement()) {
+            stmt.executeUpdate("""
+                CREATE TABLE NOTE_REPORT (
+                    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                    created_at   TEXT NOT NULL,
+                    profile_type TEXT NOT NULL
+                )""");
+            stmt.executeUpdate("""
+                CREATE TABLE NOTE_ITEM (
+                    id                       INTEGER PRIMARY KEY AUTOINCREMENT,
+                    note_id                  INTEGER NOT NULL,
+                    type_name                TEXT NOT NULL,
+                    brand_name               TEXT,
+                    model_name               TEXT,
+                    serial_number            TEXT,
+                    a_f                      TEXT,
+                    quantity                 INTEGER NOT NULL DEFAULT 1,
+                    observations             TEXT,
+                    is_asset                 INTEGER NOT NULL DEFAULT 0,
+                    glpi_status              TEXT NOT NULL DEFAULT 'N_A',
+                    glpi_rejection_reason    TEXT,
+                    glpi_status_updated_at   TEXT,
+                    return_status            TEXT NOT NULL DEFAULT 'N_A',
+                    return_rejection_reason  TEXT,
+                    return_status_updated_at TEXT
+                )""");
+            stmt.executeUpdate("INSERT INTO NOTE_REPORT (id, created_at, profile_type) VALUES (1, '2026-01-01T10:00', 'ENTREGA')");
+            stmt.executeUpdate("""
+                INSERT INTO NOTE_ITEM (id, note_id, type_name, serial_number, a_f, quantity, is_asset,
+                                        glpi_status, return_status)
+                VALUES (1, 1, 'NOTEBOOK', 'SN1', 'AF-1', 1, 1, 'PENDING', 'N_A')""");
+            stmt.executeUpdate("""
+                INSERT INTO NOTE_ITEM (id, note_id, type_name, serial_number, a_f, quantity, is_asset,
+                                        glpi_status, return_status)
+                VALUES (2, 1, 'NOTEBOOK', 'SN2', 'AF-2', 1, 1, 'N_A', 'PENDING')""");
+            stmt.executeUpdate("""
+                INSERT INTO NOTE_ITEM (id, note_id, type_name, quantity, is_asset, glpi_status, return_status)
+                VALUES (3, 1, 'MOUSE', 3, 0, 'N_A', 'N_A')""");
+            stmt.executeUpdate("""
+                INSERT INTO NOTE_ITEM (id, note_id, type_name, quantity, is_asset, glpi_status, return_status)
+                VALUES (4, 1, 'MOUSE', 5, 0, 'N_A', 'PENDING')""");
+
+            invokeCreateEquipmentTables(stmt);
+            invokeCreateHistoryTables(stmt);
+            invokeMigrateSchema(c, stmt);
+
+            assertFalse(hasColumn(c, "NOTE_ITEM", "is_asset"));
+            assertFalse(hasColumn(c, "NOTE_ITEM", "serial_number"));
+            assertFalse(hasColumn(c, "NOTE_ITEM", "return_status"));
+
+            assertEquals(2, count(c, "NOTE_ITEM_ASSET"));
+            assertEquals(2, count(c, "NOTE_ITEM_COUNTABLE"));
+            assertEquals(1, count(c, "NOTE_ITEM_GLPI_TRACKING"));   // only item 1
+            assertEquals(2, count(c, "NOTE_ITEM_RETURN_TRACKING")); // items 2 and 4
+
+            // Regression: createHistoryTables() (invoked above, matching initialize()'s real
+            // ordering) pre-creates these 4 tables before the rename runs, and SQLite's ALTER
+            // TABLE RENAME auto-rewrites other tables' REFERENCES clauses — without dropping and
+            // recreating them fresh inside migrateNoteItemSchema(), their FK silently ends up
+            // pointing at the renamed-then-dropped NOTE_ITEM_OLD_20260722 instead of NOTE_ITEM.
+            for (String subtypeTable : new String[]{
+                    "NOTE_ITEM_ASSET", "NOTE_ITEM_COUNTABLE", "NOTE_ITEM_GLPI_TRACKING", "NOTE_ITEM_RETURN_TRACKING"}) {
+                assertEquals("NOTE_ITEM", foreignKeyTarget(c, subtypeTable),
+                    subtypeTable + "'s FK must point at NOTE_ITEM, not a renamed/dropped table");
+            }
+
+            assertEquals("PENDING", singleString(c,
+                "SELECT status FROM NOTE_ITEM_GLPI_TRACKING WHERE item_id = 1"));
+            assertEquals("SN1", singleString(c,
+                "SELECT serial_number FROM NOTE_ITEM_ASSET WHERE item_id = 1"));
+            assertEquals(3, singleInt(c,
+                "SELECT quantity FROM NOTE_ITEM_COUNTABLE WHERE item_id = 3"));
+            assertEquals("PENDING", singleString(c,
+                "SELECT status FROM NOTE_ITEM_RETURN_TRACKING WHERE item_id = 4"));
+
+            // Idempotent: re-running against an already-migrated database is a no-op, not an error
+            // or a second copy of the data.
+            invokeMigrateSchema(c, stmt);
+            assertEquals(2, count(c, "NOTE_ITEM_ASSET"));
+            assertEquals(2, count(c, "NOTE_ITEM_COUNTABLE"));
+        }
+    }
+
+    // Reproduces a pre-2026-07-23 database: MODEL.brand_type_id still NOT NULL, with a
+    // duplicate "Genérico / Otro" row on each of two BRAND_TYPE_LINKs, and NOTE_ITEM (already
+    // on the post-catalog-FK-redesign shape) pointing at each of them. Verifies
+    // migrateGenericModelSchema() relaxes the column, collapses both per-link rows into one
+    // global row, re-points both historical NOTE_ITEM references onto it, and deprecates
+    // (never deletes) the old per-link rows — leaving a real, non-generic model untouched.
+    @Test
+    void migrateGenericModelSchemaCollapsesPerLinkGenericModelsIntoASingleGlobalRow() throws Exception {
+        String url = "jdbc:sqlite:" + tempDir.resolve("wide-generic-model.db").toAbsolutePath();
+
+        try (Connection c = DriverManager.getConnection(url); Statement stmt = c.createStatement()) {
+            stmt.executeUpdate("""
+                CREATE TABLE TYPE (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL UNIQUE,
+                    is_asset INTEGER NOT NULL DEFAULT 1,
+                    requires_serial INTEGER NOT NULL DEFAULT 0,
+                    deprecated INTEGER NOT NULL DEFAULT 0
+                )""");
+            stmt.executeUpdate("""
+                CREATE TABLE BRAND (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL UNIQUE,
+                    deprecated INTEGER NOT NULL DEFAULT 0
+                )""");
+            stmt.executeUpdate("""
+                CREATE TABLE BRAND_TYPE_LINK (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    type_id INTEGER NOT NULL REFERENCES TYPE(id),
+                    brand_id INTEGER NOT NULL REFERENCES BRAND(id),
+                    UNIQUE(type_id, brand_id)
+                )""");
+            // Old shape — brand_type_id NOT NULL — exactly what this migration must relax.
+            stmt.executeUpdate("""
+                CREATE TABLE MODEL (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    brand_type_id INTEGER NOT NULL REFERENCES BRAND_TYPE_LINK(id),
+                    name TEXT NOT NULL,
+                    deprecated INTEGER NOT NULL DEFAULT 0
+                )""");
+            stmt.executeUpdate("""
+                CREATE TABLE NOTE_REPORT (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    created_at TEXT NOT NULL,
+                    profile_type TEXT NOT NULL
+                )""");
+            // Already on the post-catalog-FK-redesign shape — migrateGenericModelSchema() always
+            // runs after migrateCatalogFkSchema(), so by the time it sees NOTE_ITEM it's already
+            // using model_id, never the old model_name text column.
+            stmt.executeUpdate("""
+                CREATE TABLE NOTE_ITEM (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    note_id INTEGER NOT NULL REFERENCES NOTE_REPORT(id),
+                    type_id INTEGER NOT NULL REFERENCES TYPE(id),
+                    brand_id INTEGER NOT NULL REFERENCES BRAND(id),
+                    model_id INTEGER NOT NULL REFERENCES MODEL(id),
+                    observations TEXT
+                )""");
+
+            stmt.executeUpdate("INSERT INTO TYPE (id, name) VALUES (1, 'NOTEBOOK')");
+            stmt.executeUpdate("INSERT INTO TYPE (id, name) VALUES (2, 'MONITOR')");
+            stmt.executeUpdate("INSERT INTO BRAND (id, name) VALUES (1, 'DELL')");
+            stmt.executeUpdate("INSERT INTO BRAND_TYPE_LINK (id, type_id, brand_id) VALUES (1, 1, 1)");
+            stmt.executeUpdate("INSERT INTO BRAND_TYPE_LINK (id, type_id, brand_id) VALUES (2, 2, 1)");
+            stmt.executeUpdate("INSERT INTO MODEL (id, brand_type_id, name, deprecated) VALUES (10, 1, 'LATITUDE', 0)");
+            stmt.executeUpdate("INSERT INTO MODEL (id, brand_type_id, name, deprecated) VALUES (11, 1, 'Genérico / Otro', 0)");
+            stmt.executeUpdate("INSERT INTO MODEL (id, brand_type_id, name, deprecated) VALUES (12, 2, 'Genérico / Otro', 0)");
+            stmt.executeUpdate("INSERT INTO NOTE_REPORT (id, created_at, profile_type) VALUES (1, '2026-01-01T10:00', 'ENTREGA')");
+            stmt.executeUpdate("INSERT INTO NOTE_ITEM (id, note_id, type_id, brand_id, model_id) VALUES (1, 1, 1, 1, 11)");
+            stmt.executeUpdate("INSERT INTO NOTE_ITEM (id, note_id, type_id, brand_id, model_id) VALUES (2, 1, 2, 1, 12)");
+
+            invokeMigrateGenericModelSchema(c, stmt);
+
+            assertFalse(isColumnNotNull(c, "MODEL", "brand_type_id"));
+
+            assertEquals(1, singleInt(c, "SELECT COUNT(*) FROM MODEL WHERE brand_type_id IS NULL AND deprecated = 0"),
+                "exactly one active global row must remain");
+            int globalId = singleInt(c, "SELECT id FROM MODEL WHERE brand_type_id IS NULL AND deprecated = 0");
+
+            assertEquals(1, singleInt(c,
+                "SELECT COUNT(*) FROM MODEL WHERE brand_type_id IS NOT NULL AND LOWER(name) = LOWER('Genérico / Otro') AND deprecated = 1"),
+                "the other per-link row must be deprecated, not deleted");
+
+            assertEquals(globalId, singleInt(c, "SELECT model_id FROM NOTE_ITEM WHERE id = 1"));
+            assertEquals(globalId, singleInt(c, "SELECT model_id FROM NOTE_ITEM WHERE id = 2"));
+
+            assertEquals(0, singleInt(c, "SELECT deprecated FROM MODEL WHERE id = 10"),
+                "a real, non-generic model must be untouched");
+        }
+    }
+
+    // A BRAND_TYPE_LINK for the generic brand left over from before 2026-07-23 (when it stopped
+    // needing one) makes getBrandsForType() return it via a real JOIN for that one type — sorted
+    // alphabetically among real brands — while every other type only shows it via client-side
+    // synthesis (always appended last). cleanupStrayGenericBrandLinks() removes such a link, but
+    // only once it has no MODEL rows left under it (they were already consolidated onto the
+    // single global row by migrateGenericModelSchema()) — a link that still has a genuinely
+    // different, deliberately-added model must be left alone.
+    @Test
+    void cleanupStrayGenericBrandLinksRemovesOnlyEmptyLinks() throws Exception {
+        String url = "jdbc:sqlite:" + tempDir.resolve("stray-generic-link.db").toAbsolutePath();
+
+        try (Connection c = DriverManager.getConnection(url); Statement stmt = c.createStatement()) {
+            invokeCreateEquipmentTables(stmt);
+
+            stmt.executeUpdate("INSERT INTO TYPE (id, name) VALUES (1, 'NOTEBOOK')");
+            stmt.executeUpdate("INSERT INTO TYPE (id, name) VALUES (2, 'MONITOR')");
+            stmt.executeUpdate("INSERT INTO BRAND (id, name) VALUES (1, 'Genérico / Otro')");
+            // Stray, empty link — no MODEL rows reference it — must be removed.
+            stmt.executeUpdate("INSERT INTO BRAND_TYPE_LINK (id, type_id, brand_id) VALUES (1, 1, 1)");
+            // Link with a genuinely different, deliberately-added model — must survive.
+            stmt.executeUpdate("INSERT INTO BRAND_TYPE_LINK (id, type_id, brand_id) VALUES (2, 2, 1)");
+            stmt.executeUpdate("INSERT INTO MODEL (id, brand_type_id, name) VALUES (1, 2, 'Modelo Especial')");
+
+            invokeCleanupStrayGenericBrandLinks(c);
+
+            assertEquals(0, singleInt(c, "SELECT COUNT(*) FROM BRAND_TYPE_LINK WHERE id = 1"),
+                "the empty link must be removed");
+            assertEquals(1, singleInt(c, "SELECT COUNT(*) FROM BRAND_TYPE_LINK WHERE id = 2"),
+                "the link with a real model under it must survive");
+
+            // Idempotent: re-running finds nothing left to clean up.
+            invokeCleanupStrayGenericBrandLinks(c);
+            assertEquals(1, singleInt(c, "SELECT COUNT(*) FROM BRAND_TYPE_LINK"));
+        }
+    }
+
+    private void invokeCleanupStrayGenericBrandLinks(Connection c) throws Exception {
+        Method m = DatabaseService.class.getDeclaredMethod("cleanupStrayGenericBrandLinks", Connection.class);
+        m.setAccessible(true);
+        m.invoke(DatabaseService.getInstance(), c);
+    }
+
+    private boolean isColumnNotNull(Connection c, String table, String column) throws SQLException {
+        try (Statement stmt = c.createStatement();
+             ResultSet rs = stmt.executeQuery("PRAGMA table_info(" + table + ")")) {
+            while (rs.next()) {
+                if (column.equalsIgnoreCase(rs.getString("name"))) return rs.getInt("notnull") == 1;
+            }
+            return false;
+        }
+    }
+
+    private void invokeMigrateGenericModelSchema(Connection c, Statement stmt) throws Exception {
+        Method m = DatabaseService.class.getDeclaredMethod("migrateGenericModelSchema", Connection.class, Statement.class);
+        m.setAccessible(true);
+        m.invoke(DatabaseService.getInstance(), c, stmt);
+    }
+
+    private void invokeMigrateSchema(Connection c, Statement stmt) throws Exception {
+        Method migrateSchema = DatabaseService.class.getDeclaredMethod("migrateSchema", Connection.class, Statement.class);
+        migrateSchema.setAccessible(true);
+        migrateSchema.invoke(DatabaseService.getInstance(), c, stmt);
+    }
+
+    private void invokeCreateHistoryTables(Statement stmt) throws Exception {
+        Method createHistoryTables = DatabaseService.class.getDeclaredMethod("createHistoryTables", Statement.class);
+        createHistoryTables.setAccessible(true);
+        createHistoryTables.invoke(DatabaseService.getInstance(), stmt);
+    }
+
+    // migrateSchema() now also backfills a catalog-FK-based NOTE_ITEM shape and a per-link
+    // "Genérico / Otro" MODEL row, both of which assume TYPE/BRAND/BRAND_TYPE_LINK/MODEL/PROVIDER
+    // already exist — exactly as they always do in the real initialize() call order
+    // (createEquipmentTables() runs before migrateSchema()). Both fixtures below only build
+    // NOTE_*/TYPE tables by hand, so this must be called too, matching production's real sequence
+    // — same lesson already documented above for invokeCreateHistoryTables().
+    private void invokeCreateEquipmentTables(Statement stmt) throws Exception {
+        Method createEquipmentTables = DatabaseService.class.getDeclaredMethod("createEquipmentTables", Statement.class);
+        createEquipmentTables.setAccessible(true);
+        createEquipmentTables.invoke(DatabaseService.getInstance(), stmt);
+    }
+
+    private boolean hasColumn(Connection c, String table, String column) throws SQLException {
+        try (Statement stmt = c.createStatement();
+             ResultSet rs = stmt.executeQuery("PRAGMA table_info(" + table + ")")) {
+            while (rs.next()) {
+                if (column.equalsIgnoreCase(rs.getString("name"))) return true;
+            }
+            return false;
+        }
+    }
+
+    private boolean tableExists(Connection c, String table) throws SQLException {
+        try (Statement stmt = c.createStatement();
+             ResultSet rs = stmt.executeQuery(
+                 "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '" + table + "'")) {
+            return rs.next();
+        }
+    }
+
+    private int count(Connection c, String table) throws SQLException {
+        try (Statement stmt = c.createStatement();
+             ResultSet rs = stmt.executeQuery("SELECT COUNT(*) FROM " + table)) {
+            rs.next();
+            return rs.getInt(1);
+        }
+    }
+
+    private String singleString(Connection c, String sql) throws SQLException {
+        try (Statement stmt = c.createStatement(); ResultSet rs = stmt.executeQuery(sql)) {
+            rs.next();
+            return rs.getString(1);
+        }
+    }
+
+    private String foreignKeyTarget(Connection c, String table) throws SQLException {
+        try (Statement stmt = c.createStatement();
+             ResultSet rs = stmt.executeQuery("PRAGMA foreign_key_list(" + table + ")")) {
+            assertTrue(rs.next(), table + " has no foreign key at all");
+            return rs.getString("table");
+        }
+    }
+
+    private int singleInt(Connection c, String sql) throws SQLException {
+        try (Statement stmt = c.createStatement(); ResultSet rs = stmt.executeQuery(sql)) {
+            rs.next();
+            return rs.getInt(1);
+        }
+    }
+}

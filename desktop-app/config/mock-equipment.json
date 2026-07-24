@@ -42,10 +42,10 @@
     { "id": 12, "brandTypeId": 3, "name": "ThinkBook 16 G7 ARP" }
   ],
   "snValidations": [
-    { "modelId": 1, "regexPattern": "^[A-Z0-9]{11}$", "description": "11 caracteres, letras mayúsculas y números", "isActive": true },
-    { "modelId": 2, "regexPattern": "^[A-Z0-9]{11}$", "description": "11 caracteres, letras mayúsculas y números", "isActive": true },
-    { "modelId": 3, "regexPattern": "^[A-Z0-9]{10}$", "description": "10 caracteres, letras mayúsculas y números", "isActive": true },
-    { "modelId": 4,  "regexPattern": "^[A-Z0-9]{12}$",      "description": null, "isActive": true },
-    { "modelId": 12, "regexPattern": "^PW0[A-Z0-9]{5}$",   "description": null, "isActive": true }
+    { "modelId": 1, "regexPattern": "^[A-Z0-9]{11}$", "isActive": true },
+    { "modelId": 2, "regexPattern": "^[A-Z0-9]{11}$", "isActive": true },
+    { "modelId": 3, "regexPattern": "^[A-Z0-9]{10}$", "isActive": true },
+    { "modelId": 4,  "regexPattern": "^[A-Z0-9]{12}$",    "isActive": true },
+    { "modelId": 12, "regexPattern": "^PW0[A-Z0-9]{5}$", "isActive": true }
   ]
 }

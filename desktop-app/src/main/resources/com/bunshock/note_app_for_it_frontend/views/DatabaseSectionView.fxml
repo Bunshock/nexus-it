@@ -49,8 +49,24 @@
             </children>
         </VBox>
 
-        <!-- Equipment catalog -->
-        <HBox spacing="15" VBox.vgrow="ALWAYS">
+        <!-- Catalog group toggle: Types/Brands/Models cascade vs. flat/independent catalogs -->
+        <HBox prefHeight="46.0" spacing="0">
+            <children>
+                <ToggleButton fx:id="btnEquipmentCatalog" text="CATÁLOGO DE EQUIPOS"
+                              minWidth="0" prefWidth="0" maxWidth="Infinity" HBox.hgrow="ALWAYS"
+                              styleClass="type-button-left" selected="true" toggleGroup="$catalogGroup">
+                    <toggleGroup>
+                        <ToggleGroup fx:id="catalogGroup"/>
+                    </toggleGroup>
+                </ToggleButton>
+                <ToggleButton fx:id="btnOtherCatalogs" text="OTROS CATÁLOGOS"
+                              minWidth="0" prefWidth="0" maxWidth="Infinity" HBox.hgrow="ALWAYS"
+                              styleClass="type-button-right" toggleGroup="$catalogGroup"/>
+            </children>
+        </HBox>
+
+        <!-- Equipment catalog: Types/Brands/Models cascade -->
+        <HBox fx:id="rowEquipmentCatalog" spacing="15" VBox.vgrow="ALWAYS">
 
             <!-- Types -->
             <VBox spacing="10" HBox.hgrow="ALWAYS"
@@ -109,6 +125,11 @@
                 </children>
             </VBox>
 
+        </HBox>
+
+        <!-- Other catalogs: flat, independent lists (no cascade between them) -->
+        <HBox fx:id="rowOtherCatalogs" spacing="15" VBox.vgrow="ALWAYS" visible="false" managed="false">
+
             <!-- Providers -->
             <VBox spacing="10" HBox.hgrow="ALWAYS"
                   style="-fx-background-color: white; -fx-background-radius: 10; -fx-padding: 15 20 20 20;">
@@ -123,6 +144,25 @@
                         <Button text="Editar" onAction="#handleEditProvider" styleClass="button-secondary"
                                 maxWidth="Infinity" HBox.hgrow="ALWAYS"/>
                         <Button text="Eliminar" onAction="#handleRemoveProvider" styleClass="button-secondary"
+                                maxWidth="Infinity" HBox.hgrow="ALWAYS"/>
+                    </HBox>
+                </children>
+            </VBox>
+
+            <!-- Sedes -->
+            <VBox spacing="10" HBox.hgrow="ALWAYS"
+                  style="-fx-background-color: white; -fx-background-radius: 10; -fx-padding: 15 20 20 20;">
+                <children>
+                    <HBox alignment="CENTER_LEFT">
+                        <Label text="SEDES" styleClass="section-label"/>
+                        <Region HBox.hgrow="ALWAYS"/>
+                        <Button text="+ Agregar" onAction="#handleAddSede" styleClass="button-primary"/>
+                    </HBox>
+                    <ListView fx:id="listSedes" VBox.vgrow="ALWAYS" styleClass="modern-list"/>
+                    <HBox spacing="8">
+                        <Button text="Editar" onAction="#handleEditSede" styleClass="button-secondary"
+                                maxWidth="Infinity" HBox.hgrow="ALWAYS"/>
+                        <Button text="Eliminar" onAction="#handleRemoveSede" styleClass="button-secondary"
                                 maxWidth="Infinity" HBox.hgrow="ALWAYS"/>
                     </HBox>
                 </children>

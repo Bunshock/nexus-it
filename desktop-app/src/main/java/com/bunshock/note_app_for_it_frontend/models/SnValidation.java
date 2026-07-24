@@ -7,19 +7,16 @@ import java.util.OptionalInt;
 public class SnValidation {
     private final int modelId;
     private final String regexPattern;
-    private final String description;
     private final boolean isActive;
 
-    public SnValidation(int modelId, String regexPattern, String description, boolean isActive) {
+    public SnValidation(int modelId, String regexPattern, boolean isActive) {
         this.modelId = modelId;
         this.regexPattern = regexPattern;
-        this.description = description;
         this.isActive = isActive;
     }
 
     public int getModelId() { return modelId; }
     public String getRegexPattern() { return regexPattern; }
-    public String getDescription() { return description; }
     public boolean isActive() { return isActive; }
 
     public OptionalInt deriveExpectedLength() {
@@ -29,7 +26,6 @@ public class SnValidation {
     public record TemplateSegment(String text, boolean fixed) {}
 
     public List<TemplateSegment> templateParts() {
-        if (description != null) return List.of(new TemplateSegment(description, false));
         return generateTemplateParts(regexPattern);
     }
 
@@ -105,7 +101,6 @@ public class SnValidation {
     }
 
     public String formatHint() {
-        if (description != null) return description;
         return generateTemplate(regexPattern);
     }
 

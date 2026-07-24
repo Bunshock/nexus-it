@@ -9,6 +9,7 @@ import java.util.Optional;
 import com.bunshock.note_app_for_it_frontend.models.EquipmentBrand;
 import com.bunshock.note_app_for_it_frontend.models.EquipmentModel;
 import com.bunshock.note_app_for_it_frontend.models.EquipmentProvider;
+import com.bunshock.note_app_for_it_frontend.models.Sede;
 import com.bunshock.note_app_for_it_frontend.models.EquipmentType;
 import com.bunshock.note_app_for_it_frontend.models.SnValidation;
 import com.bunshock.note_app_for_it_frontend.models.SnValidationRow;
@@ -25,12 +26,14 @@ public class MockEquipmentService implements IEquipmentService {
     private final List<EquipmentModel> models = new ArrayList<>();
     private final List<SnValidation> snValidations = new ArrayList<>();
     private final List<EquipmentProvider> providers = new ArrayList<>();
+    private final List<Sede> sedes = new ArrayList<>();
 
     private int nextTypeId = 1000;
     private int nextBrandId = 1000;
     private int nextTypeBrandId = 1000;
     private int nextModelId = 1000;
     private int nextProviderId = 1000;
+    private int nextSedeId = 1000;
 
     public MockEquipmentService() {
         try {
@@ -73,12 +76,9 @@ public class MockEquipmentService implements IEquipmentService {
             for (JsonNode n : root.get("snValidations")) {
                 String regex = n.has("regexPattern") && !n.get("regexPattern").isNull()
                     ? n.get("regexPattern").asText() : null;
-                String desc = n.has("description") && !n.get("description").isNull()
-                    ? n.get("description").asText() : null;
                 snValidations.add(new SnValidation(
                     n.get("modelId").asInt(),
                     regex,
-                    desc,
                     n.get("isActive").asBoolean()
                 ));
             }
@@ -127,6 +127,11 @@ public class MockEquipmentService implements IEquipmentService {
     }
 
     @Override
+    public List<Sede> getAllSedes() {
+        return List.copyOf(sedes);
+    }
+
+    @Override
     public Optional<SnValidation> getSnValidation(int modelId) {
         return snValidations.stream()
             .filter(v -> v.getModelId() == modelId && v.isActive())
@@ -158,7 +163,7 @@ public class MockEquipmentService implements IEquipmentService {
     public void upsertSnValidation(int modelId, String regex, boolean active) {
         snValidations.removeIf(v -> v.getModelId() == modelId);
         String r = (regex == null || regex.isBlank()) ? null : regex.trim();
-        snValidations.add(new SnValidation(modelId, r, null, active));
+        snValidations.add(new SnValidation(modelId, r, active));
     }
 
     @Override
@@ -211,6 +216,11 @@ public class MockEquipmentService implements IEquipmentService {
     }
 
     @Override
+    public void addSede(String name) {
+        sedes.add(new Sede(nextSedeId++, name.trim()));
+    }
+
+    @Override
     public void removeType(int typeId) {
         types.removeIf(t -> t.getId() == typeId);
     }
@@ -228,6 +238,11 @@ public class MockEquipmentService implements IEquipmentService {
     @Override
     public void removeProvider(int providerId) {
         providers.removeIf(p -> p.getId() == providerId);
+    }
+
+    @Override
+    public void removeSede(int sedeId) {
+        sedes.removeIf(s -> s.getId() == sedeId);
     }
 
     @Override
@@ -278,6 +293,16 @@ public class MockEquipmentService implements IEquipmentService {
         for (int i = 0; i < providers.size(); i++) {
             if (providers.get(i).getId() == providerId) {
                 providers.set(i, new EquipmentProvider(providerId, newName.trim()));
+                return;
+            }
+        }
+    }
+
+    @Override
+    public void renameSede(int sedeId, String newName) {
+        for (int i = 0; i < sedes.size(); i++) {
+            if (sedes.get(i).getId() == sedeId) {
+                sedes.set(i, new Sede(sedeId, newName.trim()));
                 return;
             }
         }
