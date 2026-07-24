@@ -32,9 +32,12 @@ public class TechnicianSessionService {
     private volatile String lastError;
     private volatile UpdateSource lastUpdateSource;
     private volatile String displayNamePreference;
+    private volatile Integer sedeIdPreference;
+    private volatile String sedeName;
 
     private final List<Runnable> onChangeListeners = new ArrayList<>();
     private final List<Runnable> onDisplayNameChangeListeners = new ArrayList<>();
+    private final List<Runnable> onSedeChangeListeners = new ArrayList<>();
 
     private TechnicianSessionService() {}
 
@@ -73,6 +76,7 @@ public class TechnicianSessionService {
         lastError = null;
         lastUpdateSource = UpdateSource.AD;
         loadDisplayNamePreference();
+        loadSedePreference();
         notifyListeners();
     }
 
@@ -85,6 +89,7 @@ public class TechnicianSessionService {
         this.lastError = null;
         this.lastUpdateSource = UpdateSource.MANUAL;
         loadDisplayNamePreference();
+        loadSedePreference();
         notifyListeners();
     }
 
@@ -99,6 +104,8 @@ public class TechnicianSessionService {
         email = null;
         dni = null;
         displayNamePreference = null;
+        sedeIdPreference = null;
+        sedeName = null;
         lastError = error;
         notifyListeners();
     }
@@ -158,6 +165,75 @@ public class TechnicianSessionService {
         return "display_name_pref:" + username;
     }
 
+    /** The technician's configured Sede (site) display name, or null if not set yet. Resolved
+     * from the stored sede_id at load time — see loadSedePreference(). */
+    public String getSede() { return sedeName; }
+
+    /** The technician's configured Sede id, or null if not set yet — this is what gets
+     * persisted onto NOTE_REPORT.sede_id at note-generation time. */
+    public Integer getSedeId() { return sedeIdPreference; }
+
+    /**
+     * Sets the technician's Sede preference from a catalog selection (the Settings ComboBox<Sede>
+     * item), persisting only the id in APP_SETTINGS keyed by username — same key/mechanism the
+     * old free-text version used (sede_pref:<username>), just storing an id instead of a name now
+     * (added 2026-07-24, when Sede became catalog-backed). Its own listener list keeps a Sede
+     * save from re-triggering the AD-identity or display-name status messages, same reasoning as
+     * the existing listener split between those two.
+     */
+    public synchronized void setSedePreference(Integer sedeId, String sedeName) {
+        if (username == null) return;
+        if (sedeId == null) {
+            deleteSetting(sedePreferenceKey(username));
+            this.sedeIdPreference = null;
+            this.sedeName = null;
+        } else {
+            saveSetting(sedePreferenceKey(username), String.valueOf(sedeId));
+            this.sedeIdPreference = sedeId;
+            this.sedeName = sedeName;
+        }
+        notifySedeListeners();
+    }
+
+    private void loadSedePreference() {
+        String stored = username != null ? loadSetting(sedePreferenceKey(username)) : null;
+        if (stored == null) {
+            sedeIdPreference = null;
+            sedeName = null;
+            return;
+        }
+        try {
+            sedeIdPreference = Integer.parseInt(stored);
+        } catch (NumberFormatException notAnId) {
+            // Pre-2026-07-24 installs stored the Sede as free text, not a catalog id — treat as
+            // unset rather than crash; the technician re-picks it once via the new combobox.
+            sedeIdPreference = null;
+            sedeName = null;
+            return;
+        }
+        sedeName = resolveSedeName(sedeIdPreference);
+    }
+
+    // Resolves regardless of deprecated status — a technician's own saved preference should
+    // still display *something* even if an admin renamed/deprecated that Sede since, rather
+    // than silently going blank (which would also block note generation, since Sede is
+    // mandatory). If the row was genuinely deleted this returns null, same as never having set one.
+    private String resolveSedeName(int sedeId) {
+        try (Connection c = DatabaseService.getInstance().getConnection();
+             PreparedStatement ps = c.prepareStatement("SELECT name FROM SEDE WHERE id = ?")) {
+            ps.setInt(1, sedeId);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? rs.getString("name") : null;
+            }
+        } catch (SQLException e) {
+            return null;
+        }
+    }
+
+    private static String sedePreferenceKey(String username) {
+        return "sede_pref:" + username;
+    }
+
     private String loadSetting(String key) {
         try (Connection c = DatabaseService.getInstance().getConnection();
              PreparedStatement ps = c.prepareStatement("SELECT value FROM APP_SETTINGS WHERE key = ?")) {
@@ -203,11 +279,19 @@ public class TechnicianSessionService {
         Platform.runLater(() -> listeners.forEach(Runnable::run));
     }
 
+    private void notifySedeListeners() {
+        List<Runnable> listeners = new ArrayList<>(onSedeChangeListeners);
+        Platform.runLater(() -> listeners.forEach(Runnable::run));
+    }
+
     public void addOnChangeListener(Runnable listener) { onChangeListeners.add(listener); }
     public void removeOnChangeListener(Runnable listener) { onChangeListeners.remove(listener); }
 
     public void addOnDisplayNameChangeListener(Runnable listener) { onDisplayNameChangeListeners.add(listener); }
     public void removeOnDisplayNameChangeListener(Runnable listener) { onDisplayNameChangeListeners.remove(listener); }
+
+    public void addOnSedeChangeListener(Runnable listener) { onSedeChangeListeners.add(listener); }
+    public void removeOnSedeChangeListener(Runnable listener) { onSedeChangeListeners.remove(listener); }
 
     public String getName() { return name; }
     public String getUsername() { return username; }

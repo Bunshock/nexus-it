@@ -1,5 +1,10 @@
 package com.bunshock.note_app_for_it_frontend.services;
 
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -140,5 +145,113 @@ class TechnicianSessionServiceTest {
         session.applyManualOverride(null, null, null, null);
         session.setDisplayNamePreference("Joaco");
         assertNull(session.getDisplayName());
+    }
+
+    // setSedePreference() also persists to the real local APP_SETTINGS table, same leakage
+    // caveat as setDisplayNamePreference() above — use dedicated usernames and clean up. Only
+    // sedePreferencePersistsAcrossRefresh() below actually needs a real SEDE catalog row (it's
+    // the one test exercising loadSedePreference()'s DB-backed name resolution) — inserted and
+    // hard-deleted within that single test so it never lingers in the real local catalog for
+    // other technicians/tests to see; every other test only exercises the in-memory
+    // setSedePreference()/getSede() round-trip, which never touches SEDE at all.
+
+    @Test
+    void getSedeNullWhenNoPreferenceSet() {
+        session.applyManualOverride("Rodriguez Joaquin", "test-tss-sede-1", "x@x.com", "45933368");
+        assertNull(session.getSede());
+    }
+
+    @Test
+    void setSedePreferenceIsReflectedImmediately() {
+        session.applyManualOverride("Rodriguez Joaquin", "test-tss-sede-2", "x@x.com", "45933368");
+        try {
+            session.setSedePreference(1, "Campus");
+            assertEquals("Campus", session.getSede());
+            assertEquals(1, session.getSedeId());
+        } finally {
+            session.setSedePreference(null, null);
+        }
+    }
+
+    @Test
+    void setSedePreferenceNullClearsIt() {
+        session.applyManualOverride("Rodriguez Joaquin", "test-tss-sede-3", "x@x.com", "45933368");
+        session.setSedePreference(1, "Campus");
+        session.setSedePreference(null, null);
+        assertNull(session.getSede());
+        assertNull(session.getSedeId());
+    }
+
+    @Test
+    void setSedePreferenceNoOpsWhenUsernameUnresolved() {
+        session.applyManualOverride(null, null, null, null);
+        session.setSedePreference(1, "Campus");
+        assertNull(session.getSede());
+    }
+
+    @Test
+    void sedePreferencePersistsAcrossRefresh() throws SQLException {
+        // Unlike this file's other real-DB-touching tests (APP_SETTINGS existed long before
+        // this feature), SEDE only exists once DatabaseService.initialize() has actually run —
+        // no other test in this suite calls it against the real data/noteapp.db, so this test
+        // can't assume it's already there. initialize() is safe/idempotent to call here, same
+        // as every real app startup.
+        DatabaseService.getInstance().initialize();
+        int sedeId = insertTestSede("Campus (test)");
+        try {
+            session.applyManualOverride("Rodriguez Joaquin", "test-tss-sede-4", "x@x.com", "45933368");
+            session.setSedePreference(sedeId, "Campus (test)");
+            // Simulate a re-resolution of the same username (e.g. a later AD refresh) — the
+            // preference must reload from APP_SETTINGS and re-resolve the name from SEDE, not
+            // just live in memory.
+            session.applyManualOverride("Rodriguez Joaquin", "test-tss-sede-4", "x@x.com", "45933368");
+            assertEquals("Campus (test)", session.getSede());
+            assertEquals(sedeId, session.getSedeId());
+        } finally {
+            session.setSedePreference(null, null);
+            deleteTestSede(sedeId);
+        }
+    }
+
+    @Test
+    void setSedePreferenceNotifiesOnlySedeListenersNotIdentityListeners() throws Exception {
+        session.applyManualOverride("Rodriguez Joaquin", "test-tss-sede-5", "x@x.com", "45933368");
+        AtomicBoolean sedeFired = new AtomicBoolean(false);
+        AtomicBoolean identityFired = new AtomicBoolean(false);
+        Runnable sedeListener = () -> sedeFired.set(true);
+        Runnable identityListener = () -> identityFired.set(true);
+        session.addOnSedeChangeListener(sedeListener);
+        session.addOnChangeListener(identityListener);
+        try {
+            session.setSedePreference(1, "Campus");
+            waitForFxEvents();
+            assertTrue(sedeFired.get());
+            assertFalse(identityFired.get());
+        } finally {
+            session.removeOnSedeChangeListener(sedeListener);
+            session.removeOnChangeListener(identityListener);
+            session.setSedePreference(null, null);
+        }
+    }
+
+    private int insertTestSede(String name) throws SQLException {
+        try (Connection c = DatabaseService.getInstance().getConnection();
+             PreparedStatement ps = c.prepareStatement(
+                 "INSERT INTO SEDE (name, deprecated) VALUES (?, 0)", Statement.RETURN_GENERATED_KEYS)) {
+            ps.setString(1, name);
+            ps.executeUpdate();
+            try (ResultSet keys = ps.getGeneratedKeys()) {
+                keys.next();
+                return keys.getInt(1);
+            }
+        }
+    }
+
+    private void deleteTestSede(int id) throws SQLException {
+        try (Connection c = DatabaseService.getInstance().getConnection();
+             PreparedStatement ps = c.prepareStatement("DELETE FROM SEDE WHERE id = ?")) {
+            ps.setInt(1, id);
+            ps.executeUpdate();
+        }
     }
 }

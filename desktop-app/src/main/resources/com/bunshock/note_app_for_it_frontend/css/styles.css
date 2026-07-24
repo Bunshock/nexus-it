@@ -73,6 +73,32 @@
     -fx-background-color: #e53935;
 }
 
+/* Small "×" dismiss button in the teal gradient header of note popups
+   (NotePreviewView, NoteDetailView) — same transparent/hover-overlay language
+   as .title-bar-button, sized for a compact dialog header instead of the title bar. */
+.dialog-header-close-button {
+    -fx-background-color: transparent;
+    -fx-background-radius: 100;
+    -fx-text-fill: rgba(255,255,255,0.85);
+    -fx-font-size: 13px;
+    -fx-cursor: hand;
+    -fx-padding: 0;
+    -fx-min-width: 26;
+    -fx-max-width: 26;
+    -fx-min-height: 26;
+    -fx-max-height: 26;
+}
+
+.dialog-header-close-button:hover {
+    -fx-background-color: rgba(255,255,255,0.20);
+    -fx-text-fill: white;
+}
+
+.dialog-header-close-button:pressed {
+    -fx-background-color: #e53935;
+    -fx-text-fill: white;
+}
+
 /* Section label (used for sub-section headings inside content cards) */
 .section-label {
     -fx-font-weight: bold;
@@ -238,6 +264,24 @@
 
 .form-input-main:focused {
     -fx-border-color: #0c8570;
+}
+
+/* Settings' Sede ComboBox only — shorter than the standard form-input-main height. Scoped to
+   .combo-box.sede-combo (a compound selector, so it outweighs the plain .form-input-main class
+   rule above) rather than touching .form-input-main itself, so no other ComboBox/TextField in
+   the app is affected. Mirrors .combo-box.form-input-filter's own pattern of zeroing the
+   control's own padding and sizing the inner .list-cell instead, since a ComboBox's outer
+   padding alone doesn't reliably shrink its rendered height. */
+.combo-box.sede-combo {
+    -fx-padding: 0;
+}
+.combo-box.sede-combo > .list-cell {
+    -fx-padding: 6 10;
+    -fx-background-color: transparent;
+    -fx-text-fill: #334155;
+}
+.combo-box.sede-combo > .arrow-button {
+    -fx-padding: 0 8;
 }
 
 /* Compact input for filter bars (date pickers + combo boxes) */
@@ -520,6 +564,14 @@
     -fx-font-size: 11px;
 }
 
+/* Sidebar Sede line — its own (smaller) class rather than reusing .user-username, so shrinking
+   its footprint to offset the welcome block's added height never affects lblUsername's size. */
+.user-sede {
+    -fx-text-fill: #8fb3af;
+    -fx-font-size: 10px;
+    -fx-font-family: "Segoe UI", sans-serif;
+}
+
 /* Sidebar button */
 .nav-button {
     -fx-background-color: rgba(255, 255, 255, 0.03);
@@ -550,6 +602,14 @@
     -fx-effect: innershadow(three-pass-box, rgba(0, 0, 0, 0.3), 5, 0, 0, 2);
 }
 
+/* Pending-count badge overlaid on Historial/Préstamos nav buttons (StackPane.alignment=
+   CENTER_RIGHT) — same orange used for "Pendiente" status badges elsewhere in the app. */
+.nav-badge {
+    -fx-text-fill: #f97316;
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+}
+
 /* Sidebar logo frame style */
 .logo-frame {
     -fx-background-color: rgba(255, 255, 255, 0.15);
@@ -566,7 +626,7 @@
 /* --- NoteGeneratorView styles - START --- */
 
 /* Toggle buttons for note type (user-provider-delivery) */
-.type-button-left, .type-button-right {
+.type-button-left, .type-button-right, .type-button-middle {
     -fx-background-color: linear-gradient(to bottom, #f8fafc, #f1f5f9);
     -fx-text-fill: #64748b;
     -fx-font-weight: bold;
@@ -584,26 +644,35 @@
     -fx-border-width: 1 0 1 1;
 }
 
+/* Sits between left and right in a 3-way split — no radius of its own, and (like
+   type-button-left) omits its own right border so the divider to its right is drawn
+   exactly once, by whichever button is next. */
+.type-button-middle {
+    -fx-background-radius: 0 !important;
+    -fx-border-radius: 0 !important;
+    -fx-border-width: 1 0 1 1;
+}
+
 .type-button-right {
     -fx-background-radius: 0 15 15 0 !important;
     -fx-border-radius: 0 15 15 0 !important;
     -fx-border-width: 1 1 1 1;
 }
 
-.type-button-left:hover, .type-button-right:hover {
+.type-button-left:hover, .type-button-right:hover, .type-button-middle:hover {
     -fx-background-color: linear-gradient(to bottom, #ffffff, #f1f5f9);
     -fx-text-fill: #334155;
     -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.1), 8, 0, 0, 2);
 }
 
-.type-button-left:selected, .type-button-right:selected {
+.type-button-left:selected, .type-button-right:selected, .type-button-middle:selected {
     -fx-background-color: #0c8570;
     -fx-text-fill: white;
     -fx-border-color: #086d5a;
     -fx-effect: innershadow(three-pass-box, rgba(0,0,0,0.25), 6, 0, 0, 2);
 }
 
-.type-button-left:selected:hover, .type-button-right:selected:hover {
+.type-button-left:selected:hover, .type-button-right:selected:hover, .type-button-middle:selected:hover {
     -fx-background-color: #0e9a82;
     -fx-effect: innershadow(three-pass-box, rgba(0,0,0,0.3), 8, 0, 0, 3);
 }
@@ -611,6 +680,13 @@
 .type-button-left:focused {
     -fx-background-radius: 15 0 0 15 !important;
     -fx-border-radius: 15 0 0 15 !important;
+    -fx-focus-color: transparent;
+    -fx-faint-focus-color: transparent;
+}
+
+.type-button-middle:focused {
+    -fx-background-radius: 0 !important;
+    -fx-border-radius: 0 !important;
     -fx-focus-color: transparent;
     -fx-faint-focus-color: transparent;
 }

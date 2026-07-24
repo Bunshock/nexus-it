@@ -5,6 +5,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import com.bunshock.note_app_for_it_frontend.services.ConfigService;
+import com.bunshock.note_app_for_it_frontend.services.MockEquipmentService;
+import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;
 
 import javafx.application.Platform;
 import javafx.fxml.FXMLLoader;
@@ -27,6 +29,11 @@ class SettingsViewFxmlTest {
             // toolkit already running from a previous test class in this JVM
         }
         ConfigService.getInstance().load();
+        // SettingsController.initialize() now eagerly populates the Sede combo
+        // (equipmentService.getAllSedes()), which needs a real service — previously
+        // setupSnTable() never dereferenced equipmentService synchronously during
+        // initialize(), so this test never needed one.
+        ServiceLocator.getInstance().setEquipmentService(new MockEquipmentService());
     }
 
     @Test

@@ -26,6 +26,18 @@
         <VBox spacing="20" style="-fx-padding: 0 30 20 30; -fx-background-color: #f4f4f4;">
         <children>
 
+            <!-- Sede (per-technician, not admin-gated — any technician sets their own).
+                 Saved via the shared "Guardar Configuración" footer button below, not a
+                 dedicated one — see SettingsController.handleSave(). -->
+            <VBox spacing="10" style="-fx-background-color: white; -fx-background-radius: 10; -fx-padding: 15 20 20 20;">
+                <children>
+                    <Label text="SEDE" styleClass="section-label"/>
+                    <Label text="Sede desde la que usted genera notas. Se imprime en cada nota y es obligatoria para poder generarlas."
+                           style="-fx-text-fill: #64748b; -fx-font-size: 12px;" wrapText="true"/>
+                    <ComboBox fx:id="cmbSede" styleClass="form-input-main, sede-combo" promptText="Seleccione una sede..." maxWidth="220"/>
+                </children>
+            </VBox>
+
             <!-- A/F Format -->
             <VBox spacing="10" style="-fx-background-color: white; -fx-background-radius: 10; -fx-padding: 15 20 20 20;">
                 <children>
@@ -171,7 +183,7 @@
                   style="-fx-padding: 15 30 20 30; -fx-background-color: #f4f4f4;">
                 <Label fx:id="lblSaveStatus" text="" style="-fx-font-size: 11px;"/>
                 <Button fx:id="btnSave" text="Guardar Configuración" onAction="#handleSave"
-                        styleClass="button-primary-large" disable="true"/>
+                        styleClass="button-primary-large"/>
             </HBox>
 
         </children>

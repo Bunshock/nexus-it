@@ -10,6 +10,7 @@ import java.util.Set;
 import java.util.function.Predicate;
 
 import com.bunshock.note_app_for_it_frontend.models.AppConfig;
+import com.bunshock.note_app_for_it_frontend.models.Sede;
 import com.bunshock.note_app_for_it_frontend.models.SnValidationRow;
 import com.bunshock.note_app_for_it_frontend.services.AdApiService;
 import com.bunshock.note_app_for_it_frontend.services.AdminAuthService;
@@ -33,6 +34,7 @@ import javafx.geometry.Pos;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
+import javafx.scene.control.ComboBox;
 import javafx.scene.control.CustomMenuItem;
 import javafx.scene.control.Label;
 import javafx.scene.control.MenuButton;
@@ -43,6 +45,7 @@ import javafx.scene.control.TableCell;
 import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableView;
 import javafx.scene.control.TextField;
+import javafx.scene.control.TextFormatter;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
@@ -57,6 +60,12 @@ public class SettingsController {
     // ── Settings panel fields ─────────────────────────────────────────
     @FXML private VBox panelSettings;
     @FXML private VBox panelSnValidation;
+
+    // Not admin-gated — any technician sets their own Sede (see updateFieldEditability()).
+    // Catalog-backed (added 2026-07-24) — strict selection from the admin-curated SEDE list,
+    // same non-editable pattern as ProviderNoteController.cmbProviderSearch. Saved through the
+    // shared "Guardar Configuración" button/handleSave() below, not a dedicated button anymore.
+    @FXML private ComboBox<Sede> cmbSede;
 
     @FXML private TextField txtAfPrefix;
     @FXML private TextField txtAfSeparator;
@@ -94,6 +103,7 @@ public class SettingsController {
     @FXML private TableColumn<SnValidationRow, Void>     colSnEdit;
 
     private static final List<String> SN_ACTIVE_OPTIONS = List.of("Sí", "No");
+    private static final int SN_REGEX_MAX_LENGTH = 500;
 
     private final Set<String> selSnTypes  = new LinkedHashSet<>();
     private final Set<String> selSnBrands = new LinkedHashSet<>();
@@ -125,6 +135,9 @@ public class SettingsController {
 
         setupSnTable();
 
+        refreshSedeCombo();
+        TechnicianSessionService.getInstance().addOnSedeChangeListener(this::preselectCurrentSede);
+
         AdminSession.getInstance().addOnActivateListener(this::onAdminStateChanged);
         AdminSession.getInstance().addOnDeactivateListener(this::onAdminStateChanged);
         onAdminStateChanged();
@@ -147,7 +160,8 @@ public class SettingsController {
         pfGlpiApiKey.setDisable(!adminActive);
         txtAdUrl.setDisable(!adminActive);
         pfAdApiToken.setDisable(!adminActive);
-        btnSave.setDisable(!adminActive);
+        // btnSave itself is never disabled by admin state — Sede (not admin-gated) is saved
+        // through the same button, see handleSave().
     }
 
     // ── A/F preview ───────────────────────────────────────────────────
@@ -166,10 +180,49 @@ public class SettingsController {
         }
     }
 
+    // ── Sede (per-technician, saved by the shared "Guardar Configuración" button below) ─────
+
+    // Repopulates the combo from the catalog and reselects whatever the technician currently
+    // has saved — called at init, whenever Base de Datos' Sede list changes underneath this
+    // (session-cached view, same "stale catalog" family of bug already fixed elsewhere for
+    // ProviderNoteController.refreshProviders()), and every time the Settings section is shown
+    // again (MainController.handleShowSettings(), mirroring HistoryController.refresh()'s
+    // precedent) — so switching away after picking a different Sede but not saving, then
+    // switching back, shows the last *saved* value again rather than the abandoned selection.
+    public void refreshSedeCombo() {
+        cmbSede.setItems(FXCollections.observableArrayList(equipmentService.getAllSedes()));
+        preselectCurrentSede();
+    }
+
+    private void preselectCurrentSede() {
+        Integer sedeId = TechnicianSessionService.getInstance().getSedeId();
+        if (sedeId == null) {
+            cmbSede.setValue(null);
+            return;
+        }
+        cmbSede.getItems().stream()
+            .filter(s -> s.getId() == sedeId)
+            .findFirst()
+            .ifPresentOrElse(cmbSede::setValue, () -> cmbSede.setValue(null));
+    }
+
     // ── Save ──────────────────────────────────────────────────────────
 
     @FXML
     private void handleSave() {
+        // Sede isn't admin-gated (any technician sets their own), so it's always saved here,
+        // regardless of admin state — previously had its own dedicated "Guardar" button next to
+        // the combo, merged into this one so a non-admin technician has a way to save it too.
+        Sede selectedSede = cmbSede.getValue();
+        TechnicianSessionService.getInstance().setSedePreference(
+            selectedSede != null ? selectedSede.getId() : null,
+            selectedSede != null ? selectedSede.getName() : null);
+
+        if (!AdminSession.getInstance().isActive()) {
+            triggerSaveStatus("Configuración guardada", "#0c8570");
+            return;
+        }
+
         AppConfig config = ConfigService.getInstance().getConfig();
 
         config.afFormat.prefix    = txtAfPrefix.getText().trim();
@@ -678,6 +731,8 @@ public class SettingsController {
         TextField tfRegex = new TextField(row.getRegex());
         tfRegex.setPromptText("Ej: [A-Z]{2}\\d{6}");
         tfRegex.getStyleClass().add("form-input-main");
+        tfRegex.setTextFormatter(new TextFormatter<>(change ->
+            change.getControlNewText().length() <= SN_REGEX_MAX_LENGTH ? change : null));
 
         CheckBox chkActive = new CheckBox("Validación activa");
         chkActive.setSelected(row.isActive());

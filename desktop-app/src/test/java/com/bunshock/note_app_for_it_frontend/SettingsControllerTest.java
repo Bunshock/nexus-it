@@ -95,7 +95,8 @@ class SettingsControllerTest {
         for (String name : FIELD_NAMES) {
             assertTrue(getField(name).isDisabled(), name + " should be disabled outside admin mode");
         }
-        assertTrue(getField("btnSave").isDisabled(), "Save button should be disabled outside admin mode");
+        // btnSave is never admin-gated — it also saves Sede, which any technician can set.
+        assertFalse(getField("btnSave").isDisabled(), "Save button should stay enabled outside admin mode");
     }
 
     @Test
@@ -117,6 +118,6 @@ class SettingsControllerTest {
         for (String name : FIELD_NAMES) {
             assertTrue(getField(name).isDisabled(), name + " should be disabled again after admin mode ends");
         }
-        assertTrue(getField("btnSave").isDisabled(), "Save button should be disabled again after admin mode ends");
+        assertFalse(getField("btnSave").isDisabled(), "Save button should stay enabled after admin mode ends");
     }
 }
