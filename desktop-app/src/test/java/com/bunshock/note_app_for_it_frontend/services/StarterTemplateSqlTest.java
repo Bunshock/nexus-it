@@ -62,7 +62,6 @@ class StarterTemplateSqlTest {
                     id            INTEGER PRIMARY KEY AUTOINCREMENT,
                     model_id      INTEGER NOT NULL REFERENCES MODEL(id),
                     regex_pattern TEXT,
-                    description   TEXT,
                     is_active     INTEGER NOT NULL DEFAULT 1
                 )""");
             s.executeUpdate("""
@@ -130,7 +129,7 @@ class StarterTemplateSqlTest {
         runTemplateScript();
 
         // requires_serial is a column in the _seed_rows staging table itself now (matching
-        // database/postgresql/02-seed-equipment.sql.example's per-row approach), not derived
+        // database/sqlserver/02-seed-equipment.sql.example's per-row approach), not derived
         // from the type name — so a non-NOTEBOOK type could require it too, and NOTEBOOK itself
         // isn't hardcoded as special. MOUSE is the same is_asset=0 case demo-seed.sql's
         // NOTEBOOK-only CASE expression would have gotten right anyway, but for the wrong

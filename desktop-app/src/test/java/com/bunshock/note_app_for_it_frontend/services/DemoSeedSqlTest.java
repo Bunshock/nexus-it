@@ -69,7 +69,6 @@ class DemoSeedSqlTest {
                     id              INTEGER PRIMARY KEY AUTOINCREMENT,
                     created_at      TEXT NOT NULL,
                     profile_type    TEXT NOT NULL,
-                    technician_id   INTEGER,
                     technician_name TEXT,
                     technician_dni  TEXT
                 )""");
@@ -94,19 +93,37 @@ class DemoSeedSqlTest {
                 )""");
             s.executeUpdate("""
                 CREATE TABLE NOTE_ITEM (
-                    id                      INTEGER PRIMARY KEY AUTOINCREMENT,
-                    note_id                 INTEGER NOT NULL REFERENCES NOTE_REPORT(id),
-                    type_name               TEXT NOT NULL,
-                    brand_name              TEXT,
-                    model_name              TEXT,
-                    serial_number           TEXT,
-                    a_f                     TEXT,
-                    quantity                INTEGER NOT NULL DEFAULT 1,
-                    observations            TEXT,
-                    is_asset                INTEGER NOT NULL DEFAULT 0,
-                    glpi_status             TEXT NOT NULL DEFAULT 'N_A',
-                    glpi_rejection_reason   TEXT,
-                    glpi_status_updated_at  TEXT
+                    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                    note_id      INTEGER NOT NULL REFERENCES NOTE_REPORT(id),
+                    type_name    TEXT NOT NULL,
+                    brand_name   TEXT,
+                    model_name   TEXT,
+                    observations TEXT
+                )""");
+            s.executeUpdate("""
+                CREATE TABLE NOTE_ITEM_ASSET (
+                    item_id       INTEGER PRIMARY KEY REFERENCES NOTE_ITEM(id),
+                    serial_number TEXT,
+                    a_f           TEXT
+                )""");
+            s.executeUpdate("""
+                CREATE TABLE NOTE_ITEM_COUNTABLE (
+                    item_id  INTEGER PRIMARY KEY REFERENCES NOTE_ITEM(id),
+                    quantity INTEGER NOT NULL DEFAULT 1
+                )""");
+            s.executeUpdate("""
+                CREATE TABLE NOTE_ITEM_GLPI_TRACKING (
+                    item_id           INTEGER PRIMARY KEY REFERENCES NOTE_ITEM(id),
+                    status            TEXT NOT NULL,
+                    rejection_reason  TEXT,
+                    status_updated_at TEXT
+                )""");
+            s.executeUpdate("""
+                CREATE TABLE NOTE_ITEM_RETURN_TRACKING (
+                    item_id           INTEGER PRIMARY KEY REFERENCES NOTE_ITEM(id),
+                    status            TEXT NOT NULL,
+                    rejection_reason  TEXT,
+                    status_updated_at TEXT
                 )""");
         }
     }
@@ -167,7 +184,14 @@ class DemoSeedSqlTest {
         assertEquals(8, count("NOTE_REPORT"), "8 fictional demo history notes");
         assertTrue(count("NOTE_ENTREGA_DEVOLUCION") > 0);
         assertTrue(count("NOTE_PROVEEDOR") > 0);
-        assertTrue(count("NOTE_ITEM") > 0);
+        assertEquals(19, count("NOTE_ITEM"), "19 demo items across the 8 notes");
+        assertEquals(11, count("NOTE_ITEM_ASSET"));
+        assertEquals(8, count("NOTE_ITEM_COUNTABLE"));
+        assertEquals(10, count("NOTE_ITEM_GLPI_TRACKING"), "every asset item except the Préstamo's");
+        // The Préstamo note's single asset item is the only one return-tracked (Préstamo assets
+        // are excluded from GLPI sync — see CLAUDE.md's "Préstamo assets are deliberately
+        // excluded from GLPI sync" — so it has no NOTE_ITEM_GLPI_TRACKING row, only this one).
+        assertEquals(1, count("NOTE_ITEM_RETURN_TRACKING"));
     }
 
     @Test

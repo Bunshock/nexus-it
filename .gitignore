@@ -5,7 +5,7 @@ desktop-app/data/noteapp.db
 desktop-app/config/app-config.json
 
 # Real equipment catalog (org-specific brand/model inventory) — copy from 02-seed-equipment.sql.example
-desktop-app/database/postgresql/02-seed-equipment.sql
+desktop-app/database/sqlserver/02-seed-equipment.sql
 
 # Real equipment catalog + S/N validation rules for local SQLite — copy from starter-template.sql.example
 desktop-app/database/sqlite/starter-template.sql

@@ -1,16 +1,15 @@
 -- Generador de Notas IT — SQLite starting data (equipment catalog + S/N validation + providers)
 --
 -- This is a TEMPLATE with placeholder rows, not real data — same pattern as
--- config/app-config.json.example and database/postgresql/02-seed-equipment.sql.example. Copy
+-- config/app-config.json.example and database/sqlserver/02-seed-equipment.sql.example. Copy
 -- this file to starter-template.sql (gitignored) and replace the example rows below with your
 -- organization's actual equipment catalog, S/N validation rules, and provider list before
 -- running it. Never commit real inventory, business-partner, or S/N pattern data to this
 -- repository.
 --
--- Unlike database/postgresql/02-seed-equipment.sql.example, this template DOES cover S/N
--- validation rules (see below) — the Postgres template deliberately leaves those to the app's
--- own UI, but they're plain, non-secret, per-model data with no reason a starting-point script
--- can't cover them too.
+-- Also covers S/N validation rules (see below), same as database/sqlserver/02-seed-equipment.sql.example
+-- — plain, non-secret, per-model data with no reason a starting-point script shouldn't cover it,
+-- alongside the app's own UI for setting these up one at a time.
 --
 -- Run against an existing data/noteapp.db (the schema must already exist — start the app once,
 -- or run database/sqlite/demo-seed.sql's own instructions apply the same way here):
@@ -28,7 +27,7 @@
 -- this script deliberately does not need a catch-all model row. requires_serial=1 disables the
 -- "Sin S/N" checkbox for that type in the app (ItemDialogController) — only meaningful when
 -- is_asset=1 — and is set per row here (not auto-derived from the type name), same as
--- database/postgresql/02-seed-equipment.sql.example, so any type can require it, not just
+-- database/sqlserver/02-seed-equipment.sql.example, so any type can require it, not just
 -- NOTEBOOK.
 --
 -- EXAMPLE ROWS ONLY — delete these and add your organization's real catalog. They illustrate
@@ -83,19 +82,19 @@ DROP TABLE _seed_rows;
 --
 -- EXAMPLE ROWS ONLY — delete these and add your organization's real patterns. Matches the two
 -- NOTEBOOK models above as an example: both require an 11-character uppercase-alphanumeric S/N.
--- description is optional (shown as a hint in the app) — pass NULL to omit it.
+-- The "Patrón esperado" hint shown in the app is always derived from regex_pattern itself, not
+-- a separately stored description.
 CREATE TEMP TABLE _seed_sn_rules (
     type_name     TEXT NOT NULL,
     brand_name    TEXT NOT NULL,
     model_name    TEXT NOT NULL,
     regex_pattern TEXT NOT NULL,
-    description   TEXT,
     is_active     INTEGER NOT NULL DEFAULT 1
 );
 
-INSERT INTO _seed_sn_rules (type_name, brand_name, model_name, regex_pattern, description, is_active) VALUES
-('NOTEBOOK', 'Marca Ejemplo A', 'Modelo Ejemplo 14', '^[A-Z0-9]{11}$', '11 caracteres, letras mayúsculas y números', 1),
-('NOTEBOOK', 'Marca Ejemplo A', 'Modelo Ejemplo 15', '^[A-Z0-9]{11}$', '11 caracteres, letras mayúsculas y números', 1);
+INSERT INTO _seed_sn_rules (type_name, brand_name, model_name, regex_pattern, is_active) VALUES
+('NOTEBOOK', 'Marca Ejemplo A', 'Modelo Ejemplo 14', '^[A-Z0-9]{11}$', 1),
+('NOTEBOOK', 'Marca Ejemplo A', 'Modelo Ejemplo 15', '^[A-Z0-9]{11}$', 1);
 
 DELETE FROM SN_VALIDATION
 WHERE model_id IN (
@@ -107,14 +106,14 @@ WHERE model_id IN (
     FROM _seed_sn_rules r
 );
 
-INSERT INTO SN_VALIDATION (model_id, regex_pattern, description, is_active)
+INSERT INTO SN_VALIDATION (model_id, regex_pattern, is_active)
 SELECT
     (SELECT m.id FROM MODEL m
        JOIN BRAND_TYPE_LINK btl ON btl.id = m.brand_type_id
        JOIN TYPE  t ON t.id = btl.type_id  AND t.name = r.type_name
        JOIN BRAND b ON b.id = btl.brand_id AND b.name = r.brand_name
        WHERE m.name = r.model_name),
-    r.regex_pattern, r.description, r.is_active
+    r.regex_pattern, r.is_active
 FROM _seed_sn_rules r;
 
 DROP TABLE _seed_sn_rules;

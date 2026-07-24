@@ -7,7 +7,7 @@ The local database (`data/noteapp.db`) is created empty — schema only, no rows
 | File | Purpose |
 |------|---------|
 | `demo-seed.sql` | **Optional, on-demand, illustrative demo data.** A realistic example equipment catalog (132 type/brand/model combinations) and 8 fictional history notes covering every GLPI status and note type. Not run automatically — load it yourself when you actually want demo data (e.g. before a demo, or as a starting example dataset). Not something you'd edit — the rows are fixed, fictional data. |
-| `starter-template.sql.example` | **Template, not real data** — same pattern as `config/app-config.json.example` and `database/postgresql/02-seed-equipment.sql.example`. Covers the equipment catalog, **S/N validation rules**, and providers, with a few example rows illustrating the syntax. Copy it to `starter-template.sql` (gitignored) and replace the example rows with your organization's real data before running it. Unlike the Postgres template, this one *does* cover S/N validation — plain, non-secret, per-model data with no reason a starting-point script can't include it too. |
+| `starter-template.sql.example` | **Template, not real data** — same pattern as `config/app-config.json.example` and `database/sqlserver/02-seed-equipment.sql.example`. Covers the equipment catalog, **S/N validation rules**, and providers, with a few example rows illustrating the syntax. Copy it to `starter-template.sql` (gitignored) and replace the example rows with your organization's real data before running it. |
 
 ## Running either one
 
@@ -34,4 +34,4 @@ To wipe the local database and start over with zero rows:
 3. Start the app — `DatabaseService.initialize()` recreates the schema (tables + the baseline "Generic" brand) but does not seed any equipment or history data.
 4. Load your own real data through **Base de Datos** (admin mode), copy `starter-template.sql.example` and run it once filled in, or run `demo-seed.sql` if you want the example/demo dataset instead.
 
-If you're preparing this local database to eventually migrate to a remote PostgreSQL server, see `../postgresql/README.md`'s "Already have a real catalog in the local SQLite database?" section for `CatalogMigrationTool` — it copies whatever's in `data/noteapp.db` (real data, demo data, or a mix) over once a PostgreSQL server is available, so there's no need to enter the catalog twice.
+If you're preparing this local database to eventually migrate to a remote SQL Server, see `../sqlserver/README.md`'s "Already have a real catalog in the local SQLite database?" section for `CatalogMigrationTool` — it copies whatever's in `data/noteapp.db` (real data, demo data, or a mix) over once a SQL Server is available, so there's no need to enter the catalog twice.

@@ -46,11 +46,11 @@
             <version>3.45.3.0</version>
         </dependency>
 
-        <!-- PostgreSQL -->
+        <!-- Microsoft SQL Server (remote database) -->
         <dependency>
-            <groupId>org.postgresql</groupId>
-            <artifactId>postgresql</artifactId>
-            <version>42.7.3</version>
+            <groupId>com.microsoft.sqlserver</groupId>
+            <artifactId>mssql-jdbc</artifactId>
+            <version>12.8.1.jre11</version>
         </dependency>
 
         <!-- Jackson (JSON config parsing) -->

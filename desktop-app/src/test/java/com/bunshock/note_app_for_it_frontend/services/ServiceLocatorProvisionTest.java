@@ -76,7 +76,7 @@ class ServiceLocatorProvisionTest {
         AppConfig config = new AppConfig();
         config.remoteDatabase = new AppConfig.RemoteDatabaseConfig();
         config.remoteDatabase.host = "should-not-be-used.example.org";
-        config.remoteDatabase.port = 5432;
+        config.remoteDatabase.port = 1433;
         config.remoteDatabase.dbName = "ignored";
 
         locator.provisionDefaultSecrets(config);
@@ -93,7 +93,7 @@ class ServiceLocatorProvisionTest {
         AppConfig config = new AppConfig();
         config.remoteDatabase = new AppConfig.RemoteDatabaseConfig();
         config.remoteDatabase.host = "";
-        config.remoteDatabase.port = 5432;
+        config.remoteDatabase.port = 1433;
         config.remoteDatabase.dbName = "notas_it";
 
         locator.provisionDefaultSecrets(config);

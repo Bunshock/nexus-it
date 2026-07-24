@@ -11,25 +11,25 @@ class RemoteDatabaseServiceTest {
 
     @Test
     void notConfiguredWhenHostIsNull() {
-        service.configure(null, 5432, "db", "user", "pass");
+        service.configure(null, 1433, "db", "user", "pass");
         assertFalse(service.isConfigured());
     }
 
     @Test
     void notConfiguredWhenHostIsBlank() {
-        service.configure("   ", 5432, "db", "user", "pass");
+        service.configure("   ", 1433, "db", "user", "pass");
         assertFalse(service.isConfigured());
     }
 
     @Test
     void configuredWhenHostIsSet() {
-        service.configure("localhost", 5432, "db", "user", "pass");
+        service.configure("localhost", 1433, "db", "user", "pass");
         assertTrue(service.isConfigured());
     }
 
     @Test
     void testConnectionFalseWhenNotConfigured() {
-        service.configure(null, 5432, "db", "user", "pass");
+        service.configure(null, 1433, "db", "user", "pass");
         assertFalse(service.testConnection());
     }
 
@@ -41,18 +41,18 @@ class RemoteDatabaseServiceTest {
 
     @Test
     void getConnectionThrowsWhenNotConfigured() {
-        service.configure(null, 5432, "db", "user", "pass");
+        service.configure(null, 1433, "db", "user", "pass");
         assertThrows(IllegalStateException.class, service::getConnection);
     }
 
     @Test
     void testConnectionOverloadFalseForNullHost() {
-        assertFalse(service.testConnection(null, 5432, "db", "user", "pass"));
+        assertFalse(service.testConnection(null, 1433, "db", "user", "pass"));
     }
 
     @Test
     void testConnectionOverloadFalseForBlankHost() {
-        assertFalse(service.testConnection("   ", 5432, "db", "user", "pass"));
+        assertFalse(service.testConnection("   ", 1433, "db", "user", "pass"));
     }
 
     @Test

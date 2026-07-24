@@ -40,7 +40,7 @@ public class ServiceLocator {
         if (host != null && !host.isBlank()) {
             try {
                 String portStr  = loadSetting("db_port");
-                int    port     = (portStr != null && !portStr.isBlank()) ? Integer.parseInt(portStr) : 5432;
+                int    port     = (portStr != null && !portStr.isBlank()) ? Integer.parseInt(portStr) : 1433;
                 String dbName   = loadSetting("db_name");
                 String username = decryptSetting("db_username");
                 String password = decryptSetting("db_password");
