@@ -2,9 +2,9 @@ package com.bunshock.note_app_for_it_frontend.controllers;
 
 import java.io.IOException;
 
-import com.bunshock.note_app_for_it_frontend.models.GlpiStatus;
 import com.bunshock.note_app_for_it_frontend.models.NoteReport;
 import com.bunshock.note_app_for_it_frontend.models.NoteReportItem;
+import com.bunshock.note_app_for_it_frontend.models.ReturnStatus;
 import com.bunshock.note_app_for_it_frontend.services.AdminSession;
 import com.bunshock.note_app_for_it_frontend.services.NoteGenerationService;
 import com.bunshock.note_app_for_it_frontend.services.PendingCountsService;
@@ -24,7 +24,6 @@ import javafx.scene.input.KeyCode;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
-import javafx.scene.control.PasswordField;
 import javafx.scene.control.Separator;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.TextFormatter;
@@ -42,7 +41,12 @@ import javafx.stage.Window;
 
 import java.time.format.DateTimeFormatter;
 
-public class NoteDetailController {
+// Préstamo-specific sibling of NoteDetailController — same popup chrome/structure, but each
+// item row shows RETURN status (Devuelto/Perdido/Pendiente) instead of GLPI sync status, with
+// admin-gated "Validar devolución"/"Marcar como perdido" buttons. Kept separate on purpose: regular
+// History's own detail popup (NoteDetailController) stays GLPI-only and untouched even for a
+// Préstamo note — return validation only happens from the Préstamos section. See CLAUDE.md.
+public class PrestamoDetailController {
 
     @FXML private VBox    rootContainer;
     @FXML private Label   lblTitle;
@@ -72,7 +76,7 @@ public class NoteDetailController {
         this.onUpdate  = onUpdate;
 
         String date = report.getCreatedAt() != null ? report.getCreatedAt().format(DT_FMT) : "";
-        lblTitle.setText(toDisplayName(report.getProfileType()) + " — " + date);
+        lblTitle.setText("Préstamo — " + date);
 
         try {
             String html = GEN_SVC.generateFromStoredReport(report);
@@ -114,44 +118,43 @@ public class NoteDetailController {
         if (item.getObservations() != null && !item.getObservations().isBlank())
             card.getChildren().add(smallLabel("Obs: " + item.getObservations()));
 
-        if (!item.isAsset()) {
-            card.getChildren().add(statusBadge("— Sin acción GLPI", "#94a3b8"));
-            return card;
-        }
-
-        card.getChildren().add(buildGlpiStatusRow(item));
+        card.getChildren().add(buildReturnStatusRow(item));
         return card;
     }
 
-    // A VBox, not a single HBox row — the "GLPI: " prefix + status badge sit on their own row in
-    // EVERY state (not just PENDING — previously the prefix only showed while pending, so it
-    // vanished the moment Sincronizar/Rechazar was clicked and the row re-rendered as SYNCED/
-    // REJECTED, which read as the label being deleted), with the Sincronizar/Rechazar buttons
-    // (PENDING only) on a separate row below, given extra spacing (8, not 4) so the button row
-    // doesn't crowd the label row above it.
-    private VBox buildGlpiStatusRow(NoteReportItem item) {
+    // A VBox, not a single HBox row — the "Préstamo: " prefix + status badge now render on their
+    // own row in EVERY state, not just PENDING (previously it only appeared while pending, so it
+    // vanished once Devuelto/No devuelto was clicked and the row re-rendered as RETURNED/LOST,
+    // which read as the label being deleted), with the action buttons (PENDING only) on a
+    // separate row below, given extra spacing (8, not 4) so the buttons don't crowd the label
+    // row above them. Unlike GLPI's Sincronizar/Rechazar, the two action labels here were
+    // shortened to "Devuelto"/"No devuelto" specifically so they still fit side-by-side at this
+    // panel's ~270px usable width — "Validar devolución"/"Marcar como perdido" together needed
+    // ~270-280px and were shrinking.
+    private VBox buildReturnStatusRow(NoteReportItem item) {
         VBox box = new VBox(8);
+        box.setAlignment(Pos.CENTER_LEFT);
         box.setStyle("-fx-padding: 4 0 0 0;");
 
-        GlpiStatus status = item.getGlpiStatus();
+        ReturnStatus status = item.getReturnStatus();
 
         String badgeText;
         String badgeColor;
         boolean showActions = false;
 
         switch (status) {
-            case SYNCED -> {
-                String ts = item.getGlpiStatusUpdatedAt() != null ? " · " + item.getGlpiStatusUpdatedAt().substring(0, 16) : "";
-                badgeText = "✓ Sincronizado" + ts;
+            case RETURNED -> {
+                String ts = item.getReturnStatusUpdatedAt() != null ? " · " + item.getReturnStatusUpdatedAt().substring(0, 16) : "";
+                badgeText = "✓ Devuelto" + ts;
                 badgeColor = "#22c55e";
             }
-            case REJECTED -> {
-                String reason = item.getGlpiRejectionReason() != null ? ": " + item.getGlpiRejectionReason() : "";
-                badgeText = "✗ Rechazado" + reason;
+            case LOST -> {
+                String reason = item.getReturnRejectionReason() != null ? ": " + item.getReturnRejectionReason() : "";
+                badgeText = "✗ Perdido" + reason;
                 badgeColor = "#ef4444";
             }
             case PENDING -> {
-                badgeText = "⏳ Pendiente sincronización";
+                badgeText = "⏳ Pendiente devolución";
                 badgeColor = "#f97316";
                 showActions = true;
             }
@@ -163,45 +166,51 @@ public class NoteDetailController {
 
         HBox statusRow = new HBox(4);
         statusRow.setAlignment(Pos.CENTER_LEFT);
-        statusRow.getChildren().addAll(prefixLabel("GLPI: "), statusBadge(badgeText, badgeColor));
+        statusRow.getChildren().addAll(prefixLabel("Préstamo: "), statusBadge(badgeText, badgeColor));
         box.getChildren().add(statusRow);
 
         if (showActions && adminMode && AdminSession.getInstance().isActive()) {
-            Button btnSync = new Button("Sincronizar");
-            btnSync.getStyleClass().add("button-primary");
-            btnSync.setStyle(btnSync.getStyle() + "-fx-font-size: 10px; -fx-padding: 3 8;");
-            btnSync.setOnAction(e -> handleSync(item, btnSync));
+            Button btnReturn = new Button("Devuelto");
+            btnReturn.getStyleClass().add("button-primary");
+            btnReturn.setStyle(btnReturn.getStyle() + "-fx-font-size: 10px; -fx-padding: 3 8;");
+            btnReturn.setOnAction(e -> handleReturn(item, btnReturn));
 
-            Button btnReject = new Button("Rechazar");
-            btnReject.getStyleClass().add("button-secondary");
-            btnReject.setStyle(btnReject.getStyle() + "-fx-font-size: 10px; -fx-padding: 3 8;");
-            btnReject.setOnAction(e -> handleReject(item));
+            Button btnLost = new Button("No devuelto");
+            btnLost.getStyleClass().add("button-secondary");
+            btnLost.setStyle(btnLost.getStyle() + "-fx-font-size: 10px; -fx-padding: 3 8;");
+            btnLost.setOnAction(e -> handleLost(item));
 
-            box.getChildren().add(new HBox(8, btnSync, btnReject));
+            box.getChildren().add(new HBox(8, btnReturn, btnLost));
         }
 
         return box;
     }
 
-    private void handleSync(NoteReportItem item, Button btnSync) {
+    private Label prefixLabel(String text) {
+        Label l = new Label(text);
+        l.setStyle("-fx-font-size: 11px; -fx-font-weight: bold; -fx-text-fill: #475569;");
+        return l;
+    }
+
+    private void handleReturn(NoteReportItem item, Button btnReturn) {
         AdminSession.getInstance().refreshActivity();
-        btnSync.setDisable(true);
+        btnReturn.setDisable(true);
         ServiceLocator.getInstance().getHistoryService()
-            .updateItemGlpiStatus(item.getId(), GlpiStatus.SYNCED, null);
-        item.setGlpiStatus(GlpiStatus.SYNCED);
+            .updateItemReturnStatus(item.getId(), ReturnStatus.RETURNED, null);
+        item.setReturnStatus(ReturnStatus.RETURNED);
         PendingCountsService.getInstance().notifyChanged();
         buildItemCards();
         if (onUpdate != null) onUpdate.run();
     }
 
-    private void handleReject(NoteReportItem item) {
+    private void handleLost(NoteReportItem item) {
         AdminSession.getInstance().refreshActivity();
         String reason = promptRejectionReason();
         if (reason == null) return;
         ServiceLocator.getInstance().getHistoryService()
-            .updateItemGlpiStatus(item.getId(), GlpiStatus.REJECTED, reason);
-        item.setGlpiStatus(GlpiStatus.REJECTED);
-        item.setGlpiRejectionReason(reason);
+            .updateItemReturnStatus(item.getId(), ReturnStatus.LOST, reason);
+        item.setReturnStatus(ReturnStatus.LOST);
+        item.setReturnRejectionReason(reason);
         PendingCountsService.getInstance().notifyChanged();
         buildItemCards();
         if (onUpdate != null) onUpdate.run();
@@ -211,14 +220,14 @@ public class NoteDetailController {
         Stage stage = buildDialogStage();
         String[] result = {null};
 
-        Label lblT = new Label("Motivo de rechazo");
+        Label lblT = new Label("Motivo de pérdida");
         lblT.getStyleClass().add("section-label");
 
-        Label lblSub = new Label("Descripción obligatoria del motivo de rechazo.");
+        Label lblSub = new Label("Descripción obligatoria de qué ocurrió con el equipo.");
         lblSub.setStyle("-fx-text-fill: #475569; -fx-font-size: 12px;");
 
         TextArea ta = new TextArea();
-        ta.setPromptText("Ej: Equipo no fue entregado / Datos incorrectos / Duplicado...");
+        ta.setPromptText("Ej: Equipo robado / Extraviado / No devuelto...");
         ta.setPrefRowCount(3);
         ta.setWrapText(true);
         ta.getStyleClass().add("form-input-main");
@@ -229,7 +238,7 @@ public class NoteDetailController {
         btnCancel.getStyleClass().add("button-secondary");
         btnCancel.setOnAction(e -> stage.close());
 
-        Button btnOk = new Button("Confirmar rechazo");
+        Button btnOk = new Button("Confirmar pérdida");
         btnOk.getStyleClass().add("button-primary");
         btnOk.setDisable(true);
         ta.textProperty().addListener((o, ov, nv) -> btnOk.setDisable(nv.isBlank()));
@@ -275,10 +284,10 @@ public class NoteDetailController {
 
     public static void open(NoteReport report, boolean adminMode, Window owner, Runnable onUpdate)
             throws IOException {
-        FXMLLoader loader = new FXMLLoader(NoteDetailController.class.getResource(
-            "/com/bunshock/note_app_for_it_frontend/views/NoteDetailView.fxml"));
+        FXMLLoader loader = new FXMLLoader(PrestamoDetailController.class.getResource(
+            "/com/bunshock/note_app_for_it_frontend/views/PrestamoDetailView.fxml"));
         Parent root = loader.load();
-        NoteDetailController ctrl = loader.getController();
+        PrestamoDetailController ctrl = loader.getController();
         ctrl.load(report, adminMode, onUpdate);
 
         VBox rootVBox = (VBox) root;
@@ -304,7 +313,7 @@ public class NoteDetailController {
 
         Scene scene = new Scene(wrapper);
         scene.setFill(Color.TRANSPARENT);
-        scene.getStylesheets().add(NoteDetailController.class.getResource(
+        scene.getStylesheets().add(PrestamoDetailController.class.getResource(
             "/com/bunshock/note_app_for_it_frontend/css/styles.css").toExternalForm());
 
         Stage stage = new Stage();
@@ -314,7 +323,6 @@ public class NoteDetailController {
         stage.setScene(scene);
         stage.setOpacity(0);
         stage.setOnShown(e -> {
-            // sidebar is 235px fixed — center within the content area to the right of it
             double sidebarW = 235;
             double contentX = owner.getX() + sidebarW;
             double contentW = owner.getWidth() - sidebarW;
@@ -330,12 +338,6 @@ public class NoteDetailController {
     private Label smallLabel(String text) {
         Label l = new Label(text);
         l.setStyle("-fx-font-size: 11px; -fx-text-fill: #475569; -fx-wrap-text: true;");
-        return l;
-    }
-
-    private Label prefixLabel(String text) {
-        Label l = new Label(text);
-        l.setStyle("-fx-font-size: 11px; -fx-font-weight: bold; -fx-text-fill: #475569;");
         return l;
     }
 
@@ -385,24 +387,5 @@ public class NoteDetailController {
         scene.getStylesheets().add(getClass().getResource(
             "/com/bunshock/note_app_for_it_frontend/css/styles.css").toExternalForm());
         return scene;
-    }
-
-    // Mirrors NoteGenerationService.toDisplayName() — duplicated per the no-shared-abstraction
-    // convention, since it's only used to format a value already read from the DB here.
-    private static String toDisplayName(String profileType) {
-        if (profileType == null) return "";
-        return switch (profileType.toUpperCase().trim()) {
-            case "ENTREGA"             -> "Entrega";
-            case "DEVOLUCIÓN"          -> "Devolución";
-            case "DEVOLUCION"          -> "Devolución";
-            case "PRÉSTAMO"            -> "Préstamo";
-            case "PRESTAMO"            -> "Préstamo";
-            case "ENTREGA PERMANENTE"  -> "Fin de contrato";
-            case "FIN DE CONTRATO"     -> "Fin de contrato";
-            case "ENTREGA - PROVEEDOR" -> "Entrega - Proveedor";
-            case "REMITO DE ENVÍO"     -> "Envío";
-            case "REMITO DE ENVIO"     -> "Envío";
-            default                    -> profileType;
-        };
     }
 }

@@ -39,12 +39,13 @@ import javafx.stage.Stage;
 import javafx.stage.StageStyle;
 import javafx.util.Duration;
 
-public class UserNoteController {
+public class UserNoteController implements AdSearchHost {
 
     private static final Pattern NAME_PATTERN =
         Pattern.compile("^\\p{L}+( \\p{L}+)*$");
     private static final Pattern DNI_PATTERN =
         Pattern.compile("^\\d{7,8}$");
+    private static final int AREA_EVENTO_MAX_LENGTH = 200;
 
     @FXML private ToggleGroup userNoteTypeGroup;
     @FXML private ToggleButton btnTypeEntrega;
@@ -60,6 +61,9 @@ public class UserNoteController {
     @FXML private VBox vboxFechaTentativa;
     @FXML private DatePicker dtpFechaTentativa;
     @FXML private Label lblFechaTentativaStatus;
+
+    @FXML private VBox vboxAreaEvento;
+    @FXML private TextField txtAreaEvento;
 
     @FXML private Label lblADStatus;
     @FXML private Button btnBuscarAD;
@@ -82,8 +86,7 @@ public class UserNoteController {
 
     // "Full Motivo memory per type" — each note type remembers its own last-selected Motivo
     // across type switches, instead of resetting to unselected every time (the old behavior).
-    // Keyed by the type ToggleButton itself, not by the motivoOptions map key, since Entrega
-    // and Fin de Contrato share the same "entrega" options list but should remember independently.
+    // Keyed by the type ToggleButton itself, not by the motivoOptions map key.
     private final Map<ToggleButton, String> lastMotivoByType = new HashMap<>();
 
     // True only for the duration of loadMotivoOptions()'s programmatic cmbMotivo.setValue(...)
@@ -174,6 +177,8 @@ public class UserNoteController {
             String newText = change.getControlNewText();
             return newText.length() <= 8 && newText.matches("\\d*") ? change : null;
         }));
+        txtAreaEvento.setTextFormatter(new TextFormatter<>(change ->
+            change.getControlNewText().length() <= AREA_EVENTO_MAX_LENGTH ? change : null));
 
         updateMotivoVisibility(btnTypeEntrega);
         btnTypeEntrega.setSelected(true);
@@ -200,9 +205,13 @@ public class UserNoteController {
         vboxMotivo.setManaged(showMotivo);
         vboxFechaTentativa.setVisible(showFechaTentativa);
         vboxFechaTentativa.setManaged(showFechaTentativa);
+        vboxAreaEvento.setVisible(showFechaTentativa);
+        vboxAreaEvento.setManaged(showFechaTentativa);
 
         if (showMotivo) {
-            String key = selected == btnTypeDevolucion ? "devolucion" : "entrega";
+            String key = selected == btnTypeDevolucion ? "devolucion"
+                       : selected == btnTypeFinContrato ? "finDeContrato"
+                       : "entrega";
             loadMotivoOptions(key, selected);
         }
         if (showFechaTentativa && dtpFechaTentativa.getValue() == null) {
@@ -267,6 +276,8 @@ public class UserNoteController {
         LocalDate date = dtpFechaTentativa.getValue();
         return date != null ? date.format(DateTimeFormatter.ofPattern("dd/MM/yyyy")) : "";
     }
+
+    public String getAreaEvento() { return txtAreaEvento.getText().trim(); }
 
     public boolean validateAndShowErrors() {
         boolean valid = true;
@@ -552,7 +563,7 @@ public class UserNoteController {
         fade.play();
     }
 
-    void highlightFields(String hexColor) {
+    public void highlightFields(String hexColor) {
         if (borderFade != null) {
             borderFade.stop();
         }
@@ -609,6 +620,7 @@ public class UserNoteController {
         lastMotivoByType.clear();
         cmbMotivo.getSelectionModel().clearSelection();
         dtpFechaTentativa.setValue(nextWorkingDay());
+        txtAreaEvento.clear();
         clearFailureDetails();
     }
 }

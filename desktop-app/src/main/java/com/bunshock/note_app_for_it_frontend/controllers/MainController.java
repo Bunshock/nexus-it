@@ -1,8 +1,12 @@
 package com.bunshock.note_app_for_it_frontend.controllers;
 
+import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import com.bunshock.note_app_for_it_frontend.models.HistoryFilter;
 import com.bunshock.note_app_for_it_frontend.services.AdminSession;
+import com.bunshock.note_app_for_it_frontend.services.IHistoryService;
+import com.bunshock.note_app_for_it_frontend.services.PendingCountsService;
 import com.bunshock.note_app_for_it_frontend.services.RemoteDatabaseService;
 import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;
 import com.bunshock.note_app_for_it_frontend.services.TechnicianSessionService;
@@ -58,7 +62,11 @@ public class MainController {
     @FXML private Label lblWelcome;
     @FXML private Label lblUsername;
     @FXML private Label lblUsernameWarningIcon;
+    @FXML private Label lblSede;
     @FXML private Label lblAdminIndicator;
+
+    @FXML private Label lblHistoryBadge;
+    @FXML private Label lblPrestamosBadge;
 
     @FXML private Circle circleAD;
     @FXML private Circle circleGLPI;
@@ -79,6 +87,7 @@ public class MainController {
 
     public void initialize() {
         TechnicianSessionService.getInstance().addOnChangeListener(this::updateWelcomeLabels);
+        TechnicianSessionService.getInstance().addOnSedeChangeListener(this::updateSedeLabel);
         updateWelcomeLabels();
 
         showSection(viewFactory.getGeneratorView());
@@ -97,6 +106,9 @@ public class MainController {
         AdminSession.getInstance().addOnActivateListener(this::updateAdminIndicator);
         AdminSession.getInstance().addOnDeactivateListener(this::updateAdminIndicator);
         AdminSession.getInstance().addOnExpireListener(this::handleAdminExpiry);
+
+        PendingCountsService.getInstance().addOnChangeListener(this::refreshPendingCounts);
+        refreshPendingCounts();
     }
 
     private void updateWelcomeLabels() {
@@ -116,6 +128,16 @@ public class MainController {
         }
         lblUsernameWarningIcon.setVisible(unresolved);
         lblUsernameWarningIcon.setManaged(unresolved);
+
+        updateSedeLabel();
+    }
+
+    private void updateSedeLabel() {
+        String sede = TechnicianSessionService.getInstance().getSede();
+        boolean hasSede = sede != null && !sede.isBlank();
+        lblSede.setText(hasSede ? "Sede: " + sede : "");
+        lblSede.setVisible(hasSede);
+        lblSede.setManaged(hasSede);
     }
 
     /**
@@ -411,6 +433,53 @@ public class MainController {
             "El modo administrador expiró por inactividad (15 minutos).");
     }
 
+    // Same case/accent variants SqliteHistoryService.isPrestamo() tolerates — profile_type is
+    // stored raw (see CLAUDE.md), so a filter for Préstamo has to match every form it's stored in.
+    private static final List<String> PRESTAMO_PROFILE_TYPES = List.of("PRÉSTAMO", "PRESTAMO", "Préstamo");
+
+    /**
+     * Recomputes the Historial (GLPI-pending) and Préstamos (return-pending) sidebar badge
+     * counts on a background thread — called once at startup and again whenever
+     * PendingCountsService.notifyChanged() fires (a note was saved, a GLPI sync/reject action
+     * happened, or a Préstamo return/lost action happened). Visible to every technician, not
+     * admin-gated — the underlying pending/orange rows are already visible to anyone who opens
+     * Historial or Préstamos; only the actual sync/validate actions are admin-gated.
+     */
+    private void refreshPendingCounts() {
+        Thread t = new Thread(() -> {
+            int glpiPending;
+            int prestamoPending;
+            try {
+                IHistoryService historyService = ServiceLocator.getInstance().getHistoryService();
+                glpiPending = historyService.getPendingGlpiSync().size();
+
+                HistoryFilter prestamoFilter = new HistoryFilter();
+                prestamoFilter.setProfileTypes(PRESTAMO_PROFILE_TYPES);
+                prestamoPending = (int) historyService.getFiltered(prestamoFilter).stream()
+                    .filter(r -> r.getReturnPendingItemCount() > 0)
+                    .count();
+            } catch (Exception e) {
+                glpiPending = 0;
+                prestamoPending = 0;
+            }
+            int finalGlpiPending = glpiPending;
+            int finalPrestamoPending = prestamoPending;
+            Platform.runLater(() -> {
+                updateBadge(lblHistoryBadge, finalGlpiPending);
+                updateBadge(lblPrestamosBadge, finalPrestamoPending);
+            });
+        }, "pending-counts-refresh");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    private void updateBadge(Label badge, int count) {
+        boolean show = count > 0;
+        badge.setText("(" + count + ")");
+        badge.setVisible(show);
+        badge.setManaged(show);
+    }
+
     private void showNotice(String title, String message) {
         showDialogNotice(title, message, "#1a1a1a", null);
     }
@@ -511,8 +580,20 @@ public class MainController {
         // rather than resetting them.
         viewFactory.getHistoryController().refresh();
     }
+    @FXML
+    private void handleShowPrestamos() {
+        showSection(viewFactory.getPrestamosView());
+        viewFactory.getPrestamosController().refreshHistory();
+    }
+
     @FXML private void handleShowDatabase()  { showSection(viewFactory.getDatabaseView()); }
-    @FXML private void handleShowSettings()  { showSection(viewFactory.getSettingsView()); }
+    @FXML
+    private void handleShowSettings() {
+        showSection(viewFactory.getSettingsView());
+        // Resets the Sede combo to whatever's actually saved, discarding any unsaved selection
+        // left over from a previous visit — mirrors handleShowHistory()'s refresh() call above.
+        viewFactory.getSettingsController().refreshSedeCombo();
+    }
     @FXML private void handleShowAbout()     { showSection(viewFactory.getAboutView()); }
     @FXML private void handleShowProfile()   { showSection(viewFactory.getProfileView()); }
 

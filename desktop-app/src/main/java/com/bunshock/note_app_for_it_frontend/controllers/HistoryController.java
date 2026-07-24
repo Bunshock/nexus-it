@@ -65,7 +65,7 @@ public class HistoryController {
     private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
 
     private static final List<String> PROFILE_TYPE_OPTIONS = List.of(
-        "Entrega", "Devolución", "Fin de Contrato", "Entrega - Proveedor", "Préstamo");
+        "Entrega", "Devolución", "Fin de Contrato", "Entrega - Proveedor", "Préstamo", "Envío");
 
     private static final List<String> GLPI_STATUS_LABELS = List.of(
         "Pendiente", "Sincronizado", "Rechazado", "Sin GLPI");
@@ -85,7 +85,8 @@ public class HistoryController {
         "Devolución",          List.of("DEVOLUCIÓN", "Devolución"),
         "Fin de Contrato",     List.of("ENTREGA PERMANENTE", "FIN DE CONTRATO", "Fin de Contrato"),
         "Préstamo",            List.of("PRÉSTAMO", "Préstamo"),
-        "Entrega - Proveedor", List.of("ENTREGA - PROVEEDOR", "Entrega - Proveedor"));
+        "Entrega - Proveedor", List.of("ENTREGA - PROVEEDOR", "Entrega - Proveedor"),
+        "Envío",               List.of("REMITO DE ENVÍO", "REMITO DE ENVIO", "Remito de Envío"));
 
     private final Set<String> selProfileTypes = new LinkedHashSet<>();
     private final Set<String> selGlpiStatuses = new LinkedHashSet<>();
@@ -330,12 +331,16 @@ public class HistoryController {
     // ── Row color ─────────────────────────────────────────────────────────────
 
     private String computeRowStyle(NoteReport r) {
-        int total = r.getAssetItemCount();
-        if (total == 0) return "-fx-background-color: #f1f5f9;";
-
         int pending  = r.getPendingItemCount();
         int synced   = r.getSyncedItemCount();
         int rejected = r.getRejectedItemCount();
+        // GLPI-tracked total, not raw asset count — a Préstamo note's assets are all glpi_status
+        // N_A (see CLAUDE.md's "Préstamo assets are deliberately excluded from GLPI sync"), so
+        // getAssetItemCount() alone would count them without any of pending/synced/rejected ever
+        // summing back up to it, falling through to a broken zero-stop gradient below instead of
+        // this flat "nothing to track" color.
+        int total = pending + synced + rejected;
+        if (total == 0) return "-fx-background-color: #f1f5f9;";
 
         if (pending  == total) return "-fx-background-color: rgba(251,146,60,0.18);";
         if (synced   == total) return "-fx-background-color: rgba(34,197,94,0.18);";
@@ -359,11 +364,12 @@ public class HistoryController {
     }
 
     private String glpiStatusLabel(NoteReport r) {
-        int total = r.getAssetItemCount();
-        if (total == 0) return "—";
         int pending  = r.getPendingItemCount();
         int synced   = r.getSyncedItemCount();
         int rejected = r.getRejectedItemCount();
+        // GLPI-tracked total, not raw asset count — see computeRowStyle()'s matching comment.
+        int total = pending + synced + rejected;
+        if (total == 0) return "—";
         if (pending  == total) return "Pendiente";
         if (synced   == total) return "Sincronizado";
         if (rejected == total) return "Rechazado";
@@ -496,6 +502,8 @@ public class HistoryController {
             case "ENTREGA PERMANENTE"  -> "Fin de contrato";
             case "FIN DE CONTRATO"     -> "Fin de contrato";
             case "ENTREGA - PROVEEDOR" -> "Entrega - Proveedor";
+            case "REMITO DE ENVÍO"     -> "Envío";
+            case "REMITO DE ENVIO"     -> "Envío";
             default                    -> profileType;
         };
     }

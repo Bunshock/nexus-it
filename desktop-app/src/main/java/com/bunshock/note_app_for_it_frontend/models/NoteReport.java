@@ -11,6 +11,7 @@ public class NoteReport {
     private String userName;
     private String userDni;
     private String userEmail;
+    private int providerId;
     private String providerName;
     private String cuit;
     private String motivo;
@@ -18,6 +19,16 @@ public class NoteReport {
     private String failureDetails;
     private String responsibleName;
     private String responsibleDni;
+    private String areaEvento;
+    private String observations;
+    private String sede;
+    private int sedeId;
+    private String destinatarioName;
+    private String destinatarioArea;
+    private String destinatarioSede;
+    private String remitenteName;
+    private String remitenteArea;
+    private String remitenteSede;
     private List<NoteReportItem> items;
 
     // Populated from JOIN queries — not stored directly in NOTE_REPORT
@@ -29,6 +40,9 @@ public class NoteReport {
     private int pendingItemCount;
     private int syncedItemCount;
     private int rejectedItemCount;
+    private int returnPendingItemCount;
+    private int returnedItemCount;
+    private int lostItemCount;
 
     public NoteReport() {}
 
@@ -53,6 +67,9 @@ public class NoteReport {
     public String getUserEmail() { return userEmail; }
     public void setUserEmail(String userEmail) { this.userEmail = userEmail; }
 
+    public int getProviderId() { return providerId; }
+    public void setProviderId(int providerId) { this.providerId = providerId; }
+
     public String getProviderName() { return providerName; }
     public void setProviderName(String providerName) { this.providerName = providerName; }
 
@@ -73,6 +90,36 @@ public class NoteReport {
 
     public String getResponsibleDni() { return responsibleDni; }
     public void setResponsibleDni(String responsibleDni) { this.responsibleDni = responsibleDni; }
+
+    public String getAreaEvento() { return areaEvento; }
+    public void setAreaEvento(String areaEvento) { this.areaEvento = areaEvento; }
+
+    public String getObservations() { return observations; }
+    public void setObservations(String observations) { this.observations = observations; }
+
+    public String getSede() { return sede; }
+    public void setSede(String sede) { this.sede = sede; }
+
+    public int getSedeId() { return sedeId; }
+    public void setSedeId(int sedeId) { this.sedeId = sedeId; }
+
+    public String getDestinatarioName() { return destinatarioName; }
+    public void setDestinatarioName(String destinatarioName) { this.destinatarioName = destinatarioName; }
+
+    public String getDestinatarioArea() { return destinatarioArea; }
+    public void setDestinatarioArea(String destinatarioArea) { this.destinatarioArea = destinatarioArea; }
+
+    public String getDestinatarioSede() { return destinatarioSede; }
+    public void setDestinatarioSede(String destinatarioSede) { this.destinatarioSede = destinatarioSede; }
+
+    public String getRemitenteName() { return remitenteName; }
+    public void setRemitenteName(String remitenteName) { this.remitenteName = remitenteName; }
+
+    public String getRemitenteArea() { return remitenteArea; }
+    public void setRemitenteArea(String remitenteArea) { this.remitenteArea = remitenteArea; }
+
+    public String getRemitenteSede() { return remitenteSede; }
+    public void setRemitenteSede(String remitenteSede) { this.remitenteSede = remitenteSede; }
 
     public List<NoteReportItem> getItems() { return items; }
     public void setItems(List<NoteReportItem> items) { this.items = items; }
@@ -100,4 +147,13 @@ public class NoteReport {
 
     public int getRejectedItemCount() { return rejectedItemCount; }
     public void setRejectedItemCount(int rejectedItemCount) { this.rejectedItemCount = rejectedItemCount; }
+
+    public int getReturnPendingItemCount() { return returnPendingItemCount; }
+    public void setReturnPendingItemCount(int returnPendingItemCount) { this.returnPendingItemCount = returnPendingItemCount; }
+
+    public int getReturnedItemCount() { return returnedItemCount; }
+    public void setReturnedItemCount(int returnedItemCount) { this.returnedItemCount = returnedItemCount; }
+
+    public int getLostItemCount() { return lostItemCount; }
+    public void setLostItemCount(int lostItemCount) { this.lostItemCount = lostItemCount; }
 }

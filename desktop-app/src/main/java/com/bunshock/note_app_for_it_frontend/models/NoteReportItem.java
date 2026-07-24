@@ -2,6 +2,9 @@ package com.bunshock.note_app_for_it_frontend.models;
 
 public class NoteReportItem {
     private int id;
+    private int typeId;
+    private int brandId;
+    private int modelId;
     private String typeName;
     private String brandName;
     private String modelName;
@@ -13,11 +16,23 @@ public class NoteReportItem {
     private GlpiStatus glpiStatus = GlpiStatus.N_A;
     private String glpiRejectionReason;
     private String glpiStatusUpdatedAt;
+    private ReturnStatus returnStatus = ReturnStatus.N_A;
+    private String returnRejectionReason;
+    private String returnStatusUpdatedAt;
 
     public NoteReportItem() {}
 
     public int getId() { return id; }
     public void setId(int id) { this.id = id; }
+
+    public int getTypeId() { return typeId; }
+    public void setTypeId(int typeId) { this.typeId = typeId; }
+
+    public int getBrandId() { return brandId; }
+    public void setBrandId(int brandId) { this.brandId = brandId; }
+
+    public int getModelId() { return modelId; }
+    public void setModelId(int modelId) { this.modelId = modelId; }
 
     public String getTypeName() { return typeName; }
     public void setTypeName(String typeName) { this.typeName = typeName; }
@@ -51,4 +66,13 @@ public class NoteReportItem {
 
     public String getGlpiStatusUpdatedAt() { return glpiStatusUpdatedAt; }
     public void setGlpiStatusUpdatedAt(String glpiStatusUpdatedAt) { this.glpiStatusUpdatedAt = glpiStatusUpdatedAt; }
+
+    public ReturnStatus getReturnStatus() { return returnStatus; }
+    public void setReturnStatus(ReturnStatus returnStatus) { this.returnStatus = returnStatus; }
+
+    public String getReturnRejectionReason() { return returnRejectionReason; }
+    public void setReturnRejectionReason(String returnRejectionReason) { this.returnRejectionReason = returnRejectionReason; }
+
+    public String getReturnStatusUpdatedAt() { return returnStatusUpdatedAt; }
+    public void setReturnStatusUpdatedAt(String returnStatusUpdatedAt) { this.returnStatusUpdatedAt = returnStatusUpdatedAt; }
 }

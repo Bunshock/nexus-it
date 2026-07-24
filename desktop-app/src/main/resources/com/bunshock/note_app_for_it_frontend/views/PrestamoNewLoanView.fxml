@@ -2,45 +2,87 @@
 <?import javafx.scene.layout.*?>
 <?import javafx.scene.control.*?>
 
-<VBox fx:id="rootContainer" spacing="15" style="-fx-padding: 30; -fx-background-color: #f4f4f4;"
+<VBox fx:id="rootContainer" spacing="15"
       xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1"
-      fx:controller="com.bunshock.note_app_for_it_frontend.controllers.NoteGeneratorController">
+      fx:controller="com.bunshock.note_app_for_it_frontend.controllers.PrestamoNewLoanController">
 
     <children>
 
-        <!-- Profile type selector: full width -->
-        <HBox prefHeight="50.0" spacing="0">
-            <children>
-                <ToggleButton fx:id="btnUserNote" text="NOTA PARA USUARIO"
-                              minWidth="0" prefWidth="0" maxWidth="Infinity" HBox.hgrow="ALWAYS"
-                              styleClass="type-button-left" selected="true" toggleGroup="$typeGroup">
-                    <toggleGroup>
-                        <ToggleGroup fx:id="typeGroup"/>
-                    </toggleGroup>
-                </ToggleButton>
-                <ToggleButton fx:id="btnProviderNote" text="NOTA PARA PROVEEDOR"
-                              minWidth="0" prefWidth="0" maxWidth="Infinity" HBox.hgrow="ALWAYS"
-                              styleClass="type-button-middle" toggleGroup="$typeGroup"/>
-                <ToggleButton fx:id="btnRemitoNote" text="REMITO DE ENVÍO"
-                              minWidth="0" prefWidth="0" maxWidth="Infinity" HBox.hgrow="ALWAYS"
-                              styleClass="type-button-right" toggleGroup="$typeGroup"/>
-            </children>
-        </HBox>
-
-        <!-- Two-column main content -->
         <HBox VBox.vgrow="ALWAYS" spacing="0">
             <children>
 
-                <!-- Left column: user / provider form -->
-                <VBox prefWidth="420.0" minWidth="380.0" maxWidth="460.0" HBox.hgrow="NEVER"
+                <!-- Left column: recipient + loan details -->
+                <VBox prefWidth="420.0" minWidth="380.0" maxWidth="460.0" HBox.hgrow="NEVER" spacing="20"
                       style="-fx-background-color: white; -fx-background-radius: 10 0 0 10; -fx-padding: 20;">
                     <children>
-                        <StackPane fx:id="dynamicContentArea" VBox.vgrow="ALWAYS">
+
+                        <VBox spacing="4">
                             <children>
-                                <Label text="Seleccione un perfil arriba para cargar el formulario."
-                                       style="-fx-text-fill: #aaa;"/>
+                                <HBox alignment="CENTER_LEFT">
+                                    <children>
+                                        <Label text="FECHA TENTATIVA DE DEVOLUCIÓN" styleClass="input-label-small"/>
+                                        <Region HBox.hgrow="ALWAYS"/>
+                                        <Label fx:id="lblFechaTentativaStatus" text="" styleClass="input-label-small"/>
+                                    </children>
+                                </HBox>
+                                <DatePicker fx:id="dtpFechaTentativa" maxWidth="Infinity" styleClass="form-input-main"/>
                             </children>
-                        </StackPane>
+                        </VBox>
+
+                        <!-- User details header + action buttons -->
+                        <VBox spacing="8">
+                            <children>
+                                <HBox alignment="CENTER_LEFT" spacing="8">
+                                    <children>
+                                        <Label text="DATOS DE QUIEN RECIBE" styleClass="section-label"/>
+                                        <Region HBox.hgrow="ALWAYS"/>
+                                        <Label fx:id="lblADStatus" text="" style="-fx-font-size: 10px; -fx-font-weight: bold;"/>
+                                    </children>
+                                </HBox>
+                                <HBox spacing="6" alignment="CENTER_LEFT" style="-fx-padding: 2 0 6 0;">
+                                    <children>
+                                        <Button fx:id="btnBuscarAD" text="Buscar en AD" onAction="#handleADSearch" styleClass="button-primary"/>
+                                        <ProgressIndicator fx:id="spinnerADSearch" visible="false" managed="false"
+                                                           minWidth="16" minHeight="16" maxWidth="16" maxHeight="16"
+                                                           style="-fx-progress-color: #0c8570;"/>
+                                        <Region HBox.hgrow="ALWAYS"/>
+                                        <Button text="Limpiar" onAction="#handleClearUserFields" styleClass="button-secondary"/>
+                                    </children>
+                                </HBox>
+                            </children>
+                        </VBox>
+
+                        <VBox spacing="2">
+                            <children>
+                                <Label text="NOMBRE COMPLETO" styleClass="input-label-small"/>
+                                <TextField fx:id="txtUserName" styleClass="form-input-main" onAction="#handleADSearch"/>
+                            </children>
+                        </VBox>
+
+                        <VBox spacing="2">
+                            <children>
+                                <Label text="DNI" styleClass="input-label-small"/>
+                                <TextField fx:id="txtUserDni" styleClass="form-input-main" onAction="#handleADSearch"/>
+                            </children>
+                        </VBox>
+
+                        <VBox spacing="2">
+                            <children>
+                                <Label text="USERNAME" styleClass="input-label-small"/>
+                                <TextField fx:id="txtUserAccount" styleClass="form-input-main" onAction="#handleADSearch"/>
+                                <Label fx:id="lblUserEmail" text="email: "
+                                       style="-fx-text-fill: #94a3b8; -fx-font-size: 11px; -fx-font-style: italic; -fx-padding: 0 0 0 5;"/>
+                            </children>
+                        </VBox>
+
+                        <VBox spacing="2">
+                            <children>
+                                <Label text="ÁREA / EVENTO (OPCIONAL)" styleClass="input-label-small"/>
+                                <TextField fx:id="txtAreaEvento" styleClass="form-input-main"
+                                           promptText="Ej: Área de Sistemas, Capacitación anual..."/>
+                            </children>
+                        </VBox>
+
                     </children>
                 </VBox>
 
@@ -52,7 +94,6 @@
                       style="-fx-background-color: white; -fx-background-radius: 0 10 10 0; -fx-padding: 20;">
                     <children>
 
-                        <!-- Section title + add button -->
                         <HBox alignment="CENTER_LEFT" spacing="10">
                             <children>
                                 <Label text="DETALLES DEL EQUIPAMIENTO" styleClass="section-label"/>
@@ -63,7 +104,6 @@
                             </children>
                         </HBox>
 
-                        <!-- Asset items table: grows to fill available height -->
                         <VBox spacing="5" VBox.vgrow="ALWAYS">
                             <children>
                                 <Label text="EQUIPOS CON S/N (NOTEBOOKS, MONITORES, ETC.)" styleClass="input-label-small"/>
@@ -87,7 +127,6 @@
                             </children>
                         </VBox>
 
-                        <!-- Countable items table: grows to fill available height -->
                         <VBox spacing="5" VBox.vgrow="ALWAYS">
                             <children>
                                 <Label text="PERIFÉRICOS Y OTROS (POR CANTIDAD)" styleClass="input-label-small"/>
@@ -116,9 +155,8 @@
             </children>
         </HBox>
 
-        <!-- Footer: observations (hidden for Remito de Envío — that note type has no
-             Observaciones Generales field, per its physical source document) -->
-        <VBox fx:id="vboxObservationsFooter" spacing="10" minHeight="110.0" prefHeight="110.0" maxHeight="110.0"
+        <!-- Footer: observations -->
+        <VBox spacing="10" minHeight="110.0" prefHeight="110.0" maxHeight="110.0"
               style="-fx-background-color: white; -fx-background-radius: 10; -fx-padding: 15 20 20 20;">
             <children>
                 <Label text="OBSERVACIONES GENERALES" styleClass="section-label"/>
@@ -135,8 +173,8 @@
             <children>
                 <Label fx:id="lblGenerationStatus" text="" opacity="0"
                        style="-fx-text-fill: #22c55e; -fx-font-size: 12px; -fx-font-weight: bold;"/>
-                <Button text="Limpiar Formulario"      onAction="#handleClearForm"     styleClass="button-secondary-large"/>
-                <Button text="Generar Reporte y Registrar" onAction="#handleGenerateNote"  styleClass="button-primary-large"/>
+                <Button text="Limpiar Formulario" onAction="#handleClearForm" styleClass="button-secondary-large"/>
+                <Button text="Guardar Préstamo" onAction="#handleGuardarPrestamo" styleClass="button-primary-large"/>
             </children>
         </HBox>
 

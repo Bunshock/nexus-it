@@ -4,7 +4,7 @@
 <?import javafx.geometry.Insets?>
 <?import javafx.scene.control.DatePicker?>
 
-<VBox spacing="20" maxHeight="Infinity"
+<VBox spacing="14" maxHeight="Infinity"
       xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1"
       fx:controller="com.bunshock.note_app_for_it_frontend.controllers.UserNoteController">
     <children>
@@ -68,7 +68,7 @@
         </VBox>
 
         <Separator style="-fx-opacity: 0.5;">
-            <VBox.margin><Insets top="6" bottom="6"/></VBox.margin>
+            <VBox.margin><Insets top="4" bottom="4"/></VBox.margin>
         </Separator>
 
         <!-- User details header + action buttons -->
@@ -117,6 +117,17 @@
                 <TextField fx:id="txtUserAccount" styleClass="form-input-main" onAction="#handleADSearch"/>
                 <Label fx:id="lblUserEmail" text="email: "
                        style="-fx-text-fill: #94a3b8; -fx-font-size: 11px; -fx-font-style: italic; -fx-padding: 0 0 0 5;"/>
+            </children>
+        </VBox>
+
+        <!-- Área / Evento: shown only for Préstamo. Placed at the very bottom (below Datos del
+             Usuario) rather than alongside Fecha Tentativa, so switching to Préstamo doesn't
+             shift the Datos del Usuario section's position — only content below it grows. -->
+        <VBox fx:id="vboxAreaEvento" spacing="2" managed="false" visible="false">
+            <children>
+                <Label text="ÁREA / EVENTO (OPCIONAL)" styleClass="input-label-small"/>
+                <TextField fx:id="txtAreaEvento" maxWidth="Infinity" styleClass="form-input-main"
+                           promptText="Ej: Área de Sistemas, Capacitación anual..."/>
             </children>
         </VBox>
 

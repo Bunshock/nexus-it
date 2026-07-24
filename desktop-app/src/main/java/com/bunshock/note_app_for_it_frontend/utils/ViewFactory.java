@@ -4,7 +4,11 @@ import java.io.IOException;
 
 import com.bunshock.note_app_for_it_frontend.controllers.HistoryController;
 import com.bunshock.note_app_for_it_frontend.controllers.NoteGeneratorController;
+import com.bunshock.note_app_for_it_frontend.controllers.PrestamoHistoryController;
+import com.bunshock.note_app_for_it_frontend.controllers.PrestamosController;
 import com.bunshock.note_app_for_it_frontend.controllers.ProviderNoteController;
+import com.bunshock.note_app_for_it_frontend.controllers.RemitoNoteController;
+import com.bunshock.note_app_for_it_frontend.controllers.SettingsController;
 import com.bunshock.note_app_for_it_frontend.controllers.UserNoteController;
 
 import javafx.fxml.FXMLLoader;
@@ -17,16 +21,25 @@ public class ViewFactory {
 
     private VBox userNoteView;
     private VBox providerNoteView;
+    private VBox remitoNoteView;
     private UserNoteController userNoteController;
     private ProviderNoteController providerNoteController;
+    private RemitoNoteController remitoNoteController;
 
     private Parent generatorView;
     private Parent historyView;
     private HistoryController historyController;
     private Parent databaseView;
     private Parent settingsView;
+    private SettingsController settingsController;
     private Parent aboutView;
     private Parent profileView;
+
+    private Parent prestamosView;
+    private PrestamosController prestamosController;
+    private Parent prestamoNewLoanView;
+    private Parent prestamoHistoryView;
+    private PrestamoHistoryController prestamoHistoryController;
 
     public VBox getUserNoteView() {
         if (userNoteView == null) {
@@ -44,6 +57,15 @@ public class ViewFactory {
             providerNoteController = loader.getController();
         }
         return providerNoteView;
+    }
+
+    public VBox getRemitoNoteView() {
+        if (remitoNoteView == null) {
+            FXMLLoader loader = loader("RemitoNoteView.fxml");
+            remitoNoteView = load(loader);
+            remitoNoteController = loader.getController();
+        }
+        return remitoNoteView;
     }
 
     public Parent getGeneratorView() {
@@ -73,9 +95,15 @@ public class ViewFactory {
     }
 
     public Parent getSettingsView() {
-        if (settingsView == null) settingsView = load(loader("SettingsView.fxml"));
+        if (settingsView == null) {
+            FXMLLoader loader = loader("SettingsView.fxml");
+            settingsView = load(loader);
+            settingsController = loader.getController();
+        }
         return settingsView;
     }
+
+    public SettingsController getSettingsController() { return settingsController; }
 
     public Parent getAboutView() {
         if (aboutView == null) aboutView = load(loader("AboutView.fxml"));
@@ -89,6 +117,35 @@ public class ViewFactory {
 
     public UserNoteController getUserNoteController() { return userNoteController; }
     public ProviderNoteController getProviderNoteController() { return providerNoteController; }
+    public RemitoNoteController getRemitoNoteController() { return remitoNoteController; }
+
+    public Parent getPrestamosView() {
+        if (prestamosView == null) {
+            FXMLLoader loader = loader("PrestamosView.fxml");
+            prestamosView = load(loader);
+            prestamosController = loader.getController();
+            prestamosController.setViewFactory(this);
+        }
+        return prestamosView;
+    }
+
+    public PrestamosController getPrestamosController() { return prestamosController; }
+
+    public Parent getPrestamoNewLoanView() {
+        if (prestamoNewLoanView == null) prestamoNewLoanView = load(loader("PrestamoNewLoanView.fxml"));
+        return prestamoNewLoanView;
+    }
+
+    public Parent getPrestamoHistoryView() {
+        if (prestamoHistoryView == null) {
+            FXMLLoader loader = loader("PrestamoHistoryView.fxml");
+            prestamoHistoryView = load(loader);
+            prestamoHistoryController = loader.getController();
+        }
+        return prestamoHistoryView;
+    }
+
+    public PrestamoHistoryController getPrestamoHistoryController() { return prestamoHistoryController; }
 
     private FXMLLoader loader(String name) {
         return new FXMLLoader(getClass().getResource(BASE + name));

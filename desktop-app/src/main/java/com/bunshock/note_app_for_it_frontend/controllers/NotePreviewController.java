@@ -13,8 +13,12 @@ import com.bunshock.note_app_for_it_frontend.models.CountableItem;
 import com.bunshock.note_app_for_it_frontend.models.NoteReport;
 import com.bunshock.note_app_for_it_frontend.models.GlpiStatus;
 import com.bunshock.note_app_for_it_frontend.models.NoteReportItem;
+import com.bunshock.note_app_for_it_frontend.services.PendingCountsService;
 import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;
 
+import javafx.animation.KeyFrame;
+import javafx.animation.KeyValue;
+import javafx.animation.Timeline;
 import javafx.fxml.FXML;
 import javafx.print.PageLayout;
 import javafx.print.PageOrientation;
@@ -29,6 +33,7 @@ import javafx.scene.control.TextField;
 import javafx.scene.layout.VBox;
 import javafx.scene.web.WebView;
 import javafx.stage.Stage;
+import javafx.util.Duration;
 
 public class NotePreviewController {
 
@@ -47,6 +52,11 @@ public class NotePreviewController {
     private NoteReport noteReport;
     private List<AssetItem> assets;
     private List<CountableItem> countables;
+    private Runnable onSuccess;
+
+    public void setOnSuccess(Runnable onSuccess) {
+        this.onSuccess = onSuccess;
+    }
 
     public void initialize() {
         chkPrint.selectedProperty().addListener((o, a, b) -> updateGenerateButton());
@@ -120,16 +130,27 @@ public class NotePreviewController {
             }
 
             ServiceLocator.getInstance().getHistoryService().save(buildReportWithItems());
+            PendingCountsService.getInstance().notifyChanged();
             tempHtml.delete();
 
-            lblStatus.setStyle("-fx-text-fill: #22c55e;");
-            lblStatus.setText("Nota generada correctamente");
-            btnGenerate.setDisable(false);
+            if (onSuccess != null) onSuccess.run();
+            fadeOutAndClose((Stage) rootContainer.getScene().getWindow());
         } catch (Exception e) {
             lblStatus.setStyle("-fx-text-fill: #ef4444;");
             lblStatus.setText("Error: " + e.getMessage());
             btnGenerate.setDisable(false);
         }
+    }
+
+    private static final Duration CLOSE_FADE = Duration.millis(200);
+
+    private void fadeOutAndClose(Stage stage) {
+        Timeline fade = new Timeline(
+            new KeyFrame(Duration.ZERO, new KeyValue(stage.opacityProperty(), 1.0)),
+            new KeyFrame(CLOSE_FADE, new KeyValue(stage.opacityProperty(), 0.0))
+        );
+        fade.setOnFinished(e -> stage.close());
+        fade.play();
     }
 
     private boolean printNote() {
@@ -158,18 +179,29 @@ public class NotePreviewController {
         r.setCreatedAt(LocalDateTime.now());
         r.setProfileType(profileType);
 
+        // Préstamo assets are deliberately excluded from GLPI sync (N_A, not PENDING) — GLPI
+        // sync in this app is a one-way, manual, no-revert action (see GlpiStatus/
+        // buildGlpiStatusRow()), and nothing in the Préstamo return flow ever un-syncs an item,
+        // so syncing a temporary loan would leave GLPI permanently believing the asset is still
+        // assigned to the borrower after it's returned. Préstamo already has its own dedicated
+        // return-tracking dimension (ReturnStatus) — see CLAUDE.md's "Préstamos section".
+        boolean isPrestamo = "PRÉSTAMO".equals(profileType);
+
         List<NoteReportItem> items = new java.util.ArrayList<>();
         for (AssetItem a : assets) {
             NoteReportItem i = new NoteReportItem();
             i.setTypeName(a.getType().get());
             i.setBrandName(a.getBrand().get());
             i.setModelName(a.getModel().get());
+            i.setTypeId(a.getTypeId());
+            i.setBrandId(a.getBrandId());
+            i.setModelId(a.getModelId());
             i.setSerialNumber(a.getSerial().get());
             i.setAf(a.getAf().get());
             i.setQuantity(1);
             i.setObservations(a.getObservations().get());
             i.setAsset(true);
-            i.setGlpiStatus(GlpiStatus.PENDING);
+            i.setGlpiStatus(isPrestamo ? GlpiStatus.N_A : GlpiStatus.PENDING);
             items.add(i);
         }
         for (CountableItem c : countables) {
@@ -177,6 +209,9 @@ public class NotePreviewController {
             i.setTypeName(c.getType().get());
             i.setBrandName(c.getBrand().get());
             i.setModelName(c.getModel().get());
+            i.setTypeId(c.getTypeId());
+            i.setBrandId(c.getBrandId());
+            i.setModelId(c.getModelId());
             i.setQuantity(c.getQuantity().get());
             i.setObservations(c.getObservations().get());
             i.setAsset(false);

@@ -109,6 +109,16 @@ class HistoryControllerTest {
         assertEquals("Mixto", glpiStatusLabel(reportWith(2, 1, 1, 0)));
     }
 
+    // Reproduces a real reported bug: a Préstamo note's assets are all glpi_status N_A (see
+    // CLAUDE.md's "Préstamo assets are deliberately excluded from GLPI sync"), so
+    // getAssetItemCount() is > 0 even though none of pending/synced/rejected are — the old
+    // implementation used raw asset count as "total" and fell through to "Mixto" for this case
+    // instead of recognizing there's nothing GLPI-tracked on the note at all.
+    @Test
+    void glpiStatusLabelAllNaAssetsReturnsDash() throws Exception {
+        assertEquals("—", glpiStatusLabel(reportWith(1, 0, 0, 0)));
+    }
+
     // ── computeRowStyle ───────────────────────────────────────────────────────
 
     @Test
@@ -129,6 +139,14 @@ class HistoryControllerTest {
     @Test
     void computeRowStyleAllRejectedReturnsSolidRed() throws Exception {
         assertEquals("-fx-background-color: rgba(239,68,68,0.18);", computeRowStyle(reportWith(3, 0, 0, 3)));
+    }
+
+    // Same bug as glpiStatusLabelAllNaAssetsReturnsDash — the old code fell through to a
+    // zero-color-stop "linear-gradient(to right);" for this case instead of the flat neutral
+    // color used for "nothing GLPI-tracked" everywhere else.
+    @Test
+    void computeRowStyleAllNaAssetsReturnsNeutralColor() throws Exception {
+        assertEquals("-fx-background-color: #f1f5f9;", computeRowStyle(reportWith(1, 0, 0, 0)));
     }
 
     @Test

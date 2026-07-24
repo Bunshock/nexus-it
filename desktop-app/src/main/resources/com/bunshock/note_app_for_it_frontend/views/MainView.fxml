@@ -59,7 +59,7 @@
             </StackPane>
 
             <!-- Title -->
-            <VBox alignment="CENTER_LEFT" spacing="2" style="-fx-padding: 0 0 25 0;">
+            <VBox alignment="CENTER_LEFT" spacing="2" style="-fx-padding: 0 0 2 0;">
                <children>
                   <HBox alignment="CENTER_LEFT" spacing="10">
                         <children>
@@ -68,7 +68,7 @@
                         </children>
                   </HBox>
                   <Label text="SOPORTE IT - SITA - UES21" styleClass="sidebar-title-sub" style="-fx-padding: 0 0 0 14;"/>
-                  <Region prefHeight="1" style="-fx-background-color: rgba(255,255,255,0.1); -fx-min-height: 1; -fx-translate-y: 10;"/>
+                  <Region prefHeight="1" style="-fx-background-color: rgba(255,255,255,0.1); -fx-min-height: 1; -fx-translate-y: 4;"/>
                </children>
             </VBox>
 
@@ -77,7 +77,11 @@
                  separator and the nav buttons. -->
             <Region VBox.vgrow="ALWAYS" />
 
-            <!-- User info and welcome message -->
+            <!-- User info and welcome message. lblSede uses its own smaller .user-sede class
+                 (not .user-username) plus a small top margin, so it reads as a separate line
+                 from Hola/Usuario without adding as much height as reusing the bigger class
+                 would — keeps the block close to its pre-Sede footprint so showing/hiding it
+                 doesn't visibly shift the nav buttons below. -->
             <VBox spacing="2" style="-fx-padding: 0 0 0 5;">
                <children>
                   <Label fx:id="lblWelcome" styleClass="user-welcome"/>
@@ -88,6 +92,9 @@
                         <Label fx:id="lblUsername" styleClass="user-username"/>
                      </children>
                   </HBox>
+                  <Label fx:id="lblSede" styleClass="user-sede" visible="false" managed="false">
+                     <VBox.margin><Insets top="4"/></VBox.margin>
+                  </Label>
                </children>
             </VBox>
 
@@ -96,8 +103,28 @@
             <!-- Main navigation buttons -->
             <ToggleButton text="Generar Nota" fx:id="btnGenerator" toggleGroup="$navigationGroup"
                   maxWidth="Infinity" styleClass="nav-button" selected="true" onAction="#handleShowGenerator"/>
-            <ToggleButton text="Historial" fx:id="btnHistory" toggleGroup="$navigationGroup"
-                  maxWidth="Infinity" styleClass="nav-button" onAction="#handleShowHistory"/>
+            <StackPane maxWidth="Infinity">
+               <children>
+                  <ToggleButton text="Historial" fx:id="btnHistory" toggleGroup="$navigationGroup"
+                        maxWidth="Infinity" styleClass="nav-button" onAction="#handleShowHistory"/>
+                  <Label fx:id="lblHistoryBadge" text="" styleClass="nav-badge"
+                         visible="false" managed="false" mouseTransparent="true"
+                         StackPane.alignment="CENTER_RIGHT">
+                     <StackPane.margin><Insets right="15"/></StackPane.margin>
+                  </Label>
+               </children>
+            </StackPane>
+            <StackPane maxWidth="Infinity">
+               <children>
+                  <ToggleButton text="Préstamos" fx:id="btnPrestamos" toggleGroup="$navigationGroup"
+                        maxWidth="Infinity" styleClass="nav-button" onAction="#handleShowPrestamos"/>
+                  <Label fx:id="lblPrestamosBadge" text="" styleClass="nav-badge"
+                         visible="false" managed="false" mouseTransparent="true"
+                         StackPane.alignment="CENTER_RIGHT">
+                     <StackPane.margin><Insets right="15"/></StackPane.margin>
+                  </Label>
+               </children>
+            </StackPane>
             <ToggleButton text="Base de Datos" fx:id="btnData" toggleGroup="$navigationGroup"
                   maxWidth="Infinity" styleClass="nav-button" onAction="#handleShowDatabase"/>
 

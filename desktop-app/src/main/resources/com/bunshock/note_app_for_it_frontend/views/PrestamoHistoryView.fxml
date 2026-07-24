@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?import javafx.scene.layout.*?>
+<?import javafx.scene.control.*?>
+
+<VBox spacing="20"
+      xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1"
+      fx:controller="com.bunshock.note_app_for_it_frontend.controllers.PrestamoHistoryController">
+    <children>
+
+        <!-- Filter panel -->
+        <VBox spacing="14"
+              style="-fx-background-color: white; -fx-background-radius: 10; -fx-padding: 18 20;">
+            <children>
+
+                <HBox spacing="28">
+
+                    <VBox spacing="6">
+                        <Label text="Fecha" styleClass="filter-section-label"/>
+                        <HBox spacing="12">
+                            <VBox spacing="3">
+                                <Label text="DESDE" styleClass="input-label-small"/>
+                                <DatePicker fx:id="dpFrom" promptText="dd/mm/aaaa"
+                                            prefWidth="145" prefHeight="32" styleClass="form-input-filter"/>
+                            </VBox>
+                            <VBox spacing="3">
+                                <Label text="HASTA" styleClass="input-label-small"/>
+                                <DatePicker fx:id="dpTo" promptText="dd/mm/aaaa"
+                                            prefWidth="145" prefHeight="32" styleClass="form-input-filter"/>
+                            </VBox>
+                        </HBox>
+                    </VBox>
+
+                    <VBox spacing="6">
+                        <Label text="Préstamo" styleClass="filter-section-label"/>
+                        <HBox spacing="12">
+                            <VBox spacing="3">
+                                <Label text="ESTADO DE DEVOLUCIÓN" styleClass="input-label-small"/>
+                                <MenuButton fx:id="mnuReturnStatus" text="Todas"
+                                            prefWidth="178" prefHeight="32" styleClass="filter-menu-button"/>
+                            </VBox>
+                            <VBox spacing="3">
+                                <Label text="DESTINATARIO" styleClass="input-label-small"/>
+                                <TextField fx:id="txtRecipientSearch" prefWidth="178" prefHeight="32"
+                                           promptText="Buscar destinatario..."
+                                           onAction="#handleSearch"
+                                           styleClass="form-input-filter"/>
+                            </VBox>
+                            <VBox spacing="3">
+                                <Label text="AUTOR" styleClass="input-label-small"/>
+                                <TextField fx:id="txtAuthorSearch" prefWidth="178" prefHeight="32"
+                                           promptText="Buscar por autor..."
+                                           onAction="#handleSearch"
+                                           styleClass="form-input-filter"/>
+                            </VBox>
+                        </HBox>
+                    </VBox>
+
+                </HBox>
+
+                <HBox spacing="10" alignment="CENTER_LEFT">
+                    <Button text="Buscar" onAction="#handleSearch" styleClass="button-primary" prefHeight="32"/>
+                    <Button text="Limpiar filtros" onAction="#handleClearFilters" styleClass="button-secondary" prefHeight="32"/>
+                </HBox>
+
+            </children>
+        </VBox>
+
+        <!-- Préstamos table -->
+        <VBox VBox.vgrow="ALWAYS" spacing="6"
+              style="-fx-background-color: white; -fx-background-radius: 10; -fx-padding: 15 20 20 20;">
+            <TableView fx:id="tblPrestamos" VBox.vgrow="ALWAYS" styleClass="modern-table">
+                <placeholder>
+                    <Label text="No hay préstamos registrados."/>
+                </placeholder>
+                <columnResizePolicy>
+                    <TableView fx:constant="CONSTRAINED_RESIZE_POLICY"/>
+                </columnResizePolicy>
+                <columns>
+                    <TableColumn fx:id="colPDate"      text="FECHA"                 prefWidth="155" maxWidth="155"/>
+                    <TableColumn fx:id="colPAuthor"    text="AUTOR"                 prefWidth="190" maxWidth="220"/>
+                    <TableColumn fx:id="colPRecipient" text="DESTINATARIO"/>
+                    <TableColumn fx:id="colPItems"     text="EQUIPOS"               prefWidth="90"  maxWidth="90"/>
+                    <TableColumn fx:id="colPStatus"    text="ESTADO DE DEVOLUCIÓN"  prefWidth="170" maxWidth="200"/>
+                </columns>
+            </TableView>
+            <Label text="A = Activo (con S/N) · C = Contable (por cantidad) — ej.: &quot;2A / 3C&quot;"
+                   maxWidth="Infinity" alignment="CENTER_RIGHT"
+                   style="-fx-text-fill: #94a3b8; -fx-font-size: 10px; -fx-alignment: center-right;"/>
+        </VBox>
+
+    </children>
+</VBox>

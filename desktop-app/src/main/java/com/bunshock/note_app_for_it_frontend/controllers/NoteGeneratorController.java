@@ -31,6 +31,7 @@ import javafx.scene.control.TableCell;
 import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableView;
 import javafx.scene.control.TextField;
+import javafx.scene.control.TextFormatter;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.ToggleGroup;
 import javafx.scene.control.Tooltip;
@@ -45,13 +46,15 @@ import javafx.stage.StageStyle;
 import javafx.util.Callback;
 import javafx.util.Duration;
 
-public class NoteGeneratorController {
+public class NoteGeneratorController implements ItemDialogHost {
 
     @FXML private VBox rootContainer;
     @FXML private ToggleButton btnUserNote;
     @FXML private ToggleButton btnProviderNote;
+    @FXML private ToggleButton btnRemitoNote;
     @FXML private ToggleGroup typeGroup;
     @FXML private StackPane dynamicContentArea;
+    @FXML private VBox vboxObservationsFooter;
 
     @FXML private TableView<AssetItem> tblAssets;
     @FXML private TableColumn<AssetItem, String> colAssetType;
@@ -73,6 +76,7 @@ public class NoteGeneratorController {
     @FXML private TextField txtObservations;
     @FXML private Button btnAddItem;
     @FXML private Label lblTableStatus;
+    @FXML private Label lblGenerationStatus;
 
     private final ObservableList<AssetItem> assetList = FXCollections.observableArrayList();
     private final ObservableList<CountableItem> countableList = FXCollections.observableArrayList();
@@ -85,9 +89,15 @@ public class NoteGeneratorController {
         showUserNoteView();
     }
 
+    private static final int OBSERVATIONS_MAX_LENGTH = 300;
+
     public void initialize() {
         btnUserNote.setOnAction(e -> showUserNoteView());
         btnProviderNote.setOnAction(e -> showProviderNoteView());
+        btnRemitoNote.setOnAction(e -> showRemitoNoteView());
+
+        txtObservations.setTextFormatter(new TextFormatter<>(change ->
+            change.getControlNewText().length() <= OBSERVATIONS_MAX_LENGTH ? change : null));
 
         typeGroup.selectedToggleProperty().addListener((obs, old, next) -> {
             if (next == null) old.setSelected(true);
@@ -106,7 +116,9 @@ public class NoteGeneratorController {
     }
 
     private void showUserNoteView() {
-        if (viewFactory != null) dynamicContentArea.getChildren().setAll(viewFactory.getUserNoteView());
+        if (viewFactory == null) return;
+        dynamicContentArea.getChildren().setAll(viewFactory.getUserNoteView());
+        setObservationsFooterVisible(true);
     }
 
     private void showProviderNoteView() {
@@ -115,6 +127,21 @@ public class NoteGeneratorController {
         // ViewFactory caches this view for the session — without this, a provider an admin adds
         // via Base de Datos mid-session wouldn't appear here until the app restarts.
         viewFactory.getProviderNoteController().refreshProviders();
+        setObservationsFooterVisible(true);
+    }
+
+    private void showRemitoNoteView() {
+        if (viewFactory == null) return;
+        dynamicContentArea.getChildren().setAll(viewFactory.getRemitoNoteView());
+        setObservationsFooterVisible(false);
+    }
+
+    // Remito de Envío has no Observaciones Generales field — its physical source document
+    // doesn't have one — so this shared shell footer (common to every profile type otherwise)
+    // is hidden specifically for that toggle, rather than just left visible-but-unused.
+    private void setObservationsFooterVisible(boolean visible) {
+        vboxObservationsFooter.setVisible(visible);
+        vboxObservationsFooter.setManaged(visible);
     }
 
     private <T> Callback<TableColumn<T, Void>, TableCell<T, Void>> createActionCellFactory(
@@ -248,6 +275,10 @@ public class NoteGeneratorController {
         return typeGroup.getSelectedToggle() == btnUserNote;
     }
 
+    public boolean isRemitoNote() {
+        return typeGroup.getSelectedToggle() == btnRemitoNote;
+    }
+
     @FXML
     private void handleClearForm() {
         txtObservations.clear();
@@ -255,9 +286,12 @@ public class NoteGeneratorController {
         countableList.clear();
         updateAddButtonState();
 
-        if (isUserNote() && viewFactory != null && viewFactory.getUserNoteController() != null) {
+        if (viewFactory == null) return;
+        if (isUserNote() && viewFactory.getUserNoteController() != null) {
             viewFactory.getUserNoteController().clearAllFields();
-        } else if (!isUserNote() && viewFactory != null && viewFactory.getProviderNoteController() != null) {
+        } else if (isRemitoNote() && viewFactory.getRemitoNoteController() != null) {
+            viewFactory.getRemitoNoteController().clearAllFields();
+        } else if (!isUserNote() && !isRemitoNote() && viewFactory.getProviderNoteController() != null) {
             viewFactory.getProviderNoteController().clearAllFields();
         }
     }
@@ -280,6 +314,20 @@ public class NoteGeneratorController {
         fade.play();
     }
 
+    private static final Duration GENERATION_SUCCESS_HOLD = Duration.millis(2000);
+    private static final Duration GENERATION_SUCCESS_FADE = Duration.millis(650);
+
+    private void showGenerationSuccess(String message) {
+        lblGenerationStatus.setText(message);
+        lblGenerationStatus.setOpacity(1.0);
+        FadeTransition fade = new FadeTransition(GENERATION_SUCCESS_FADE, lblGenerationStatus);
+        fade.setDelay(GENERATION_SUCCESS_HOLD);
+        fade.setFromValue(1.0);
+        fade.setToValue(0.0);
+        fade.setOnFinished(e -> lblGenerationStatus.setText(""));
+        fade.play();
+    }
+
     @FXML
     private void handleGenerateNote() {
         try {
@@ -287,6 +335,10 @@ public class NoteGeneratorController {
             if (technician.getName() == null || technician.getName().isBlank()
                     || technician.getDni() == null || technician.getDni().isBlank()) {
                 showMissingTechnicianProfileError();
+                return;
+            }
+            if (technician.getSedeId() == null || technician.getSede() == null || technician.getSede().isBlank()) {
+                showMissingSedeError();
                 return;
             }
 
@@ -298,7 +350,10 @@ public class NoteGeneratorController {
             if (isUserNote() && !viewFactory.getUserNoteController().validateAndShowErrors()) {
                 canGenerate = false;
             }
-            if (!isUserNote() && !viewFactory.getProviderNoteController().validateAndShowErrors()) {
+            if (isRemitoNote() && !viewFactory.getRemitoNoteController().validateAndShowErrors()) {
+                canGenerate = false;
+            }
+            if (!isUserNote() && !isRemitoNote() && !viewFactory.getProviderNoteController().validateAndShowErrors()) {
                 canGenerate = false;
             }
             if (!canGenerate) return;
@@ -308,7 +363,22 @@ public class NoteGeneratorController {
             String html;
             NoteReport report = new NoteReport();
 
-            if (isUserNote()) {
+            if (isRemitoNote()) {
+                RemitoNoteController rnc = viewFactory.getRemitoNoteController();
+                html = generator.generateRemitoNote(
+                    rnc.getDestinatarioName(), rnc.getDestinatarioArea(), rnc.getDestinatarioSede(),
+                    rnc.getRemitenteName(), rnc.getRemitenteArea(), rnc.getRemitenteSede(),
+                    technician.getSede(),
+                    assetList, countableList
+                );
+                report.setDestinatarioName(rnc.getDestinatarioName());
+                report.setDestinatarioArea(rnc.getDestinatarioArea());
+                report.setDestinatarioSede(rnc.getDestinatarioSede());
+                report.setRemitenteName(rnc.getRemitenteName());
+                report.setRemitenteArea(rnc.getRemitenteArea());
+                report.setRemitenteSede(rnc.getRemitenteSede());
+                report.setProfileType("Remito de Envío");
+            } else if (isUserNote()) {
                 UserNoteController unc = viewFactory.getUserNoteController();
                 String profileType = unc.getSelectedNoteType();
                 boolean isPrestamo = "PRÉSTAMO".equals(profileType);
@@ -316,12 +386,13 @@ public class NoteGeneratorController {
                 String motimoOrFecha = isPrestamo ? unc.getFechaTentativa() : unc.getMotivo();
                 String failureCause = isDevolucion ? unc.getFailureCause() : null;
                 String failureDetails = isDevolucion ? unc.getFailureDetails() : null;
+                String areaEvento = isPrestamo ? unc.getAreaEvento() : null;
                 html = generator.generateUserNote(
                     profileType,
                     unc.getUserName(), unc.getUserDni(), unc.getUserEmail(),
                     motimoOrFecha,
-                    technician.getName(), technician.getDni(),
-                    failureCause, failureDetails,
+                    technician.getName(), technician.getDni(), technician.getSede(),
+                    failureCause, failureDetails, areaEvento,
                     assetList, countableList, getObservations()
                 );
                 report.setUserName(unc.getUserName());
@@ -330,6 +401,7 @@ public class NoteGeneratorController {
                 report.setMotivo(motimoOrFecha);
                 report.setFailureCause(failureCause);
                 report.setFailureDetails(failureDetails);
+                report.setAreaEvento(areaEvento);
                 report.setProfileType(profileType);
             } else {
                 ProviderNoteController pnc = viewFactory.getProviderNoteController();
@@ -337,10 +409,11 @@ public class NoteGeneratorController {
                     pnc.getProviderName(), pnc.getCuit(),
                     pnc.getResponsibleName(), pnc.getResponsibleDni(),
                     pnc.getMotivo(),
-                    technician.getName(), technician.getDni(),
+                    technician.getName(), technician.getDni(), technician.getSede(),
                     assetList, countableList, getObservations()
                 );
                 report.setProviderName(pnc.getProviderName());
+                report.setProviderId(pnc.getProviderId());
                 report.setCuit(pnc.getCuit());
                 report.setMotivo(pnc.getMotivo());
                 report.setResponsibleName(pnc.getResponsibleName());
@@ -350,7 +423,13 @@ public class NoteGeneratorController {
 
             report.setAuthorName(technician.getName());
             report.setAuthorDni(technician.getDni());
+            report.setSede(technician.getSede());
+            report.setSedeId(technician.getSedeId());
             report.setCreatedAt(LocalDateTime.now());
+            // Remito de Envío has no Observaciones Generales field (the footer is hidden for
+            // it) — skip persisting whatever stale text is left in txtObservations from a
+            // previous Usuario/Proveedor session in this cached view.
+            if (!isRemitoNote()) report.setObservations(getObservations());
             openPreview(html, report.getProfileType(), report);
 
         } catch (Exception e) {
@@ -363,6 +442,13 @@ public class NoteGeneratorController {
             "No se puede generar la nota: no se pudo obtener su nombre y DNI desde Active Directory. "
             + "Vaya a Mi Perfil y use \"Actualizar Perfil desde AD\", o pídale a un administrador que complete sus datos manualmente. "
             + "Toda nota debe quedar asociada al técnico que la generó.");
+    }
+
+    private void showMissingSedeError() {
+        showWarningNotice("Sede no configurada",
+            "No se puede generar la nota: no se ha configurado su Sede. "
+            + "Vaya a Configuración y complete el campo \"Sede\" antes de continuar. "
+            + "Toda nota debe quedar asociada a la sede desde la que se generó.");
     }
 
     private void showWarningNotice(String title, String message) {
@@ -480,6 +566,7 @@ public class NoteGeneratorController {
         Parent root = loader.load();
         NotePreviewController ctrl = loader.getController();
         ctrl.loadPreview(html, profileType, report, assetList, countableList);
+        ctrl.setOnSuccess(() -> showGenerationSuccess("Nota generada correctamente"));
 
         javafx.scene.layout.VBox rootVBox = (javafx.scene.layout.VBox) root;
 

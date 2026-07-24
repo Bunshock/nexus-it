@@ -15,6 +15,7 @@ import com.bunshock.note_app_for_it_frontend.models.GlpiStatus;
 import com.bunshock.note_app_for_it_frontend.models.HistoryFilter;
 import com.bunshock.note_app_for_it_frontend.models.NoteReport;
 import com.bunshock.note_app_for_it_frontend.models.NoteReportItem;
+import com.bunshock.note_app_for_it_frontend.models.ReturnStatus;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -27,10 +28,11 @@ class SqliteHistoryServiceTest {
     Path tempDir;
 
     private SqliteHistoryService service;
+    private String url;
 
     @BeforeEach
     void setUp() throws SQLException {
-        String url = "jdbc:sqlite:" + tempDir.resolve("history-test.db").toAbsolutePath();
+        url = "jdbc:sqlite:" + tempDir.resolve("history-test.db").toAbsolutePath();
         createSchema(url);
         service = new SqliteHistoryService(() -> {
             try { return DriverManager.getConnection(url); }
@@ -41,21 +43,55 @@ class SqliteHistoryServiceTest {
     private void createSchema(String url) throws SQLException {
         try (Connection c = DriverManager.getConnection(url); Statement stmt = c.createStatement()) {
             stmt.executeUpdate("""
-                CREATE TABLE TECHNICIAN_PROFILE (
-                    id               INTEGER PRIMARY KEY AUTOINCREMENT,
-                    windows_username TEXT NOT NULL UNIQUE,
-                    name             TEXT,
-                    dni              TEXT,
-                    email            TEXT
+                CREATE TABLE TYPE (
+                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name            TEXT NOT NULL UNIQUE,
+                    is_asset        INTEGER NOT NULL DEFAULT 1,
+                    requires_serial INTEGER NOT NULL DEFAULT 0,
+                    deprecated      INTEGER NOT NULL DEFAULT 0
+                )""");
+            stmt.executeUpdate("""
+                CREATE TABLE BRAND (
+                    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name       TEXT NOT NULL UNIQUE,
+                    deprecated INTEGER NOT NULL DEFAULT 0
+                )""");
+            stmt.executeUpdate("""
+                CREATE TABLE BRAND_TYPE_LINK (
+                    id       INTEGER PRIMARY KEY AUTOINCREMENT,
+                    type_id  INTEGER NOT NULL REFERENCES TYPE(id),
+                    brand_id INTEGER NOT NULL REFERENCES BRAND(id),
+                    UNIQUE(type_id, brand_id)
+                )""");
+            stmt.executeUpdate("""
+                CREATE TABLE MODEL (
+                    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                    brand_type_id INTEGER NOT NULL REFERENCES BRAND_TYPE_LINK(id),
+                    name          TEXT NOT NULL,
+                    deprecated    INTEGER NOT NULL DEFAULT 0
+                )""");
+            stmt.executeUpdate("""
+                CREATE TABLE PROVIDER (
+                    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name       TEXT NOT NULL UNIQUE,
+                    deprecated INTEGER NOT NULL DEFAULT 0
+                )""");
+            stmt.executeUpdate("""
+                CREATE TABLE SEDE (
+                    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name       TEXT NOT NULL UNIQUE,
+                    deprecated INTEGER NOT NULL DEFAULT 0
                 )""");
             stmt.executeUpdate("""
                 CREATE TABLE NOTE_REPORT (
                     id              INTEGER PRIMARY KEY AUTOINCREMENT,
                     created_at      TEXT NOT NULL,
                     profile_type    TEXT NOT NULL,
-                    technician_id   INTEGER REFERENCES TECHNICIAN_PROFILE(id),
                     technician_name TEXT,
-                    technician_dni  TEXT
+                    technician_dni  TEXT,
+                    observations    TEXT,
+                    sede            TEXT,
+                    sede_id         INTEGER REFERENCES SEDE(id)
                 )""");
             stmt.executeUpdate("""
                 CREATE TABLE NOTE_ENTREGA_DEVOLUCION (
@@ -65,33 +101,147 @@ class SqliteHistoryServiceTest {
                     user_email      TEXT,
                     motivo          TEXT,
                     failure_cause   TEXT,
-                    failure_details TEXT
+                    failure_details TEXT,
+                    area_evento     TEXT
                 )""");
             stmt.executeUpdate("""
                 CREATE TABLE NOTE_PROVEEDOR (
                     note_report_id   INTEGER PRIMARY KEY REFERENCES NOTE_REPORT(id),
-                    provider_name    TEXT,
+                    provider_id      INTEGER NOT NULL REFERENCES PROVIDER(id),
                     cuit             TEXT,
                     motivo           TEXT,
                     responsible_name TEXT,
                     responsible_dni  TEXT
                 )""");
             stmt.executeUpdate("""
-                CREATE TABLE NOTE_ITEM (
-                    id                      INTEGER PRIMARY KEY AUTOINCREMENT,
-                    note_id                 INTEGER NOT NULL REFERENCES NOTE_REPORT(id),
-                    type_name               TEXT NOT NULL,
-                    brand_name              TEXT,
-                    model_name              TEXT,
-                    serial_number           TEXT,
-                    a_f                     TEXT,
-                    quantity                INTEGER NOT NULL DEFAULT 1,
-                    observations            TEXT,
-                    is_asset                INTEGER NOT NULL DEFAULT 0,
-                    glpi_status             TEXT NOT NULL DEFAULT 'N_A',
-                    glpi_rejection_reason   TEXT,
-                    glpi_status_updated_at  TEXT
+                CREATE TABLE NOTE_REMITO (
+                    note_report_id    INTEGER PRIMARY KEY REFERENCES NOTE_REPORT(id),
+                    destinatario_name TEXT,
+                    destinatario_area TEXT,
+                    destinatario_sede TEXT,
+                    remitente_name    TEXT,
+                    remitente_area    TEXT,
+                    remitente_sede    TEXT
                 )""");
+            stmt.executeUpdate("""
+                CREATE TABLE NOTE_ITEM (
+                    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                    note_id      INTEGER NOT NULL REFERENCES NOTE_REPORT(id),
+                    type_id      INTEGER NOT NULL REFERENCES TYPE(id),
+                    brand_id     INTEGER NOT NULL REFERENCES BRAND(id),
+                    model_id     INTEGER NOT NULL REFERENCES MODEL(id),
+                    observations TEXT
+                )""");
+            stmt.executeUpdate("""
+                CREATE TABLE NOTE_ITEM_ASSET (
+                    item_id       INTEGER PRIMARY KEY REFERENCES NOTE_ITEM(id),
+                    serial_number TEXT,
+                    a_f           TEXT
+                )""");
+            stmt.executeUpdate("""
+                CREATE TABLE NOTE_ITEM_COUNTABLE (
+                    item_id  INTEGER PRIMARY KEY REFERENCES NOTE_ITEM(id),
+                    quantity INTEGER NOT NULL DEFAULT 1
+                )""");
+            stmt.executeUpdate("""
+                CREATE TABLE NOTE_ITEM_GLPI_TRACKING (
+                    item_id           INTEGER PRIMARY KEY REFERENCES NOTE_ITEM(id),
+                    status            TEXT NOT NULL,
+                    rejection_reason  TEXT,
+                    status_updated_at TEXT
+                )""");
+            stmt.executeUpdate("""
+                CREATE TABLE NOTE_ITEM_RETURN_TRACKING (
+                    item_id           INTEGER PRIMARY KEY REFERENCES NOTE_ITEM(id),
+                    status            TEXT NOT NULL,
+                    rejection_reason  TEXT,
+                    status_updated_at TEXT
+                )""");
+        }
+    }
+
+    // Resolve-or-create catalog rows for a (type, brand, model) triple, mirroring
+    // SqliteEquipmentService's own upsert shape — NOTE_ITEM now stores real FKs, not text, so
+    // every test item needs an actual catalog row behind it. Opens its own short-lived
+    // connection off the shared `url` rather than the service's own connector, since this runs
+    // during test setup, independent of the service under test.
+    private int resolveOrCreate(String table, String name) throws SQLException {
+        try (Connection c = DriverManager.getConnection(url)) {
+            try (PreparedStatement sel = c.prepareStatement("SELECT id FROM " + table + " WHERE name = ?")) {
+                sel.setString(1, name);
+                try (ResultSet rs = sel.executeQuery()) {
+                    if (rs.next()) return rs.getInt(1);
+                }
+            }
+            try (PreparedStatement ins = c.prepareStatement(
+                    "INSERT INTO " + table + " (name) VALUES (?)", Statement.RETURN_GENERATED_KEYS)) {
+                ins.setString(1, name);
+                ins.executeUpdate();
+                try (ResultSet keys = ins.getGeneratedKeys()) {
+                    keys.next();
+                    return keys.getInt(1);
+                }
+            }
+        }
+    }
+
+    private int resolveOrCreateBrandTypeLink(int typeId, int brandId) throws SQLException {
+        try (Connection c = DriverManager.getConnection(url)) {
+            try (PreparedStatement sel = c.prepareStatement(
+                    "SELECT id FROM BRAND_TYPE_LINK WHERE type_id = ? AND brand_id = ?")) {
+                sel.setInt(1, typeId);
+                sel.setInt(2, brandId);
+                try (ResultSet rs = sel.executeQuery()) {
+                    if (rs.next()) return rs.getInt(1);
+                }
+            }
+            try (PreparedStatement ins = c.prepareStatement(
+                    "INSERT INTO BRAND_TYPE_LINK (type_id, brand_id) VALUES (?, ?)", Statement.RETURN_GENERATED_KEYS)) {
+                ins.setInt(1, typeId);
+                ins.setInt(2, brandId);
+                ins.executeUpdate();
+                try (ResultSet keys = ins.getGeneratedKeys()) {
+                    keys.next();
+                    return keys.getInt(1);
+                }
+            }
+        }
+    }
+
+    private int resolveOrCreateModel(int brandTypeId, String name) throws SQLException {
+        try (Connection c = DriverManager.getConnection(url)) {
+            try (PreparedStatement sel = c.prepareStatement(
+                    "SELECT id FROM MODEL WHERE brand_type_id = ? AND name = ?")) {
+                sel.setInt(1, brandTypeId);
+                sel.setString(2, name);
+                try (ResultSet rs = sel.executeQuery()) {
+                    if (rs.next()) return rs.getInt(1);
+                }
+            }
+            try (PreparedStatement ins = c.prepareStatement(
+                    "INSERT INTO MODEL (brand_type_id, name) VALUES (?, ?)", Statement.RETURN_GENERATED_KEYS)) {
+                ins.setInt(1, brandTypeId);
+                ins.setString(2, name);
+                ins.executeUpdate();
+                try (ResultSet keys = ins.getGeneratedKeys()) {
+                    keys.next();
+                    return keys.getInt(1);
+                }
+            }
+        }
+    }
+
+    private void seedItemIds(NoteReportItem item, String type, String brand, String model) {
+        try {
+            int typeId = resolveOrCreate("TYPE", type);
+            int brandId = resolveOrCreate("BRAND", brand);
+            int linkId = resolveOrCreateBrandTypeLink(typeId, brandId);
+            int modelId = resolveOrCreateModel(linkId, model);
+            item.setTypeId(typeId);
+            item.setBrandId(brandId);
+            item.setModelId(modelId);
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
         }
     }
 
@@ -100,6 +250,7 @@ class SqliteHistoryServiceTest {
         item.setTypeName(type);
         item.setBrandName(brand);
         item.setModelName(model);
+        seedItemIds(item, type, brand, model);
         item.setSerialNumber(serial);
         item.setAf(af);
         item.setQuantity(1);
@@ -113,6 +264,7 @@ class SqliteHistoryServiceTest {
         item.setTypeName(type);
         item.setBrandName(brand);
         item.setModelName(model);
+        seedItemIds(item, type, brand, model);
         item.setQuantity(qty);
         item.setAsset(false);
         item.setGlpiStatus(GlpiStatus.N_A);
@@ -137,6 +289,11 @@ class SqliteHistoryServiceTest {
         r.setProfileType("Entrega - Proveedor");
         r.setCreatedAt(createdAt);
         r.setProviderName(providerName);
+        try {
+            r.setProviderId(resolveOrCreate("PROVIDER", providerName));
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
         r.setCuit("30-12345678-9");
         r.setMotivo("Alta");
         r.setItems(items);
@@ -302,6 +459,23 @@ class SqliteHistoryServiceTest {
         assertEquals("No Asset User", naResults.get(0).getRecipientDisplay());
     }
 
+    // Reproduces a real reported bug: a Préstamo note's assets are saved with GlpiStatus.N_A
+    // (not PENDING) by NotePreviewController/PrestamoNewLoanController — see CLAUDE.md's
+    // "Préstamo assets are deliberately excluded from GLPI sync". matchesGlpiStatus()'s old
+    // "N_A" case checked getAssetItemCount() == 0, which is false for such a note (it does have
+    // an asset, just an N_A one) — silently excluding it from the "Sin GLPI" filter.
+    @Test
+    void filtersByGlpiStatusIncludesPrestamoNotesWhoseAssetsAreAllNA() {
+        service.save(userReport("PRÉSTAMO", LocalDateTime.now(), "Loan User",
+            List.of(assetItem("NOTEBOOK", "DELL", "LATITUDE", "SN1", "AF1", GlpiStatus.N_A))));
+
+        HistoryFilter na = new HistoryFilter();
+        na.setGlpiStatuses(List.of("N_A"));
+        List<NoteReport> naResults = service.getFiltered(na);
+        assertTrue(naResults.stream().anyMatch(r -> "Loan User".equals(r.getRecipientDisplay())),
+            "A Préstamo note with an N_A asset must match the Sin GLPI filter");
+    }
+
     @Test
     void filtersByItemTypeBrandAndModel() {
         service.save(userReport("Entrega", LocalDateTime.now(), "Monitor Owner",
@@ -356,34 +530,23 @@ class SqliteHistoryServiceTest {
     }
 
     @Test
-    void getByIdFallsBackToTechnicianIdJoinForLegacyNotes() throws SQLException {
-        // Notes saved before technician_name/technician_dni existed only have technician_id set;
-        // getById()/getFiltered() must still resolve the author via the old TECHNICIAN_PROFILE join.
-        String url = "jdbc:sqlite:" + tempDir.resolve("history-test.db").toAbsolutePath();
-        int reportId;
-        try (Connection c = DriverManager.getConnection(url)) {
-            try (PreparedStatement ps = c.prepareStatement(
-                    "INSERT INTO TECHNICIAN_PROFILE (windows_username, name, dni) VALUES (?, ?, ?)")) {
-                ps.setString(1, "legacyuser");
-                ps.setString(2, "Legacy Tecnico");
-                ps.setString(3, "20111222");
-                ps.executeUpdate();
-            }
-            try (PreparedStatement ps = c.prepareStatement(
-                    "INSERT INTO NOTE_REPORT (created_at, profile_type, technician_id) VALUES (?, ?, 1)",
-                    PreparedStatement.RETURN_GENERATED_KEYS)) {
-                ps.setString(1, LocalDateTime.now().toString());
-                ps.setString(2, "Entrega");
-                ps.executeUpdate();
-                ResultSet keys = ps.getGeneratedKeys();
-                keys.next();
-                reportId = keys.getInt(1);
-            }
-        }
+    void getByIdPersistsAndReturnsObservationsGenerales() {
+        NoteReport r = userReport("Entrega", LocalDateTime.now(), "Juan Perez", List.of());
+        r.setObservations("Equipo entregado con cargador adicional");
+        int id = service.save(r);
 
-        NoteReport byId = service.getById(reportId);
-        assertEquals("Legacy Tecnico", byId.getAuthorName());
-        assertEquals("20111222", byId.getAuthorDni());
+        NoteReport byId = service.getById(id);
+        assertEquals("Equipo entregado con cargador adicional", byId.getObservations());
+    }
+
+    @Test
+    void getByIdPersistsAndReturnsSede() throws SQLException {
+        NoteReport r = userReport("Entrega", LocalDateTime.now(), "Juan Perez", List.of());
+        r.setSedeId(resolveOrCreate("SEDE", "Campus Test"));
+        int id = service.save(r);
+
+        NoteReport byId = service.getById(id);
+        assertEquals("Campus Test", byId.getSede());
     }
 
     @Test
@@ -511,5 +674,64 @@ class SqliteHistoryServiceTest {
         List<NoteReport> pending = service.getPendingGlpiSync();
         assertEquals(1, pending.size());
         assertEquals("Pending User", pending.get(0).getRecipientDisplay());
+    }
+
+    // ── Préstamo return status ────────────────────────────────────────────────
+
+    @Test
+    void insertItemsSetsReturnStatusPendingForPrestamoNotesBothAssetAndCountable() {
+        NoteReport r = userReport("PRÉSTAMO", LocalDateTime.now(), "Marta Ruiz",
+            List.of(assetItem("NOTEBOOK", "DELL", "LATITUDE", "SN1", "AF1", GlpiStatus.PENDING),
+                    countableItem("MOUSE", "GENIUS", "DX-120", 2)));
+        int id = service.save(r);
+
+        NoteReport full = service.getById(id);
+        for (NoteReportItem item : full.getItems()) {
+            assertEquals(ReturnStatus.PENDING, item.getReturnStatus());
+        }
+    }
+
+    @Test
+    void insertItemsLeavesReturnStatusNAForNonPrestamoNotes() {
+        int id = service.save(userReport("Entrega", LocalDateTime.now(), "Juan Perez",
+            List.of(assetItem("NOTEBOOK", "DELL", "LATITUDE", "SN1", "AF1", GlpiStatus.PENDING))));
+
+        NoteReport full = service.getById(id);
+        assertEquals(ReturnStatus.N_A, full.getItems().get(0).getReturnStatus());
+    }
+
+    @Test
+    void updateItemReturnStatusPersistsStatusAndReason() {
+        int id = service.save(userReport("PRÉSTAMO", LocalDateTime.now(), "Marta Ruiz",
+            List.of(assetItem("NOTEBOOK", "DELL", "LATITUDE", "SN1", "AF1", GlpiStatus.PENDING))));
+
+        NoteReport before = service.getById(id);
+        int itemId = before.getItems().get(0).getId();
+
+        service.updateItemReturnStatus(itemId, ReturnStatus.LOST, "Equipo robado");
+
+        NoteReport after = service.getById(id);
+        NoteReportItem item = after.getItems().get(0);
+        assertEquals(ReturnStatus.LOST, item.getReturnStatus());
+        assertEquals("Equipo robado", item.getReturnRejectionReason());
+        assertNotNull(item.getReturnStatusUpdatedAt());
+    }
+
+    @Test
+    void returnStatusAggregatesComputeCorrectlyForMixedPrestamo() {
+        int id = service.save(userReport("PRÉSTAMO", LocalDateTime.now(), "Marta Ruiz",
+            List.of(assetItem("NOTEBOOK", "DELL", "LATITUDE", "SN1", "AF1", GlpiStatus.PENDING),
+                    assetItem("NOTEBOOK", "DELL", "LATITUDE", "SN2", "AF2", GlpiStatus.PENDING),
+                    countableItem("MOUSE", "GENIUS", "DX-120", 1))));
+
+        NoteReport before = service.getById(id);
+        List<NoteReportItem> items = before.getItems();
+        service.updateItemReturnStatus(items.get(0).getId(), ReturnStatus.RETURNED, null);
+        service.updateItemReturnStatus(items.get(1).getId(), ReturnStatus.LOST, "Perdido");
+
+        NoteReport summary = service.getFiltered(new HistoryFilter()).get(0);
+        assertEquals(1, summary.getReturnedItemCount());
+        assertEquals(1, summary.getLostItemCount());
+        assertEquals(1, summary.getReturnPendingItemCount());
     }
 }

@@ -23,10 +23,10 @@ public class ADUserSelectionController {
     @FXML private ListView<ADUser> lstResults;
     @FXML private Button btnCancel, btnSelect;
 
-    private UserNoteController parentController;
+    private AdSearchHost parentController;
     private ADUser selectedUser;
 
-    public void setParentController(UserNoteController parent) {
+    public void setParentController(AdSearchHost parent) {
         this.parentController = parent;
     }
 

@@ -5,6 +5,7 @@ import java.util.List;
 import com.bunshock.note_app_for_it_frontend.models.GlpiStatus;
 import com.bunshock.note_app_for_it_frontend.models.HistoryFilter;
 import com.bunshock.note_app_for_it_frontend.models.NoteReport;
+import com.bunshock.note_app_for_it_frontend.models.ReturnStatus;
 
 public class CachingHistoryService implements IHistoryService {
 
@@ -47,6 +48,12 @@ public class CachingHistoryService implements IHistoryService {
     public void updateItemGlpiStatus(int itemId, GlpiStatus status, String reason) {
         primary.updateItemGlpiStatus(itemId, status, reason);
         try { local.updateItemGlpiStatus(itemId, status, reason); } catch (Exception ignored) {}
+    }
+
+    @Override
+    public void updateItemReturnStatus(int itemId, ReturnStatus status, String reason) {
+        primary.updateItemReturnStatus(itemId, status, reason);
+        try { local.updateItemReturnStatus(itemId, status, reason); } catch (Exception ignored) {}
     }
 
     @Override

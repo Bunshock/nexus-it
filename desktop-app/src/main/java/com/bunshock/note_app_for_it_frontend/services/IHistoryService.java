@@ -6,6 +6,7 @@ import java.util.List;
 import com.bunshock.note_app_for_it_frontend.models.GlpiStatus;
 import com.bunshock.note_app_for_it_frontend.models.HistoryFilter;
 import com.bunshock.note_app_for_it_frontend.models.NoteReport;
+import com.bunshock.note_app_for_it_frontend.models.ReturnStatus;
 
 public interface IHistoryService {
 
@@ -20,6 +21,8 @@ public interface IHistoryService {
     default List<NoteReport> getPendingGlpiSync() { return Collections.emptyList(); }
 
     default void updateItemGlpiStatus(int itemId, GlpiStatus status, String reason) {}
+
+    default void updateItemReturnStatus(int itemId, ReturnStatus status, String reason) {}
 
     default List<String> getDistinctItemTypes() { return Collections.emptyList(); }
 
