@@ -129,6 +129,11 @@ public class ProviderNoteController {
         return selected != null ? selected.getName() : "";
     }
 
+    public int getProviderId() {
+        EquipmentProvider selected = cmbProviderSearch.getValue();
+        return selected != null ? selected.getId() : -1;
+    }
+
     public String getCuit() { return txtCuit.getText().trim(); }
 
     public String getMotivo() { return cmbMotivo.getValue(); }

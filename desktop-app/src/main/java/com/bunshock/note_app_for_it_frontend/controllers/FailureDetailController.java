@@ -8,9 +8,12 @@ import javafx.scene.control.Button;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextArea;
+import javafx.scene.control.TextFormatter;
 import javafx.stage.Stage;
 
 public class FailureDetailController {
+
+    private static final int FAILURE_DETAILS_MAX_LENGTH = 200;
 
     @FXML private ComboBox<String> cmbFailureCause;
     @FXML private TextArea txtFailureDetails;
@@ -23,6 +26,8 @@ public class FailureDetailController {
     public void initialize() {
         cmbFailureCause.setItems(FXCollections.observableArrayList(
             ConfigService.getInstance().getConfig().fallaOptions));
+        txtFailureDetails.setTextFormatter(new TextFormatter<>(change ->
+            change.getControlNewText().length() <= FAILURE_DETAILS_MAX_LENGTH ? change : null));
     }
 
     public void setParentController(UserNoteController parent) {
