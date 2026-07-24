@@ -61,7 +61,7 @@ flowchart TB
     end
 
     subgraph EXT["External Systems"]
-        Postgres[("PostgreSQL — optional remote DB")]
+        SqlServer[("SQL Server — optional remote DB")]
         ADApi["Active Directory REST API"]
         GLPI["GLPI — stub, out of scope v1"]
         SMTP["Gmail SMTP (STARTTLS)"]
@@ -76,9 +76,9 @@ flowchart TB
     IADServiceImpl --> ADApi
     IEquipmentServiceImpl -.mock only.-> MockEquipmentJson
     IEquipmentServiceImpl --> NoteAppDb
-    IEquipmentServiceImpl --> Postgres
+    IEquipmentServiceImpl --> SqlServer
     IHistoryServiceImpl --> NoteAppDb
-    IHistoryServiceImpl --> Postgres
+    IHistoryServiceImpl --> SqlServer
     IEmailServiceImpl --> SMTP
     ConfigService --> AppConfigJson
     TemplateEngine --> HtmlTemplates
@@ -104,6 +104,7 @@ desktop-app/src/main/java/com/bunshock/note_app_for_it_frontend/
 │   ├── NoteGeneratorController.java  — Equipment tables, note profile switching, generate trigger
 │   ├── UserNoteController.java       — User note fields: type toggle, Motivo, AD search
 │   ├── ProviderNoteController.java   — Provider note fields: name, CUIT, Motivo, responsible
+│   ├── RemitoNoteController.java     — Remito de Envío fields: Destinatario (free text) and Remitente (coordinator name, manual; Área/Sede editable, defaulted from config)
 │   ├── ItemDialogController.java     — Add/edit item: cascading dropdowns, S/N, A/F, quantity
 │   ├── NotePreviewController.java    — Preview popup: rendered HTML, print/email options
 │   ├── NoteDetailController.java     — History detail popup: HTML preview + item list with admin GLPI actions
@@ -112,7 +113,13 @@ desktop-app/src/main/java/com/bunshock/note_app_for_it_frontend/
 │   ├── SettingsController.java       — A/F format, SMTP, GLPI URL, S/N validation table, admin toggle
 │   ├── ProfileController.java        — Technician personal profile (read from DB)
 │   ├── AboutController.java          — App info
-│   └── ADUserSelectionController.java — Multi-result AD user picker dialog
+│   ├── ADUserSelectionController.java — Multi-result AD user picker dialog
+│   ├── ItemDialogHost.java            — Interface: callback for the item-add popup (implemented by NoteGeneratorController, PrestamoNewLoanController)
+│   ├── AdSearchHost.java              — Interface: callback for the AD search popup (implemented by UserNoteController, PrestamoNewLoanController)
+│   ├── PrestamosController.java       — Préstamos section shell: Cargar Nuevo Préstamo / Historial de Préstamos toggle
+│   ├── PrestamoNewLoanController.java — Non-printing direct-entry Préstamo form (own item tables + AD search)
+│   ├── PrestamoHistoryController.java — Préstamo-scoped history table: return-status coloring + overdue indicator
+│   └── PrestamoDetailController.java  — Préstamo detail popup: per-item return status with admin validate/reject actions
 ├── models/
 │   ├── ADUser.java                   — AD lookup result
 │   ├── AppConfig.java                — Deserialized app-config.json structure
@@ -124,18 +131,18 @@ desktop-app/src/main/java/com/bunshock/note_app_for_it_frontend/
 │   ├── EquipmentType.java            — Type entity with isAsset flag
 │   ├── EquipmentItem.java            — Base class for AssetItem and CountableItem
 │   ├── GlpiStatus.java               — Enum: N_A, PENDING, SYNCED, REJECTED
+│   ├── ReturnStatus.java             — Enum: N_A, PENDING, RETURNED, LOST (Préstamo return tracking)
 │   ├── HistoryFilter.java            — Filter params for history queries (dates, multi-select lists)
-│   ├── NoteReport.java               — Saved note report (history entry) with aggregated GLPI counts
-│   ├── NoteReportItem.java           — Individual item row in a saved report with GlpiStatus
+│   ├── NoteReport.java               — Saved note report (history entry) with aggregated GLPI + return-status counts and areaEvento
+│   ├── NoteReportItem.java           — Individual item row in a saved report with GlpiStatus and ReturnStatus
 │   ├── SnValidation.java             — S/N regex rule for a specific model
-│   ├── SnValidationRow.java          — Display row for S/N validation admin table
-│   └── TechnicianProfile.java        — Current user's personal profile
+│   └── SnValidationRow.java          — Display row for S/N validation admin table
 ├── services/
 │   ├── AdminAuthService.java         — Admin password verification (SHA-256 hash stored in APP_SETTINGS)
 │   ├── AdminSession.java             — Singleton: tracks active admin session; fires activate/deactivate listeners
 │   ├── ConfigService.java            — Singleton: loads/saves app-config.json
 │   ├── DatabaseService.java          — SQLite connection pool and schema initialization
-│   ├── RemoteDatabaseService.java    — PostgreSQL connection and DDL; used by Caching* wrappers
+│   ├── RemoteDatabaseService.java    — SQL Server connection and DDL; used by Caching* wrappers
 │   ├── ServiceLocator.java           — Single wiring point for all service implementations
 │   ├── IADService.java               — AD lookup interface (search + isConfigured)
 │   ├── AdApiService.java             — Active implementation: REST client for the AD API (see below)
@@ -143,10 +150,10 @@ desktop-app/src/main/java/com/bunshock/note_app_for_it_frontend/
 │   ├── IEquipmentService.java        — Equipment catalog interface (types, brands, models)
 │   ├── MockEquipmentService.java     — JSON-backed equipment catalog (reads mock-equipment.json)
 │   ├── SqliteEquipmentService.java   — SQLite-backed equipment catalog
-│   ├── CachingEquipmentService.java  — Remote-first wrapper: tries PostgreSQL, falls back to SQLite
+│   ├── CachingEquipmentService.java  — Remote-first wrapper: tries SQL Server, falls back to SQLite
 │   ├── IHistoryService.java          — Note history persistence interface + distinct-value query methods
 │   ├── SqliteHistoryService.java     — SQLite-backed history: filtered queries, GLPI status updates, distinct catalog values
-│   ├── CachingHistoryService.java    — Remote-first wrapper: tries PostgreSQL, falls back to SQLite
+│   ├── CachingHistoryService.java    — Remote-first wrapper: tries SQL Server, falls back to SQLite
 │   ├── IGLPIService.java             — GLPI API interface
 │   ├── GLPIServiceStub.java          — No-op stub (GLPI out of scope for v1)
 │   ├── IEmailService.java            — Email sending interface
@@ -210,6 +217,8 @@ classDiagram
         +getById(id) NoteReport
         +getDistinctItemTypes() getDistinctItemBrands() getDistinctItemModels()
         +getMostUsedTypeNames(days, minUses, limit) getMostUsedBrandNames(type, ...) getMostUsedModelNames(type, brand, ...)
+        +updateItemGlpiStatus(itemId, GlpiStatus, reason)
+        +updateItemReturnStatus(itemId, ReturnStatus, reason)
     }
     class SqliteHistoryService
     class CachingHistoryService
@@ -266,8 +275,16 @@ classDiagram
 
 - **The bug**: the greeting used to grab the *first* word of the technician's AD full name, assuming "Nombre Apellido" order. Since `AdApiService.normalizeName()` keeps AD's actual "Apellido Nombre" order, that logic was silently greeting technicians by their surname instead of their given name.
 - **The fix**: `getDisplayName()` returns the technician's own explicit preference if set, else falls back to `defaultDisplayName()` — the *last* word of the full name (correct now that the order is "Apellido Nombre"), capitalized.
-- **Persistence**: unlike Name/Username/Email/DNI, the preference is a personal cosmetic choice independent of AD identity, so it's persisted in `APP_SETTINGS` keyed by `"display_name_pref:" + username` (local SQLite only, same as `ad_api_token`/`db_host` — not mirrored to PostgreSQL). This keeps it correctly scoped per technician even if multiple people share one installed app on a shared machine, and lets it survive both app restarts and AD refreshes (`refreshFromWindowsSession()`/`applyManualOverride()` both reload it from disk after updating identity, rather than clearing it).
+- **Persistence**: unlike Name/Username/Email/DNI, the preference is a personal cosmetic choice independent of AD identity, so it's persisted in `APP_SETTINGS` keyed by `"display_name_pref:" + username` (local SQLite only, same as `ad_api_token`/`db_host` — not mirrored to the remote database). This keeps it correctly scoped per technician even if multiple people share one installed app on a shared machine, and lets it survive both app restarts and AD refreshes (`refreshFromWindowsSession()`/`applyManualOverride()` both reload it from disk after updating identity, rather than clearing it).
 - **UI**: `ProfileController`'s "NOMBRE PARA MOSTRAR" field (`ProfileView.fxml`) is deliberately *not* gated by `AdminSession` like the other four profile fields — it's always editable, with its own always-visible "Guardar" button (`handleSaveDisplayName()`). It's pre-filled with `getDisplayName()`'s current effective value (preference or suggested default), so a technician who never touches it just sees — and can tweak — the suggested default. Saving a blank value clears the preference back to the suggested default rather than storing an empty override.
+
+### Technician Sede Preference (TechnicianSessionService)
+Added 2026-07-22, a second exception to `TechnicianSessionService`'s otherwise session-only identity data, same shape as the display-name preference above but a fully independent concept — a technician's Sede has no AD-sourced field to derive a default from, unlike the display name's "last word of full name" fallback.
+
+- **Storage**: `getSede()`/`setSedePreference()`, persisted in `APP_SETTINGS` keyed by `"sede_pref:" + username` (local SQLite only). Its own listener list (`addOnSedeChangeListener`) keeps a Sede save from re-triggering the AD-identity or display-name status messages, same reasoning as the existing listener split between those two.
+- **UI**: `SettingsController`'s "SEDE" field (`SettingsView.fxml`) — placed in Configuración per explicit user request, not Mi Perfil, even though the value is per-technician like the display name. Not admin-gated: always editable, with its own "Guardar" button (`handleSaveSede()`), unlike every other field in that panel.
+- **Mandatory to generate a note**: `NoteGeneratorController.handleGenerateNote()` and `PrestamoNewLoanController.handleGuardarPrestamo()` both block (same pattern as the existing AD-profile-incomplete check) if `getSede()` is blank, showing a dedicated warning directing the technician to Configuración.
+- **Snapshotted onto every note, printed on every template**: `NOTE_REPORT.sede` stores the value at generation time (same "snapshot, don't reference" pattern as `technician_name`/`technician_dni`/`observations`), rendered via a `{{SEDE}}` token. On 5 of the 6 templates (`entrega.html`, `devolucion.html`, `entrega - fin de contrato.html`, `proveedor.html`, `prestamo.html`) it replaces a previously hardcoded "Campus" in the intro sentence ("En la sede {{SEDE}} de la Universidad Siglo 21..."); `remito.html` (which has no such sentence) prints it as a "Sede: {{SEDE}}" line in the header. This is independent of `NOTE_REMITO`'s own `destinatario_sede`/`remitente_sede` fields, which keep their existing, unrelated meaning.
 
 ### ViewFactory — State Persistence Across Navigation
 `ViewFactory` loads each section FXML exactly once and caches the result. When `MainController` switches sections via sidebar, it calls `viewFactory.getXxxView()` which returns the cached node. Controller instances — and their bound data — remain alive in memory for the session. This implements FR-08 (in-session data persistence).
@@ -286,10 +303,10 @@ Templates live in `src/main/resources/.../templates/`. `NoteGenerationService` s
 
 **Zero-touch pre-configuration**: `app-config.json`'s `defaults` object (`smtpPassword`, `glpiApiKey`, `dbUsername`, `dbPassword`, `adApiToken`) holds pre-encrypted values, generated via `utils.AppKeyEncryptionGenerator` (mirrors `AdminPasswordHashGenerator`'s existing CLI pattern). `ServiceLocator.provisionDefaultSecrets()` copies any of these into `APP_SETTINGS` on first startup, only for keys not already set — an admin's later edit via Settings/Base de Datos always takes precedence and is never overwritten by a shipped default. `dbUsername` was added 2026-07-13 alongside `remoteDatabase` below — before that there was no `defaults` field for it at all.
 
-**Pre-configuring a remote database before first startup** (added 2026-07-13): `app-config.json`'s top-level `remoteDatabase` object (`host`, `port` default `5432`, `dbName`) holds the **non-secret** connection fields — these are plaintext, matching how `db_host`/`db_port`/`db_name` are already stored unencrypted in `APP_SETTINGS`. `ServiceLocator.provisionDefaultSecrets()` copies them in the same one-shot, never-overwrite way as `defaults`, but only when `remoteDatabase.host` is non-blank (an empty host means "not configured," so port/dbName are skipped too rather than leaving a half-populated, host-less connection). Combined with `defaults.dbUsername`/`dbPassword`, this lets an installer ship with a shared remote PostgreSQL fully wired up — no admin has to open Base de Datos → Editar at all on a fresh machine. This replaced the old `database.baseUrl` field (`AppConfig.database`, an `ApiEndpoint` like `adApi`/`glpiApi`) that was declared but **never actually read anywhere in the code** — a dead leftover from before `RemoteDatabaseService`'s JDBC host/port/dbName/username/password connection model existed, confirmed unused by a full-codebase grep before removal.
+**Pre-configuring a remote database before first startup** (added 2026-07-13): `app-config.json`'s top-level `remoteDatabase` object (`host`, `port` default `1433`, `dbName`) holds the **non-secret** connection fields — these are plaintext, matching how `db_host`/`db_port`/`db_name` are already stored unencrypted in `APP_SETTINGS`. `ServiceLocator.provisionDefaultSecrets()` copies them in the same one-shot, never-overwrite way as `defaults`, but only when `remoteDatabase.host` is non-blank (an empty host means "not configured," so port/dbName are skipped too rather than leaving a half-populated, host-less connection). Combined with `defaults.dbUsername`/`dbPassword`, this lets an installer ship with a shared remote SQL Server fully wired up — no admin has to open Base de Datos → Editar at all on a fresh machine. This replaced the old `database.baseUrl` field (`AppConfig.database`, an `ApiEndpoint` like `adApi`/`glpiApi`) that was declared but **never actually read anywhere in the code** — a dead leftover from before `RemoteDatabaseService`'s JDBC host/port/dbName/username/password connection model existed, confirmed unused by a full-codebase grep before removal.
 
 ### SQLite Local Database
-`DatabaseService` initializes a local `data/noteapp.db` on first run. The schema mirrors the planned PostgreSQL structure exactly (same table names and column types), so migration will require only a JDBC driver swap and connection string change. The `Generic` brand is inserted as protected default data on initialization.
+`DatabaseService` initializes a local `data/noteapp.db` on first run. The schema mirrors the remote SQL Server structure closely (same table names, column types differing only where the dialect requires it — see `RemoteDatabaseService.ensureSchema()`). The `Generic` brand is inserted as protected default data on initialization.
 
 ### Admin Mode (AdminSession)
 `AdminSession` is a singleton that tracks whether an admin session is currently active. Controllers register listeners via `addOnActivateListener` / `addOnDeactivateListener`. Activation is done via `SettingsController.handleToggleAdmin()` which calls `requireAdmin(Runnable)` — this checks if a password is configured (`AdminAuthService.isConfigured()`), prompts for it, verifies against the stored SHA-256 hash, then fires the callback. Sessions auto-expire after 15 minutes of inactivity. `SettingsController`'s own configuration fields (A/F format, SMTP, GLPI API) and its "Guardar Configuración" button are disabled unless admin mode is active, via the same listener pair (`SettingsController.updateFieldEditability()`).
@@ -298,12 +315,22 @@ Templates live in `src/main/resources/.../templates/`. `NoteGenerationService` s
 `NoteDetailController.open(NoteReport, boolean adminMode, Window owner, Runnable onUpdate)` opens a floating stage showing the rendered HTML note alongside a scrollable item card list. When `adminMode` is true and `AdminSession.getInstance().isActive()`, each PENDING item's card includes Sync and Reject buttons. The `adminMode` flag is set from the caller by reading `AdminSession.getInstance().isActive()` at open time. No separate admin tab or view — actions are embedded directly in the popup.
 
 ### History Filtering
-`HistoryController` uses `MenuButton` with `CustomMenuItem(CheckBox, false)` to build non-closing multi-select dropdowns for note type, GLPI status, and equipment type/brand/model. Equipment dropdowns cascade: tipo → refreshBrandMenu() → refreshModelMenu() each time a selection changes. Distinct values for type/brand/model are read from `NOTE_ITEM` historical data (not the current catalog) via `IHistoryService.getDistinctItemTypes/Brands/Models()`. Filter state is assembled into a `HistoryFilter` and passed to `IHistoryService.getFiltered()`. **Autor filter** (added 2026-07-10): a free-text field alongside the recipient search, matching `COALESCE(r.technician_name, tp.name)` — repeated inline in `SqliteHistoryService.getFiltered()`'s WHERE clause rather than referencing the `author_name` SELECT alias, since PostgreSQL doesn't allow referencing a SELECT alias in WHERE (SQLite tolerates it, but this query runs against both — see `ServiceLocator`'s dual wiring of `SqliteHistoryService` for local vs. remote).
+`HistoryController` uses `MenuButton` with `CustomMenuItem(CheckBox, false)` to build non-closing multi-select dropdowns for note type, GLPI status, and equipment type/brand/model. Equipment dropdowns cascade: tipo → refreshBrandMenu() → refreshModelMenu() each time a selection changes. Distinct values for type/brand/model are read from `NOTE_ITEM` historical data (not the current catalog) via `IHistoryService.getDistinctItemTypes/Brands/Models()`. Filter state is assembled into a `HistoryFilter` and passed to `IHistoryService.getFiltered()`. **Autor filter** (added 2026-07-10): a free-text field alongside the recipient search, matching `COALESCE(r.technician_name, tp.name)` — repeated inline in `SqliteHistoryService.getFiltered()`'s WHERE clause rather than referencing the `author_name` SELECT alias, since SQL Server doesn't allow referencing a SELECT alias in WHERE (SQLite tolerates it, but this query runs against both — see `ServiceLocator`'s dual wiring of `SqliteHistoryService` for local vs. remote).
 
 **Refresh on section open** (fixed 2026-07-10): `ViewFactory` caches every section's controller for the session (see below), so `HistoryController.initialize()`'s one-time `loadGlobal()` call meant a note generated after the technician's first visit to Historial never appeared until they manually clicked "Buscar". `MainController.handleShowHistory()` now calls the newly-exposed `viewFactory.getHistoryController().refresh()` on every navigation to History, which re-runs `loadGlobal(buildFilter())` — reusing whatever filters are currently set rather than resetting them. `ProviderNoteController.refreshProviders()` (see below) is the same fix applied to the provider-catalog dropdown.
 
 ### Provider Catalog (EquipmentProvider)
-`PROVIDER` (flat: `id`, `name UNIQUE` — no type/brand/model structure, unlike the equipment catalog) backs `ProviderNoteController`'s "PROVEEDOR" `ComboBox`. **Fixed 2026-07-10**: this field used to be entirely non-functional — a `ComboBox<String>` never populated with items and never made editable anywhere in the code, so `getProviderName()` always returned `""` and every provider note generated through the live UI silently saved with a blank provider name. `IEquipmentService` gained `getAllProviders()`/`addProvider()`/`renameProvider()`/`removeProvider()`, implemented in `SqliteEquipmentService` (same `ON CONFLICT (name) DO NOTHING` pattern as `addBrand()`), `CachingEquipmentService` (remote-first, local-fallback, same as the rest of the interface), and `MockEquipmentService` (in-memory, test-only). Providers are managed like Types/Brands/Models — a fourth "PROVEEDORES" list in `DatabaseSectionController`/`DatabaseSectionView.fxml`, admin-gated via the same `requireAdmin()` used by the other three lists — but deliberately excluded from the equipment tables' cascade, since a provider isn't tied to a type or brand. `cmbProviderSearch` is intentionally left non-editable (strict selection from the admin-curated list, not free text) — chosen over free text specifically to avoid typos/inconsistent naming across notes, an explicit user decision. `ProviderNoteController.validateAndShowErrors()` now rejects note generation with no provider selected (`lblProviderStatus`), a check that was previously moot since the field could never hold a real value anyway.
+`PROVIDER` (flat: `id`, `name UNIQUE`, `deprecated` — no type/brand/model structure, unlike the equipment catalog) backs `ProviderNoteController`'s "PROVEEDOR" `ComboBox`. **Fixed 2026-07-10**: this field used to be entirely non-functional — a `ComboBox<String>` never populated with items and never made editable anywhere in the code, so `getProviderName()` always returned `""` and every provider note generated through the live UI silently saved with a blank provider name. `IEquipmentService` gained `getAllProviders()`/`addProvider()`/`renameProvider()`/`removeProvider()`, implemented in `SqliteEquipmentService`, `CachingEquipmentService` (remote-first, local-fallback, same as the rest of the interface), and `MockEquipmentService` (in-memory, test-only). Providers are managed like Types/Brands/Models — a fourth "PROVEEDORES" list in `DatabaseSectionController`/`DatabaseSectionView.fxml`, admin-gated via the same `requireAdmin()` used by the other three lists — but deliberately excluded from the equipment tables' cascade, since a provider isn't tied to a type or brand. `cmbProviderSearch` is intentionally left non-editable (strict selection from the admin-curated list, not free text) — chosen over free text specifically to avoid typos/inconsistent naming across notes, an explicit user decision. `ProviderNoteController.validateAndShowErrors()` now rejects note generation with no provider selected (`lblProviderStatus`), a check that was previously moot since the field could never hold a real value anyway. **Catalog-FK redesign (2026-07-22)**: `addProvider`/`renameProvider`/`removeProvider` now follow the same deprecate-and-reactivate pattern as Type/Brand/Model (see `docs/database.md`'s "Catalog-FK redesign" note) instead of a straight insert/update/delete, and `NOTE_PROVEEDOR.provider_id` is a real FK into this table rather than a `provider_name` text snapshot.
+
+### Préstamos Section (internal equipment loan tracking)
+Added 2026-07-17. Closes the gap left by the existing Préstamo note type (see `docs/use-cases.md` UC-01/UC-16): generating one captured a tentative return date but gave no way to track the loan afterward. Reuses the GLPI-sync pattern (`GlpiStatus`, `NoteDetailController.buildGlpiStatusRow()`, `HistoryController`'s row-gradient coloring) for a new, orthogonal per-item dimension — `ReturnStatus` (`N_A`/`PENDING`/`RETURNED`/`LOST`) — tracked on both asset **and** countable items (unlike GLPI, which is asset-only), via 3 new `NOTE_ITEM` columns (`return_status`, `return_rejection_reason`, `return_status_updated_at`).
+
+- **Two entry points, both kept**: Generar Nota → Préstamo still prints a note (unchanged); the new Préstamos → "Cargar Nuevo Préstamo" tab (`PrestamoNewLoanController`) saves a loan directly via `IHistoryService.save()` with no HTML render/print/email step at all.
+- **Área / Evento**: an optional context field (`NOTE_ENTREGA_DEVOLUCION.area_evento`) — the signer is still always Name+DNI; this just records e.g. "Área de Sistemas" or "Capacitación anual" alongside it.
+- **`ItemDialogHost`/`AdSearchHost`**: two minimal callback interfaces extracted so `PrestamoNewLoanController` can reuse the existing item-add and AD-search popups (previously hard-typed to `NoteGeneratorController`/`UserNoteController`) without duplicating either ~700-/~150-line controller wholesale — see CLAUDE.md's "Préstamos section" for the full rationale (a deliberate, scoped exception to the no-shared-abstraction convention).
+- **`PrestamoHistoryController`**: a Préstamo-scoped, GLPI-free sibling of `HistoryController`, reusing the existing `IHistoryService.getFiltered()` (profile type fixed to Préstamo) — no new listing query. Adds an overdue "Vencido" visual (red border) when a row has pending items past its tentative return date.
+- **`PrestamoDetailController`**: a separate popup (not a branch inside `NoteDetailController`, which stays GLPI-only) showing per-item return status with admin-gated "Validar devolución"/"Marcar como perdido" actions, mirroring `buildGlpiStatusRow()`'s exact admin-gating pattern.
+- **No new header-level table** — `profile_type = 'PRÉSTAMO'` plus the existing `motivo` column (tentative date) are enough to identify and list a Préstamo note.
 
 ---
 
@@ -401,4 +428,20 @@ flowchart LR
 
     ProviderNoteController -->|Motivo options| ConfigService
     ProviderNoteController -->|provider catalog| ServiceLocator
+
+    RemitoNoteController -->|Remitente Área/Sede defaults| ConfigService
+
+    PrestamosController --> PrestamoNewLoanController
+    PrestamosController --> PrestamoHistoryController
+
+    PrestamoNewLoanController --> ServiceLocator
+    PrestamoNewLoanController -->|AD search| IADService
+    PrestamoNewLoanController -->|item catalog| IEquipmentService
+    PrestamoNewLoanController -->|direct save, no HTML/print| IHistoryService
+
+    PrestamoHistoryController -->|filtered queries| ServiceLocator
+    PrestamoHistoryController -->|adminMode flag to PrestamoDetailController| AdminSession
+
+    PrestamoDetailController -->|return-status updates| ServiceLocator
+    PrestamoDetailController -->|gates Validar/Marcar como perdido| AdminSession
 ```

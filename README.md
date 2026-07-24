@@ -57,9 +57,9 @@ Two JSON files in `desktop-app/config/` control runtime behavior. **Do not commi
 | `smtp.senderAddress` | Sender email address |
 | `adApi.baseUrl` | REST API URL for AD lookups |
 | `glpiApi.baseUrl` | GLPI REST API URL |
-| `remoteDatabase.host` | Remote PostgreSQL host — not a secret; leave `""` to keep the app on local SQLite |
-| `remoteDatabase.port` | Remote PostgreSQL port (defaults to `5432`) |
-| `remoteDatabase.dbName` | Remote PostgreSQL database name |
+| `remoteDatabase.host` | Remote SQL Server host — not a secret; leave `""` to keep the app on local SQLite |
+| `remoteDatabase.port` | Remote SQL Server port (defaults to `1433`) |
+| `remoteDatabase.dbName` | Remote SQL Server database name |
 | `noteItemLimit` | Max items per note before showing a warning |
 
 SMTP password and GLPI API key are stored encrypted in the local SQLite database (`AppKeyEncryptionService`, AES-256/GCM) — never in this file. Same for the remote database's username/password — see below.
@@ -77,7 +77,7 @@ mvn exec:java -Dexec.mainClass="com.bunshock.note_app_for_it_frontend.utils.AppK
 ```json
 "remoteDatabase": {
   "host": "db.example.org",
-  "port": 5432,
+  "port": 1433,
   "dbName": "notas_it"
 },
 "defaults": {
@@ -89,7 +89,7 @@ mvn exec:java -Dexec.mainClass="com.bunshock.note_app_for_it_frontend.utils.AppK
 }
 ```
 
-On first startup, any of these whose `APP_SETTINGS` key isn't already set gets copied in — `remoteDatabase.host`/`port`/`dbName` (plaintext, only if `host` is non-blank) and the five `defaults` entries (pre-encrypted). Once an admin edits a value via Settings or Base de Datos, that always takes precedence and the shipped default is never consulted again for that key. Leave a field as `""` if you don't want to pre-configure it. This is the only way to have the app connect to a shared remote database with zero manual setup on a fresh machine — see [Remote database (PostgreSQL)](#remote-database-postgresql) below for the equivalent one-time manual setup via the UI.
+On first startup, any of these whose `APP_SETTINGS` key isn't already set gets copied in — `remoteDatabase.host`/`port`/`dbName` (plaintext, only if `host` is non-blank) and the five `defaults` entries (pre-encrypted). Once an admin edits a value via Settings or Base de Datos, that always takes precedence and the shipped default is never consulted again for that key. Leave a field as `""` if you don't want to pre-configure it. This is the only way to have the app connect to a shared remote database with zero manual setup on a fresh machine — see [Remote database (SQL Server)](#remote-database-sql-server) below for the equivalent one-time manual setup via the UI.
 
 **Security note**: all five secrets share one fixed encryption key embedded in the app (`AppKeyEncryptionService`) — this trades some security for zero-touch deployability across many machines (see `CLAUDE.md`'s Known issues/gotchas for the full trade-off discussion). Anyone with the installed application can, in principle, extract this key and decrypt these values from any copy of `data/noteapp.db` — this is materially weaker than the previous per-account Windows DPAPI approach, and was an explicit, discussed decision, not an oversight.
 
@@ -132,17 +132,19 @@ Saving tests the connection in the background (using the currently resolved tech
 - **Any of the 5 fields above can come back as a JSON array instead of a plain string** for some accounts (a multi-valued directory attribute — confirmed on both `dni` and `mail` in practice). The app always uses the first value in that case (empty array → empty string).
 - **`dni` and `displayName` are normalized before display**: dots are stripped from `dni` (`"00.000.000"` → `"00000000"`) and the comma is stripped from `displayName` (`"Apellido, Nombre"` → `"Apellido Nombre"`, order kept as-is), since the destination fields only accept digits and letters/spaces respectively.
 
-### Remote database (PostgreSQL)
+### Remote database (SQL Server)
 
-The app runs fully on local SQLite by default. To point it at a shared PostgreSQL instance instead, go to **Base de Datos** → **✏ Editar** (admin mode required) and enter host, port, database name, username, and password — stored in `data/noteapp.db`'s `APP_SETTINGS` table (host/port/name in plaintext, username/password encrypted via `AppKeyEncryptionService`). Saving tests the connection before persisting, same confirm-on-failure flow as the AD API above. Alternatively, pre-configure all five in `app-config.json` before the very first launch (see [Pre-configuring default secrets](#pre-configuring-default-secrets-zero-touch-first-run) above) so a fresh install connects with zero manual setup. The **Probar conexión** button re-checks connectivity on demand without opening the edit dialog, and reports the remote and local databases independently: "ESTADO REMOTO" shows orange ("no configurada") if no remote database is set up at all, red if one is configured but unreachable, or green if it connects successfully; "ESTADO LOCAL" always tests and reports the local SQLite database separately. If the remote database is unreachable, the app automatically falls back to local SQLite (write-through cache: writes go to remote first, then local; reads try remote first, fall back to local).
+The app runs fully on local SQLite by default. To point it at a shared Microsoft SQL Server (Express or full edition) instance instead, go to **Base de Datos** → **✏ Editar** (admin mode required) and enter host, port, database name, username, and password — stored in `data/noteapp.db`'s `APP_SETTINGS` table (host/port/name in plaintext, username/password encrypted via `AppKeyEncryptionService`). Saving tests the connection before persisting, same confirm-on-failure flow as the AD API above. Alternatively, pre-configure all five in `app-config.json` before the very first launch (see [Pre-configuring default secrets](#pre-configuring-default-secrets-zero-touch-first-run) above) so a fresh install connects with zero manual setup. The **Probar conexión** button re-checks connectivity on demand without opening the edit dialog, and reports the remote and local databases independently: "ESTADO REMOTO" shows orange ("no configurada") if no remote database is set up at all, red if one is configured but unreachable, or green if it connects successfully; "ESTADO LOCAL" always tests and reports the local SQLite database separately. If the remote database is unreachable, the app automatically falls back to local SQLite (write-through cache: writes go to remote first, then local; reads try remote first, fall back to local).
 
-The app creates its own schema automatically on first connect (`RemoteDatabaseService.ensureSchema()`) — a fresh, empty PostgreSQL database is all that's required. **`desktop-app/database/postgresql/`** has ready-to-run scripts for setting one up, including starting data for the equipment catalog (Type/Brand/Model) and the provider catalog (Nota de Proveedor's dropdown), and a full remote-server setup walkthrough (creating the DB/role, allowing remote connections, running the scripts) — see that folder's `README.md`. The seed script is a **template** with placeholder rows only, not real data (same pattern as `app-config.json.example`) — copy it and fill in your organization's actual catalog before running it; never commit the real, filled-in file (already gitignored). S/N validation rules are configured through the app's own UI, not a SQL script — same README explains why.
+**SQL Server Express note**: it commonly installs as a named instance (`SQLEXPRESS`) with a dynamic port, discovered via SQL Server Browser rather than a fixed port the way PostgreSQL/MySQL default to. This app connects with a plain host:port — no named-instance discovery — so assigning the instance a **static TCP port** via SQL Server Configuration Manager is a required one-time setup step, not optional. See `desktop-app/database/sqlserver/README.md` for the exact steps.
 
-**Already built up a real catalog locally before setting up a remote server?** `CatalogMigrationTool` (`mvn exec:java -Dexec.mainClass="com.bunshock.note_app_for_it_frontend.utils.CatalogMigrationTool"` from `desktop-app/`) copies the equipment catalog — Type, Brand, Brand-Type links, Model, S/N validation rules, Provider — from the local `data/noteapp.db` into a PostgreSQL database, correctly remapping autoincrement ids instead of copying them as-is. It creates the schema itself and prompts interactively for the connection details; safe to re-run as more local data is added. See `desktop-app/database/postgresql/README.md` for details. History isn't migrated by this tool — only the equipment catalog.
+The app creates its own schema automatically on first connect (`RemoteDatabaseService.ensureSchema()`) — a fresh, empty SQL Server database is all that's required. **`desktop-app/database/sqlserver/`** has ready-to-run scripts for setting one up, including starting data for the equipment catalog (Type/Brand/Model) and the provider catalog (Nota de Proveedor's dropdown), and a full remote-server setup walkthrough (installing Express, enabling TCP/IP with a static port, creating the DB/login, running the scripts) — see that folder's `README.md`. The seed script is a **template** with placeholder rows only, not real data (same pattern as `app-config.json.example`) — copy it and fill in your organization's actual catalog before running it; never commit the real, filled-in file (already gitignored). S/N validation rules are configured through the app's own UI, not a SQL script — same README explains why.
+
+**Already built up a real catalog locally before setting up a remote server?** `CatalogMigrationTool` (`mvn exec:java -Dexec.mainClass="com.bunshock.note_app_for_it_frontend.utils.CatalogMigrationTool"` from `desktop-app/`) copies the equipment catalog — Type, Brand, Brand-Type links, Model, S/N validation rules, Provider — from the local `data/noteapp.db` into a SQL Server database, correctly remapping autoincrement ids instead of copying them as-is. It creates the schema itself and prompts interactively for the connection details; safe to re-run as more local data is added. See `desktop-app/database/sqlserver/README.md` for details. History isn't migrated by this tool — only the equipment catalog.
 
 ### `config/mock-equipment.json`
 
-Contains placeholder equipment types, brands, models, and S/N validation rules used by `MockEquipmentService`. Replace with real data once connected to the PostgreSQL backend. Schema mirrors the production database structure.
+Contains placeholder equipment types, brands, models, and S/N validation rules used by `MockEquipmentService`. Replace with real data once connected to the SQL Server backend. Schema mirrors the production database structure.
 
 The `snValidations` array defines per-model serial number rules:
 
@@ -178,6 +180,7 @@ Each template is a plain `.html` file. The template engine replaces `{{TOKEN}}` 
 | `entrega - fin de contrato.html` | Fin de Contrato notes |
 | `prestamo.html` | Préstamo notes |
 | `proveedor.html` | Entrega - Proveedor notes |
+| `remito.html` | Remito de Envío notes — landscape orientation, no signatures, DNI, Motivo, or Observaciones, matching its physical source document |
 
 To customize the look of a generated note, edit the corresponding HTML file — no Java changes needed. The CSS inside the template controls print layout. Common tokens available in both templates:
 
@@ -205,7 +208,7 @@ mvn test
 
 ### Note Generation
 
-- **5 note profiles**: Entrega, Devolución, Fin de Contrato, Préstamo, Entrega - Proveedor
+- **6 note profiles**: Entrega, Devolución, Fin de Contrato, Préstamo, Entrega - Proveedor, Remito de Envío
 - Motivo dropdown (configurable per profile type) — mandatory for Entrega, Devolución, Fin de Contrato, and Provider notes
 - Provider notes select the provider from an admin-managed catalog (see [Database Section](#database-section-base-de-datos)) — not free text, to keep naming consistent across notes; generation is blocked with an inline message if none is selected
 - HTML template rendering with `{{TOKEN}}` substitution and `{{#ITEMS}}` loops
@@ -252,15 +255,24 @@ mvn test
 - **Admin GLPI actions**: in admin mode, PENDING item cards in the popup show Sync and Reject buttons; rejection requires entering a reason; the history table refreshes after each action
 - **Auto-refreshes on open**: every time you navigate to Historial, the table reloads with whatever filters are currently set (not reset) — a note generated since your last visit shows up immediately, no manual "Buscar" needed
 
+### Préstamos (Internal Equipment Loans)
+
+- **Two ways to create a Préstamo**: the existing Generar Nota → Préstamo flow (prints a note), or the new "Cargar Nuevo Préstamo" tab, which saves a loan directly to history with no print/email/rendered note at all
+- **Cargar Nuevo Préstamo**: recipient Name/DNI with AD search, an optional "Área / Evento" context field, a mandatory tentative return date (defaults to next working day, can't be in the past), and the same asset/countable item tables and item dialog as Generar Nota
+- **Historial de Préstamos**: a Préstamo-scoped history table, colored by return status (green = devuelto, orange = pendiente, red = perdido, gradient for mixed) with an overdue "(Vencido)" flag for pending loans past their tentative return date
+- **Filters**: date range, Estado de Devolución (multi-select), destinatario/autor text search
+- **Return validation** (admin mode): double-click a loan to open its detail popup — pending items show "Validar devolución" / "Marcar como perdido" (mandatory reason) buttons; every item, asset or countable, is tracked independently of GLPI sync status
+
 ### Database Section (Base de Datos)
 
 - Admin-managed catalogs: Tipos, Marcas, Modelos (cascading), and Proveedores (flat list) — add/rename/remove, all admin-gated
 - "Generic" brand protected from deletion
 - A provider added here is immediately selectable in Nota de Proveedor's dropdown, even in a tab already open earlier in the session
-- Remote PostgreSQL connection config and connectivity test (see [Remote database (PostgreSQL)](#remote-database-postgresql) below)
+- Remote SQL Server connection config and connectivity test (see [Remote database (SQL Server)](#remote-database-sql-server) below)
 
 ### Settings
 
+- **Sede**: a per-technician site value (own field, own "Guardar" button, not admin-gated — any technician sets their own), shown in the sidebar next to the welcome message. Mandatory to generate a note or register a Préstamo — blocked with a warning if unset, same as an incomplete AD profile. Snapshotted onto every note at generation time and printed on it (replaces the previously hardcoded "Campus" text on 5 of the 6 templates; shown as a header line on Remito de Envío)
 - A/F format configuration with live preview
 - SMTP credentials (password encrypted via `AppKeyEncryptionService` — never stored in plaintext)
 - GLPI API URL and API Key (key encrypted via `AppKeyEncryptionService` — never stored in plaintext)
@@ -291,7 +303,7 @@ notes-app-for-it/
 ├── desktop-app/           — JavaFX desktop application
 │   ├── config/            — Runtime config files (not compiled into JAR)
 │   ├── data/              — SQLite database (created at first run, gitignored)
-│   ├── database/postgresql/ — Remote DB setup: schema + starting equipment/provider catalog SQL scripts (example template, not real data)
+│   ├── database/sqlserver/ — Remote DB setup: schema + starting equipment/provider catalog SQL scripts (example template, not real data)
 │   └── src/
 │       ├── main/java/     — Application source
 │       ├── main/resources/— FXML views, CSS, HTML note templates
@@ -309,4 +321,4 @@ notes-app-for-it/
 | [`docs/architecture.md`](docs/architecture.md) | Package structure, design patterns, startup sequence, data flow |
 | [`docs/use-cases.md`](docs/use-cases.md) | User-facing use cases (UC-01 through UC-15) |
 | [`docs/requirements.md`](docs/requirements.md) | Functional and non-functional requirements |
-| [`docs/database.md`](docs/database.md) | SQLite schema and planned PostgreSQL migration path |
+| [`docs/database.md`](docs/database.md) | SQLite schema and planned SQL Server migration path |

@@ -34,7 +34,7 @@
 
 - **FR-13**: The system shall require an Admin Password or Environment Key to modify critical settings (like Server IP). All general configuration fields in Settings (A/F format, SMTP, GLPI API URL/Key, AD API URL/Token) and the "Guardar Configuración" button are disabled unless an admin session is active. Saving a new database or AD API connection tests it first and requires confirmation before persisting if the test fails.
 
-- **FR-14**: The system shall protect the "Generic" brand entry from deletion.
+- **FR-14**: The system shall protect the "Genérico / Otro" brand entry from deletion.
 
 - **FR-15**: The system shall allow administrators to activate a timed admin session (15-minute inactivity expiry) via a password-protected toggle in Settings.
 
@@ -49,6 +49,22 @@
 - **FR-19**: The system shall support exporting the current filtered history to CSV (UTF-8 with BOM) and Excel (.xlsx) formats via a file-save dialog.
 
 - **FR-20**: In admin mode, the note detail popup shall display Sync and Reject action buttons for each PENDING asset item, allowing per-item GLPI status management without leaving the history view.
+
+##### 6. Internal Equipment Loans (Préstamos)
+
+- **FR-21**: The system shall allow a technician to log a Préstamo (internal equipment loan) directly, independent of the existing printed-note generation flow, capturing recipient Name/DNI, an optional Área/Evento context field, a mandatory tentative return date (not in the past), and one or more equipment items — without producing a printed note, email, or rendered HTML.
+
+- **FR-22**: The system shall track a return status (Pendiente/Devuelto/Perdido) per item on every Préstamo note, for both serialized (asset) and countable items, independent of GLPI sync status.
+
+- **FR-23**: The Préstamos Historial view shall color each row by aggregate return status (solid green/orange/red, or a proportional gradient for mixed statuses) and visually flag any row with pending items past its tentative return date as overdue.
+
+- **FR-24**: In admin mode, the Préstamo detail popup shall allow validating a pending item as returned or marking it as lost (with a mandatory reason), without affecting that item's separate GLPI sync status.
+
+- **FR-25**: The system shall allow a technician to generate a Remito de Envío note (a transport receipt for equipment shipped to another sede), capturing free-text Destinatario Nombre/Área/Sede and a read-only Remitente Nombre/Área/Sede (sourced from the technician's session and a configurable default), with no Motivo, no DNI, no signatures, and no Observaciones Generales field — matching the profile's physical source document. Assets on a Remito shall follow the same GLPI Pendiente sync workflow as Entrega/Devolución/Proveedor notes.
+
+##### 7. Technician Identity & Traceability
+
+- **FR-26**: The system shall require each technician to configure a Sede (site) value, editable by any technician (not admin-gated) from Settings, and shall block note generation (and direct Préstamo entry) with a warning until it is set — the same traceability requirement already enforced for the technician's AD-resolved Name/DNI. The configured Sede shall be displayed in the sidebar and snapshotted onto every generated note, printed on the note itself.
 
 ### Non-Functional Requirements (NFR)
 
@@ -188,3 +204,17 @@
     - ***Acceptance Criteria***:
         - A status bar or header icon must show a green/red indicator for the Spring Boot API connection.
         - A warning message must appear if the app falls back to the local `.sqlite` cache.
+
+##### 7. Internal Equipment Loans (Préstamos)
+
+- **US 7.1** - **Direct Préstamo Entry**: As a technician, I want to log an internal equipment loan without going through the full note-generation/print flow, so that I can quickly record a loan that doesn't need (or already has) its own physical paperwork.
+    - ***Acceptance Criteria***:
+        - The "Cargar Nuevo Préstamo" form captures recipient Name/DNI (with AD search), an optional Área/Evento field, a mandatory tentative return date, and equipment items.
+        - Saving does not open a print dialog, send an email, or render an HTML note — it saves directly to history.
+        - The existing Generar Nota → Préstamo flow (which does print) is unaffected and remains available alongside this one.
+
+- **US 7.2** - **Préstamo Return Tracking**: As a technician or administrator, I want to see which loaned items have been returned, are still pending, or were lost, so that I can follow up on overdue loans without cross-referencing a paper log.
+    - ***Acceptance Criteria***:
+        - Every item on a Préstamo note (asset or countable) has its own return status, independent of GLPI sync status.
+        - The Préstamos Historial table color-codes rows by return status and flags overdue pending loans.
+        - Only an active admin session can mark an item as returned or lost; marking an item lost requires a reason.

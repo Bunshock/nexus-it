@@ -19,6 +19,7 @@
 **Alternate Flow A — AD unavailable:** Fields are filled manually  
 **Alternate Flow B — Item limit exceeded:** Warning shown; second note recommended  
 **Alternate Flow C — Print cancelled:** If "Imprimir" is checked and the technician cancels the OS print dialog, the whole generation is aborted — no email is sent and no History entry is created; status shows "Impresión cancelada — nota no generada" and the preview popup stays open so the technician can retry
+**Alternate Flow D — Missing technician profile or Sede:** Generation is blocked with a warning popup if the technician's AD profile (Name/DNI, resolved via Mi Perfil) or Sede (set in Configuración) isn't resolved/configured yet — every note must be traceable to both the technician and the site it was generated at
 
 ---
 
@@ -130,7 +131,7 @@ Same as UC-01 but with profile "FIN DE CONTRATO". Used for employees leaving the
 1. Four lists shown: Types, Brands, Models, Proveedores
 2. Selecting a Type filters the Brands list; selecting a Brand filters the Models list (Proveedores is a flat, independent list — no cascade)
 3. Add/Renombrar/Eliminar on any list prompts for the admin password if admin mode isn't already active (same `requireAdmin` gate as Configuración's fields)
-4. "Generic" brand is protected from deletion
+4. "Genérico / Otro" brand is protected from deletion
 5. A provider added here immediately becomes selectable in Nota de Proveedor's "PROVEEDOR" dropdown (UC-04) — including for that tab if it was already open earlier in the session, which re-fetches the provider list every time it's shown
 
 **Alternate Flow — Remote DB:** Technician enters DB URL; app verifies connectivity before accepting
@@ -237,8 +238,74 @@ Same as UC-01 but with profile "FIN DE CONTRATO". Used for employees leaving the
 4. Sidebar welcome message ("Hola, {nombre}!" / "Usuario: {username}") updates immediately to reflect any change
 5. A separate "Nombre para mostrar" field (max 20 characters), always editable (no admin mode required), lets the technician set a personal greeting-name preference used only for the sidebar welcome message. It's pre-filled with a suggested default (the last word of the AD full name — the given name, since AD's stored order is "Apellido Nombre"). Clicking its own "Guardar" persists the preference locally, keyed by the technician's username, so it survives app restarts and AD refreshes
 6. Clearing the field to blank and saving reverts the welcome message to the suggested default. A square reset button (↺) next to the field does this in one click — it clears the field and saves, equivalent to step 6 without manually emptying the field first
+7. A separate "SEDE" field, in Configuración (not Mi Perfil), always editable (no admin mode required), lets the technician set their own site. It's shown in the sidebar next to the welcome message and printed on every note the technician generates — it's mandatory: generating a note or registering a Préstamo is blocked with a warning until it's set
 
 **Alternate Flow A — AD lookup fails:** A warning popup (and Profile's status label) distinguishes "user not found in AD" from "could not connect to AD" from "no Windows domain session available"; the four identity fields stay empty and read-only until a successful refresh or an admin override. Sidebar shows "Perfil no configurado" under the welcome message. The "Nombre para mostrar" field is unaffected by this failure (it's independent of AD identity), but can't be saved without a resolved username to key it by.
 **Alternate Flow B — Admin mode active:** The four identity fields become editable; Administrator can manually enter or correct Name, Username, DNI, and Email; "Guardar" commits the override for the current session only — lost on the next AD refresh or app restart, not written to any database table.
 
-**Note:** The four AD identity fields (Name, Username, Email, DNI) are session-only and never stored in a database table. When a note is generated, the current session's Name and DNI are copied as plain text directly onto that note's history record (not a reference to a shared profile row), so historical notes stay accurate even if the technician's AD identity changes later. The "Nombre para mostrar" preference is the one exception — it's a personal display preference independent of AD identity, so it's persisted locally (`APP_SETTINGS`, keyed by username) and deliberately survives both AD refreshes and app restarts.
+**Note:** The four AD identity fields (Name, Username, Email, DNI) are session-only and never stored in a database table. When a note is generated, the current session's Name and DNI are copied as plain text directly onto that note's history record (not a reference to a shared profile row), so historical notes stay accurate even if the technician's AD identity changes later. The "Nombre para mostrar" preference is the one exception — it's a personal display preference independent of AD identity, so it's persisted locally (`APP_SETTINGS`, keyed by username) and deliberately survives both AD refreshes and app restarts. Sede is a second such exception (set in Configuración, not Mi Perfil) — also persisted locally per technician username, and, unlike every other identity field, also snapshotted onto the note itself (`NOTE_REPORT.sede`) and printed on it, since it must stay mandatory and traceable per note.
+
+---
+
+## UC-16 — Log a Préstamo Directly (Cargar Nuevo Préstamo)
+
+**Actor:** IT Technician
+**Trigger:** Clicks "Préstamos" in the sidebar, then the "CARGAR NUEVO PRÉSTAMO" toggle
+**Preconditions:** Technician profile is resolved (Name + DNI), same requirement as any other note generation
+
+**Main Flow:**
+1. Technician fills recipient Name/DNI (manually or via "Buscar en AD", same search as UC-07)
+2. Optionally fills "Área / Evento" (e.g. a department or event the loan is for — the signer is still the person in step 1, this is just extra context)
+3. Sets "Fecha tentativa de devolución" (defaults to the next working day; cannot be a past date)
+4. Adds equipment items via the same item dialog as UC-05 (asset and/or countable)
+5. Clicks "Guardar Préstamo"
+6. Loan is saved directly to history — **no print dialog, no email, no rendered note is shown** — and a success message appears; the form clears
+
+**Alternate Flow A — Missing technician profile or Sede:** Same warning as UC-01's Alternate Flow D
+**Alternate Flow B — Validation failure:** Same inline red feedback as UC-01 (Name/DNI pattern, missing fecha tentativa, no items added)
+
+**Note:** This is a second, deliberately separate way to create a Préstamo alongside the existing Generar Nota → Préstamo flow (UC-01), which still prints a physical note for the paper-folder process. Neither replaced the other — a loan logged here has no accompanying printed note, so it's meant for cases where the physical paperwork is handled separately (or not needed).
+
+---
+
+## UC-17 — View and Validate Préstamo Returns (Historial de Préstamos)
+
+**Actor:** IT Technician (view only); IT Administrator (validate/reject returns)
+**Trigger:** Clicks "Préstamos" in the sidebar, then the "HISTORIAL DE PRÉSTAMOS" toggle
+
+**Main Flow:**
+1. Table shows every Préstamo note (from either UC-01 or UC-16), with Fecha, Autor, Destinatario, Ítems, and Estado de Devolución columns
+2. Each row is colored by return status: green (all items returned), orange (all pending), red (all lost), or a proportional gradient when mixed — same visual language as History's GLPI status coloring
+3. A row with pending items whose tentative return date has passed shows an additional red outline and "(Vencido)" in the status text
+4. Technician applies optional filters: date range, Estado de Devolución (multi-select: Pendiente/Devuelto/Perdido/Mixto/Vencido), destinatario/autor text search
+5. Double-clicking a row opens the Préstamo detail popup
+
+**Alternate Flow — Admin mode active:**
+1. Admin opens the detail popup; PENDING items show "Validar devolución" and "Marcar como perdido" buttons
+2. Admin clicks "Validar devolución" → item status updates to RETURNED; card refreshes
+3. Admin clicks "Marcar como perdido" → a mandatory reason dialog appears; on confirm, status updates to LOST
+4. After any action, the Préstamos table in the background refreshes to reflect the updated return counts
+
+**Note:** This popup is separate from the regular History detail popup (UC-12) — reopening a Préstamo note from the regular Historial section shows only its GLPI sync status, not return status; return validation is only available from this Préstamos section.
+
+---
+
+## UC-18 — Generate a Remito de Envío Note
+
+**Actor:** IT Technician
+**Trigger:** Selects "REMITO DE ENVÍO" in Generar Nota, when equipment is being physically shipped to another sede
+**Preconditions:** Technician profile is resolved (Name + DNI), same requirement as any other note generation
+
+**Main Flow:**
+1. Technician selects "REMITO DE ENVÍO" (third toggle, alongside "NOTA PARA USUARIO"/"NOTA PARA PROVEEDOR")
+2. Fills Destinatario Nombre, Área, and Sede (all free text — Sede is a stand-in until a dedicated Sede catalog exists)
+3. Fills Remitente Nombre (the IT Support coordinator sending the shipment — not necessarily the technician generating the note; always starts blank, no default) and, if needed, adjusts Remitente Área/Sede (both pre-filled from `app-config.json`'s `remito.remitenteArea`/`remitenteSede`, but editable per note)
+4. Adds equipment items via the same item dialog as UC-05 (asset and/or countable) — the shared equipment tables and the note is subject to the same item-limit warning as any other note type
+5. Clicks "Generar Reporte y Registrar"
+6. Preview popup shows the rendered note; technician selects Print / Email as usual
+7. Note is printed/sent; report saved to history
+
+**Alternate Flow A — Missing technician profile or Sede:** Same warning as UC-01's Alternate Flow D
+**Alternate Flow B — Validation failure:** Inline red feedback if any Destinatario or Remitente field is blank, or a Nombre field contains anything other than letters and single spaces
+
+**Note:** Deliberately different from every other note type, matching its physical source document exactly: **no Motivo field**, **no DNI printed for either party**, **no signatures at all**, and **no "Observaciones Generales" field** — the shared footer used by the other two profile types is hidden specifically when this toggle is selected. The rendered note (`remito.html`) is also the only one of the app's templates printed in **landscape**, not portrait, matching its source spreadsheet. Equipment assets on a Remito still go through the normal GLPI Pendiente → Sincronizar/Rechazar workflow (unlike Préstamo, whose assets are marked N/A) — a Remito is treated as a real custody-affecting relocation. Fully integrated into Historial (UC-08, UC-12) like every other note type — filterable, exportable, reopenable/reprintable.
