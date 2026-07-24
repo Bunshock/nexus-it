@@ -19,6 +19,8 @@
                               -fx-font-weight: bold; -fx-letter-spacing: 1.5;"/>
                 <Label fx:id="lblTitle" text="DETALLE DE NOTA" styleClass="dialog-title"/>
             </VBox>
+            <Region HBox.hgrow="ALWAYS"/>
+            <Button text="✕" onAction="#handleClose" styleClass="dialog-header-close-button"/>
         </HBox>
 
         <!-- Content row -->
@@ -50,6 +52,7 @@
                     <Separator/>
                     <HBox spacing="10" alignment="CENTER_RIGHT"
                           style="-fx-padding: 14 20;">
+                        <Button text="Reimprimir Nota" onAction="#handleReprint" styleClass="button-secondary"/>
                         <Button text="Cerrar" onAction="#handleClose" styleClass="button-secondary"/>
                     </HBox>
 

@@ -19,6 +19,8 @@
                               -fx-font-weight: bold; -fx-letter-spacing: 1.5;"/>
                 <Label text="GENERAR REPORTE" styleClass="dialog-title"/>
             </VBox>
+            <Region HBox.hgrow="ALWAYS"/>
+            <Button text="✕" onAction="#handleCancel" styleClass="dialog-header-close-button"/>
         </HBox>
 
         <!-- Content row: note preview (left) + options panel (right) -->
