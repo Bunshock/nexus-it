@@ -127,9 +127,6 @@
             </StackPane>
             <ToggleButton text="Base de Datos" fx:id="btnData" toggleGroup="$navigationGroup"
                   maxWidth="Infinity" styleClass="nav-button" onAction="#handleShowDatabase"/>
-            <ToggleButton text="Auditoría" fx:id="btnAudit" toggleGroup="$navigationGroup"
-                  maxWidth="Infinity" styleClass="nav-button" onAction="#handleShowAudit"
-                  visible="false" managed="false"/>
 
             <!-- Separator -->
             <Region maxWidth="Infinity"

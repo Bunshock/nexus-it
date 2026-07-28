@@ -13,7 +13,6 @@ import com.bunshock.note_app_for_it_frontend.services.ConfigService;
 import com.bunshock.note_app_for_it_frontend.services.IADService;
 import com.bunshock.note_app_for_it_frontend.services.IUserRoleService;
 import com.bunshock.note_app_for_it_frontend.services.MockADService;
-import com.bunshock.note_app_for_it_frontend.services.MockAuditService;
 import com.bunshock.note_app_for_it_frontend.services.MockUserRoleService;
 import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;
 import com.bunshock.note_app_for_it_frontend.services.TechnicianSessionService;
@@ -50,7 +49,6 @@ class LoginControllerTest {
     // code) — kept as its concrete Mock type here so tests can still seed a role, via
     // MockUserRoleService's own test-only setRole(), not part of the interface.
     private MockUserRoleService mockUserRoleService;
-    private MockAuditService mockAuditService;
 
     @BeforeAll
     static void initFx() {
@@ -66,8 +64,6 @@ class LoginControllerTest {
         ServiceLocator.getInstance().setAdService(new MockADService());
         mockUserRoleService = new MockUserRoleService();
         ServiceLocator.getInstance().setUserRoleService(mockUserRoleService);
-        mockAuditService = new MockAuditService();
-        ServiceLocator.getInstance().setAuditService(mockAuditService);
 
         ConfigService.getInstance().load();
         // Deterministic regardless of whatever's in this machine's real app-config.json — the
@@ -107,10 +103,6 @@ class LoginControllerTest {
         assertEquals("jperez", TechnicianSessionService.getInstance().getUsername());
         assertEquals(IUserRoleService.ROLE_ADMIN, TechnicianSessionService.getInstance().getRole());
         assertTrue(AdminSession.getInstance().isActive());
-
-        assertEquals(1, mockAuditService.getAllLogins().size());
-        assertTrue(mockAuditService.getAllLogins().get(0).isSuccess());
-        assertEquals("jperez", mockAuditService.getAllLogins().get(0).getUsername());
     }
 
     @Test
@@ -127,9 +119,6 @@ class LoginControllerTest {
 
         assertTrue(latch.await(5, TimeUnit.SECONDS), "login did not complete in time");
         assertFalse(AdminSession.getInstance().isActive());
-
-        assertEquals(1, mockAuditService.getAllLogins().size());
-        assertTrue(mockAuditService.getAllLogins().get(0).isSuccess());
     }
 
     @Test
@@ -142,9 +131,6 @@ class LoginControllerTest {
 
         waitUntilStatusContains("incorrectos");
         assertFalse(TechnicianSessionService.getInstance().isResolved());
-        waitUntilAuditHasEntry();
-        assertFalse(mockAuditService.getAllLogins().get(0).isSuccess());
-        assertEquals("INVALID_CREDENTIALS", mockAuditService.getAllLogins().get(0).getFailureReason());
     }
 
     @Test
@@ -157,9 +143,6 @@ class LoginControllerTest {
 
         waitUntilStatusContains("incorrectos");
         assertFalse(TechnicianSessionService.getInstance().isResolved());
-        waitUntilAuditHasEntry();
-        assertFalse(mockAuditService.getAllLogins().get(0).isSuccess());
-        assertEquals("INVALID_CREDENTIALS", mockAuditService.getAllLogins().get(0).getFailureReason());
     }
 
     @Test
@@ -174,13 +157,10 @@ class LoginControllerTest {
 
         waitUntilStatusContains("permisos");
         assertFalse(TechnicianSessionService.getInstance().isResolved());
-        waitUntilAuditHasEntry();
-        assertFalse(mockAuditService.getAllLogins().get(0).isSuccess());
-        assertEquals("NOT_IN_ALLOWED_GROUP", mockAuditService.getAllLogins().get(0).getFailureReason());
     }
 
     @Test
-    void profileLookupFailureIsLoggedWithItsOwnReason() throws Exception {
+    void profileLookupFailureShowsError() throws Exception {
         // A custom IADService double whose validateCredentials() always passes but search()
         // always comes back empty — reproduces the "credentials fine, but AD has no matching
         // profile" branch, which MockADService's own fixed user list can never trigger since
@@ -200,13 +180,10 @@ class LoginControllerTest {
 
         waitUntilStatusContains("perfil");
         assertFalse(TechnicianSessionService.getInstance().isResolved());
-        waitUntilAuditHasEntry();
-        assertFalse(mockAuditService.getAllLogins().get(0).isSuccess());
-        assertEquals("PROFILE_LOOKUP_FAILED", mockAuditService.getAllLogins().get(0).getFailureReason());
     }
 
     @Test
-    void adUnreachableIsLoggedWithItsOwnReason() throws Exception {
+    void adUnreachableShowsError() throws Exception {
         ServiceLocator.getInstance().setAdService(new IADService() {
             @Override public List<ADUser> search(String dni, String name, String username) { return List.of(); }
             @Override public AdCredentialResult validateCredentials(String username, String password) {
@@ -222,9 +199,6 @@ class LoginControllerTest {
 
         waitUntilStatusContains("Active Directory");
         assertFalse(TechnicianSessionService.getInstance().isResolved());
-        waitUntilAuditHasEntry();
-        assertFalse(mockAuditService.getAllLogins().get(0).isSuccess());
-        assertEquals("AD_UNREACHABLE", mockAuditService.getAllLogins().get(0).getFailureReason());
     }
 
     // ── helpers ──────────────────────────────────────────────────────
@@ -269,18 +243,5 @@ class LoginControllerTest {
             Thread.sleep(50);
         }
         fail("lblLoginStatus never showed text containing \"" + expectedSubstring + "\"");
-    }
-
-    // logLoginAttempt() runs on the same background thread, before the Platform.runLater() call
-    // waitUntilStatusContains() already waited on — so in practice the entry is already there by
-    // the time that method returns. Polling here too costs nothing and keeps this test robust
-    // against any future reordering of those two calls.
-    private void waitUntilAuditHasEntry() throws Exception {
-        long deadline = System.currentTimeMillis() + 5000;
-        while (System.currentTimeMillis() < deadline) {
-            if (!mockAuditService.getAllLogins().isEmpty()) return;
-            Thread.sleep(50);
-        }
-        fail("No LOGIN_AUDIT entry was recorded");
     }
 }

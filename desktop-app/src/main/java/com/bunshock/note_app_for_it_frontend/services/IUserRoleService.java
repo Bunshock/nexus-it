@@ -12,10 +12,8 @@ package com.bunshock.note_app_for_it_frontend.services;
  */
 public interface IUserRoleService {
 
-    String ROLE_ADMIN      = "ADMIN";
-    String ROLE_USER       = "USER";
-    /** Full ADMIN privileges, plus the Auditoría section — see the Login screen's role check. */
-    String ROLE_SUPERADMIN = "SUPERADMIN";
+    String ROLE_ADMIN = "ADMIN";
+    String ROLE_USER  = "USER";
 
     /** Defaults to ROLE_USER when the username has no row — most technicians are never promoted. */
     String getRole(String username);

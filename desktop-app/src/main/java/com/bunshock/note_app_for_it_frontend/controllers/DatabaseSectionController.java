@@ -22,7 +22,6 @@ import com.bunshock.note_app_for_it_frontend.services.DatabaseService;
 import com.bunshock.note_app_for_it_frontend.services.IEquipmentService;
 import com.bunshock.note_app_for_it_frontend.services.RemoteDatabaseService;
 import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;
-import com.bunshock.note_app_for_it_frontend.services.TechnicianSessionService;
 
 import javafx.animation.FadeTransition;
 import javafx.application.Platform;
@@ -253,8 +252,6 @@ public class DatabaseSectionController {
                 try { configuredPort = Integer.parseInt(portStr); }
                 catch (NumberFormatException nfe) { configuredPort = 1433; }
                 RemoteDatabaseService.getInstance().configure(host, configuredPort, name, user, pass);
-                logConnectionChangeAudit(host, portStr, name, user, curHost, curPortNorm,
-                    curName, curUser, !typedPass.isBlank());
                 loadConnectionDisplay();
                 stage.close();
             };
@@ -302,26 +299,6 @@ public class DatabaseSectionController {
         stage.setScene(scene);
         Platform.runLater(tfHost::requestFocus);
         stage.showAndWait();
-    }
-
-    /** Describes what changed — never the password value itself. Best-effort: IAuditService's
-     *  writes already fail open, and this call site is wrapped defensively too, so an
-     *  audit-logging problem never blocks saving the real connection change. */
-    private void logConnectionChangeAudit(String host, String port, String name, String user,
-            String prevHost, String prevPort, String prevName, String prevUser, boolean passwordChanged) {
-        try {
-            StringBuilder details = new StringBuilder();
-            if (!host.equals(prevHost != null ? prevHost : "")) details.append("host, ");
-            if (!port.equals(prevPort)) details.append("port, ");
-            if (!name.equals(prevName != null ? prevName : "")) details.append("db_name, ");
-            if (!user.equals(prevUser != null ? prevUser : "")) details.append("username, ");
-            if (passwordChanged) details.append("password, ");
-            String changed = details.length() > 0 ? details.substring(0, details.length() - 2) : "sin cambios";
-
-            String username = TechnicianSessionService.getInstance().getUsername();
-            ServiceLocator.getInstance().getAuditService()
-                .logAction(username, "DB_CONNECTION_CHANGED", null, "Campos modificados: " + changed);
-        } catch (Exception ignored) { }
     }
 
     // ── Equipment catalog ────────────────────────────────────────────

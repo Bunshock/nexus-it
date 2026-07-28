@@ -6,7 +6,6 @@ import com.bunshock.note_app_for_it_frontend.models.ADUser;
 import com.bunshock.note_app_for_it_frontend.models.AdCredentialResult;
 import com.bunshock.note_app_for_it_frontend.services.AdminSession;
 import com.bunshock.note_app_for_it_frontend.services.ConfigService;
-import com.bunshock.note_app_for_it_frontend.services.IAuditService;
 import com.bunshock.note_app_for_it_frontend.services.IUserRoleService;
 import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;
 import com.bunshock.note_app_for_it_frontend.services.TechnicianSessionService;
@@ -27,11 +26,6 @@ import javafx.scene.control.TextField;
  * AdminSession immediately (no separate password prompt — this login already proved identity).
  */
 public class LoginController {
-
-    private static final String REASON_INVALID_CREDENTIALS = "INVALID_CREDENTIALS";
-    private static final String REASON_NOT_IN_ALLOWED_GROUP = "NOT_IN_ALLOWED_GROUP";
-    private static final String REASON_PROFILE_LOOKUP_FAILED = "PROFILE_LOOKUP_FAILED";
-    private static final String REASON_AD_UNREACHABLE = "AD_UNREACHABLE";
 
     @FXML private TextField txtUsername;
     @FXML private PasswordField pfPassword;
@@ -79,7 +73,6 @@ public class LoginController {
                     .validateCredentials(username, password);
 
                 if (!credentials.isValid()) {
-                    logLoginAttempt(username, false, REASON_INVALID_CREDENTIALS);
                     Platform.runLater(() -> {
                         setBusy(false);
                         showError("Usuario o contraseña incorrectos.");
@@ -89,7 +82,6 @@ public class LoginController {
 
                 String allowedGroup = allowedGroupName();
                 if (allowedGroup != null && !credentials.getGroups().contains(allowedGroup)) {
-                    logLoginAttempt(username, false, REASON_NOT_IN_ALLOWED_GROUP);
                     Platform.runLater(() -> {
                         setBusy(false);
                         showError("No tiene permisos para usar esta aplicación.");
@@ -99,7 +91,6 @@ public class LoginController {
 
                 List<ADUser> profile = ServiceLocator.getInstance().getAdService().search(null, null, username);
                 if (profile.isEmpty()) {
-                    logLoginAttempt(username, false, REASON_PROFILE_LOOKUP_FAILED);
                     Platform.runLater(() -> {
                         setBusy(false);
                         showError("No se pudo obtener el perfil desde Active Directory.");
@@ -109,17 +100,15 @@ public class LoginController {
 
                 ADUser user = profile.get(0);
                 String role = ServiceLocator.getInstance().getUserRoleService().getRole(user.getUsername());
-                logLoginAttempt(username, true, null);
 
                 Platform.runLater(() -> {
                     TechnicianSessionService.getInstance().loginResolved(user, role);
-                    if (IUserRoleService.ROLE_ADMIN.equals(role) || IUserRoleService.ROLE_SUPERADMIN.equals(role)) {
+                    if (IUserRoleService.ROLE_ADMIN.equals(role)) {
                         AdminSession.getInstance().activatePermanently();
                     }
                     if (onLoginSuccess != null) onLoginSuccess.run();
                 });
             } catch (Exception adUnreachable) {
-                logLoginAttempt(username, false, REASON_AD_UNREACHABLE);
                 Platform.runLater(() -> {
                     setBusy(false);
                     showError("No se pudo conectar con Active Directory.");
@@ -128,16 +117,6 @@ public class LoginController {
         }, "login-auth");
         t.setDaemon(true);
         t.start();
-    }
-
-    /** Best-effort — CachingAuditService/SqliteAuditService already fail open, but this call
-     *  site is on a background thread before ServiceLocator may be fully settled, so it's
-     *  wrapped defensively too; a logging failure must never affect the login outcome. */
-    private void logLoginAttempt(String username, boolean success, String failureReason) {
-        try {
-            IAuditService audit = ServiceLocator.getInstance().getAuditService();
-            if (audit != null) audit.logLogin(username, success, failureReason);
-        } catch (Exception ignored) { }
     }
 
     private String allowedGroupName() {

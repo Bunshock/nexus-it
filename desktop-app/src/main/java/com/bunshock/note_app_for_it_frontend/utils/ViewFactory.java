@@ -2,13 +2,11 @@ package com.bunshock.note_app_for_it_frontend.utils;
 
 import java.io.IOException;
 
-import com.bunshock.note_app_for_it_frontend.controllers.AuditController;
 import com.bunshock.note_app_for_it_frontend.controllers.HistoryController;
 import com.bunshock.note_app_for_it_frontend.controllers.NoteGeneratorController;
 import com.bunshock.note_app_for_it_frontend.controllers.PrestamoHistoryController;
 import com.bunshock.note_app_for_it_frontend.controllers.PrestamosController;
 import com.bunshock.note_app_for_it_frontend.controllers.ProviderNoteController;
-import com.bunshock.note_app_for_it_frontend.controllers.RemitoNoteController;
 import com.bunshock.note_app_for_it_frontend.controllers.SettingsController;
 import com.bunshock.note_app_for_it_frontend.controllers.UserNoteController;
 
@@ -22,10 +20,8 @@ public class ViewFactory {
 
     private VBox userNoteView;
     private VBox providerNoteView;
-    private VBox remitoNoteView;
     private UserNoteController userNoteController;
     private ProviderNoteController providerNoteController;
-    private RemitoNoteController remitoNoteController;
 
     private Parent generatorView;
     private Parent historyView;
@@ -35,8 +31,6 @@ public class ViewFactory {
     private SettingsController settingsController;
     private Parent aboutView;
     private Parent profileView;
-    private Parent auditView;
-    private AuditController auditController;
 
     private Parent prestamosView;
     private PrestamosController prestamosController;
@@ -60,15 +54,6 @@ public class ViewFactory {
             providerNoteController = loader.getController();
         }
         return providerNoteView;
-    }
-
-    public VBox getRemitoNoteView() {
-        if (remitoNoteView == null) {
-            FXMLLoader loader = loader("RemitoNoteView.fxml");
-            remitoNoteView = load(loader);
-            remitoNoteController = loader.getController();
-        }
-        return remitoNoteView;
     }
 
     public Parent getGeneratorView() {
@@ -118,20 +103,8 @@ public class ViewFactory {
         return profileView;
     }
 
-    public Parent getAuditView() {
-        if (auditView == null) {
-            FXMLLoader loader = loader("AuditView.fxml");
-            auditView = load(loader);
-            auditController = loader.getController();
-        }
-        return auditView;
-    }
-
-    public AuditController getAuditController() { return auditController; }
-
     public UserNoteController getUserNoteController() { return userNoteController; }
     public ProviderNoteController getProviderNoteController() { return providerNoteController; }
-    public RemitoNoteController getRemitoNoteController() { return remitoNoteController; }
 
     public Parent getPrestamosView() {
         if (prestamosView == null) {

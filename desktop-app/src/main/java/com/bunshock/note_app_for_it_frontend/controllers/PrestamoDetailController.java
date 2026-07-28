@@ -9,7 +9,6 @@ import com.bunshock.note_app_for_it_frontend.services.AdminSession;
 import com.bunshock.note_app_for_it_frontend.services.NoteGenerationService;
 import com.bunshock.note_app_for_it_frontend.services.PendingCountsService;
 import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;
-import com.bunshock.note_app_for_it_frontend.services.TechnicianSessionService;
 
 import javafx.application.Platform;
 import javafx.fxml.FXML;
@@ -199,7 +198,6 @@ public class PrestamoDetailController {
         ServiceLocator.getInstance().getHistoryService()
             .updateItemReturnStatus(item.getId(), ReturnStatus.RETURNED, null);
         item.setReturnStatus(ReturnStatus.RETURNED);
-        logAuditAction("PRESTAMO_RETURN", item.getId(), null);
         PendingCountsService.getInstance().notifyChanged();
         buildItemCards();
         if (onUpdate != null) onUpdate.run();
@@ -213,19 +211,9 @@ public class PrestamoDetailController {
             .updateItemReturnStatus(item.getId(), ReturnStatus.LOST, reason);
         item.setReturnStatus(ReturnStatus.LOST);
         item.setReturnRejectionReason(reason);
-        logAuditAction("PRESTAMO_LOST", item.getId(), reason);
         PendingCountsService.getInstance().notifyChanged();
         buildItemCards();
         if (onUpdate != null) onUpdate.run();
-    }
-
-    /** Best-effort — IAuditService's writes already fail open; this call site is wrapped
-     *  defensively too, so an audit-logging problem never blocks the real return/lost action. */
-    private void logAuditAction(String eventType, Integer noteItemId, String details) {
-        try {
-            String username = TechnicianSessionService.getInstance().getUsername();
-            ServiceLocator.getInstance().getAuditService().logAction(username, eventType, noteItemId, details);
-        } catch (Exception ignored) { }
     }
 
     private String promptRejectionReason() {

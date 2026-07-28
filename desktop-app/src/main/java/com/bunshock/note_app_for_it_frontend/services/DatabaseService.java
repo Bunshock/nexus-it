@@ -39,7 +39,6 @@ public class DatabaseService {
             createHistoryTables(stmt);
             createSettingsTable(stmt);
             createUserRoleTable(stmt);
-            createAuditTables(stmt);
             migrateSchema(conn, stmt);
             insertDefaultData(stmt);
         }
@@ -832,17 +831,6 @@ public class DatabaseService {
                 responsible_dni  TEXT
             )""");
 
-        stmt.executeUpdate("""
-            CREATE TABLE IF NOT EXISTS NOTE_REMITO (
-                note_report_id    INTEGER PRIMARY KEY REFERENCES NOTE_REPORT(id),
-                destinatario_name TEXT,
-                destinatario_area TEXT,
-                destinatario_sede TEXT,
-                remitente_name    TEXT,
-                remitente_area    TEXT,
-                remitente_sede    TEXT
-            )""");
-
         // Slim base table — asset-only, countable-only, GLPI-tracking, and return-tracking
         // fields each live in their own subtype table below, so a row never carries a column
         // that doesn't apply to it (see migrateNoteItemSchema() for the pre-existing-database
@@ -907,33 +895,6 @@ public class DatabaseService {
             CREATE TABLE IF NOT EXISTS USER_ROLE (
                 username TEXT PRIMARY KEY,
                 role     TEXT NOT NULL
-            )""");
-    }
-
-    // Append-only — no app code ever updates or deletes a row here (see IAuditService's own
-    // doc). Writes are best-effort/fail-open (CachingAuditService swallows exceptions from
-    // both primary and local) so a logging failure never blocks the real action being audited.
-    private void createAuditTables(Statement stmt) throws SQLException {
-        stmt.executeUpdate("""
-            CREATE TABLE IF NOT EXISTS LOGIN_AUDIT (
-                id             INTEGER PRIMARY KEY AUTOINCREMENT,
-                username       TEXT NOT NULL,
-                attempted_at   TEXT NOT NULL,
-                success        INTEGER NOT NULL,
-                failure_reason TEXT
-            )""");
-
-        // note_item_id is a real FK, not a generic entity_type/entity_id pair — every current
-        // action either targets a NOTE_ITEM row or nothing at all (DB_CONNECTION_CHANGED).
-        // Requires NOTE_ITEM to already exist — createHistoryTables() runs before this.
-        stmt.executeUpdate("""
-            CREATE TABLE IF NOT EXISTS ACTION_AUDIT (
-                id           INTEGER PRIMARY KEY AUTOINCREMENT,
-                username     TEXT NOT NULL,
-                event_type   TEXT NOT NULL,
-                occurred_at  TEXT NOT NULL,
-                note_item_id INTEGER REFERENCES NOTE_ITEM(id),
-                details      TEXT
             )""");
     }
 

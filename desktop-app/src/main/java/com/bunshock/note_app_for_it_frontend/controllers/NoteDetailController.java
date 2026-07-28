@@ -9,7 +9,6 @@ import com.bunshock.note_app_for_it_frontend.services.AdminSession;
 import com.bunshock.note_app_for_it_frontend.services.NoteGenerationService;
 import com.bunshock.note_app_for_it_frontend.services.PendingCountsService;
 import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;
-import com.bunshock.note_app_for_it_frontend.services.TechnicianSessionService;
 
 import javafx.application.Platform;
 import javafx.fxml.FXML;
@@ -190,7 +189,6 @@ public class NoteDetailController {
         ServiceLocator.getInstance().getHistoryService()
             .updateItemGlpiStatus(item.getId(), GlpiStatus.SYNCED, null);
         item.setGlpiStatus(GlpiStatus.SYNCED);
-        logAuditAction("GLPI_SYNC", item.getId(), null);
         PendingCountsService.getInstance().notifyChanged();
         buildItemCards();
         if (onUpdate != null) onUpdate.run();
@@ -204,19 +202,9 @@ public class NoteDetailController {
             .updateItemGlpiStatus(item.getId(), GlpiStatus.REJECTED, reason);
         item.setGlpiStatus(GlpiStatus.REJECTED);
         item.setGlpiRejectionReason(reason);
-        logAuditAction("GLPI_REJECT", item.getId(), reason);
         PendingCountsService.getInstance().notifyChanged();
         buildItemCards();
         if (onUpdate != null) onUpdate.run();
-    }
-
-    /** Best-effort — IAuditService's writes already fail open; this call site is wrapped
-     *  defensively too, so an audit-logging problem never blocks the real GLPI action. */
-    private void logAuditAction(String eventType, Integer noteItemId, String details) {
-        try {
-            String username = TechnicianSessionService.getInstance().getUsername();
-            ServiceLocator.getInstance().getAuditService().logAction(username, eventType, noteItemId, details);
-        } catch (Exception ignored) { }
     }
 
     private String promptRejectionReason() {
@@ -412,8 +400,6 @@ public class NoteDetailController {
             case "ENTREGA PERMANENTE"  -> "Fin de contrato";
             case "FIN DE CONTRATO"     -> "Fin de contrato";
             case "ENTREGA - PROVEEDOR" -> "Entrega - Proveedor";
-            case "REMITO DE ENVÍO"     -> "Envío";
-            case "REMITO DE ENVIO"     -> "Envío";
             default                    -> profileType;
         };
     }

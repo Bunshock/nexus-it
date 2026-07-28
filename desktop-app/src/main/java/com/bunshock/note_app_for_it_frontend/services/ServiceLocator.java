@@ -16,7 +16,6 @@ public class ServiceLocator {
     private IEmailService emailService;
     private IHistoryService historyService;
     private IUserRoleService userRoleService;
-    private IAuditService auditService;
 
     private boolean remoteConnected = false;
 
@@ -35,12 +34,10 @@ public class ServiceLocator {
         SqliteEquipmentService localEquipment = new SqliteEquipmentService();
         SqliteHistoryService localHistory     = new SqliteHistoryService();
         SqliteUserRoleService localUserRole   = new SqliteUserRoleService();
-        SqliteAuditService localAudit         = new SqliteAuditService();
 
         equipmentService = localEquipment;
         historyService   = localHistory;
         userRoleService  = localUserRole;
-        auditService     = localAudit;
 
         String host = loadSetting("db_host");
         if (host != null && !host.isBlank()) {
@@ -64,14 +61,10 @@ public class ServiceLocator {
                 IUserRoleService remoteUserRole = new SqliteUserRoleService(() -> {
                     try { return remote.getConnection(); } catch (java.sql.SQLException e) { throw new RuntimeException(e); }
                 });
-                IAuditService remoteAudit = new SqliteAuditService(() -> {
-                    try { return remote.getConnection(); } catch (java.sql.SQLException e) { throw new RuntimeException(e); }
-                });
 
                 equipmentService   = new CachingEquipmentService(remoteEquipment, localEquipment);
                 historyService     = new CachingHistoryService(remoteHistory, localHistory);
                 userRoleService    = new CachingUserRoleService(remoteUserRole, localUserRole);
-                auditService       = new CachingAuditService(remoteAudit, localAudit);
                 remoteConnected    = true;
             } catch (Exception e) {
                 remoteConnected = false;
@@ -156,11 +149,9 @@ public class ServiceLocator {
     public IEmailService     getEmailService()      { return emailService; }
     public IHistoryService   getHistoryService()    { return historyService; }
     public IUserRoleService  getUserRoleService()   { return userRoleService; }
-    public IAuditService     getAuditService()      { return auditService; }
     public boolean           isRemoteConnected()    { return remoteConnected; }
 
     public void setEquipmentService(IEquipmentService s) { equipmentService = s; }
     public void setAdService(IADService s)               { adService = s; }
     public void setUserRoleService(IUserRoleService s)   { userRoleService = s; }
-    public void setAuditService(IAuditService s)         { auditService = s; }
 }

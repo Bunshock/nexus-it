@@ -199,16 +199,6 @@ public class RemoteDatabaseService {
                     responsible_name NVARCHAR(255),
                     responsible_dni  NVARCHAR(255)
                 )""");
-            createTableIfMissing(stmt, "NOTE_REMITO", """
-                CREATE TABLE NOTE_REMITO (
-                    note_report_id    INT PRIMARY KEY REFERENCES NOTE_REPORT(id),
-                    destinatario_name NVARCHAR(255),
-                    destinatario_area NVARCHAR(100),
-                    destinatario_sede NVARCHAR(255),
-                    remitente_name    NVARCHAR(255),
-                    remitente_area    NVARCHAR(100),
-                    remitente_sede    NVARCHAR(255)
-                )""");
             // Slim base table — asset-only, countable-only, GLPI-tracking, and return-tracking
             // fields each live in their own subtype table below, so a row never carries a column
             // that doesn't apply to it. See the backfill/DROP COLUMN block further down for the
@@ -249,30 +239,6 @@ public class RemoteDatabaseService {
                     status            NVARCHAR(50) NOT NULL,
                     rejection_reason  NVARCHAR(300),
                     status_updated_at NVARCHAR(MAX)
-                )""");
-
-            // Append-only — no app code ever updates or deletes a row here. Writes are
-            // best-effort/fail-open (CachingAuditService swallows exceptions from both primary
-            // and local) so a logging failure never blocks the real action being audited.
-            createTableIfMissing(stmt, "LOGIN_AUDIT", """
-                CREATE TABLE LOGIN_AUDIT (
-                    id             INT IDENTITY(1,1) PRIMARY KEY,
-                    username       NVARCHAR(100) NOT NULL,
-                    attempted_at   NVARCHAR(MAX) NOT NULL,
-                    success        INT NOT NULL,
-                    failure_reason NVARCHAR(50)
-                )""");
-            // note_item_id is a real FK, not a generic entity_type/entity_id pair — every
-            // current action either targets a NOTE_ITEM row or nothing at all
-            // (DB_CONNECTION_CHANGED). Placed after NOTE_ITEM above, which it references.
-            createTableIfMissing(stmt, "ACTION_AUDIT", """
-                CREATE TABLE ACTION_AUDIT (
-                    id           INT IDENTITY(1,1) PRIMARY KEY,
-                    username     NVARCHAR(100) NOT NULL,
-                    event_type   NVARCHAR(30) NOT NULL,
-                    occurred_at  NVARCHAR(MAX) NOT NULL,
-                    note_item_id INT REFERENCES NOTE_ITEM(id),
-                    details      NVARCHAR(300)
                 )""");
 
             // CREATE TABLE ... only-if-missing (above) silently no-ops on a database that already

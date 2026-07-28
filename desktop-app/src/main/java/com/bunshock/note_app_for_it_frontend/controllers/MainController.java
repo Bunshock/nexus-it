@@ -6,7 +6,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import com.bunshock.note_app_for_it_frontend.models.HistoryFilter;
 import com.bunshock.note_app_for_it_frontend.services.AdminSession;
 import com.bunshock.note_app_for_it_frontend.services.IHistoryService;
-import com.bunshock.note_app_for_it_frontend.services.IUserRoleService;
 import com.bunshock.note_app_for_it_frontend.services.PendingCountsService;
 import com.bunshock.note_app_for_it_frontend.services.RemoteDatabaseService;
 import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;
@@ -69,8 +68,6 @@ public class MainController {
     @FXML private Label lblHistoryBadge;
     @FXML private Label lblPrestamosBadge;
 
-    @FXML private javafx.scene.control.ToggleButton btnAudit;
-
     @FXML private Circle circleAD;
     @FXML private Circle circleGLPI;
     @FXML private Circle circleDB;
@@ -92,13 +89,6 @@ public class MainController {
         TechnicianSessionService.getInstance().addOnChangeListener(this::updateWelcomeLabels);
         TechnicianSessionService.getInstance().addOnSedeChangeListener(this::updateSedeLabel);
         updateWelcomeLabels();
-
-        // Role doesn't change mid-session (set once at login), so this is checked once here
-        // rather than via a listener like the admin indicator above.
-        boolean isSuperAdmin = IUserRoleService.ROLE_SUPERADMIN
-            .equals(TechnicianSessionService.getInstance().getRole());
-        btnAudit.setVisible(isSuperAdmin);
-        btnAudit.setManaged(isSuperAdmin);
 
         showSection(viewFactory.getGeneratorView());
         // Deferred: initialize() runs during FXMLLoader.load(), before App.start() calls
@@ -600,13 +590,6 @@ public class MainController {
     }
 
     @FXML private void handleShowDatabase()  { showSection(viewFactory.getDatabaseView()); }
-    @FXML
-    private void handleShowAudit() {
-        showSection(viewFactory.getAuditView());
-        // ViewFactory caches this view for the session — refresh() so an action logged after
-        // the first visit shows up, same staleness fix as History's own refresh() call.
-        viewFactory.getAuditController().refresh();
-    }
     @FXML
     private void handleShowSettings() {
         showSection(viewFactory.getSettingsView());
