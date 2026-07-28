@@ -13,6 +13,7 @@ public class HistoryFilter {
     private List<String> itemTypes;     // null = all
     private List<String> itemBrands;    // null = all
     private List<String> itemModels;    // null = all
+    private List<String> sedes;         // null = all
 
     public HistoryFilter() {}
 
@@ -48,4 +49,7 @@ public class HistoryFilter {
 
     public List<String> getItemModels()    { return itemModels; }
     public void         setItemModels(List<String> v) { itemModels = v; }
+
+    public List<String> getSedes()         { return sedes; }
+    public void         setSedes(List<String> v)      { sedes = v; }
 }

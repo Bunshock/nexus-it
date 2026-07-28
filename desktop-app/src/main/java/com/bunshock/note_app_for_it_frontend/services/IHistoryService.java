@@ -30,6 +30,8 @@ public interface IHistoryService {
 
     default List<String> getDistinctItemModels(List<String> types, List<String> brands) { return Collections.emptyList(); }
 
+    default List<String> getDistinctSedes() { return Collections.emptyList(); }
+
     default List<String> getMostUsedTypeNames(int windowDays, int minUses, int limit) { return Collections.emptyList(); }
 
     default List<String> getMostUsedBrandNames(String typeName, int windowDays, int minUses, int limit) { return Collections.emptyList(); }

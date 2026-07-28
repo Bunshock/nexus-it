@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -36,6 +37,7 @@ public class PrestamoHistoryController {
     @FXML private DatePicker dpFrom;
     @FXML private DatePicker dpTo;
     @FXML private MenuButton mnuReturnStatus;
+    @FXML private MenuButton mnuSede;
     @FXML private TextField  txtRecipientSearch;
     @FXML private TextField  txtAuthorSearch;
 
@@ -56,12 +58,19 @@ public class PrestamoHistoryController {
         List.of("Pendiente", "Devuelto", "Perdido", "Mixto", "Vencido");
 
     private final Set<String> selReturnStatuses = new LinkedHashSet<>();
+    private final Set<String> selSedes = new LinkedHashSet<>();
     private boolean suppressCallbacks = false;
 
     public void initialize() {
         setupTable();
         populateMenu(mnuReturnStatus, RETURN_STATUS_OPTIONS, selReturnStatuses, this::autoSearch);
+        initSedeMenu();
         loadPrestamos(buildFilter());
+    }
+
+    private void initSedeMenu() {
+        var svc = ServiceLocator.getInstance().getHistoryService();
+        populateMenu(mnuSede, svc.getDistinctSedes(), selSedes, this::autoSearch);
     }
 
     /** Reloads with whatever filters are currently set — called by PrestamosController every time
@@ -83,8 +92,10 @@ public class PrestamoHistoryController {
         txtRecipientSearch.clear();
         txtAuthorSearch.clear();
         selReturnStatuses.clear();
+        selSedes.clear();
         suppressCallbacks = false;
         populateMenu(mnuReturnStatus, RETURN_STATUS_OPTIONS, selReturnStatuses, this::autoSearch);
+        initSedeMenu();
         loadPrestamos(buildFilter());
     }
 
@@ -101,6 +112,7 @@ public class PrestamoHistoryController {
         if (recipient != null && !recipient.isBlank()) f.setRecipientSearch(recipient);
         String author = txtAuthorSearch.getText();
         if (author != null && !author.isBlank()) f.setAuthorSearch(author);
+        if (!selSedes.isEmpty()) f.setSedes(new ArrayList<>(selSedes));
         return f;
     }
 

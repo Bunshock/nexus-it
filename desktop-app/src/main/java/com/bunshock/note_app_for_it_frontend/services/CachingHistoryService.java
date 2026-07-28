@@ -62,6 +62,11 @@ public class CachingHistoryService implements IHistoryService {
     }
 
     @Override
+    public List<String> getDistinctSedes() {
+        try { return primary.getDistinctSedes(); } catch (Exception e) { return local.getDistinctSedes(); }
+    }
+
+    @Override
     public List<String> getDistinctItemBrands(List<String> types) {
         try { return primary.getDistinctItemBrands(types); } catch (Exception e) { return local.getDistinctItemBrands(types); }
     }

@@ -59,6 +59,11 @@
                                            onAction="#handleSearch"
                                            styleClass="form-input-filter"/>
                             </VBox>
+                            <VBox spacing="3">
+                                <Label text="SEDE" styleClass="input-label-small"/>
+                                <MenuButton fx:id="mnuSede" text="Todas"
+                                            prefWidth="158" prefHeight="32" styleClass="filter-menu-button"/>
+                            </VBox>
                         </HBox>
                     </VBox>
 

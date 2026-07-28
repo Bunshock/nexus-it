@@ -30,7 +30,7 @@ public class SqliteHistoryService implements IHistoryService {
         SELECT r.id, r.created_at, r.profile_type,
                r.technician_name AS author_name,
                r.technician_dni AS author_dni,
-               COALESCE(e.user_name, pv.name, rm.destinatario_name, '') AS recipient,
+               COALESCE(e.user_name, pv.name, '') AS recipient,
                COALESCE(e.motivo, p.motivo, '') AS motivo,
                SUM(CASE WHEN ig.status = 'PENDING'  THEN 1 ELSE 0 END) AS pending_count,
                SUM(CASE WHEN ig.status = 'SYNCED'   THEN 1 ELSE 0 END) AS synced_count,
@@ -44,7 +44,6 @@ public class SqliteHistoryService implements IHistoryService {
         LEFT JOIN NOTE_ENTREGA_DEVOLUCION   e  ON e.note_report_id  = r.id
         LEFT JOIN NOTE_PROVEEDOR            p  ON p.note_report_id  = r.id
         LEFT JOIN PROVIDER                  pv ON pv.id             = p.provider_id
-        LEFT JOIN NOTE_REMITO               rm ON rm.note_report_id = r.id
         LEFT JOIN NOTE_ITEM                 i  ON i.note_id         = r.id
         LEFT JOIN NOTE_ITEM_ASSET           ia ON ia.item_id        = i.id
         LEFT JOIN NOTE_ITEM_GLPI_TRACKING   ig ON ig.item_id         = i.id
@@ -112,21 +111,6 @@ public class SqliteHistoryService implements IHistoryService {
             ps.setString(4, report.getMotivo());
             ps.setString(5, report.getResponsibleName());
             ps.setString(6, report.getResponsibleDni());
-            ps.executeUpdate();
-        } else if (report.getDestinatarioName() != null) {
-            PreparedStatement ps = c.prepareStatement("""
-                INSERT INTO NOTE_REMITO
-                    (note_report_id, destinatario_name, destinatario_area, destinatario_sede,
-                     remitente_name, remitente_area, remitente_sede)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                """);
-            ps.setInt(1, reportId);
-            ps.setString(2, report.getDestinatarioName());
-            ps.setString(3, report.getDestinatarioArea());
-            ps.setString(4, report.getDestinatarioSede());
-            ps.setString(5, report.getRemitenteName());
-            ps.setString(6, report.getRemitenteArea());
-            ps.setString(7, report.getRemitenteSede());
             ps.executeUpdate();
         } else {
             PreparedStatement ps = c.prepareStatement("""
@@ -254,6 +238,7 @@ public class SqliteHistoryService implements IHistoryService {
             appendInViaCatalog(sql, params, "ni.model_id", "MODEL", filter.getItemModels());
             sql.append(")");
         }
+        appendInViaCatalog(sql, params, "r.sede_id", "SEDE", filter.getSedes());
 
         sql.append(" GROUP BY r.id ORDER BY r.created_at DESC");
 
@@ -338,6 +323,13 @@ public class SqliteHistoryService implements IHistoryService {
     public List<String> getDistinctItemTypes() {
         return queryDistinct("""
             SELECT DISTINCT t.name FROM NOTE_ITEM ni JOIN TYPE t ON t.id = ni.type_id ORDER BY t.name
+            """, java.util.Collections.emptyList());
+    }
+
+    @Override
+    public List<String> getDistinctSedes() {
+        return queryDistinct("""
+            SELECT DISTINCT sd.name FROM NOTE_REPORT r JOIN SEDE sd ON sd.id = r.sede_id ORDER BY sd.name
             """, java.util.Collections.emptyList());
     }
 
@@ -438,18 +430,11 @@ public class SqliteHistoryService implements IHistoryService {
                    COALESCE(p.provider_id, 0) AS provider_id,
                    COALESCE(p.cuit, '')          AS cuit,
                    COALESCE(p.responsible_name, '') AS responsible_name,
-                   COALESCE(p.responsible_dni, '')  AS responsible_dni,
-                   COALESCE(rm.destinatario_name, '') AS destinatario_name,
-                   COALESCE(rm.destinatario_area, '') AS destinatario_area,
-                   COALESCE(rm.destinatario_sede, '') AS destinatario_sede,
-                   COALESCE(rm.remitente_name, '')    AS remitente_name,
-                   COALESCE(rm.remitente_area, '')    AS remitente_area,
-                   COALESCE(rm.remitente_sede, '')    AS remitente_sede
+                   COALESCE(p.responsible_dni, '')  AS responsible_dni
             FROM NOTE_REPORT r
             LEFT JOIN NOTE_ENTREGA_DEVOLUCION  e  ON e.note_report_id  = r.id
             LEFT JOIN NOTE_PROVEEDOR           p  ON p.note_report_id  = r.id
             LEFT JOIN PROVIDER                 pv ON pv.id             = p.provider_id
-            LEFT JOIN NOTE_REMITO              rm ON rm.note_report_id = r.id
             LEFT JOIN SEDE                     sd ON sd.id             = r.sede_id
             WHERE r.id = ?
             """;
@@ -480,16 +465,7 @@ public class SqliteHistoryService implements IHistoryService {
             r.setCuit(rs.getString("cuit"));
             r.setResponsibleName(rs.getString("responsible_name"));
             r.setResponsibleDni(rs.getString("responsible_dni"));
-            String destName = rs.getString("destinatario_name");
-            r.setDestinatarioName(destName.isBlank() ? null : destName);
-            r.setDestinatarioArea(rs.getString("destinatario_area"));
-            r.setDestinatarioSede(rs.getString("destinatario_sede"));
-            r.setRemitenteName(rs.getString("remitente_name"));
-            r.setRemitenteArea(rs.getString("remitente_area"));
-            r.setRemitenteSede(rs.getString("remitente_sede"));
-            r.setRecipientDisplay(!provName.isBlank() ? provName
-                : !destName.isBlank() ? destName
-                : rs.getString("user_name"));
+            r.setRecipientDisplay(!provName.isBlank() ? provName : rs.getString("user_name"));
             r.setItems(loadItems(c, id));
             return r;
         } catch (SQLException e) {

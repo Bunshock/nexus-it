@@ -53,6 +53,7 @@ public class HistoryController {
     @FXML private MenuButton   mnuItemType;
     @FXML private MenuButton   mnuItemBrand;
     @FXML private MenuButton   mnuItemModel;
+    @FXML private MenuButton   mnuSede;
 
     @FXML private TableView<NoteReport>           tblGlobal;
     @FXML private TableColumn<NoteReport, String> colGDate;
@@ -65,7 +66,7 @@ public class HistoryController {
     private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
 
     private static final List<String> PROFILE_TYPE_OPTIONS = List.of(
-        "Entrega", "Devolución", "Fin de Contrato", "Entrega - Proveedor", "Préstamo", "Envío");
+        "Entrega", "Devolución", "Fin de Contrato", "Entrega - Proveedor", "Préstamo");
 
     private static final List<String> GLPI_STATUS_LABELS = List.of(
         "Pendiente", "Sincronizado", "Rechazado", "Sin GLPI");
@@ -85,14 +86,14 @@ public class HistoryController {
         "Devolución",          List.of("DEVOLUCIÓN", "Devolución"),
         "Fin de Contrato",     List.of("ENTREGA PERMANENTE", "FIN DE CONTRATO", "Fin de Contrato"),
         "Préstamo",            List.of("PRÉSTAMO", "Préstamo"),
-        "Entrega - Proveedor", List.of("ENTREGA - PROVEEDOR", "Entrega - Proveedor"),
-        "Envío",               List.of("REMITO DE ENVÍO", "REMITO DE ENVIO", "Remito de Envío"));
+        "Entrega - Proveedor", List.of("ENTREGA - PROVEEDOR", "Entrega - Proveedor"));
 
     private final Set<String> selProfileTypes = new LinkedHashSet<>();
     private final Set<String> selGlpiStatuses = new LinkedHashSet<>();
     private final Set<String> selItemTypes    = new LinkedHashSet<>();
     private final Set<String> selItemBrands   = new LinkedHashSet<>();
     private final Set<String> selItemModels   = new LinkedHashSet<>();
+    private final Set<String> selSedes        = new LinkedHashSet<>();
 
     private boolean suppressCallbacks = false;
 
@@ -115,6 +116,7 @@ public class HistoryController {
         populateMenu(mnuItemType,  svc.getDistinctItemTypes(),           selItemTypes,  this::onItemTypeChanged);
         populateMenu(mnuItemBrand, svc.getDistinctItemBrands(null),      selItemBrands, this::onItemBrandChanged);
         populateMenu(mnuItemModel, svc.getDistinctItemModels(null, null), selItemModels, this::autoSearch);
+        populateMenu(mnuSede,      svc.getDistinctSedes(),               selSedes,      this::autoSearch);
     }
 
     private void onItemTypeChanged() {
@@ -233,6 +235,7 @@ public class HistoryController {
         selItemTypes.clear();
         selItemBrands.clear();
         selItemModels.clear();
+        selSedes.clear();
         suppressCallbacks = false;
         populateMenu(mnuProfileType, PROFILE_TYPE_OPTIONS, selProfileTypes, this::autoSearch);
         populateMenu(mnuGlpiStatus, GLPI_STATUS_LABELS, selGlpiStatuses, this::autoSearch);
@@ -262,6 +265,7 @@ public class HistoryController {
         if (!selItemTypes.isEmpty())  f.setItemTypes(new ArrayList<>(selItemTypes));
         if (!selItemBrands.isEmpty()) f.setItemBrands(new ArrayList<>(selItemBrands));
         if (!selItemModels.isEmpty()) f.setItemModels(new ArrayList<>(selItemModels));
+        if (!selSedes.isEmpty())      f.setSedes(new ArrayList<>(selSedes));
         return f;
     }
 
@@ -502,8 +506,6 @@ public class HistoryController {
             case "ENTREGA PERMANENTE"  -> "Fin de contrato";
             case "FIN DE CONTRATO"     -> "Fin de contrato";
             case "ENTREGA - PROVEEDOR" -> "Entrega - Proveedor";
-            case "REMITO DE ENVÍO"     -> "Envío";
-            case "REMITO DE ENVIO"     -> "Envío";
             default                    -> profileType;
         };
     }

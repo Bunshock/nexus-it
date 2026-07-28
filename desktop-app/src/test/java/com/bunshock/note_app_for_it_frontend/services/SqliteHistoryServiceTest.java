@@ -114,16 +114,6 @@ class SqliteHistoryServiceTest {
                     responsible_dni  TEXT
                 )""");
             stmt.executeUpdate("""
-                CREATE TABLE NOTE_REMITO (
-                    note_report_id    INTEGER PRIMARY KEY REFERENCES NOTE_REPORT(id),
-                    destinatario_name TEXT,
-                    destinatario_area TEXT,
-                    destinatario_sede TEXT,
-                    remitente_name    TEXT,
-                    remitente_area    TEXT,
-                    remitente_sede    TEXT
-                )""");
-            stmt.executeUpdate("""
                 CREATE TABLE NOTE_ITEM (
                     id           INTEGER PRIMARY KEY AUTOINCREMENT,
                     note_id      INTEGER NOT NULL REFERENCES NOTE_REPORT(id),
