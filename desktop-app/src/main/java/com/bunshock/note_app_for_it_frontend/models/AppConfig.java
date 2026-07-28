@@ -18,7 +18,6 @@ public class AppConfig {
     public RemoteDatabaseConfig remoteDatabase;
     public int noteItemLimit;
     public DefaultSecrets defaults;
-    public RemitoConfig remito;
     public CatalogConfig catalog = new CatalogConfig();
     public AdAccessConfig adAccess = new AdAccessConfig();
 
@@ -92,16 +91,6 @@ public class AppConfig {
         public String adApiToken;
     }
 
-    /**
-     * Fixed "Remitente" (sender) details printed on every Remito de Envío note — this IT
-     * department's own área/sede, rarely changed, edited by hand in this file (same
-     * editability model as motivoOptions/fallaOptions) rather than through a Settings UI field.
-     */
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    public static class RemitoConfig {
-        public String remitenteArea;
-        public String remitenteSede;
-    }
 
     /**
      * catalog.genericLabel seeds the name of the single global "no specific brand/model"

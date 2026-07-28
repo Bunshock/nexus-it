@@ -186,69 +186,6 @@ class NoteGenerationServiceTest {
     }
 
     @Test
-    void generatesRemitoNoteWithDestinatarioRemitenteAndItemsNoObservationsOrSignatures() throws Exception {
-        String html = service.generateRemitoNote(
-            "Maria Meossi", "Coordinador CAU", "(CAU) Santiago del Estero - Jujuy N° 8 (CP: 4200)",
-            "Wladimir Naar",
-            "Soporte IT", "Campus Córdoba - Calle de los Latinos N°8555 – B° Los Bulevares",
-            "Campus Test",
-            oneAsset(), oneCountable(2));
-
-        assertFalse(html.contains("{{"));
-        assertTrue(html.contains("Maria Meossi"));
-        assertTrue(html.contains("Coordinador CAU"));
-        assertTrue(html.contains("(CAU) Santiago del Estero - Jujuy N° 8 (CP: 4200)"));
-        assertTrue(html.contains("Wladimir Naar"));
-        assertTrue(html.contains("Soporte IT"));
-        assertTrue(html.contains("Campus Córdoba"));
-        assertTrue(html.contains("Remito de Envío"));
-        assertTrue(html.contains("NOTEBOOK"));
-        assertTrue(html.contains("MOUSE"));
-
-        // No signatures, no DNI, no Observaciones Generales — matching the physical source
-        // document exactly, per explicit user direction (see CLAUDE.md's "Remito de Envío" entry).
-        assertFalse(html.contains("signature-box"));
-        assertFalse(html.contains("OBSERVACIONES"));
-    }
-
-    @Test
-    void generateFromStoredReportRendersRemitoNoteWithDestinatarioAndRemitenteFields() throws Exception {
-        NoteReport report = new NoteReport();
-        report.setProfileType("Remito de Envío");
-        report.setCreatedAt(LocalDateTime.of(2026, 7, 20, 9, 0));
-        report.setDestinatarioName("Luis Morillo");
-        report.setDestinatarioArea("Soporte IT");
-        report.setDestinatarioSede("Vicente López - Av. del Libertador 107 - Buenos Aires (CP: 1638)");
-        report.setRemitenteName("Wladimir Naar");
-        report.setRemitenteArea("Soporte IT");
-        report.setRemitenteSede("Campus Córdoba - Calle de los Latinos N°8555 – B° Los Bulevares");
-        // The generating technician is a different person from Remitente — captured for
-        // traceability, but never rendered on remito.html.
-        report.setAuthorName("Marcos Tecnico");
-        report.setAuthorDni("27555111");
-
-        NoteReportItem asset = new NoteReportItem();
-        asset.setTypeName("HEADSET");
-        asset.setBrandName("TRUST");
-        asset.setModelName("AYDA");
-        asset.setSerialNumber("N/A");
-        asset.setAsset(true);
-        report.setItems(List.of(asset));
-
-        String html = service.generateFromStoredReport(report);
-
-        assertFalse(html.contains("{{"));
-        assertTrue(html.contains("Luis Morillo"));
-        assertTrue(html.contains("Vicente López"));
-        assertTrue(html.contains("Wladimir Naar"));
-        assertTrue(html.contains("Remito de Envío"));
-        assertTrue(html.contains("HEADSET"));
-        assertFalse(html.contains("27555111"), "Remito has no DNI on the printed note");
-        assertFalse(html.contains("Marcos Tecnico"),
-            "The generating technician (author) is a different person from Remitente and must never be rendered");
-    }
-
-    @Test
     void generateFromStoredReportRendersRecipientReportWithTechnician() throws Exception {
         NoteReport report = new NoteReport();
         report.setProfileType("ENTREGA");

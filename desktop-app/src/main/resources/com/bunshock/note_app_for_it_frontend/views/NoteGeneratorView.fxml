@@ -20,9 +20,6 @@
                 </ToggleButton>
                 <ToggleButton fx:id="btnProviderNote" text="NOTA PARA PROVEEDOR"
                               minWidth="0" prefWidth="0" maxWidth="Infinity" HBox.hgrow="ALWAYS"
-                              styleClass="type-button-middle" toggleGroup="$typeGroup"/>
-                <ToggleButton fx:id="btnRemitoNote" text="REMITO DE ENVÍO"
-                              minWidth="0" prefWidth="0" maxWidth="Infinity" HBox.hgrow="ALWAYS"
                               styleClass="type-button-right" toggleGroup="$typeGroup"/>
             </children>
         </HBox>
@@ -116,8 +113,7 @@
             </children>
         </HBox>
 
-        <!-- Footer: observations (hidden for Remito de Envío — that note type has no
-             Observaciones Generales field, per its physical source document) -->
+        <!-- Footer: observations -->
         <VBox fx:id="vboxObservationsFooter" spacing="10" minHeight="110.0" prefHeight="110.0" maxHeight="110.0"
               style="-fx-background-color: white; -fx-background-radius: 10; -fx-padding: 15 20 20 20;">
             <children>

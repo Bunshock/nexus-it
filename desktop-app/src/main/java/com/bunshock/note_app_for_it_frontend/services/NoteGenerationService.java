@@ -87,38 +87,10 @@ public class NoteGenerationService {
         return engine.render(template, tokens, loops);
     }
 
-    public String generateRemitoNote(String destinatarioName, String destinatarioArea, String destinatarioSede,
-                                     String remitenteName, String remitenteArea, String remitenteSede,
-                                     String sede,
-                                     List<AssetItem> assets, List<CountableItem> countables) throws IOException {
-        String template = loadTemplate("remito.html");
-
-        Map<String, String> tokens = new LinkedHashMap<>();
-        tokens.put("TEMPLATE_NAME", "Remito de Envío");
-        tokens.put("DATE", LocalDateTime.now().format(DT_FMT));
-        tokens.put("DESTINATARIO_NAME", destinatarioName);
-        tokens.put("DESTINATARIO_AREA", destinatarioArea);
-        tokens.put("DESTINATARIO_SEDE", destinatarioSede);
-        tokens.put("REMITENTE_NAME", remitenteName);
-        tokens.put("REMITENTE_AREA", remitenteArea);
-        tokens.put("REMITENTE_SEDE", remitenteSede);
-        tokens.put("SEDE", sede != null ? sede : "");
-
-        Map<String, List<Map<String, String>>> loops = new LinkedHashMap<>();
-        loops.put("ASSET_ITEMS", buildAssetItemTokens(assets));
-        loops.put("HAS_ASSET_ITEMS", presenceFlag(!assets.isEmpty()));
-        loops.put("COUNTABLE_ITEMS", buildCountableItemTokens(countables));
-        loops.put("HAS_COUNTABLE_ITEMS", presenceFlag(!countables.isEmpty()));
-
-        return engine.render(template, tokens, loops);
-    }
-
     /** Re-renders a stored NoteReport back into HTML for the history detail view. */
     public String generateFromStoredReport(NoteReport report) throws IOException {
         String templateName = report.getProviderName() != null
             ? "proveedor.html"
-            : report.getDestinatarioName() != null
-            ? "remito.html"
             : resolveTemplateName(report.getProfileType());
         String template = loadTemplate(templateName);
 
@@ -142,12 +114,6 @@ public class NoteGenerationService {
         tokens.put("CUIT", orEmpty(report.getCuit()));
         tokens.put("RESPONSIBLE_NAME", orEmpty(report.getResponsibleName()));
         tokens.put("RESPONSIBLE_DNI", orEmpty(report.getResponsibleDni()));
-        tokens.put("DESTINATARIO_NAME", orEmpty(report.getDestinatarioName()));
-        tokens.put("DESTINATARIO_AREA", orEmpty(report.getDestinatarioArea()));
-        tokens.put("DESTINATARIO_SEDE", orEmpty(report.getDestinatarioSede()));
-        tokens.put("REMITENTE_NAME", orEmpty(report.getRemitenteName()));
-        tokens.put("REMITENTE_AREA", orEmpty(report.getRemitenteArea()));
-        tokens.put("REMITENTE_SEDE", orEmpty(report.getRemitenteSede()));
 
         List<Map<String, String>> assetTokens = new ArrayList<>();
         List<Map<String, String>> countableTokens = new ArrayList<>();
@@ -243,8 +209,6 @@ public class NoteGenerationService {
             case "ENTREGA PERMANENTE"  -> "Fin de contrato";
             case "FIN DE CONTRATO"     -> "Fin de contrato";
             case "ENTREGA - PROVEEDOR" -> "Entrega - Proveedor";
-            case "REMITO DE ENVÍO"     -> "Remito de Envío";
-            case "REMITO DE ENVIO"     -> "Remito de Envío";
             default                    -> profileType;
         };
     }

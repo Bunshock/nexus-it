@@ -625,8 +625,8 @@
 
 /* --- NoteGeneratorView styles - START --- */
 
-/* Toggle buttons for note type (user-provider-delivery) */
-.type-button-left, .type-button-right, .type-button-middle {
+/* Toggle buttons for note type (user-provider) */
+.type-button-left, .type-button-right {
     -fx-background-color: linear-gradient(to bottom, #f8fafc, #f1f5f9);
     -fx-text-fill: #64748b;
     -fx-font-weight: bold;
@@ -644,35 +644,26 @@
     -fx-border-width: 1 0 1 1;
 }
 
-/* Sits between left and right in a 3-way split — no radius of its own, and (like
-   type-button-left) omits its own right border so the divider to its right is drawn
-   exactly once, by whichever button is next. */
-.type-button-middle {
-    -fx-background-radius: 0 !important;
-    -fx-border-radius: 0 !important;
-    -fx-border-width: 1 0 1 1;
-}
-
 .type-button-right {
     -fx-background-radius: 0 15 15 0 !important;
     -fx-border-radius: 0 15 15 0 !important;
     -fx-border-width: 1 1 1 1;
 }
 
-.type-button-left:hover, .type-button-right:hover, .type-button-middle:hover {
+.type-button-left:hover, .type-button-right:hover {
     -fx-background-color: linear-gradient(to bottom, #ffffff, #f1f5f9);
     -fx-text-fill: #334155;
     -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.1), 8, 0, 0, 2);
 }
 
-.type-button-left:selected, .type-button-right:selected, .type-button-middle:selected {
+.type-button-left:selected, .type-button-right:selected {
     -fx-background-color: #0c8570;
     -fx-text-fill: white;
     -fx-border-color: #086d5a;
     -fx-effect: innershadow(three-pass-box, rgba(0,0,0,0.25), 6, 0, 0, 2);
 }
 
-.type-button-left:selected:hover, .type-button-right:selected:hover, .type-button-middle:selected:hover {
+.type-button-left:selected:hover, .type-button-right:selected:hover {
     -fx-background-color: #0e9a82;
     -fx-effect: innershadow(three-pass-box, rgba(0,0,0,0.3), 8, 0, 0, 3);
 }
@@ -680,13 +671,6 @@
 .type-button-left:focused {
     -fx-background-radius: 15 0 0 15 !important;
     -fx-border-radius: 15 0 0 15 !important;
-    -fx-focus-color: transparent;
-    -fx-faint-focus-color: transparent;
-}
-
-.type-button-middle:focused {
-    -fx-background-radius: 0 !important;
-    -fx-border-radius: 0 !important;
     -fx-focus-color: transparent;
     -fx-faint-focus-color: transparent;
 }

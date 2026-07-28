@@ -35,10 +35,6 @@
     "dbName" : ""
   },
   "noteItemLimit" : 8,
-  "remito" : {
-    "remitenteArea" : "Soporte IT",
-    "remitenteSede" : "Sede Central - Dirección de ejemplo N°123"
-  },
   "catalog" : {
     "genericLabel" : "Genérico / Otro"
   },

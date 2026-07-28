@@ -51,7 +51,6 @@ public class NoteGeneratorController implements ItemDialogHost {
     @FXML private VBox rootContainer;
     @FXML private ToggleButton btnUserNote;
     @FXML private ToggleButton btnProviderNote;
-    @FXML private ToggleButton btnRemitoNote;
     @FXML private ToggleGroup typeGroup;
     @FXML private StackPane dynamicContentArea;
     @FXML private VBox vboxObservationsFooter;
@@ -94,7 +93,6 @@ public class NoteGeneratorController implements ItemDialogHost {
     public void initialize() {
         btnUserNote.setOnAction(e -> showUserNoteView());
         btnProviderNote.setOnAction(e -> showProviderNoteView());
-        btnRemitoNote.setOnAction(e -> showRemitoNoteView());
 
         txtObservations.setTextFormatter(new TextFormatter<>(change ->
             change.getControlNewText().length() <= OBSERVATIONS_MAX_LENGTH ? change : null));
@@ -130,15 +128,6 @@ public class NoteGeneratorController implements ItemDialogHost {
         setObservationsFooterVisible(true);
     }
 
-    private void showRemitoNoteView() {
-        if (viewFactory == null) return;
-        dynamicContentArea.getChildren().setAll(viewFactory.getRemitoNoteView());
-        setObservationsFooterVisible(false);
-    }
-
-    // Remito de Envío has no Observaciones Generales field — its physical source document
-    // doesn't have one — so this shared shell footer (common to every profile type otherwise)
-    // is hidden specifically for that toggle, rather than just left visible-but-unused.
     private void setObservationsFooterVisible(boolean visible) {
         vboxObservationsFooter.setVisible(visible);
         vboxObservationsFooter.setManaged(visible);
@@ -275,10 +264,6 @@ public class NoteGeneratorController implements ItemDialogHost {
         return typeGroup.getSelectedToggle() == btnUserNote;
     }
 
-    public boolean isRemitoNote() {
-        return typeGroup.getSelectedToggle() == btnRemitoNote;
-    }
-
     @FXML
     private void handleClearForm() {
         txtObservations.clear();
@@ -289,9 +274,7 @@ public class NoteGeneratorController implements ItemDialogHost {
         if (viewFactory == null) return;
         if (isUserNote() && viewFactory.getUserNoteController() != null) {
             viewFactory.getUserNoteController().clearAllFields();
-        } else if (isRemitoNote() && viewFactory.getRemitoNoteController() != null) {
-            viewFactory.getRemitoNoteController().clearAllFields();
-        } else if (!isUserNote() && !isRemitoNote() && viewFactory.getProviderNoteController() != null) {
+        } else if (!isUserNote() && viewFactory.getProviderNoteController() != null) {
             viewFactory.getProviderNoteController().clearAllFields();
         }
     }
@@ -350,10 +333,7 @@ public class NoteGeneratorController implements ItemDialogHost {
             if (isUserNote() && !viewFactory.getUserNoteController().validateAndShowErrors()) {
                 canGenerate = false;
             }
-            if (isRemitoNote() && !viewFactory.getRemitoNoteController().validateAndShowErrors()) {
-                canGenerate = false;
-            }
-            if (!isUserNote() && !isRemitoNote() && !viewFactory.getProviderNoteController().validateAndShowErrors()) {
+            if (!isUserNote() && !viewFactory.getProviderNoteController().validateAndShowErrors()) {
                 canGenerate = false;
             }
             if (!canGenerate) return;
@@ -363,22 +343,7 @@ public class NoteGeneratorController implements ItemDialogHost {
             String html;
             NoteReport report = new NoteReport();
 
-            if (isRemitoNote()) {
-                RemitoNoteController rnc = viewFactory.getRemitoNoteController();
-                html = generator.generateRemitoNote(
-                    rnc.getDestinatarioName(), rnc.getDestinatarioArea(), rnc.getDestinatarioSede(),
-                    rnc.getRemitenteName(), rnc.getRemitenteArea(), rnc.getRemitenteSede(),
-                    technician.getSede(),
-                    assetList, countableList
-                );
-                report.setDestinatarioName(rnc.getDestinatarioName());
-                report.setDestinatarioArea(rnc.getDestinatarioArea());
-                report.setDestinatarioSede(rnc.getDestinatarioSede());
-                report.setRemitenteName(rnc.getRemitenteName());
-                report.setRemitenteArea(rnc.getRemitenteArea());
-                report.setRemitenteSede(rnc.getRemitenteSede());
-                report.setProfileType("Remito de Envío");
-            } else if (isUserNote()) {
+            if (isUserNote()) {
                 UserNoteController unc = viewFactory.getUserNoteController();
                 String profileType = unc.getSelectedNoteType();
                 boolean isPrestamo = "PRÉSTAMO".equals(profileType);
@@ -426,10 +391,7 @@ public class NoteGeneratorController implements ItemDialogHost {
             report.setSede(technician.getSede());
             report.setSedeId(technician.getSedeId());
             report.setCreatedAt(LocalDateTime.now());
-            // Remito de Envío has no Observaciones Generales field (the footer is hidden for
-            // it) — skip persisting whatever stale text is left in txtObservations from a
-            // previous Usuario/Proveedor session in this cached view.
-            if (!isRemitoNote()) report.setObservations(getObservations());
+            report.setObservations(getObservations());
             openPreview(html, report.getProfileType(), report);
 
         } catch (Exception e) {

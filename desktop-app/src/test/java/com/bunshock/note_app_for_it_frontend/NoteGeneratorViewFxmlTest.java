@@ -99,12 +99,11 @@ class NoteGeneratorViewFxmlTest {
         }
     }
 
-    // Regression test for the "Remito de Envío" third toggle button (added 2026-07-20) — checks
-    // the 3-way type-button split wired correctly (all three share one ToggleGroup) and that the
-    // Observaciones Generales footer (hidden for Remito, since it has no such field) still
+    // Regression test for the type-button toggle split — checks the 2-way toggle wired
+    // correctly (both share one ToggleGroup) and that the Observaciones Generales footer
     // resolves via fx:id.
     @Test
-    void remitoToggleJoinsSharedGroupAndObservationsFooterResolves() throws Exception {
+    void typeTogglesJoinSharedGroupAndObservationsFooterResolves() throws Exception {
         AtomicReference<Throwable> errorRef = new AtomicReference<>();
         CountDownLatch latch = new CountDownLatch(1);
 
@@ -118,12 +117,12 @@ class NoteGeneratorViewFxmlTest {
                 Field groupField = NoteGeneratorController.class.getDeclaredField("typeGroup");
                 groupField.setAccessible(true);
                 ToggleGroup group = (ToggleGroup) groupField.get(controller);
-                assertEquals(3, group.getToggles().size());
+                assertEquals(2, group.getToggles().size());
 
-                Field remitoField = NoteGeneratorController.class.getDeclaredField("btnRemitoNote");
-                remitoField.setAccessible(true);
-                ToggleButton btnRemitoNote = (ToggleButton) remitoField.get(controller);
-                assertTrue(group.getToggles().contains(btnRemitoNote));
+                Field providerField = NoteGeneratorController.class.getDeclaredField("btnProviderNote");
+                providerField.setAccessible(true);
+                ToggleButton btnProviderNote = (ToggleButton) providerField.get(controller);
+                assertTrue(group.getToggles().contains(btnProviderNote));
 
                 Field footerField = NoteGeneratorController.class.getDeclaredField("vboxObservationsFooter");
                 footerField.setAccessible(true);

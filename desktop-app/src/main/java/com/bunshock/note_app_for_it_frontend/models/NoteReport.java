@@ -23,12 +23,6 @@ public class NoteReport {
     private String observations;
     private String sede;
     private int sedeId;
-    private String destinatarioName;
-    private String destinatarioArea;
-    private String destinatarioSede;
-    private String remitenteName;
-    private String remitenteArea;
-    private String remitenteSede;
     private List<NoteReportItem> items;
 
     // Populated from JOIN queries — not stored directly in NOTE_REPORT
@@ -102,24 +96,6 @@ public class NoteReport {
 
     public int getSedeId() { return sedeId; }
     public void setSedeId(int sedeId) { this.sedeId = sedeId; }
-
-    public String getDestinatarioName() { return destinatarioName; }
-    public void setDestinatarioName(String destinatarioName) { this.destinatarioName = destinatarioName; }
-
-    public String getDestinatarioArea() { return destinatarioArea; }
-    public void setDestinatarioArea(String destinatarioArea) { this.destinatarioArea = destinatarioArea; }
-
-    public String getDestinatarioSede() { return destinatarioSede; }
-    public void setDestinatarioSede(String destinatarioSede) { this.destinatarioSede = destinatarioSede; }
-
-    public String getRemitenteName() { return remitenteName; }
-    public void setRemitenteName(String remitenteName) { this.remitenteName = remitenteName; }
-
-    public String getRemitenteArea() { return remitenteArea; }
-    public void setRemitenteArea(String remitenteArea) { this.remitenteArea = remitenteArea; }
-
-    public String getRemitenteSede() { return remitenteSede; }
-    public void setRemitenteSede(String remitenteSede) { this.remitenteSede = remitenteSede; }
 
     public List<NoteReportItem> getItems() { return items; }
     public void setItems(List<NoteReportItem> items) { this.items = items; }
