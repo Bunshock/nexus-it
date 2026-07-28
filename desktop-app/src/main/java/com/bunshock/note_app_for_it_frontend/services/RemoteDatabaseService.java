@@ -152,6 +152,14 @@ public class RemoteDatabaseService {
                     name       NVARCHAR(255) NOT NULL UNIQUE,
                     deprecated INT NOT NULL DEFAULT 0
                 )""");
+            // Login-time role lookup (ADMIN starts admin mode already active) — not the same
+            // thing as AD group membership, which gates app access at all and is checked
+            // against the AD API at login time, not stored here.
+            createTableIfMissing(stmt, "USER_ROLE", """
+                CREATE TABLE USER_ROLE (
+                    username NVARCHAR(100) PRIMARY KEY,
+                    role     NVARCHAR(20) NOT NULL
+                )""");
             // created_at/glpi_status_updated_at/return_status_updated_at are deliberately left as
             // NVARCHAR(MAX), not bounded — TODO: revisit these as a real DATETIME2 (or Postgres
             // TIMESTAMP) column once the remote engine choice is confirmed (see 2026-07-20 report
@@ -241,6 +249,30 @@ public class RemoteDatabaseService {
                     status            NVARCHAR(50) NOT NULL,
                     rejection_reason  NVARCHAR(300),
                     status_updated_at NVARCHAR(MAX)
+                )""");
+
+            // Append-only — no app code ever updates or deletes a row here. Writes are
+            // best-effort/fail-open (CachingAuditService swallows exceptions from both primary
+            // and local) so a logging failure never blocks the real action being audited.
+            createTableIfMissing(stmt, "LOGIN_AUDIT", """
+                CREATE TABLE LOGIN_AUDIT (
+                    id             INT IDENTITY(1,1) PRIMARY KEY,
+                    username       NVARCHAR(100) NOT NULL,
+                    attempted_at   NVARCHAR(MAX) NOT NULL,
+                    success        INT NOT NULL,
+                    failure_reason NVARCHAR(50)
+                )""");
+            // note_item_id is a real FK, not a generic entity_type/entity_id pair — every
+            // current action either targets a NOTE_ITEM row or nothing at all
+            // (DB_CONNECTION_CHANGED). Placed after NOTE_ITEM above, which it references.
+            createTableIfMissing(stmt, "ACTION_AUDIT", """
+                CREATE TABLE ACTION_AUDIT (
+                    id           INT IDENTITY(1,1) PRIMARY KEY,
+                    username     NVARCHAR(100) NOT NULL,
+                    event_type   NVARCHAR(30) NOT NULL,
+                    occurred_at  NVARCHAR(MAX) NOT NULL,
+                    note_item_id INT REFERENCES NOTE_ITEM(id),
+                    details      NVARCHAR(300)
                 )""");
 
             // CREATE TABLE ... only-if-missing (above) silently no-ops on a database that already

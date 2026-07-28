@@ -38,6 +38,8 @@ public class DatabaseService {
             createEquipmentTables(stmt);
             createHistoryTables(stmt);
             createSettingsTable(stmt);
+            createUserRoleTable(stmt);
+            createAuditTables(stmt);
             migrateSchema(conn, stmt);
             insertDefaultData(stmt);
         }
@@ -893,6 +895,45 @@ public class DatabaseService {
             CREATE TABLE IF NOT EXISTS APP_SETTINGS (
                 key   TEXT PRIMARY KEY,
                 value TEXT
+            )""");
+    }
+
+    // Login-time role lookup (ADMIN starts admin mode already active, USER doesn't) — see
+    // IUserRoleService. Not the same thing as AD group membership (which gates app access at
+    // all, checked at login against the AD API) — this only distinguishes admin vs. normal
+    // among users who already got past that gate.
+    private void createUserRoleTable(Statement stmt) throws SQLException {
+        stmt.executeUpdate("""
+            CREATE TABLE IF NOT EXISTS USER_ROLE (
+                username TEXT PRIMARY KEY,
+                role     TEXT NOT NULL
+            )""");
+    }
+
+    // Append-only — no app code ever updates or deletes a row here (see IAuditService's own
+    // doc). Writes are best-effort/fail-open (CachingAuditService swallows exceptions from
+    // both primary and local) so a logging failure never blocks the real action being audited.
+    private void createAuditTables(Statement stmt) throws SQLException {
+        stmt.executeUpdate("""
+            CREATE TABLE IF NOT EXISTS LOGIN_AUDIT (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                username       TEXT NOT NULL,
+                attempted_at   TEXT NOT NULL,
+                success        INTEGER NOT NULL,
+                failure_reason TEXT
+            )""");
+
+        // note_item_id is a real FK, not a generic entity_type/entity_id pair — every current
+        // action either targets a NOTE_ITEM row or nothing at all (DB_CONNECTION_CHANGED).
+        // Requires NOTE_ITEM to already exist — createHistoryTables() runs before this.
+        stmt.executeUpdate("""
+            CREATE TABLE IF NOT EXISTS ACTION_AUDIT (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                username     TEXT NOT NULL,
+                event_type   TEXT NOT NULL,
+                occurred_at  TEXT NOT NULL,
+                note_item_id INTEGER REFERENCES NOTE_ITEM(id),
+                details      TEXT
             )""");
     }
 
