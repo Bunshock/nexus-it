@@ -130,6 +130,29 @@ class AdminSessionTest {
     }
 
     @Test
+    void activatePermanentlyNeverExpiresEvenAfterLongInactivity() throws Exception {
+        session.activatePermanently();
+        setLastActivity(LocalDateTime.now().minusMinutes(9999));
+        assertTrue(session.isActive());
+        assertEquals(0, session.getRemainingSeconds());
+    }
+
+    @Test
+    void activatePermanentlyStillDeactivatesNormally() {
+        session.activatePermanently();
+        session.deactivate();
+        assertFalse(session.isActive());
+    }
+
+    @Test
+    void plainActivateAfterPermanentlyResumesNormalExpiry() throws Exception {
+        session.activatePermanently();
+        session.activate();
+        setLastActivity(LocalDateTime.now().minusMinutes(16));
+        assertFalse(session.isActive());
+    }
+
+    @Test
     void expiryFiresBothDeactivateAndExpireListeners() throws Exception {
         AtomicBoolean deactivateFired = new AtomicBoolean(false);
         AtomicBoolean expireFired = new AtomicBoolean(false);

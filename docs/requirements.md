@@ -36,7 +36,9 @@
 
 - **FR-14**: The system shall protect the "Genérico / Otro" brand entry from deletion.
 
-- **FR-15**: The system shall allow administrators to activate a timed admin session (15-minute inactivity expiry) via a password-protected toggle in Settings.
+- **FR-15**: The system shall require every technician to log in (AD username + password) before showing the main application window, gate application access on AD group membership, and automatically activate a non-expiring admin session for accounts with the ADMIN role — replacing the previous self-service, password-toggled admin session. A non-admin-role technician retains per-action password prompts for individual admin-gated actions (catalog edits, S/N validation edits) but cannot activate the broader session.
+
+- **FR-15a**: The system shall support a per-account role (ADMIN/USER), independent of AD group membership, resolved read-only at login; roles are assigned by a database administrator via direct SQL against the USER_ROLE table, not through an in-app screen.
 
 - **FR-16**: The system shall allow administrators to manage per-model S/N regex validation rules (enable/disable, view pattern) from an admin-protected table in Settings.
 

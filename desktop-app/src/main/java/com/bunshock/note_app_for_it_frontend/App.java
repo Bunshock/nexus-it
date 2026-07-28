@@ -54,6 +54,39 @@ public class App extends Application {
 
     @Override
     public void start(Stage stage) throws Exception {
+        stage.getIcons().add(new Image(getClass().getResourceAsStream("images/favicon.png")));
+        stage.setTitle("Universidad Siglo 21 - Soporte IT - Registro de Movimientos y Generación de Notas");
+        stage.initStyle(StageStyle.TRANSPARENT);
+        showLoginScreen(stage);
+    }
+
+    /**
+     * Shown alone, before MainView (and its startup connectivity overlay) is constructed at
+     * all — only a successful login proceeds to showMainApp(). LoginController itself never
+     * touches the Stage; it just reports success/failure back through the callback.
+     */
+    private void showLoginScreen(Stage stage) throws Exception {
+        FXMLLoader loader = new FXMLLoader(getClass().getResource("views/LoginView.fxml"));
+        Parent loginRoot = loader.load();
+        com.bunshock.note_app_for_it_frontend.controllers.LoginController controller = loader.getController();
+
+        Scene loginScene = new Scene(loginRoot, 420, 560);
+        loginScene.setFill(Color.TRANSPARENT);
+        stage.setScene(loginScene);
+        stage.setResizable(false);
+        stage.centerOnScreen();
+        stage.show();
+
+        controller.setOnLoginSuccess(() -> {
+            try {
+                showMainApp(stage);
+            } catch (Exception e) {
+                throw new RuntimeException("Failed to load MainView after login", e);
+            }
+        });
+    }
+
+    private void showMainApp(Stage stage) throws Exception {
         Parent root = FXMLLoader.load(getClass().getResource("views/MainView.fxml"));
 
         Rectangle2D visualBounds = Screen.getPrimary().getVisualBounds();
@@ -84,20 +117,15 @@ public class App extends Application {
         scene.setFill(Color.TRANSPARENT);
         stage.setScene(scene);
 
-        stage.getIcons().add(new Image(getClass().getResourceAsStream("images/favicon.png")));
-
         // Native OS chrome is intentionally replaced by MainView.fxml's own title bar
         // (MainController.setupWindowChrome() wires drag-to-move, edge resize, the
-        // minimize/maximize/close buttons, and the shadow/rounded-corner window frame) — the
-        // title is still set here for the taskbar/Alt+Tab entry, it just isn't rendered by the
-        // OS anymore. TRANSPARENT (rather than UNDECORATED) is required for the drop shadow and
-        // rounded corners to render at all — an UNDECORATED stage is always an opaque rectangle.
-        stage.initStyle(StageStyle.TRANSPARENT);
+        // minimize/maximize/close buttons, and the shadow/rounded-corner window frame). Icon,
+        // title, and StageStyle.TRANSPARENT were already set once in start() — a Stage's style
+        // can only be initialized before its first show(), which already happened for the login
+        // screen, so it must not be set again here.
         stage.setResizable(true);
         stage.setMinWidth(900);
         stage.setMinHeight(600);
-
-        stage.setTitle("Universidad Siglo 21 - Soporte IT - Registro de Movimientos y Generación de Notas");
 
         stage.centerOnScreen();
         stage.show();

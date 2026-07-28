@@ -22,6 +22,7 @@ public class AdminSession {
     });
 
     private volatile boolean active = false;
+    private volatile boolean neverExpires = false;
     private volatile LocalDateTime lastActivity;
     private ScheduledFuture<?> timeoutCheck;
 
@@ -35,14 +36,30 @@ public class AdminSession {
 
     public synchronized void activate() {
         active = true;
+        neverExpires = false;
         lastActivity = LocalDateTime.now();
         scheduleCheck();
+        Platform.runLater(() -> new ArrayList<>(onActivateListeners).forEach(Runnable::run));
+    }
+
+    /**
+     * Activates without ever expiring on inactivity — used for an ADMIN-role login, since the
+     * technician's own credentials already proved who they are, and the old self-service
+     * "Activar modo administrador" password toggle (the only way anyone used to get back in
+     * after the 15-minute timeout) no longer exists for anyone to click.
+     */
+    public synchronized void activatePermanently() {
+        active = true;
+        neverExpires = true;
+        lastActivity = null;
+        if (timeoutCheck != null) timeoutCheck.cancel(false);
         Platform.runLater(() -> new ArrayList<>(onActivateListeners).forEach(Runnable::run));
     }
 
     public synchronized void deactivate() {
         if (!active) return;
         active = false;
+        neverExpires = false;
         lastActivity = null;
         if (timeoutCheck != null) timeoutCheck.cancel(false);
         List<Runnable> listeners = new ArrayList<>(onDeactivateListeners);
@@ -51,6 +68,7 @@ public class AdminSession {
 
     public synchronized boolean isActive() {
         if (!active) return false;
+        if (neverExpires) return true;
         if (lastActivity == null ||
             LocalDateTime.now().isAfter(lastActivity.plusMinutes(TIMEOUT_MINUTES))) {
             expire();
@@ -60,11 +78,11 @@ public class AdminSession {
     }
 
     public synchronized void refreshActivity() {
-        if (active) lastActivity = LocalDateTime.now();
+        if (active && !neverExpires) lastActivity = LocalDateTime.now();
     }
 
     public long getRemainingSeconds() {
-        if (!active || lastActivity == null) return 0;
+        if (!active || neverExpires || lastActivity == null) return 0;
         long elapsed = java.time.temporal.ChronoUnit.SECONDS.between(lastActivity, LocalDateTime.now());
         return Math.max(0, TIMEOUT_MINUTES * 60L - elapsed);
     }

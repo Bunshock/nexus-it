@@ -3,6 +3,7 @@ package com.bunshock.note_app_for_it_frontend;
 import java.util.List;
 
 import com.bunshock.note_app_for_it_frontend.models.ADUser;
+import com.bunshock.note_app_for_it_frontend.models.AdCredentialResult;
 import com.bunshock.note_app_for_it_frontend.services.MockADService;
 
 import org.junit.jupiter.api.Test;
@@ -48,5 +49,25 @@ class MockADServiceTest {
     void emptyQueryReturnsNothing() {
         List<ADUser> results = service.search("", "", "");
         assertTrue(results.isEmpty());
+    }
+
+    @Test
+    void validateCredentialsValidForKnownUserWithMockPassword() {
+        AdCredentialResult result = service.validateCredentials("jperez", "password123");
+        assertTrue(result.isValid());
+        assertFalse(result.getGroups().isEmpty());
+    }
+
+    @Test
+    void validateCredentialsInvalidForWrongPassword() {
+        AdCredentialResult result = service.validateCredentials("jperez", "wrong");
+        assertFalse(result.isValid());
+        assertTrue(result.getGroups().isEmpty());
+    }
+
+    @Test
+    void validateCredentialsInvalidForUnknownUser() {
+        AdCredentialResult result = service.validateCredentials("nobody", "password123");
+        assertFalse(result.isValid());
     }
 }

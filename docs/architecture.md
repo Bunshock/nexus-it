@@ -172,7 +172,7 @@ desktop-app/src/main/java/com/bunshock/note_app_for_it_frontend/
 ## Key Patterns
 
 ### Service Abstraction (Strategy Pattern)
-Every external dependency has an interface (`IADService`, `IEquipmentService`, `IGLPIService`, `IEmailService`, `IHistoryService`). Concrete implementations are wired in `ServiceLocator.initialize()`. Swapping from mock to real is a one-line change in `ServiceLocator`.
+Every external dependency has an interface (`IADService`, `IEquipmentService`, `IGLPIService`, `IEmailService`, `IHistoryService`, `IUserRoleService`). Concrete implementations are wired in `ServiceLocator.initialize()`. Swapping from mock to real is a one-line change in `ServiceLocator`.
 
 ```mermaid
 
@@ -182,12 +182,25 @@ classDiagram
     class IADService {
         <<interface>>
         +search(dni, name, username) List~ADUser~
+        +validateCredentials(username, password) AdCredentialResult
         +isConfigured() bool
     }
     class AdApiService
     class MockADService
     IADService <|.. AdApiService
     IADService <|.. MockADService
+
+    class IUserRoleService {
+        <<interface>>
+        +getRole(username) String
+    }
+    class SqliteUserRoleService
+    class MockUserRoleService
+    class CachingUserRoleService
+    IUserRoleService <|.. SqliteUserRoleService
+    IUserRoleService <|.. MockUserRoleService
+    IUserRoleService <|.. CachingUserRoleService
+    CachingUserRoleService ..> IUserRoleService : wraps primary (remote) + local
 
     class IEquipmentService {
         <<interface>>
@@ -253,10 +266,19 @@ classDiagram
     ServiceLocator --> IHistoryService : wires Caching or Sqlite impl
     ServiceLocator --> IGLPIService : wires GLPIServiceStub
     ServiceLocator --> IEmailService : wires GmailEmailService
+    ServiceLocator --> IUserRoleService : wires Caching or Sqlite impl
 ```
+
+### Login screen (LoginController) and IUserRoleService
+
+Added 2026-07-24. `App.java` shows a small login `Scene` (`LoginController` + `views/LoginView.fxml`) before `MainView` is built at all — a successful login is what triggers `App.showMainApp(Stage)`, the entire previous `start()` body. `LoginController.handleLogin()`: `IADService.validateCredentials(username, password)` → AD group-membership check (`AppConfig.adAccess.allowedGroupName`, blank = skipped) → `search(null, null, username)` profile lookup → `IUserRoleService.getRole(username)` → `TechnicianSessionService.loginResolved(ADUser, role)`, activating `AdminSession` permanently (no 15-minute expiry) for an `ADMIN` role. `IUserRoleService` is intentionally **read-only** — just `getRole(username)` — following the same remote-first/local-fallback `CachingXxxService` shape as `IEquipmentService`, backed by a flat `USER_ROLE(username, role)` table. **No in-app UI edits this table**: a first version added a 6th catalog list ("Usuarios") to Base de Datos for this, removed the same day per explicit user preference for direct SQL over an in-app CRUD screen for something this infrequent.
 
 ### Active Directory Integration (AdApiService)
 `AdApiService` (singleton, `configure(baseUrl, apiToken)` / `isConfigured()`) is the active `IADService` implementation, calling `<baseUrl>/api/v1/ad/users` with `dni`/`name`/`username` query params (server-side ANDs whatever is supplied) and an `Authorization: Bearer <token>` header. `MockADService` is test-only now — `ServiceLocator` always wires `AdApiService`.
+
+`validateCredentials(username, password)` (added 2026-07-24 for the login screen) `POST`s to `<baseUrl>/api/v1/ad/validate-credentials` — same Bearer token, body `{username, password}` — and expects `{"valid": bool, "groups": [...]}`. **This endpoint doesn't exist on the real AD API yet**; `MockADService`'s stub (fixed password, mock group) is what the login flow was built and tested against in the meantime.
+
+**Temporary production bypass** (`AppConfig.adAccess.mockCredentialValidation`, default `false`): when `true`, `AdApiService.mockValidateCredentials()` skips the HTTP call above entirely, accepting any password but still confirming the username via the real, already-working `search()` lookup, and still populating the configured `allowedGroupName` in its returned groups so the access gate stays consistent. Logs an unmissable `[MOCK]` line on every use. Exists solely because the real AD API can't be extended yet; set back to `false` once it can.
 
 - **Config storage**: the URL (`adApi.baseUrl`) lives in `app-config.json` like `glpiApi.baseUrl`; the token is a secret, encrypted (`AppKeyEncryptionService`) into `APP_SETTINGS` (`ad_api_token`), never re-displayed once saved (write-only `PasswordField`, same pattern as `glpi_api_key`). Both fields live in `SettingsController`'s "ACTIVE DIRECTORY API" card, admin-gated like every other config field. Can ship pre-configured via `app-config.json`'s `defaults.adApiToken` — see "Credential Encryption" pattern below.
 - **Verify-before-save**: saving a new URL/token in Settings tests the connection on a background thread (using the current technician's already-resolved username as a cheap, real query) before persisting; a failed test prompts for confirmation rather than silently accepting bad config — mirrors `DatabaseSectionController`'s DB connection flow.

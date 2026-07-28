@@ -9,6 +9,8 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import com.bunshock.note_app_for_it_frontend.models.ADUser;
+
 import javafx.application.Platform;
 
 import org.junit.jupiter.api.AfterEach;
@@ -67,6 +69,49 @@ class TechnicianSessionServiceTest {
         assertEquals("mtecnico@ues21.edu.ar", session.getEmail());
         assertEquals("27555111", session.getDni());
         assertNull(session.getLastError());
+        assertTrue(session.isResolved());
+    }
+
+    @Test
+    void loginResolvedSetsIdentityRoleAndUpdateSourceAd() {
+        ADUser user = new ADUser("27555111", "Marcos Tecnico", "mtecnico", "mtecnico@ues21.edu.ar", null);
+        session.loginResolved(user, IUserRoleService.ROLE_ADMIN);
+
+        assertEquals("Marcos Tecnico", session.getName());
+        assertEquals("mtecnico", session.getUsername());
+        assertEquals("mtecnico@ues21.edu.ar", session.getEmail());
+        assertEquals("27555111", session.getDni());
+        assertEquals(IUserRoleService.ROLE_ADMIN, session.getRole());
+        assertNull(session.getLastError());
+        assertEquals(TechnicianSessionService.UpdateSource.AD, session.getLastUpdateSource());
+    }
+
+    @Test
+    void refreshProfileFromAdUpdatesNameEmailDniButNotUsernameOrRole() {
+        ADUser original = new ADUser("27555111", "Marcos Tecnico", "mtecnico", "mtecnico@ues21.edu.ar", null);
+        session.loginResolved(original, IUserRoleService.ROLE_ADMIN);
+
+        ADUser refreshed = new ADUser("27555112", "Marcos T. Tecnico", "mtecnico", "new@ues21.edu.ar", null);
+        session.refreshProfileFromAd(refreshed);
+
+        assertEquals("Marcos T. Tecnico", session.getName());
+        assertEquals("new@ues21.edu.ar", session.getEmail());
+        assertEquals("27555112", session.getDni());
+        assertEquals("mtecnico", session.getUsername());
+        assertEquals(IUserRoleService.ROLE_ADMIN, session.getRole());
+    }
+
+    @Test
+    void reportProfileRefreshErrorLeavesExistingSessionIntact() {
+        ADUser user = new ADUser("27555111", "Marcos Tecnico", "mtecnico", "mtecnico@ues21.edu.ar", null);
+        session.loginResolved(user, IUserRoleService.ROLE_USER);
+
+        session.reportProfileRefreshError("No se pudo conectar con Active Directory.");
+
+        assertEquals("No se pudo conectar con Active Directory.", session.getLastError());
+        // A refresh failure must not force a re-login — the already-resolved identity stays.
+        assertEquals("Marcos Tecnico", session.getName());
+        assertEquals("mtecnico", session.getUsername());
         assertTrue(session.isResolved());
     }
 

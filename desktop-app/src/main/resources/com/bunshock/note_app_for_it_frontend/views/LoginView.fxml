@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?import javafx.scene.layout.*?>
+<?import javafx.scene.control.*?>
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.image.Image?>
+<?import javafx.scene.image.ImageView?>
+
+<!-- Standalone login screen — the only thing shown before MainView (and its startup
+     connectivity overlay) is even constructed. Same two-layer background/border/shadow
+     recipe every dialog in this app already uses (see e.g. SettingsController.buildDialogRoot),
+     since this isn't part of MainView's own window chrome. -->
+<StackPane xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1"
+           fx:controller="com.bunshock.note_app_for_it_frontend.controllers.LoginController"
+           stylesheets="/com/bunshock/note_app_for_it_frontend/css/styles.css"
+           style="-fx-background-color: transparent; -fx-padding: 20;">
+    <children>
+        <VBox alignment="CENTER" spacing="16" maxWidth="340" style="
+                -fx-background-color: #1a1a1a, white;
+                -fx-background-radius: 14, 12;
+                -fx-background-insets: 0, 2;
+                -fx-padding: 36 32 28 32;
+                -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.6), 24, 0, 0, 6);
+              ">
+            <children>
+                <ImageView fitWidth="90" preserveRatio="true">
+                    <image>
+                        <Image url="/com/bunshock/note_app_for_it_frontend/images/logo.png" />
+                    </image>
+                </ImageView>
+
+                <Label text="Registro de Movimientos y Generación de Notas"
+                       style="-fx-font-size: 12px; -fx-text-fill: #64748b; -fx-text-alignment: center;"
+                       wrapText="true" textAlignment="CENTER"/>
+
+                <Label text="INICIAR SESIÓN" styleClass="section-label">
+                    <VBox.margin><Insets top="8"/></VBox.margin>
+                </Label>
+
+                <VBox spacing="2" maxWidth="Infinity">
+                    <children>
+                        <Label text="USUARIO" styleClass="input-label-small"/>
+                        <TextField fx:id="txtUsername" styleClass="form-input-main" maxWidth="Infinity"
+                                   promptText="usuario.dominio"/>
+                    </children>
+                </VBox>
+
+                <VBox spacing="2" maxWidth="Infinity">
+                    <children>
+                        <Label text="CONTRASEÑA" styleClass="input-label-small"/>
+                        <PasswordField fx:id="pfPassword" styleClass="form-input-main" maxWidth="Infinity"
+                                       onAction="#handleLogin"/>
+                    </children>
+                </VBox>
+
+                <Label fx:id="lblLoginStatus" text="" wrapText="true" textAlignment="CENTER"
+                       style="-fx-font-size: 12px;">
+                    <VBox.margin><Insets top="2"/></VBox.margin>
+                </Label>
+
+                <HBox spacing="10" alignment="CENTER" maxWidth="Infinity">
+                    <VBox.margin><Insets top="6"/></VBox.margin>
+                    <children>
+                        <Button fx:id="btnExit" text="Salir" onAction="#handleExit" styleClass="button-secondary-large"/>
+                        <Button fx:id="btnLogin" text="Iniciar sesión" onAction="#handleLogin"
+                                styleClass="button-primary-large" HBox.hgrow="ALWAYS" maxWidth="Infinity"/>
+                    </children>
+                </HBox>
+            </children>
+        </VBox>
+    </children>
+</StackPane>

@@ -3,6 +3,7 @@ package com.bunshock.note_app_for_it_frontend.controllers;
 import java.util.regex.Pattern;
 
 import com.bunshock.note_app_for_it_frontend.services.AdminSession;
+import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;
 import com.bunshock.note_app_for_it_frontend.services.TechnicianSessionService;
 
 import javafx.animation.Animation;
@@ -22,6 +23,9 @@ public class ProfileController {
         Pattern.compile("^\\p{L}+( \\p{L}+)*$");
     private static final Pattern DNI_PATTERN =
         Pattern.compile("^\\d{7,8}$");
+    private static final String ADMIN_HINT_SUFFIX =
+        " Un administrador puede completar estos datos manualmente en modo administrador.";
+
     private static final Pattern EMAIL_PATTERN =
         Pattern.compile("^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$");
 
@@ -102,15 +106,34 @@ public class ProfileController {
         btnSave.setManaged(adminActive);
     }
 
+    // Refreshes name/dni/email from a fresh AD lookup by the already-known username — not a
+    // re-authentication (the technician already logged in with a password to start this
+    // session; see TechnicianSessionService.refreshProfileFromAd()). A failure here leaves the
+    // existing session untouched and just reports the error, rather than wiping identity.
     @FXML
     private void handleRefreshFromAd() {
+        String username = TechnicianSessionService.getInstance().getUsername();
+        if (username == null) return;
+
         btnRefreshFromAd.setDisable(true);
         String originalText = btnRefreshFromAd.getText();
         btnRefreshFromAd.setText("Actualizando...");
         flashStatus(lblProfileStatus, "Consultando Active Directory...", "#64748b");
 
         Thread t = new Thread(() -> {
-            TechnicianSessionService.getInstance().refreshFromWindowsSession();
+            TechnicianSessionService session = TechnicianSessionService.getInstance();
+            try {
+                var results = ServiceLocator.getInstance().getAdService().search(null, null, username);
+                if (results.isEmpty()) {
+                    session.reportProfileRefreshError(
+                        "Usuario no encontrado en Active Directory." + ADMIN_HINT_SUFFIX);
+                } else {
+                    session.refreshProfileFromAd(results.get(0));
+                }
+            } catch (Exception adUnreachable) {
+                session.reportProfileRefreshError(
+                    "No se pudo conectar con Active Directory." + ADMIN_HINT_SUFFIX);
+            }
             Platform.runLater(() -> {
                 btnRefreshFromAd.setDisable(false);
                 btnRefreshFromAd.setText(originalText);

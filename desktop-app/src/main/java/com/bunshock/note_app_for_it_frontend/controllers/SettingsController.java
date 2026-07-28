@@ -5,7 +5,6 @@ import java.sql.PreparedStatement;
 import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Optional;
 import java.util.Set;
 import java.util.function.Predicate;
 
@@ -13,7 +12,6 @@ import com.bunshock.note_app_for_it_frontend.models.AppConfig;
 import com.bunshock.note_app_for_it_frontend.models.Sede;
 import com.bunshock.note_app_for_it_frontend.models.SnValidationRow;
 import com.bunshock.note_app_for_it_frontend.services.AdApiService;
-import com.bunshock.note_app_for_it_frontend.services.AdminAuthService;
 import com.bunshock.note_app_for_it_frontend.services.AdminSession;
 import com.bunshock.note_app_for_it_frontend.services.AppKeyEncryptionService;
 import com.bunshock.note_app_for_it_frontend.services.ConfigService;
@@ -85,10 +83,6 @@ public class SettingsController {
     @FXML private Button btnSave;
     @FXML private Label  lblSaveStatus;
 
-    // ── Admin mode fields ─────────────────────────────────────────────
-    @FXML private Button btnToggleAdmin;
-    @FXML private Label  lblAdminStatus;
-
     // ── S/N validation panel fields ───────────────────────────────────
     @FXML private MenuButton                             mnuSnType;
     @FXML private MenuButton                             mnuSnBrand;
@@ -144,7 +138,6 @@ public class SettingsController {
     }
 
     private void onAdminStateChanged() {
-        updateAdminButton();
         updateFieldEditability();
     }
 
@@ -391,48 +384,6 @@ public class SettingsController {
         fade.play();
     }
 
-    // ── Admin mode toggle ─────────────────────────────────────────────
-
-    @FXML
-    private void handleToggleAdmin() {
-        if (AdminSession.getInstance().isActive()) {
-            AdminSession.getInstance().deactivate();
-            showErrorDialog("Modo administrador", "El modo administrador fue desactivado.");
-            return;
-        }
-        if (!AdminAuthService.isConfigured()) {
-            showErrorDialog("Administrador no configurado",
-                "El hash de contraseña de administrador no está configurado en el sistema.");
-            return;
-        }
-        Optional<String> entered = promptPassword();
-        if (entered.isEmpty()) return;
-        if (!AdminAuthService.verify(entered.get())) {
-            showErrorDialog("Acceso denegado", "Contraseña incorrecta.");
-            return;
-        }
-        AdminSession.getInstance().activate();
-    }
-
-    private void updateAdminButton() {
-        boolean active = AdminSession.getInstance().isActive();
-        if (active) {
-            btnToggleAdmin.setText("Desactivar modo administrador");
-            btnToggleAdmin.getStyleClass().removeAll("button-secondary");
-            if (!btnToggleAdmin.getStyleClass().contains("button-primary"))
-                btnToggleAdmin.getStyleClass().add("button-primary");
-            lblAdminStatus.setText("Activo");
-            lblAdminStatus.setStyle("-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #0c8570;");
-        } else {
-            btnToggleAdmin.setText("Activar modo administrador");
-            btnToggleAdmin.getStyleClass().removeAll("button-primary");
-            if (!btnToggleAdmin.getStyleClass().contains("button-secondary"))
-                btnToggleAdmin.getStyleClass().add("button-secondary");
-            lblAdminStatus.setText("Inactivo");
-            lblAdminStatus.setStyle("-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #94a3b8;");
-        }
-    }
-
     // ── S/N validation panel navigation ───────────────────────────────
 
     @FXML
@@ -660,48 +611,6 @@ public class SettingsController {
         } else {
             btn.setText(selected.size() + " seleccionados");
         }
-    }
-
-    // ── Admin auth ────────────────────────────────────────────────────
-
-    private Optional<String> promptPassword() {
-        Stage stage = buildDialogStage();
-        centerOnContent(stage);
-        String[] result = {null};
-
-        Label title = new Label("Acceso de administrador");
-        title.getStyleClass().add("section-label");
-
-        Label subtitle = new Label("Ingrese la contraseña para editar esta configuración.");
-        subtitle.setStyle("-fx-text-fill: #475569; -fx-font-size: 12px;");
-        subtitle.setWrapText(true);
-
-        PasswordField pf = new PasswordField();
-        pf.setPromptText("Contraseña");
-        pf.getStyleClass().add("form-input-main");
-
-        Button btnCancel = new Button("Cancelar");
-        btnCancel.getStyleClass().add("button-secondary");
-        btnCancel.setOnAction(e -> stage.close());
-
-        Button btnOk = new Button("Confirmar");
-        btnOk.getStyleClass().add("button-primary");
-        btnOk.setOnAction(e -> { result[0] = pf.getText(); stage.close(); });
-        pf.setOnAction(e -> btnOk.fire());
-
-        HBox buttons = new HBox(8, btnCancel, btnOk);
-        buttons.setAlignment(Pos.CENTER_RIGHT);
-
-        VBox root = buildDialogRoot(380);
-        root.getChildren().addAll(title, subtitle, pf, buttons);
-
-        Scene scene = buildDialogScene(root);
-        scene.setOnKeyPressed(e -> { if (e.getCode() == javafx.scene.input.KeyCode.ESCAPE) stage.close(); });
-        stage.setScene(scene);
-        javafx.application.Platform.runLater(pf::requestFocus);
-        stage.showAndWait();
-
-        return Optional.ofNullable(result[0]);
     }
 
     // ── Edit row ──────────────────────────────────────────────────────

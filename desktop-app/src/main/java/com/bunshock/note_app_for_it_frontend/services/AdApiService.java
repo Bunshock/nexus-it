@@ -15,6 +15,9 @@ import java.util.List;
 import java.util.Map;
 
 import com.bunshock.note_app_for_it_frontend.models.ADUser;
+import com.bunshock.note_app_for_it_frontend.models.AdCredentialResult;
+// ConfigService.getInstance() below reads the same live AppConfig singleton loaded at startup —
+// no constructor wiring needed, same pattern SqliteEquipmentService.genericLabel() already uses.
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -23,6 +26,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 public class AdApiService implements IADService {
 
     private static final String USERS_PATH = "/api/v1/ad/users";
+    private static final String VALIDATE_CREDENTIALS_PATH = "/api/v1/ad/validate-credentials";
 
     private static AdApiService instance;
 
@@ -126,6 +130,79 @@ public class AdApiService implements IADService {
             }
         }
         return merged;
+    }
+
+    @Override
+    public AdCredentialResult validateCredentials(String username, String password) {
+        if (!isConfigured()) return new AdCredentialResult(false, List.of());
+
+        if (isMockCredentialValidationEnabled()) {
+            return mockValidateCredentials(username);
+        }
+
+        try {
+            String base = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
+            String json = mapper.writeValueAsString(Map.of("username", username, "password", password));
+
+            HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(base + VALIDATE_CREDENTIALS_PATH))
+                .header("Authorization", "Bearer " + apiToken)
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(json, StandardCharsets.UTF_8))
+                .build();
+
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() != 200) {
+                throw new RuntimeException("AD API validate-credentials failed with status "
+                    + response.statusCode() + ": " + response.body());
+            }
+
+            JsonNode node = mapper.readTree(response.body());
+            boolean valid = node.path("valid").asBoolean(false);
+            List<String> groups = new ArrayList<>();
+            if (valid && node.has("groups") && node.get("groups").isArray()) {
+                node.get("groups").forEach(g -> groups.add(g.asText()));
+            }
+            return new AdCredentialResult(valid, groups);
+        } catch (IOException | InterruptedException e) {
+            throw new RuntimeException("AD API validate-credentials request failed", e);
+        }
+    }
+
+    private boolean isMockCredentialValidationEnabled() {
+        try {
+            var adAccess = ConfigService.getInstance().getConfig().adAccess;
+            return adAccess != null && adAccess.mockCredentialValidation;
+        } catch (IllegalStateException notLoaded) {
+            return false;
+        }
+    }
+
+    /**
+     * TEMPORARY — see AppConfig.AdAccessConfig.mockCredentialValidation. Stands in for the real
+     * AD API's validate-credentials endpoint, which doesn't exist yet: does NOT check the
+     * password at all (any value is accepted), but does confirm the username is a real AD
+     * account via the already-working search() lookup, so a typo'd/unknown username is still
+     * rejected. Prints a loud, unmissable warning every time it's used, since accepting any
+     * password is a real (temporary, explicitly accepted) security bypass, not something that
+     * should go unnoticed if left on by mistake.
+     */
+    private AdCredentialResult mockValidateCredentials(String username) {
+        System.out.println("[MOCK] AD credential validation is DISABLED (adAccess.mockCredentialValidation=true) "
+            + "- password for \"" + username + "\" was NOT checked. Remove this once the real "
+            + "validate-credentials endpoint exists on the AD API.");
+
+        boolean knownUser = !search(null, null, username).isEmpty();
+        if (!knownUser) return new AdCredentialResult(false, List.of());
+
+        List<String> groups = new ArrayList<>();
+        try {
+            String allowedGroup = ConfigService.getInstance().getConfig().adAccess.allowedGroupName;
+            if (allowedGroup != null && !allowedGroup.isBlank()) groups.add(allowedGroup.trim());
+        } catch (IllegalStateException notLoaded) {
+            // no config to read a group name from - leave groups empty, same as an unconfigured gate
+        }
+        return new AdCredentialResult(true, groups);
     }
 
     /** Tests arbitrary connection details without mutating the singleton's live config. */

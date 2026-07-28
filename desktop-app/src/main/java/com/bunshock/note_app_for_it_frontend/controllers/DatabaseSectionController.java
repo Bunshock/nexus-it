@@ -22,6 +22,7 @@ import com.bunshock.note_app_for_it_frontend.services.DatabaseService;
 import com.bunshock.note_app_for_it_frontend.services.IEquipmentService;
 import com.bunshock.note_app_for_it_frontend.services.RemoteDatabaseService;
 import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;
+import com.bunshock.note_app_for_it_frontend.services.TechnicianSessionService;
 
 import javafx.animation.FadeTransition;
 import javafx.application.Platform;
@@ -129,8 +130,13 @@ public class DatabaseSectionController {
     }
 
     @FXML
+    // Not admin-gated (removed 2026-07-24, explicit user decision) — any technician can point
+    // their own local install at a different remote database. db_host/port/name/username/
+    // password all live in local APP_SETTINGS only (never synced), so this only ever affects
+    // the machine it's changed on, and the existing test-connection-before-accepting flow below
+    // still guards against silently saving an unreachable/wrong config either way.
     private void handleEditConnection() {
-        requireAdmin(this::openEditConnectionDialog);
+        openEditConnectionDialog();
     }
 
     // Tests and reports both databases independently every time — previously this only ever
@@ -195,9 +201,16 @@ public class DatabaseSectionController {
         TextField tfUser = new TextField(curUser != null ? curUser : "");
         tfUser.setPromptText("Ej: admin"); tfUser.getStyleClass().add("form-input-main");
 
-        Label lblPw = new Label("CONTRASEÑA"); lblPw.getStyleClass().add("input-label-small");
+        // Write-only, like every other secret field in this app (SMTP/GLPI/AD) — never
+        // pre-filled with the decrypted current value. Removing the admin gate on this dialog
+        // means any technician can open it now, and a PasswordField's masked text can still be
+        // selected/copied in plain text, so pre-filling it here would hand out the real shared
+        // DB password to anyone who opens this screen.
+        Label lblPw = new Label("CONTRASEÑA");
+        lblPw.getStyleClass().add("input-label-small");
+        Label lblPwError = buildErrorLabel();
         PasswordField pfPass = new PasswordField();
-        pfPass.setText(curPass != null ? curPass : "");
+        pfPass.setPromptText("Dejar en blanco para no cambiarla");
         pfPass.getStyleClass().add("form-input-main");
 
         Button btnCancel = new Button("Cancelar");
@@ -211,18 +224,37 @@ public class DatabaseSectionController {
             String portStr = tfPort.getText().trim().isEmpty() ? "1433" : tfPort.getText().trim();
             String name   = tfName.getText().trim();
             String user   = tfUser.getText().trim();
-            String pass   = pfPass.getText();
+            // Blank means "keep the existing password" — write-only field, see above — but
+            // ONLY when the destination itself (host/port) is unchanged. Reusing the stored
+            // password against a genuinely different host would submit the real, live
+            // credential to wherever the field was just pointed at — via the test-connection
+            // call below, before anything is even saved — letting anyone who can type a new
+            // host effectively exfiltrate the password to a server of their choosing without
+            // ever needing to read it back. Changing just the database name or username against
+            // the SAME already-trusted host is fine and still allowed with a blank password.
+            String curHostNorm = curHost != null ? curHost : "";
+            String curPortNorm = curPort != null && !curPort.isBlank() ? curPort : "1433";
+            boolean destinationChanged = !host.equals(curHostNorm) || !portStr.equals(curPortNorm);
+
+            String typedPass = pfPass.getText();
+            if (typedPass.isBlank() && destinationChanged && !host.isEmpty()) {
+                triggerFieldError(lblPwError, "Ingrese la contraseña al cambiar de servidor o puerto");
+                return;
+            }
+            String pass = typedPass.isBlank() ? (curPass != null ? curPass : "") : typedPass;
 
             Runnable persistAndClose = () -> {
                 saveSetting("db_host", host);
                 saveSetting("db_port", portStr);
                 saveSetting("db_name", name);
                 saveEncryptedSetting("db_username", user);
-                saveEncryptedSetting("db_password", pass);
+                if (!typedPass.isBlank()) saveEncryptedSetting("db_password", typedPass);
                 int configuredPort;
                 try { configuredPort = Integer.parseInt(portStr); }
                 catch (NumberFormatException nfe) { configuredPort = 1433; }
                 RemoteDatabaseService.getInstance().configure(host, configuredPort, name, user, pass);
+                logConnectionChangeAudit(host, portStr, name, user, curHost, curPortNorm,
+                    curName, curUser, !typedPass.isBlank());
                 loadConnectionDisplay();
                 stage.close();
             };
@@ -262,7 +294,7 @@ public class DatabaseSectionController {
         root.getChildren().addAll(lblTitle, hostPort,
             new VBox(2, lblN, tfName),
             new VBox(2, lblU, tfUser),
-            new VBox(2, lblPw, pfPass),
+            new VBox(2, buildFieldHeaderRow(lblPw, lblPwError), pfPass),
             new Separator(), buttons);
 
         Scene scene = buildDialogScene(root);
@@ -270,6 +302,26 @@ public class DatabaseSectionController {
         stage.setScene(scene);
         Platform.runLater(tfHost::requestFocus);
         stage.showAndWait();
+    }
+
+    /** Describes what changed — never the password value itself. Best-effort: IAuditService's
+     *  writes already fail open, and this call site is wrapped defensively too, so an
+     *  audit-logging problem never blocks saving the real connection change. */
+    private void logConnectionChangeAudit(String host, String port, String name, String user,
+            String prevHost, String prevPort, String prevName, String prevUser, boolean passwordChanged) {
+        try {
+            StringBuilder details = new StringBuilder();
+            if (!host.equals(prevHost != null ? prevHost : "")) details.append("host, ");
+            if (!port.equals(prevPort)) details.append("port, ");
+            if (!name.equals(prevName != null ? prevName : "")) details.append("db_name, ");
+            if (!user.equals(prevUser != null ? prevUser : "")) details.append("username, ");
+            if (passwordChanged) details.append("password, ");
+            String changed = details.length() > 0 ? details.substring(0, details.length() - 2) : "sin cambios";
+
+            String username = TechnicianSessionService.getInstance().getUsername();
+            ServiceLocator.getInstance().getAuditService()
+                .logAction(username, "DB_CONNECTION_CHANGED", null, "Campos modificados: " + changed);
+        } catch (Exception ignored) { }
     }
 
     // ── Equipment catalog ────────────────────────────────────────────

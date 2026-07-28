@@ -28,7 +28,7 @@ Project-level instructions for Claude Code. These override defaults and apply to
 - **Validate all user inputs** at every system boundary (form fields, config values, FXML bindings).
 - **Fail safely**: if AD, GLPI, or SMTP is unreachable, degrade gracefully — show a status message, do not crash and do not expose internal errors to the UI.
 - The "Generic" brand is protected from deletion (`SqliteEquipmentService` enforces this).
-- DB IP changes must trigger a security verification check against the remote database before accepting.
+- DB IP changes must trigger a security verification check against the remote database before accepting. **This is the `testConnection()`/`confirmSaveDespiteFailedTest()` flow in `DatabaseSectionController.openEditConnectionDialog()`, independent of who can open that dialog** — removing its admin-password gate on 2026-07-24 (see "Admin dialog pattern" below) didn't touch this requirement, since it was never what enforced it.
 
 ---
 
@@ -37,8 +37,8 @@ Project-level instructions for Claude Code. These override defaults and apply to
 - Every implemented feature must have tests. Write test files **and run them** before marking a task done.
 - Desktop app: **JUnit 5 + TestFX** (`src/test/java/...`)
 - Run: `mvn test` from `desktop-app/`
-- Current test count: 268 tests, all passing.
-- Test classes: `TemplateEngineTest`, `AfFormatterTest`, `MockADServiceTest`, `AdApiServiceTest`, `AppKeyEncryptionServiceTest`, `MockEquipmentServiceTest`, `CachingServiceTest`, `GlpiStatusTest`, `ReturnStatusTest`, `NoteGenerationServiceTest`, `AdminSessionTest`, `RemoteDatabaseServiceTest`, `SqliteHistoryServiceTest`, `DatabaseServiceMigrationTest`, `HistoryControllerTest`, `InputValidationTest`, `TechnicianSessionServiceTest`, `SettingsControllerTest`, `SqliteEquipmentServiceTest`, `ServiceLocatorProvisionTest`, `UserNoteFallaPersistenceTest`, `UserNoteViewFxmlTest`, `SettingsControllerSnFilterTest`, `SettingsViewFxmlTest`, `ProfileControllerDisplayNameTest`, `ProfileViewFxmlTest`, `CatalogMigrationToolTest`, `DemoSeedSqlTest`, `StarterTemplateSqlTest`, `SqlServerSeedSqlSnValidationTest`, `NotePreviewViewFxmlTest`, `NoteDetailViewFxmlTest`, `PrestamosViewFxmlTest`, `PrestamoNewLoanViewFxmlTest`, `PrestamoDetailViewFxmlTest`, `NotePreviewControllerGlpiStatusTest`, `PendingCountsServiceTest`, `NoteGeneratorViewFxmlTest`, `RemitoNoteViewFxmlTest`
+- Current test count: 319 tests, all passing.
+- Test classes: `TemplateEngineTest`, `AfFormatterTest`, `MockADServiceTest`, `AdApiServiceTest`, `AppKeyEncryptionServiceTest`, `MockEquipmentServiceTest`, `CachingServiceTest`, `GlpiStatusTest`, `ReturnStatusTest`, `NoteGenerationServiceTest`, `AdminSessionTest`, `RemoteDatabaseServiceTest`, `SqliteHistoryServiceTest`, `DatabaseServiceMigrationTest`, `HistoryControllerTest`, `InputValidationTest`, `TechnicianSessionServiceTest`, `SettingsControllerTest`, `SqliteEquipmentServiceTest`, `ServiceLocatorProvisionTest`, `UserNoteFallaPersistenceTest`, `UserNoteViewFxmlTest`, `SettingsControllerSnFilterTest`, `SettingsViewFxmlTest`, `ProfileControllerDisplayNameTest`, `ProfileViewFxmlTest`, `CatalogMigrationToolTest`, `DemoSeedSqlTest`, `StarterTemplateSqlTest`, `SqlServerSeedSqlSnValidationTest`, `NotePreviewViewFxmlTest`, `NoteDetailViewFxmlTest`, `PrestamosViewFxmlTest`, `PrestamoNewLoanViewFxmlTest`, `PrestamoDetailViewFxmlTest`, `NotePreviewControllerGlpiStatusTest`, `PendingCountsServiceTest`, `NoteGeneratorViewFxmlTest`, `RemitoNoteViewFxmlTest`, `SqliteUserRoleServiceTest`, `LoginControllerTest`, `LoginViewFxmlTest`, `DatabaseSectionViewFxmlTest`, `SqliteAuditServiceTest`, `AuditViewFxmlTest`
 
 ---
 
@@ -102,7 +102,7 @@ notes-app-for-it/
 ## Architecture — key patterns
 
 ### Service abstraction (Strategy)
-Every external dependency has an interface (`IADService`, `IEquipmentService`, `IGLPIService`, `IEmailService`, `IHistoryService`). Concrete implementations are wired in `ServiceLocator.initialize()`. Mock → real is a one-line swap.
+Every external dependency has an interface (`IADService`, `IEquipmentService`, `IGLPIService`, `IEmailService`, `IHistoryService`, `IUserRoleService`). Concrete implementations are wired in `ServiceLocator.initialize()`. Mock → real is a one-line swap.
 
 ### ViewFactory — session state persistence
 `ViewFactory` loads each section FXML exactly once and caches it. Navigation reuses the cached node so controller state (form data, item tables) survives tab switches within a session (FR-08).
@@ -118,9 +118,108 @@ Every external dependency has an interface (`IADService`, `IEquipmentService`, `
 ### Admin dialog pattern
 `requireAdmin(Runnable)` in `SettingsController` and `DatabaseSectionController` handles the full admin flow: check `AdminAuthService.isConfigured()`, prompt password, verify hash, run action. Each controller also duplicates `buildDialogStage / buildDialogRoot / buildDialogScene / centerOnContent` — this duplication is intentional (no shared utility class, per the no-abstraction rule). Do not extract a base class or helper unless explicitly requested. `MainController` and `NoteGeneratorController` duplicate the same pattern again for `showWarningNotice`/`showDialogNotice` (orange-accent warning popups) — `NoteGeneratorController` centers on `rootContainer` instead of a `contentArea`/`panelSettings`-style field, since it's a section-level controller, not the shell.
 
+**Exception, 2026-07-24**: `DatabaseSectionController.handleEditConnection()` (the remote DB host/port/name/username/password dialog) no longer calls `requireAdmin()` — explicit user decision, since `db_*` settings are per-machine (local `APP_SETTINGS` only, never synced) and the existing test-connection-before-accepting flow (see Security requirements above) already guards against silently saving a bad config, regardless of who opens the dialog. This surfaced a real, separate issue while reviewing it: `openEditConnectionDialog()`'s password field used to pre-fill with the *decrypted* current `db_password` — harmless while only an admin could reach it, but a real plaintext-disclosure risk once anyone can. Fixed in the same change: the password field is now write-only, like every other secret field in this app (SMTP/GLPI/AD) — blank by default (`promptText="Dejar en blanco para no cambiarla"`), and `db_password` is only re-saved when the field is actually non-blank; a blank save resolves to the existing decrypted password for `configure()`/`testConnection()` (so leaving it blank doesn't break the live connection), but never writes it back to `APP_SETTINGS` again. The username field was deliberately left as-is (still pre-filled, plain `TextField`) — out of scope for this change, and a username alone isn't a credential.
+
+**A second, more serious gap, caught by direct user question the same day**: reusing the stored password on a blank field is only safe when the *destination* hasn't changed. The blank-password resolution originally applied unconditionally — meaning anyone could retype `host` to a server of their own choosing, leave the password blank, and the app would submit the real, live `db_password` to that new host via the test-connection call, before anything was even saved. This doesn't require ever reading the password back (the write-only fix above didn't address it) — it lets the app itself relay the live credential to an arbitrary destination on request, which is the more dangerous vector. Fixed by comparing the typed `host`/`portStr` against the currently-stored values: a blank password is only accepted when both are unchanged from what's already configured (changing just the database name or username against the *same* already-trusted host is still fine blank); changing host or port with a blank password now shows an inline error ("Ingrese la contraseña al cambiar de servidor o puerto") and the save/test never runs at all.
+
 `AdminSession` is a singleton with `addOnActivateListener` / `addOnDeactivateListener` hooks. `NoteDetailController.open()` takes a boolean `adminMode` parameter — callers pass `AdminSession.getInstance().isActive()` at open time. Inside the popup, `case PENDING` in `buildGlpiStatusRow()` shows Sync/Reject buttons only when `adminMode && AdminSession.getInstance().isActive()`. This means admin actions are embedded in the note detail popup, not in a separate tab.
 
 `SettingsController`'s general configuration fields (A/F format, SMTP, GLPI API) follow the same `setDisable(!adminActive)` gating as `ProfileController`'s technician fields: all inputs and the "Guardar Configuración" button are disabled by default and only become editable while `AdminSession.getInstance().isActive()`, wired via the same `addOnActivateListener`/`addOnDeactivateListener` pair (`SettingsController.onAdminStateChanged()`). Unlike `ProfileController`, the Save button is disabled rather than hidden when admin mode is off, since the user explicitly asked for a visible-but-disabled affordance here.
+
+**Superseded 2026-07-24 by login-based role activation, see [Login screen and role-based admin mode](#login-screen-and-role-based-admin-mode) below** — the self-service "Activar modo administrador" toggle this paragraph originally described no longer exists; `AdminSession` itself, `requireAdmin()`, and the `setDisable(!adminActive)` field-gating pattern are otherwise unchanged.
+
+### Login screen and role-based admin mode
+
+Added 2026-07-24. Replaces the previous zero-friction identity model (`TechnicianSessionService.refreshFromWindowsSession()`, silently resolving identity from the Windows session's UPN at every startup, no password ever typed anywhere) with a real login screen shown *before* `MainView` — and before its startup connectivity overlay — is even constructed. Also replaces the shared-password "Activar modo administrador" self-toggle in Configuración with role-based auto-activation at login.
+
+**Fixed same day**: `LoginView.fxml`'s root had no `stylesheets` attribute, unlike `MainView.fxml` (which sets `styles.css` directly on its own root node) — so every `styleClass` reference on the login screen (`button-primary-large`, `button-secondary-large`, `section-label`, `input-label-small`, `form-input-main`) resolved to nothing, and the whole screen rendered in plain default JavaFX styling instead of the app's actual look. Fixed by adding `stylesheets="/com/bunshock/note_app_for_it_frontend/css/styles.css"` to `LoginView.fxml`'s root `StackPane`, matching `MainView.fxml`'s own convention.
+
+- **`App.java` shows a login `Scene` first**, small and fixed-size (420×560, same transparent/rounded-card chrome every dialog in this app already uses), built from a new `views/LoginView.fxml` + `LoginController`. Only on a successful login does `App.showMainApp(Stage)` (the entire previous `start()` body, now a separate method) build `MainView.fxml` and run the existing startup sequence — `MainController`'s connectivity overlay, sidebar status checks, etc. are never constructed at all until login succeeds, so there is genuinely nothing else on screen beforehand. `LoginController` never touches the `Stage` directly; it reports success via a plain `Runnable` callback (`setOnLoginSuccess`), keeping `App.java` the only place that owns Stage/Scene swapping.
+- **Login flow**: username (pre-filled from `WindowsIdentityService.getSessionEmail()` via the now-`public` `TechnicianSessionService.deriveUsernameFromEmail()` — a convenience only, never trusted for authentication) + password, submitted to a new `IADService.validateCredentials(username, password)` method (same file as `search()` — no separate interface needed). Returns a new `AdCredentialResult(valid, groups)` model. `AdApiService` calls a **new AD API endpoint that doesn't exist yet** — `POST /api/v1/ad/validate-credentials`, body `{username, password}`, response `{"valid": true/false, "groups": [...]}`, same Bearer service-account token as the existing lookup calls. This is the one piece of this feature genuinely blocked on external work; everything else was built and tested against `MockADService`'s own stub (fixed password `"password123"`, any of its 3 mock users, returns a mock `"AllowedAppUsers"` group) so the app-side flow didn't have to wait for it.
+- **App access is gated by AD group membership, not a local whitelist** — a new `AppConfig.AdAccessConfig.adAccess.allowedGroupName` (`app-config.json`'s `adAccess.allowedGroupName`) is checked against `AdCredentialResult.getGroups()` after a successful password check; failing it shows "No tiene permisos para usar esta aplicación" and the technician stays on the login screen. **The real group name is still unknown — deliberately left blank** (blank = check skipped entirely, same degrade-gracefully convention as GLPI/AD/SMTP being unconfigured elsewhere in this app) pending the user's own investigation into what it's actually called in their AD. Do not guess a value here.
+- **Role source: a new local `USER_ROLE` table** (`username` PK, `role` — `"ADMIN"`/`"USER"`), not AD groups — a deliberately separate concern from the access gate above. New `IUserRoleService`/`SqliteUserRoleService`/`CachingUserRoleService`/`MockUserRoleService`, mirroring `IEquipmentService`'s remote-first/local-fallback pattern (remote-first read, fall back to local), wired into `ServiceLocator` alongside the others. `getRole(username)` defaults to `"USER"` when no row exists — most technicians are never promoted. **Read-only by design, no in-app UI at all** — `IUserRoleService` only exposes `getRole()`; an admin promotes/demotes an account by running SQL directly against `USER_ROLE` (`INSERT`/`UPDATE`/`DELETE`), not through the app. A first version of this added a 6th flat catalog list ("USUARIOS") in Base de Datos for this, admin-gated via `requireAdmin()` — **removed same day, explicit user decision**: direct SQL was preferred over an in-app CRUD screen for something this infrequent. `getAllUsers()`/`setRole()`/`removeUser()` and the `UserRole` model were deleted along with it, not left as unused code. `MockUserRoleService` alone keeps a test-only `setRole()` (not part of the interface) purely so tests can arrange a role without touching a real database.
+- **TEMPORARY: mock credential validation** (`AppConfig.AdAccessConfig.mockCredentialValidation`, `app-config.json`'s `adAccess.mockCredentialValidation`, default `false`) — added the same day, since the real AD API genuinely cannot be extended with the `validate-credentials` endpoint yet and the user still needed to log in and use the app. When `true`, `AdApiService.validateCredentials()` skips the HTTP call entirely (`AdApiService.mockValidateCredentials()`): it accepts **any password**, but still confirms the typed username is a real AD account via the already-working `search()` lookup, and still supplies the configured `allowedGroupName` (if set) in its returned groups so the access gate isn't accidentally defeated too. Prints an unmissable `[MOCK]` line to stdout on every use. **Must be set back to `false`** once the real endpoint exists — this is a real, accepted-for-now security bypass (any correct username logs in with any password), not a permanent config knob.
+- **`TechnicianSessionService.loginResolved(ADUser, role)`** replaces `refreshFromWindowsSession()` as the session-populating entry point (called once, by `LoginController`, after every check above already passed — this method does no AD I/O of its own). An `ADMIN` role calls `AdminSession.getInstance().activatePermanently()` — a new activation mode (alongside the existing `activate()`) that skips the 15-minute inactivity timeout entirely, since the technician's own login already proved their identity and the only UI that used to let anyone get back in after that timeout (the removed toggle) no longer exists for anyone to click. `activatePermanently()`/`activate()`/`deactivate()` all remain on one `AdminSession` singleton; `isActive()` just short-circuits `true` for a permanently-activated session instead of ever checking `lastActivity`.
+- **"Actualizar Perfil desde AD" no longer re-authenticates** — `ProfileController.handleRefreshFromAd()` used to call the now-removed `refreshFromWindowsSession()` (which, on failure, wiped the whole session via a `clear(String)` method that no longer exists). It now calls a plain `search(null, null, username)` lookup and either `TechnicianSessionService.refreshProfileFromAd(ADUser)` (updates name/email/dni only, leaves username/role untouched) or `reportProfileRefreshError(message)` (sets `lastError` for the existing `lblProfileStatus` display, **without** touching the rest of the session) — an AD hiccup while refreshing a profile must not force a technician to log in again.
+- **Real, accepted feature loss for non-admin-role technicians, flagged rather than silently absorbed**: every UI element gated purely on `AdminSession.isActive()` (not wrapped in `requireAdmin()`'s own password-prompt fallback) — `NoteDetailController`'s GLPI Sync/Reject buttons, `PrestamoDetailController`'s Devuelto/No devuelto buttons, and `ProfileController`'s own manual-edit fields — become reachable only by an `ADMIN`-role login now, since there is no longer any UI path for a non-admin-role technician to make `AdminSession.isActive()` true at all. `requireAdmin()`-wrapped actions (Base de Datos catalog CRUD, S/N validation edit) are **unaffected** — that method already had its own independent per-click password fallback, untouched by any of this. Deliberately not rewiring the three admin-session-gated cases above onto `requireAdmin()` too — that would be adding functionality nobody asked for, not fixing a bug.
+- **`AboutView.fxml`'s manual (section 11)** was rewritten to match: no more "Se activa desde Ajustes con el botón..." instructions, since that button is gone; now describes automatic role-based activation, the never-expiring session, and that a non-admin-role technician can still reach the `requireAdmin()`-gated actions via the shared password.
+- **Tests**: `SqliteUserRoleServiceTest` (real SQLite-backed, rows seeded with plain `INSERT` statements — matching how a real admin edits this table — not a `setRole()` call), `MockADServiceTest` additions for `validateCredentials()`, `TechnicianSessionServiceTest` additions for `loginResolved()`/`refreshProfileFromAd()`/`reportProfileRefreshError()`, `AdminSessionTest` additions for `activatePermanently()`, `LoginControllerTest` (reflection-injected fields, `MockADService`/`MockUserRoleService` via `ServiceLocator`, no real `Stage.show()` — same standing rule as `UserNoteFallaPersistenceTest`), `LoginViewFxmlTest`.
+
+### Audit logging (LOGIN_AUDIT + ACTION_AUDIT) + SUPERADMIN Auditoría section
+
+Added 2026-07-24, same day as the login/role feature above. The login screen and role-based
+admin activation gave the app a real identity/authorization model but no record of *who* did
+what — this adds a durable, append-only trail for login attempts and for the handful of
+currently-unattributed sensitive actions (GLPI sync/reject, Préstamo return/lost, DB connection
+changes), plus a third `SUPERADMIN` role tier with a new read-only "Auditoría" section to review
+it without needing direct SQL access. **Standing convention going forward**: any new
+admin-sensitive action added to this app should get an `ACTION_AUDIT` row (a new `event_type`
+if it doesn't fit an existing one), not just this initial batch — see
+[[feedback_audit_logging_convention]] in memory.
+
+- **Two tables, both append-only — no in-app edit/delete, ever.** `LOGIN_AUDIT` (`username`,
+  `attempted_at`, `success`, `failure_reason`) and `ACTION_AUDIT` (`username`, `event_type`,
+  `occurred_at`, `note_item_id`, `details`). `note_item_id` is a real
+  `INTEGER REFERENCES NOTE_ITEM(id)` FK, not a generic `entity_type`/`entity_id` text pair —
+  every current action either targets a `NOTE_ITEM` or nothing (`DB_CONNECTION_CHANGED`), so a
+  real FK was both possible and preferred, consistent with this project's standing full-
+  normalization requirement (see [[feedback_db_normalization]]). `event_type` values:
+  `GLPI_SYNC`, `GLPI_REJECT`, `PRESTAMO_RETURN`, `PRESTAMO_LOST`, `DB_CONNECTION_CHANGED`.
+  `failure_reason` values (`LOGIN_AUDIT` only): `INVALID_CREDENTIALS`, `NOT_IN_ALLOWED_GROUP`,
+  `PROFILE_LOOKUP_FAILED`, `AD_UNREACHABLE` — map 1:1 to `LoginController.handleLogin()`'s
+  existing branches. `details` never contains a password value, even when
+  `DB_CONNECTION_CHANGED` is logged for a password change — just which fields changed.
+- **`IAuditService`/`SqliteAuditService`/`CachingAuditService`/`MockAuditService`**, wired into
+  `ServiceLocator` alongside every other service. **`CachingAuditService`'s writes deliberately
+  deviate from every other `CachingXxxService`'s "primary first, fail loudly" convention** —
+  `logLogin`/`logAction` try primary then local, swallowing every exception from both, since an
+  audit-write failure must never block or surface to the caller performing the real action.
+  Every write-point call site wraps the call in its own additional try/catch too, for the same
+  reason (`LoginController.logLoginAttempt()`, `NoteDetailController.logAuditAction()`,
+  `PrestamoDetailController.logAuditAction()`, `DatabaseSectionController.logConnectionChangeAudit()`
+  — each duplicated per this codebase's no-shared-abstraction convention). Read methods
+  (`getAllLogins()`/`getAllActions()`, newest first) use the normal remote-first/local-fallback
+  pattern.
+- **Five write points**: `LoginController.handleLogin()` (success plus each of the 4 failure
+  branches above), `NoteDetailController.handleSync()`/`handleReject()` (`GLPI_SYNC`/
+  `GLPI_REJECT`), `PrestamoDetailController.handleReturn()`/`handleLost()`
+  (`PRESTAMO_RETURN`/`PRESTAMO_LOST`), and `DatabaseSectionController`'s connection-save flow
+  (`DB_CONNECTION_CHANGED`, `details` built by diffing the submitted host/port/name/username/
+  password-changed-or-not against the previously-configured values).
+- **`IUserRoleService.ROLE_SUPERADMIN`** — a third role value alongside `ROLE_ADMIN`/
+  `ROLE_USER`, no schema change (the `role` column was already unconstrained text).
+  `LoginController`'s admin-activation check widened from `ROLE_ADMIN.equals(role)` to
+  `ROLE_ADMIN.equals(role) || ROLE_SUPERADMIN.equals(role)` — a superadmin gets full admin
+  rights plus the new section below, confirmed as the preferred design (a third tier, not a
+  parallel/separate permission) over gating the Auditoría section on `ROLE_ADMIN` directly.
+- **"Auditoría" nav section, `SUPERADMIN`-only.** `MainController` checks
+  `TechnicianSessionService.getInstance().getRole()` once at `initialize()` (role doesn't change
+  mid-session) and toggles `btnAudit`'s `visible`/`managed` — same pattern already used for the
+  admin indicator, just role-gated instead of `AdminSession`-gated. New `AuditController`/
+  `AuditView.fxml`, wired into `ViewFactory` exactly like every other section. A `ToggleButton`
+  pair ("INICIOS DE SESIÓN" / "ACCIONES", same `.type-button-left`/`.type-button-right` toggle
+  pattern as `DatabaseSectionView.fxml`'s catalog/other-catalogs toggle) swaps between two
+  `modern-table`-styled `TableView`s — Logins: Usuario/Fecha/Resultado; Actions: Usuario/Fecha/
+  Acción/Detalle. **Confirmed minimal v1 scope**: no filters, no export, no sort UI beyond
+  default newest-first, purely read-only — no edit/delete affordance anywhere in this screen,
+  matching the append-only design. `MainController.handleShowAudit()` calls
+  `AuditController.refresh()` on every visit, same ViewFactory-caches-the-section staleness fix
+  as History's own `refresh()`.
+- **Real bug caught by the test suite, not by manual review**: `SqliteAuditService.getAllActions()`
+  originally read `note_item_id` via `rs.getInt(...)` then checked `rs.wasNull()` only after
+  three more `rs.getString(...)` calls had already run (as constructor arguments, evaluated
+  left-to-right) — `wasNull()` reflects only the *most recently read* column, so by the time it
+  was checked it was reporting `occurred_at`'s null-ness, not `note_item_id`'s. Every
+  `DB_CONNECTION_CHANGED` row (which has no `note_item_id`) came back with `noteItemId = 0`
+  instead of `null`. Fixed by capturing `wasNull()` into a local variable immediately after the
+  `getInt()` call, before any other column read.
+- **Tests**: `SqliteAuditServiceTest` (real SQLite-backed, all 4 `IAuditService` methods),
+  `AuditViewFxmlTest` (same FXML-load convention as `DatabaseSectionViewFxmlTest`),
+  `LoginControllerTest` extended with audit-log assertions on every existing case plus two new
+  ones (`profileLookupFailureIsLoggedWithItsOwnReason`, `adUnreachableIsLoggedWithItsOwnReason`)
+  using small inline `IADService` doubles, since `MockADService`'s fixed user list can never
+  naturally produce those two branches (its `search()` always finds whatever `validateCredentials()`
+  just approved, and its `validateCredentials()` never throws).
 
 ### Remote SQL Server (write-through cache)
 `RemoteDatabaseService` manages the SQL Server connection (`com.microsoft.sqlserver:mssql-jdbc`). When `db_host` is set in `APP_SETTINGS`, `ServiceLocator.initialize()` calls `RemoteDatabaseService.configure(...)`, runs `ensureSchema()` (T-SQL DDL), then wraps both remote and local `SqliteEquipmentService`/`SqliteHistoryService` instances in `CachingEquipmentService`/`CachingHistoryService`. Reads try remote first, fall back to local SQLite on error. Writes go to remote first (fail loudly), then local SQLite best-effort. If remote is unreachable at startup, the app runs fully local. `APP_SETTINGS` and `SMTP` config are always local SQLite regardless of remote config.
@@ -460,6 +559,8 @@ The user explicitly deferred building a proper Sede catalog/config system (a rea
 | `IHistoryService` | `SqliteHistoryService` | — |
 | `IGLPIService` | `GLPIServiceStub` (no-op) | GLPI REST API (out of scope v1) |
 | `IEmailService` | `GmailEmailService` (Jakarta Mail, STARTTLS port 587) | — |
+| `IUserRoleService` | `SqliteUserRoleService` (local + remote, via `CachingUserRoleService`) | — |
+| `IAuditService` | `SqliteAuditService` (local + remote, via `CachingAuditService` — fail-open writes) | — |
 
 ---
 
@@ -473,6 +574,7 @@ The user explicitly deferred building a proper Sede catalog/config system (a rea
 - `catalog.genericLabel` (default `"Genérico / Otro"`, added 2026-07-23): seeds the name of the single global "no specific brand/model" catalog row **the first time it's created only** — not live-synced, an admin renames it afterward through the ordinary catalog UI. See [Global "Genérico / Otro" MODEL row](#global-genérico--otro-model-row--collapsing-the-per-link-duplicate-2026-07-23).
 - `smtp`: `host`, `port`, `senderAddress` (password stored encrypted in DB, never here)
 - `adApi.baseUrl`, `glpiApi.baseUrl`: external service URLs
+- `adAccess.allowedGroupName`: AD group required to log in at all (see [Login screen and role-based admin mode](#login-screen-and-role-based-admin-mode)) — blank means the check is skipped, not yet configured
 - `remoteDatabase`: `host`, `port` (default `1433`), `dbName` — non-secret SQL Server connection fields for pre-configuring a shared remote DB before first startup. **Replaced the old, unused `database.baseUrl` field on 2026-07-13** — `database.baseUrl` was declared on `AppConfig` but never read anywhere in the code (confirmed via grep); it predates `RemoteDatabaseService`'s host/port/dbName/username/password JDBC connection model and was a dead leftover, not an alternate config path. `ServiceLocator.provisionDefaultSecrets()` copies `remoteDatabase.host`/`port`/`dbName` into `APP_SETTINGS` (`db_host`/`db_port`/`db_name`, plaintext) on first startup, only if `host` is non-blank and only for keys not already set — same one-shot, never-overwrite semantics as `defaults` below. **Username/password are NOT part of `remoteDatabase`** — they're secrets and go through `defaults.dbUsername`/`defaults.dbPassword` instead (see below), since `db_username`/`db_password` are stored AES-encrypted in `APP_SETTINGS`, not plaintext.
 - GLPI API key and AD API token are **not** in this file — they're credentials, encrypted (`AppKeyEncryptionService`) in `APP_SETTINGS` (`glpi_api_key`, `ad_api_token`), same as `smtp_password`. Both are configured via a write-only `PasswordField` in `SettingsController` (never re-displayed once saved) and verified with a live test-before-save call before persisting (see `docs/architecture.md`'s "Active Directory Integration" section).
 - `defaults` (optional): pre-encrypted (`AppKeyEncryptionService`) default values for `smtpPassword`, `glpiApiKey`, `dbUsername`, `dbPassword`, `adApiToken` — copied into `APP_SETTINGS` on first startup only if that key isn't already set, so a fresh install can ship pre-configured with zero technician/admin setup. Generate values via `utils.AppKeyEncryptionGenerator`, never paste plaintext here. `dbUsername` added 2026-07-13 alongside `remoteDatabase` — before that, there was no way to pre-provision a remote DB connection at all, since host/port/dbName had no config field and username (like password) needs encryption, not a plaintext one.
@@ -488,7 +590,9 @@ Types, brands, `typeBrands` junction entries, models, `snValidations`. Loaded by
 
 ## SQLite tables
 
-`TYPE`, `BRAND`, `BRAND_TYPE_LINK`, `MODEL`, `SN_VALIDATION`, `PROVIDER`, `SEDE`, `NOTE_REPORT`, `NOTE_ENTREGA_DEVOLUCION`, `NOTE_PROVEEDOR`, `NOTE_REMITO`, `NOTE_ITEM`, `NOTE_ITEM_ASSET`, `NOTE_ITEM_COUNTABLE`, `NOTE_ITEM_GLPI_TRACKING`, `NOTE_ITEM_RETURN_TRACKING`, `APP_SETTINGS`
+`TYPE`, `BRAND`, `BRAND_TYPE_LINK`, `MODEL`, `SN_VALIDATION`, `PROVIDER`, `SEDE`, `USER_ROLE`, `LOGIN_AUDIT`, `ACTION_AUDIT`, `NOTE_REPORT`, `NOTE_ENTREGA_DEVOLUCION`, `NOTE_PROVEEDOR`, `NOTE_REMITO`, `NOTE_ITEM`, `NOTE_ITEM_ASSET`, `NOTE_ITEM_COUNTABLE`, `NOTE_ITEM_GLPI_TRACKING`, `NOTE_ITEM_RETURN_TRACKING`, `APP_SETTINGS`
+
+`USER_ROLE` (`username` PK, `role`) is a flat username→role mapping (`"ADMIN"`/`"USER"`/`"SUPERADMIN"`), unrelated to AD group membership (which gates app access at login, checked live against the AD API, not stored here) — see [Login screen and role-based admin mode](#login-screen-and-role-based-admin-mode). `LOGIN_AUDIT`/`ACTION_AUDIT` are append-only audit trails — see [Audit logging](#audit-logging-login_audit--action_audit--superadmin-auditoría-section).
 
 `NOTE_ENTREGA_DEVOLUCION` has `failure_cause`/`failure_details` columns (Devolución's Falla flow — always `NULL` for other note types) and an `area_evento` column (Préstamo-only optional context field — see [Préstamos section](#préstamos-section-internal-equipment-loans)). `NOTE_PROVEEDOR` has `responsible_name`/`responsible_dni` columns (the provider's own receiving person — see [Two-signature layout](#two-signature-layout)). `NOTE_REPORT` has `technician_name`/`technician_dni` columns (see [Technician identity](#technician-identity--session-only-sourced-from-windowsad)) — `SqliteHistoryService`'s history queries read these straight off `NOTE_REPORT`. `NOTE_REPORT` also has a `sede` column (per-technician site, mandatory, printed on every note — see [Technician Sede](#technician-sede--per-note-mandatory-2026-07-22)). **`TECHNICIAN_PROFILE` and `NOTE_REPORT.technician_id` were removed 2026-07-16** (see [Technician identity](#technician-identity--session-only-sourced-from-windowsad)'s last bullet) — an already-running installation's existing table/column are simply left in place, unused, since no `DROP` migration was added. Both the SQLite (`DatabaseService`) and SQL Server (`RemoteDatabaseService.ensureSchema()`) DDL must stay in sync — see [SQLite schema mirrors the remote SQL Server schema](#sqlite-schema-mirrors-the-remote-sql-server-schema).
 

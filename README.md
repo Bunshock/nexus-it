@@ -242,8 +242,9 @@ mvn test
 - DNI dot format normalized automatically — queried both as `"35123456"` and `"35.123.456"`. Note: a *partial* DNI search against a record whose DNI is stored dotted in AD may not find it unless the typed length happens to land on a dot boundary — this is how Active Directory itself indexes that data, confirmed in the native Windows AD tool too, not something the app's query can work around
 - Name accepts "Nombre Apellido", "Apellido Nombre", and incomplete words in either position (e.g. "Rodriguez Joa", "Joaquin Rodrig", or just "Rodrig" alone) — queried as typed plus both comma-insertion guesses; if that finds nothing, each word is automatically retried alone and the results are narrowed back down to only people matching every typed word
 - Multi-result picker dialog when search returns more than one user, showing DNI/email/OU on hover
-- Current Windows user looked up in AD on startup (background thread) to populate the technician profile
-- Sidebar status dot reflects real AD API reachability (see [Configure Application Settings](docs/use-cases.md) / `CLAUDE.md` for the status-check design)
+- Credential validation at login (`POST /api/v1/ad/validate-credentials` on the AD API — a bind-as-user password check, plus the caller's AD group memberships for the app-access gate) — see [Login](#login) above
+- Technician profile populated by the same lookup used for searches, once login succeeds
+- Sidebar status dot reflects real AD API reachability (a background check using the already-logged-in username, not a re-lookup) — see [Configure Application Settings](docs/use-cases.md) / `CLAUDE.md` for the status-check design
 
 ### History
 
@@ -270,6 +271,12 @@ mvn test
 - A provider added here is immediately selectable in Nota de Proveedor's dropdown, even in a tab already open earlier in the session
 - Remote SQL Server connection config and connectivity test (see [Remote database (SQL Server)](#remote-database-sql-server) below)
 
+### Login
+
+- A standalone login screen is shown before anything else in the app — no main window, no startup connectivity checks — until it succeeds. Username (pre-filled from the Windows session, still editable) + password, validated against the AD API (a bind-as-user credential check, not a stored password).
+- App access is gated by AD group membership (configurable, `adAccess.allowedGroupName` — blank skips the check while it's not yet configured).
+- A per-account role (`ADMIN`/`USER`, assigned by a database administrator via direct SQL against the `USER_ROLE` table — no in-app screen) determines whether admin mode starts already active — an `ADMIN` login skips the old password toggle entirely and never expires for that session; a `USER` login starts as a normal technician, still able to reach password-gated admin actions (catalog edits, S/N validation) per click.
+
 ### Settings
 
 - **Sede**: a per-technician site value (own field, own "Guardar" button, not admin-gated — any technician sets their own), shown in the sidebar next to the welcome message. Mandatory to generate a note or register a Préstamo — blocked with a warning if unset, same as an incomplete AD profile. Snapshotted onto every note at generation time and printed on it (replaces the previously hardcoded "Campus" text on 5 of the 6 templates; shown as a header line on Remito de Envío)
@@ -278,13 +285,13 @@ mvn test
 - GLPI API URL and API Key (key encrypted via `AppKeyEncryptionService` — never stored in plaintext)
 - Active Directory API URL and Token (token encrypted via `AppKeyEncryptionService`, write-only field — never redisplayed once saved); saving tests the connection first and asks for confirmation if it fails
 - Settings content scrolls independently in a fixed-height panel — the "CONFIGURACIÓN" header and the "Guardar Configuración" footer both stay fixed in place; only the card list in between scrolls
-- All configuration fields and the "Guardar Configuración" button are read-only/disabled unless admin mode is active
+- All configuration fields are read-only/disabled unless admin mode is active; the "Guardar Configuración" button itself is always enabled, since it also saves Sede for any technician
 - **S/N Validation table** (admin-protected): view all asset-type models with their regex pattern and active toggle; active rules sort to the top; multi-select Tipo/Marca/Modelo/Activo dropdown filters (same pattern as History's filters, Tipo→Marca→Modelo cascading) with a "Limpiar filtros" reset button
-- **Admin mode**: password-protected session (SHA-256 hash in SQLite); unlocks general configuration editing, S/N validation edits, GLPI sync actions, and DB connection changes; auto-expires after 15 minutes of inactivity
+- **Admin mode**: activated automatically at login for an account with the `ADMIN` role (see [Login](#login) above; role is set via direct SQL against `USER_ROLE`, no in-app screen) — never expires for that session. A non-admin-role technician has no self-service toggle at all, but can still unlock individual actions (catalog edits, S/N validation, GLPI sync) with the shared password, per click, exactly as before.
 
 ### Mi Perfil (technician identity)
 
-- Name, Username, DNI, and Email resolved automatically from Active Directory via the current Windows session at startup, and on demand via "Actualizar Perfil desde AD" — read-only, editable only in admin mode, never persisted to disk
+- Name, Username, DNI, and Email resolved from Active Directory at login time (see [Login](#login) above), refreshable on demand via "Actualizar Perfil desde AD" (a lookup, not a re-login) — read-only, editable only in admin mode, never persisted to disk
 - **Nombre para mostrar**: a separate, always-editable field (no admin mode required, max 20 characters) controlling only the sidebar welcome greeting ("Hola, ...!"). Pre-filled with a suggested default (the last word of the AD full name); persisted locally per technician username so it survives restarts and AD refreshes. Clearing it and saving reverts to the suggested default — or use the square ↺ reset button next to the field to do both in one click
 - Sidebar welcome message updates immediately on any change (AD refresh, admin override, or a saved display-name preference) — no restart needed
 

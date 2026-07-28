@@ -312,7 +312,7 @@
                        text="&quot;Nombre para mostrar&quot; es un campo aparte (máximo 20 caracteres), siempre editable (no requiere modo administrador), que controla únicamente el saludo de la barra lateral (&quot;Hola, ...!&quot;) — no afecta las notas generadas. Se completa automáticamente con una sugerencia a partir del nombre completo, pero puede reemplazarse por el nombre que el técnico prefiera y guardarse con su propio botón &quot;Guardar&quot;. Vaciar el campo y guardar restablece la sugerencia automática — el botón cuadrado &quot;↺&quot; junto al campo hace ambas cosas en un solo clic. Esta preferencia se recuerda entre sesiones y no se pierde al actualizar el perfil desde AD."
                        style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
                 <Label wrapText="true"
-                       text="Un administrador puede completar o corregir manualmente el nombre, usuario, DNI y correo activando el modo administrador (ver sección 11) — útil si Active Directory no tiene el dato correcto o si el equipo no está en el dominio institucional. Esta corrección manual se pierde al reiniciar la aplicación o al volver a actualizar desde AD."
+                       text="Una cuenta con rol de administrador (modo administrador activo, ver sección 11) puede completar o corregir manualmente el nombre, usuario, DNI y correo — útil si Active Directory no tiene el dato correcto o si el equipo no está en el dominio institucional. Esta corrección manual se pierde al reiniciar la aplicación o al volver a actualizar desde AD."
                        style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
 
                 <Separator/>
@@ -419,10 +419,10 @@
                        text="El modo administrador desbloquea, mientras está activo: la edición de todos los campos de Ajustes (sección 10) y de Mi Perfil (sección 7), la sección Base de Datos completa (sección 9), la edición de reglas de validación de S/N (sección 10.4), y los botones de sincronización/rechazo GLPI en el detalle de una nota del Historial (sección 8)."
                        style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
                 <Label wrapText="true"
-                       text="Se activa desde Ajustes con el botón &quot;Activar modo administrador&quot;. La primera vez que se usa, la aplicación pide definir una contraseña de administrador; en los siguientes usos, simplemente la solicita para verificarla. El estado (Activo/Inactivo) se muestra junto al botón y, mientras está activo, también como una etiqueta &quot;MODO ADMINISTRADOR&quot; en la barra de título de la aplicación."
+                       text="Se activa automáticamente al iniciar sesión si la cuenta tiene rol de administrador asignado — no hay un botón para activarlo manualmente. Mientras está activo, se muestra una etiqueta &quot;MODO ADMINISTRADOR&quot; en la barra de título de la aplicación, y permanece activo durante toda la sesión (no expira por inactividad)."
                        style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
                 <Label wrapText="true"
-                       text="Por seguridad, la sesión de administrador expira automáticamente después de 15 minutos sin actividad, volviendo todos los campos mencionados a su estado de solo lectura."
+                       text="Una cuenta sin rol de administrador puede igualmente editar reglas de validación de S/N y el catálogo de Base de Datos ingresando la contraseña compartida al hacer clic en la acción correspondiente — esa contraseña habilita solo esa acción puntual, no el modo administrador completo."
                        style="-fx-font-size: 12px; -fx-text-fill: #94a3b8; -fx-font-style: italic;"/>
 
                 <!-- Espacio final -->

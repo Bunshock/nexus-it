@@ -6,6 +6,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import com.bunshock.note_app_for_it_frontend.models.HistoryFilter;
 import com.bunshock.note_app_for_it_frontend.services.AdminSession;
 import com.bunshock.note_app_for_it_frontend.services.IHistoryService;
+import com.bunshock.note_app_for_it_frontend.services.IUserRoleService;
 import com.bunshock.note_app_for_it_frontend.services.PendingCountsService;
 import com.bunshock.note_app_for_it_frontend.services.RemoteDatabaseService;
 import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;
@@ -68,6 +69,8 @@ public class MainController {
     @FXML private Label lblHistoryBadge;
     @FXML private Label lblPrestamosBadge;
 
+    @FXML private javafx.scene.control.ToggleButton btnAudit;
+
     @FXML private Circle circleAD;
     @FXML private Circle circleGLPI;
     @FXML private Circle circleDB;
@@ -89,6 +92,13 @@ public class MainController {
         TechnicianSessionService.getInstance().addOnChangeListener(this::updateWelcomeLabels);
         TechnicianSessionService.getInstance().addOnSedeChangeListener(this::updateSedeLabel);
         updateWelcomeLabels();
+
+        // Role doesn't change mid-session (set once at login), so this is checked once here
+        // rather than via a listener like the admin indicator above.
+        boolean isSuperAdmin = IUserRoleService.ROLE_SUPERADMIN
+            .equals(TechnicianSessionService.getInstance().getRole());
+        btnAudit.setVisible(isSuperAdmin);
+        btnAudit.setManaged(isSuperAdmin);
 
         showSection(viewFactory.getGeneratorView());
         // Deferred: initialize() runs during FXMLLoader.load(), before App.start() calls
@@ -201,20 +211,31 @@ public class MainController {
         delay.play();
     }
 
-    /** Retries the technician-profile AD lookup up to MAX_CONNECTION_ATTEMPTS times before giving up. */
+    /**
+     * Retries a live AD reachability check up to MAX_CONNECTION_ATTEMPTS times before giving
+     * up. Identity is already fully resolved by this point (login succeeded before MainView
+     * was even constructed — see App.java/LoginController) — this is purely about whether AD
+     * is reachable right now, for the sidebar status dot, using the already-known technician
+     * username rather than re-deriving anything from the Windows session.
+     */
     private void startAdCheck(StartupRow row, Runnable onCheckDone) {
         Thread t = new Thread(() -> {
-            boolean resolved = false;
-            for (int attempt = 1; attempt <= MAX_CONNECTION_ATTEMPTS && !resolved; attempt++) {
-                TechnicianSessionService.getInstance().refreshFromWindowsSession();
-                resolved = TechnicianSessionService.getInstance().isResolved();
-                if (!resolved && attempt < MAX_CONNECTION_ATTEMPTS) sleepBetweenAttempts();
+            String username = TechnicianSessionService.getInstance().getUsername();
+            boolean reachable = false;
+            for (int attempt = 1; attempt <= MAX_CONNECTION_ATTEMPTS && !reachable; attempt++) {
+                try {
+                    reachable = username != null
+                        && !ServiceLocator.getInstance().getAdService().search(null, null, username).isEmpty();
+                } catch (Exception adUnreachable) {
+                    reachable = false;
+                }
+                if (!reachable && attempt < MAX_CONNECTION_ATTEMPTS) sleepBetweenAttempts();
             }
-            boolean finalResolved = resolved;
+            boolean finalReachable = reachable;
             Platform.runLater(() -> {
-                updateADStatus(finalResolved);
+                updateADStatus(finalReachable);
                 resolveRow(row, "Active Directory",
-                    ServiceLocator.getInstance().getAdService().isConfigured(), finalResolved);
+                    ServiceLocator.getInstance().getAdService().isConfigured(), finalReachable);
                 onCheckDone.run();
             });
         }, "startup-ad-check");
@@ -346,16 +367,12 @@ public class MainController {
         Timeline unblur = new Timeline(new KeyFrame(fadeDuration, new KeyValue(blur.radiusProperty(), 0)));
 
         ParallelTransition fadeOut = new ParallelTransition(fade, unblur);
+        // Technician identity is guaranteed resolved by the time MainView exists at all — login
+        // (App.java/LoginController) already succeeded before this overlay was ever shown, so
+        // there's no "profile unavailable" case left to warn about here anymore.
         fadeOut.setOnFinished(e -> {
             loadingStage.close();
             rootPane.setEffect(null);
-            TechnicianSessionService session = TechnicianSessionService.getInstance();
-            if (!session.isResolved()) {
-                // showAndWait() throws IllegalStateException if called synchronously from
-                // this animation-finished handler (still inside the pulse) - defer one pulse.
-                Platform.runLater(() -> showWarningNotice("Perfil de técnico no disponible",
-                    session.getLastError() + " Puede reintentar desde Mi Perfil con \"Actualizar Perfil desde AD\"."));
-            }
         });
         fadeOut.play();
     }
@@ -484,10 +501,6 @@ public class MainController {
         showDialogNotice(title, message, "#1a1a1a", null);
     }
 
-    private void showWarningNotice(String title, String message) {
-        showDialogNotice(title, message, "#f59e0b", "⚠");
-    }
-
     private void showDialogNotice(String title, String message, String accentColor, String icon) {
         Stage stage = buildDialogStage();
         centerOnContent(stage);
@@ -587,6 +600,13 @@ public class MainController {
     }
 
     @FXML private void handleShowDatabase()  { showSection(viewFactory.getDatabaseView()); }
+    @FXML
+    private void handleShowAudit() {
+        showSection(viewFactory.getAuditView());
+        // ViewFactory caches this view for the session — refresh() so an action logged after
+        // the first visit shows up, same staleness fix as History's own refresh() call.
+        viewFactory.getAuditController().refresh();
+    }
     @FXML
     private void handleShowSettings() {
         showSection(viewFactory.getSettingsView());

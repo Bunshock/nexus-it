@@ -22,6 +22,10 @@
   "adApi" : {
     "baseUrl" : "https://ad-api.example.org"
   },
+  "adAccess" : {
+    "allowedGroupName" : "",
+    "mockCredentialValidation" : false
+  },
   "glpiApi" : {
     "baseUrl" : ""
   },

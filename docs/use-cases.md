@@ -195,17 +195,41 @@ Same as UC-01 but with profile "FIN DE CONTRATO". Used for employees leaving the
 
 ---
 
-## UC-13 — Activate Admin Mode
+## UC-00 — Log In
 
-**Actor:** IT Administrator  
-**Trigger:** Clicks "Activar modo administrador" in Configuración
+**Actor:** Any technician  
+**Trigger:** Launching the application
 
 **Main Flow:**
-1. If no admin password is configured: prompt to set one; hash is stored in APP_SETTINGS (SHA-256)
-2. If password is configured: prompt for password; verify against stored hash
-3. On success: AdminSession activates; Settings label shows "Activo"; status label in sidebar updates
-4. Admin actions (GLPI sync/reject, S/N validation edits, DB connection changes) are now accessible
-5. Session expires automatically after 15 minutes of inactivity
+1. A login screen is shown alone — no main window, no startup connectivity checks — until this succeeds
+2. Username is pre-filled from the Windows session (still editable); technician enters their password
+3. Credentials are validated against the AD API (a bind-as-user check, not a stored password)
+4. The technician's AD group membership is checked against the configured allowed group (skipped if not yet configured)
+5. On success: full profile (name/DNI/email) is looked up, and the account's role (ADMIN/USER, from the USER_ROLE table — assigned by a database administrator via direct SQL, no in-app screen) is resolved
+6. MainView is built and shown for the first time — an ADMIN role starts with admin mode already active (see UC-13)
+
+**Alternate Flows:**
+- Wrong username/password: inline error, stays on the login screen for retry
+- Valid credentials but not in the allowed AD group: inline error ("No tiene permisos..."), stays on the login screen
+- AD API unreachable: inline error, stays on the login screen
+
+---
+
+## UC-13 — Admin Mode (Role-Based)
+
+**Actor:** IT Administrator (ADMIN role) or any technician (per-action password)  
+**Trigger:** Logging in (ADMIN role) or clicking an admin-gated action as a USER-role technician
+
+**Main Flow (ADMIN-role login):**
+1. Login (UC-00) resolves the account's role as ADMIN
+2. AdminSession activates automatically — no password prompt, since login already proved identity
+3. Admin actions (GLPI sync/reject, Préstamo return validation, Mi Perfil manual edits, general Settings fields, Base de Datos catalog edits, S/N validation edits) are all accessible immediately
+4. The session never expires from inactivity for this technician — there is no self-service toggle left to reactivate it with if it did
+
+**Alternate Flow (USER-role technician, per-action password):**
+1. Clicking a Base de Datos catalog edit or S/N validation edit prompts for the shared admin password (unrelated to AD credentials), same as before
+2. On success, only that one action runs — global admin mode does not activate
+3. GLPI sync/reject, Préstamo return validation, and Mi Perfil manual edits are **not** reachable this way — they require an ADMIN-role login
 
 ---
 

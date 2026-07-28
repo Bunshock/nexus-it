@@ -13,11 +13,14 @@ import javafx.application.Platform;
 
 /**
  * Holds the current technician's identity for this app session only — never persisted to
- * disk. Populated from the Windows session's UPN (email) resolved against AD; refreshed at
- * app startup and on demand (manual "Actualizar desde AD" button, or an admin-mode edit).
- * The one exception is displayNamePreference (see getDisplayName()/setDisplayNamePreference()):
- * a personal greeting-name preference, independent of AD identity, persisted locally in
- * APP_SETTINGS keyed by username so it survives restarts and AD refreshes.
+ * disk. Populated once at login (LoginController.loginResolved(), after AD credentials, group
+ * membership, and USER_ROLE have all already been checked), and refreshable on demand
+ * ("Actualizar Perfil desde AD" in Mi Perfil, or an admin-mode manual edit) — but never
+ * re-authenticated mid-session; a refresh failure leaves the existing session intact rather
+ * than forcing a fresh login. The one exception is displayNamePreference (see
+ * getDisplayName()/setDisplayNamePreference()): a personal greeting-name preference,
+ * independent of AD identity, persisted locally in APP_SETTINGS keyed by username so it
+ * survives restarts and AD refreshes.
  */
 public class TechnicianSessionService {
 
@@ -29,6 +32,7 @@ public class TechnicianSessionService {
     private volatile String username;
     private volatile String email;
     private volatile String dni;
+    private volatile String role;
     private volatile String lastError;
     private volatile UpdateSource lastUpdateSource;
     private volatile String displayNamePreference;
@@ -43,36 +47,18 @@ public class TechnicianSessionService {
 
     public static TechnicianSessionService getInstance() { return INSTANCE; }
 
-    private static final String ADMIN_HINT =
-        " Un administrador puede completar estos datos manualmente en modo administrador.";
-
-    /** Resolves identity from the Windows session's UPN via AD. Safe to call from a background thread. */
-    public synchronized void refreshFromWindowsSession() {
-        String sessionEmail = WindowsIdentityService.getInstance().getSessionEmail();
-        if (sessionEmail == null) {
-            clear("No se pudo obtener el usuario de dominio de Windows." + ADMIN_HINT);
-            return;
-        }
-
-        List<ADUser> results;
-        try {
-            results = ServiceLocator.getInstance().getAdService()
-                .search(null, null, deriveUsernameFromEmail(sessionEmail));
-        } catch (Exception adUnreachable) {
-            clear("No se pudo conectar con Active Directory." + ADMIN_HINT);
-            return;
-        }
-
-        if (results.isEmpty()) {
-            clear("Usuario no encontrado en Active Directory." + ADMIN_HINT);
-            return;
-        }
-
-        ADUser match = results.get(0);
-        name = match.getFullName();
-        username = match.getUsername();
-        email = match.getEmail();
-        dni = match.getDni();
+    /**
+     * Populates the session from an already-authenticated login (LoginController): the AD
+     * credential check and group-membership gate already ran, and {@code user} is the result
+     * of the existing {@code search(null, null, username)} profile lookup — this method does
+     * no AD I/O of its own. {@code role} is the login-time USER_ROLE lookup ("ADMIN"/"USER").
+     */
+    public synchronized void loginResolved(ADUser user, String role) {
+        name = user.getFullName();
+        username = user.getUsername();
+        email = user.getEmail();
+        dni = user.getDni();
+        this.role = role;
         lastError = null;
         lastUpdateSource = UpdateSource.AD;
         loadDisplayNamePreference();
@@ -93,20 +79,32 @@ public class TechnicianSessionService {
         notifyListeners();
     }
 
-    static String deriveUsernameFromEmail(String email) {
+    /** Used by LoginController to pre-fill the username field from the Windows session's UPN —
+     * a convenience only, never trusted for authentication itself. */
+    public static String deriveUsernameFromEmail(String email) {
         int at = email.indexOf('@');
         return at >= 0 ? email.substring(0, at) : email;
     }
 
-    private synchronized void clear(String error) {
-        name = null;
-        username = null;
-        email = null;
-        dni = null;
-        displayNamePreference = null;
-        sedeIdPreference = null;
-        sedeName = null;
-        lastError = error;
+    /**
+     * Updates name/email/dni from a fresh AD lookup (ProfileController's "Actualizar Perfil
+     * desde AD" button) without touching username/role — this is a post-login profile refresh,
+     * not a re-authentication, so it deliberately does NOT wipe the existing session the way
+     * the old Windows-session resolution failure path used to.
+     */
+    public synchronized void refreshProfileFromAd(ADUser user) {
+        name = user.getFullName();
+        email = user.getEmail();
+        dni = user.getDni();
+        lastError = null;
+        lastUpdateSource = UpdateSource.AD;
+        notifyListeners();
+    }
+
+    /** Reports a profile-refresh failure without discarding the already-resolved session —
+     * an AD hiccup while refreshing shouldn't force a technician to log in again. */
+    public synchronized void reportProfileRefreshError(String message) {
+        lastError = message;
         notifyListeners();
     }
 
@@ -297,6 +295,7 @@ public class TechnicianSessionService {
     public String getUsername() { return username; }
     public String getEmail() { return email; }
     public String getDni() { return dni; }
+    public String getRole() { return role; }
     public String getLastError() { return lastError; }
     public UpdateSource getLastUpdateSource() { return lastUpdateSource; }
     public boolean isResolved() { return name != null; }

@@ -73,6 +73,26 @@ erDiagram
 
 ---
 
+#### User role table
+
+Added 2026-07-24 alongside the login screen. Flat username→role mapping, unrelated to AD group
+membership (which gates app access at login, checked live against the AD API, never stored
+locally) — this table only distinguishes `ADMIN` vs `USER` among accounts that already passed
+that gate. `IUserRoleService.getRole()` defaults to `"USER"` when a username has no row. No
+in-app UI writes to this table — an admin promotes/demotes an account with a plain SQL
+`INSERT`/`UPDATE`/`DELETE` against `USER_ROLE` directly.
+
+```mermaid
+
+erDiagram
+    USER_ROLE {
+        string username PK "AD account name, not a catalog id"
+        string role "ADMIN or USER"
+    }
+```
+
+---
+
 #### Note history tables
 
 ```mermaid

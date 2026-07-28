@@ -20,6 +20,7 @@ public class AppConfig {
     public DefaultSecrets defaults;
     public RemitoConfig remito;
     public CatalogConfig catalog = new CatalogConfig();
+    public AdAccessConfig adAccess = new AdAccessConfig();
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class AfFormat {
@@ -40,6 +41,28 @@ public class AppConfig {
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class ApiEndpoint {
         public String baseUrl;
+    }
+
+    /**
+     * Gates app access at login on AD group membership, not just a valid password — see
+     * LoginController. Blank allowedGroupName means the check is skipped entirely (not yet
+     * configured), same degrade-gracefully convention as GLPI/AD/SMTP being unconfigured
+     * elsewhere in this app. TODO: real group name still pending investigation on the org's
+     * AD side — leave blank until confirmed, do not guess a value here.
+     */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class AdAccessConfig {
+        public String allowedGroupName;
+
+        /**
+         * TEMPORARY bypass (added 2026-07-24) — the real AD API can't be extended with a
+         * validate-credentials endpoint yet. When true, AdApiService.validateCredentials()
+         * skips the (nonexistent) HTTP call entirely and instead does a real search() lookup
+         * to confirm the typed username exists in AD, accepting ANY password for it. Remove
+         * this flag (and AdApiService's mock branch) once the real endpoint exists — do not
+         * leave it around as a permanent "skip login" switch.
+         */
+        public boolean mockCredentialValidation = false;
     }
 
     /**

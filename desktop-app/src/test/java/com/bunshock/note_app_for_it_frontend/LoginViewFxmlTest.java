@@ -4,10 +4,6 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
-import com.bunshock.note_app_for_it_frontend.services.ConfigService;
-import com.bunshock.note_app_for_it_frontend.services.MockEquipmentService;
-import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;
-
 import javafx.application.Platform;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Parent;
@@ -16,22 +12,19 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
-// Mirrors SettingsViewFxmlTest — no prior test loaded DatabaseSectionView.fxml, so a typo in the
-// new catalog-group ToggleButtons/rows or the Sedes list/buttons would otherwise only surface at
-// runtime. initialize() dereferences equipmentService synchronously (refreshTypes()/
-// refreshSedes()/refreshProviders()), so ServiceLocator needs a real service before load, same
-// as SettingsController's own Sede combobox needed.
-class DatabaseSectionViewFxmlTest {
+// Same FXML-load-through-a-real-FXMLLoader convention as UserNoteViewFxmlTest — no prior test
+// loaded LoginView.fxml, so a typo in fx:id/onAction would otherwise only surface at runtime.
+// LoginController.initialize() only reads WindowsIdentityService (no ServiceLocator/DB state),
+// making a full load cheap and realistic without any test-side service wiring.
+class LoginViewFxmlTest {
 
     @BeforeAll
-    static void initFxToolkitAndConfig() throws Exception {
+    static void initFxToolkit() {
         try {
             Platform.startup(() -> {});
         } catch (IllegalStateException alreadyStarted) {
             // toolkit already running from a previous test class in this JVM
         }
-        ConfigService.getInstance().load();
-        ServiceLocator.getInstance().setEquipmentService(new MockEquipmentService());
     }
 
     @Test
@@ -43,7 +36,7 @@ class DatabaseSectionViewFxmlTest {
         Platform.runLater(() -> {
             try {
                 FXMLLoader loader = new FXMLLoader(getClass().getResource(
-                    "/com/bunshock/note_app_for_it_frontend/views/DatabaseSectionView.fxml"));
+                    "/com/bunshock/note_app_for_it_frontend/views/LoginView.fxml"));
                 rootRef.set(loader.load());
             } catch (Throwable t) {
                 errorRef.set(t);
@@ -54,7 +47,7 @@ class DatabaseSectionViewFxmlTest {
 
         assertTrue(latch.await(5, TimeUnit.SECONDS), "FXML load did not complete in time");
         if (errorRef.get() != null) {
-            fail("DatabaseSectionView.fxml failed to load: " + errorRef.get(), errorRef.get());
+            fail("LoginView.fxml failed to load: " + errorRef.get(), errorRef.get());
         }
         assertNotNull(rootRef.get());
     }

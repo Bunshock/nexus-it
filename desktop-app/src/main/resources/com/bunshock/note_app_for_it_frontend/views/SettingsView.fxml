@@ -158,21 +158,6 @@
                 </children>
             </VBox>
 
-            <!-- Admin mode -->
-            <VBox spacing="10" style="-fx-background-color: white; -fx-background-radius: 10; -fx-padding: 15 20 20 20;">
-                <children>
-                    <Label text="MODO ADMINISTRADOR" styleClass="section-label"/>
-                    <Label text="Habilita la sincronización GLPI en el historial y permite editar la configuración general (A/F, SMTP, GLPI) y guardar los cambios. La sesión expira tras 15 minutos de inactividad."
-                           style="-fx-text-fill: #64748b; -fx-font-size: 12px;" wrapText="true"/>
-                    <HBox spacing="12" alignment="CENTER_LEFT">
-                        <Button fx:id="btnToggleAdmin" text="Activar modo administrador"
-                                onAction="#handleToggleAdmin" styleClass="button-secondary"/>
-                        <Label fx:id="lblAdminStatus" text="Inactivo"
-                               style="-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #94a3b8;"/>
-                    </HBox>
-                </children>
-            </VBox>
-
         </children>
         </VBox>
         </content>

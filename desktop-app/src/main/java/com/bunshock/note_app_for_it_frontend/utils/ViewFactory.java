@@ -2,6 +2,7 @@ package com.bunshock.note_app_for_it_frontend.utils;
 
 import java.io.IOException;
 
+import com.bunshock.note_app_for_it_frontend.controllers.AuditController;
 import com.bunshock.note_app_for_it_frontend.controllers.HistoryController;
 import com.bunshock.note_app_for_it_frontend.controllers.NoteGeneratorController;
 import com.bunshock.note_app_for_it_frontend.controllers.PrestamoHistoryController;
@@ -34,6 +35,8 @@ public class ViewFactory {
     private SettingsController settingsController;
     private Parent aboutView;
     private Parent profileView;
+    private Parent auditView;
+    private AuditController auditController;
 
     private Parent prestamosView;
     private PrestamosController prestamosController;
@@ -114,6 +117,17 @@ public class ViewFactory {
         if (profileView == null) profileView = load(loader("ProfileView.fxml"));
         return profileView;
     }
+
+    public Parent getAuditView() {
+        if (auditView == null) {
+            FXMLLoader loader = loader("AuditView.fxml");
+            auditView = load(loader);
+            auditController = loader.getController();
+        }
+        return auditView;
+    }
+
+    public AuditController getAuditController() { return auditController; }
 
     public UserNoteController getUserNoteController() { return userNoteController; }
     public ProviderNoteController getProviderNoteController() { return providerNoteController; }
