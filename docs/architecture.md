@@ -104,7 +104,6 @@ desktop-app/src/main/java/com/bunshock/note_app_for_it_frontend/
 │   ├── NoteGeneratorController.java  — Equipment tables, note profile switching, generate trigger
 │   ├── UserNoteController.java       — User note fields: type toggle, Motivo, AD search
 │   ├── ProviderNoteController.java   — Provider note fields: name, CUIT, Motivo, responsible
-│   ├── RemitoNoteController.java     — Remito de Envío fields: Destinatario (free text) and Remitente (coordinator name, manual; Área/Sede editable, defaulted from config)
 │   ├── ItemDialogController.java     — Add/edit item: cascading dropdowns, S/N, A/F, quantity
 │   ├── NotePreviewController.java    — Preview popup: rendered HTML, print/email options
 │   ├── NoteDetailController.java     — History detail popup: HTML preview + item list with admin GLPI actions
@@ -306,7 +305,7 @@ Added 2026-07-22, a second exception to `TechnicianSessionService`'s otherwise s
 - **Storage**: `getSede()`/`setSedePreference()`, persisted in `APP_SETTINGS` keyed by `"sede_pref:" + username` (local SQLite only). Its own listener list (`addOnSedeChangeListener`) keeps a Sede save from re-triggering the AD-identity or display-name status messages, same reasoning as the existing listener split between those two.
 - **UI**: `SettingsController`'s "SEDE" field (`SettingsView.fxml`) — placed in Configuración per explicit user request, not Mi Perfil, even though the value is per-technician like the display name. Not admin-gated: always editable, with its own "Guardar" button (`handleSaveSede()`), unlike every other field in that panel.
 - **Mandatory to generate a note**: `NoteGeneratorController.handleGenerateNote()` and `PrestamoNewLoanController.handleGuardarPrestamo()` both block (same pattern as the existing AD-profile-incomplete check) if `getSede()` is blank, showing a dedicated warning directing the technician to Configuración.
-- **Snapshotted onto every note, printed on every template**: `NOTE_REPORT.sede` stores the value at generation time (same "snapshot, don't reference" pattern as `technician_name`/`technician_dni`/`observations`), rendered via a `{{SEDE}}` token. On 5 of the 6 templates (`entrega.html`, `devolucion.html`, `entrega - fin de contrato.html`, `proveedor.html`, `prestamo.html`) it replaces a previously hardcoded "Campus" in the intro sentence ("En la sede {{SEDE}} de la Universidad Siglo 21..."); `remito.html` (which has no such sentence) prints it as a "Sede: {{SEDE}}" line in the header. This is independent of `NOTE_REMITO`'s own `destinatario_sede`/`remitente_sede` fields, which keep their existing, unrelated meaning.
+- **Snapshotted onto every note, printed on every template**: `NOTE_REPORT.sede` stores the value at generation time (same "snapshot, don't reference" pattern as `technician_name`/`technician_dni`/`observations`), rendered via a `{{SEDE}}` token. On all 5 templates (`entrega.html`, `devolucion.html`, `entrega - fin de contrato.html`, `proveedor.html`, `prestamo.html`) it replaces a previously hardcoded "Campus" in the intro sentence ("En la sede {{SEDE}} de la Universidad Siglo 21...").
 
 ### ViewFactory — State Persistence Across Navigation
 `ViewFactory` loads each section FXML exactly once and caches the result. When `MainController` switches sections via sidebar, it calls `viewFactory.getXxxView()` which returns the cached node. Controller instances — and their bound data — remain alive in memory for the session. This implements FR-08 (in-session data persistence).
@@ -450,8 +449,6 @@ flowchart LR
 
     ProviderNoteController -->|Motivo options| ConfigService
     ProviderNoteController -->|provider catalog| ServiceLocator
-
-    RemitoNoteController -->|Remitente Área/Sede defaults| ConfigService
 
     PrestamosController --> PrestamoNewLoanController
     PrestamosController --> PrestamoHistoryController

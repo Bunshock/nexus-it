@@ -180,7 +180,6 @@ Each template is a plain `.html` file. The template engine replaces `{{TOKEN}}` 
 | `entrega - fin de contrato.html` | Fin de Contrato notes |
 | `prestamo.html` | Préstamo notes |
 | `proveedor.html` | Entrega - Proveedor notes |
-| `remito.html` | Remito de Envío notes — landscape orientation, no signatures, DNI, Motivo, or Observaciones, matching its physical source document |
 
 To customize the look of a generated note, edit the corresponding HTML file — no Java changes needed. The CSS inside the template controls print layout. Common tokens available in both templates:
 
@@ -208,7 +207,7 @@ mvn test
 
 ### Note Generation
 
-- **6 note profiles**: Entrega, Devolución, Fin de Contrato, Préstamo, Entrega - Proveedor, Remito de Envío
+- **5 note profiles**: Entrega, Devolución, Fin de Contrato, Préstamo, Entrega - Proveedor
 - Motivo dropdown (configurable per profile type) — mandatory for Entrega, Devolución, Fin de Contrato, and Provider notes
 - Provider notes select the provider from an admin-managed catalog (see [Database Section](#database-section-base-de-datos)) — not free text, to keep naming consistent across notes; generation is blocked with an inline message if none is selected
 - HTML template rendering with `{{TOKEN}}` substitution and `{{#ITEMS}}` loops
@@ -250,7 +249,7 @@ mvn test
 
 - Every generated note saved to local SQLite
 - History table with date, profile type, recipient, author, equipment count, and GLPI sync status
-- **Advanced multi-select filters**: date range, note type, GLPI status (Pendiente/Sincronizado/Rechazado/Sin GLPI), author text, recipient/provider text, and cascading equipment type → brand → model; partial/hybrid GLPI states are included in filtered results
+- **Advanced multi-select filters**: date range, note type, GLPI status (Pendiente/Sincronizado/Rechazado/Sin GLPI), author text, recipient/provider text, Sede, and cascading equipment type → brand → model; partial/hybrid GLPI states are included in filtered results
 - **Export**: filtered results exportable to CSV (UTF-8 with BOM) or Excel (.xlsx) with bold headers and auto-sized columns
 - **Note detail popup**: double-click any row to open a floating popup with the rendered note preview (left) and a scrollable item card list (right) showing per-item GLPI status badges
 - **Admin GLPI actions**: in admin mode, PENDING item cards in the popup show Sync and Reject buttons; rejection requires entering a reason; the history table refreshes after each action
@@ -261,7 +260,7 @@ mvn test
 - **Two ways to create a Préstamo**: the existing Generar Nota → Préstamo flow (prints a note), or the new "Cargar Nuevo Préstamo" tab, which saves a loan directly to history with no print/email/rendered note at all
 - **Cargar Nuevo Préstamo**: recipient Name/DNI with AD search, an optional "Área / Evento" context field, a mandatory tentative return date (defaults to next working day, can't be in the past), and the same asset/countable item tables and item dialog as Generar Nota
 - **Historial de Préstamos**: a Préstamo-scoped history table, colored by return status (green = devuelto, orange = pendiente, red = perdido, gradient for mixed) with an overdue "(Vencido)" flag for pending loans past their tentative return date
-- **Filters**: date range, Estado de Devolución (multi-select), destinatario/autor text search
+- **Filters**: date range, Estado de Devolución (multi-select), destinatario/autor text search, Sede (multi-select)
 - **Return validation** (admin mode): double-click a loan to open its detail popup — pending items show "Validar devolución" / "Marcar como perdido" (mandatory reason) buttons; every item, asset or countable, is tracked independently of GLPI sync status
 
 ### Database Section (Base de Datos)
@@ -279,7 +278,7 @@ mvn test
 
 ### Settings
 
-- **Sede**: a per-technician site value (own field, own "Guardar" button, not admin-gated — any technician sets their own), shown in the sidebar next to the welcome message. Mandatory to generate a note or register a Préstamo — blocked with a warning if unset, same as an incomplete AD profile. Snapshotted onto every note at generation time and printed on it (replaces the previously hardcoded "Campus" text on 5 of the 6 templates; shown as a header line on Remito de Envío)
+- **Sede**: a per-technician site value (own field, own "Guardar" button, not admin-gated — any technician sets their own), shown in the sidebar next to the welcome message. Mandatory to generate a note or register a Préstamo — blocked with a warning if unset, same as an incomplete AD profile. Snapshotted onto every note at generation time and printed on it (replaces the previously hardcoded "Campus" text on all 5 templates)
 - A/F format configuration with live preview
 - SMTP credentials (password encrypted via `AppKeyEncryptionService` — never stored in plaintext)
 - GLPI API URL and API Key (key encrypted via `AppKeyEncryptionService` — never stored in plaintext)

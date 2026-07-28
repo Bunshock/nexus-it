@@ -44,7 +44,7 @@
 
 ##### 5. History & Export
 
-- **FR-17**: The history view shall provide multi-select filters for note type, GLPI status, equipment type, brand, and model, as well as date range and recipient text search.
+- **FR-17**: The history view shall provide multi-select filters for note type, GLPI status, equipment type, brand, model, and Sede, as well as date range and recipient text search.
 
 - **FR-18**: Equipment filter values (type, brand, model) in the history view shall be populated from historical NOTE_ITEM data, not from the current live catalog.
 
@@ -58,11 +58,9 @@
 
 - **FR-22**: The system shall track a return status (Pendiente/Devuelto/Perdido) per item on every Préstamo note, for both serialized (asset) and countable items, independent of GLPI sync status.
 
-- **FR-23**: The Préstamos Historial view shall color each row by aggregate return status (solid green/orange/red, or a proportional gradient for mixed statuses) and visually flag any row with pending items past its tentative return date as overdue.
+- **FR-23**: The Préstamos Historial view shall color each row by aggregate return status (solid green/orange/red, or a proportional gradient for mixed statuses), visually flag any row with pending items past its tentative return date as overdue, and provide multi-select filters for return status and Sede alongside date range and recipient/author text search.
 
 - **FR-24**: In admin mode, the Préstamo detail popup shall allow validating a pending item as returned or marking it as lost (with a mandatory reason), without affecting that item's separate GLPI sync status.
-
-- **FR-25**: The system shall allow a technician to generate a Remito de Envío note (a transport receipt for equipment shipped to another sede), capturing free-text Destinatario Nombre/Área/Sede and a read-only Remitente Nombre/Área/Sede (sourced from the technician's session and a configurable default), with no Motivo, no DNI, no signatures, and no Observaciones Generales field — matching the profile's physical source document. Assets on a Remito shall follow the same GLPI Pendiente sync workflow as Entrega/Devolución/Proveedor notes.
 
 ##### 7. Technician Identity & Traceability
 

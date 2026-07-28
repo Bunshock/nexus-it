@@ -104,7 +104,6 @@ erDiagram
 
     NOTE_REPORT ||--o| NOTE_ENTREGA_DEVOLUCION : ""
     NOTE_REPORT ||--o| NOTE_PROVEEDOR : ""
-    NOTE_REPORT ||--o| NOTE_REMITO : ""
 
     NOTE_ITEM ||--o| NOTE_ITEM_ASSET : ""
     NOTE_ITEM ||--o| NOTE_ITEM_COUNTABLE : ""
@@ -120,7 +119,7 @@ erDiagram
     NOTE_REPORT {
         int id PK
         string created_at "ISO-8601 timestamp"
-        string profile_type "ENTREGA / DEVOLUCION / FIN_DE_CONTRATO / PROVEEDOR / Remito de Envío"
+        string profile_type "ENTREGA / DEVOLUCION / FIN_DE_CONTRATO / PROVEEDOR"
         int glpi_synced "0 = not synced"
         string technician_name "plain text, snapshot at generation time"
         string technician_dni "plain text, snapshot at generation time"
@@ -142,16 +141,6 @@ erDiagram
         int provider_id FK "references PROVIDER(id), possibly a deprecated/renamed-away row — see Notes below"
         string cuit
         string motivo "mandatory"
-    }
-
-    NOTE_REMITO {
-        int note_report_id PK_FK
-        string destinatario_name "free text, no AD lookup — no DNI on this note type"
-        string destinatario_area "free text"
-        string destinatario_sede "free text; interim stand-in until a real Sede catalog exists"
-        string remitente_name "the IT Support coordinator sending the shipment — manual, no default; NOT the generating technician"
-        string remitente_area "editable, pre-filled from app-config.json's remito.remitenteArea"
-        string remitente_sede "editable, pre-filled from app-config.json's remito.remitenteSede"
     }
 
     NOTE_ITEM {
@@ -225,7 +214,7 @@ Schema-less key-value table — see the table above for the actual keys in use; 
 #### Notes
 
 - `'Genérico / Otro'` brand row (renamed from `'Generic'` 2026-07-22) is inserted on first run and is protected from deletion in `SqliteEquipmentService`. `MODEL` has its own single global `'Genérico / Otro'` row too (`brand_type_id IS NULL`, added 2026-07-23) — offered for every brand+type combination regardless of whether a real `BRAND_TYPE_LINK` exists, via a `UNION` in `getModelsForBrandAndType()`. This replaced an earlier per-`BRAND_TYPE_LINK` duplicate (one "Genérico / Otro" `MODEL` row per link, forced by `brand_type_id` being `NOT NULL`) — a real redundancy, since the label never actually varied by scope; renaming it meant updating N rows to stay in sync. `removeModel()` refuses to delete this row (it can only be renamed); `idx_model_global_generic_name` (`UNIQUE(name) WHERE brand_type_id IS NULL`) and `idx_model_single_active_generic` (`UNIQUE(deprecated) WHERE brand_type_id IS NULL AND deprecated = 0`) back it at the DB level — a plain `UNIQUE(brand_type_id, name)` can't, since every SQL engine treats NULL as never-equal-to-NULL even inside a unique index. The seed label is configurable via `app-config.json`'s `catalog.genericLabel` (one-shot: only used the first time the row is created — renaming it afterward is a normal admin catalog rename, same as any Brand/Model, so historical notes keep showing whatever label was active when they were generated).
-- `NOTE_ENTREGA_DEVOLUCION`, `NOTE_PROVEEDOR`, and `NOTE_REMITO` are optional one-to-one extensions of `NOTE_REPORT`, populated based on `profile_type`. Remito de Envío (`NOTE_REMITO`) has no Motivo, no DNI, and no signatures on its rendered note — deliberately matching its physical source document rather than this app's usual conventions; see `CLAUDE.md`'s "Remito de Envío" section.
+- `NOTE_ENTREGA_DEVOLUCION` and `NOTE_PROVEEDOR` are optional one-to-one extensions of `NOTE_REPORT`, populated based on `profile_type`.
 - `NOTE_REPORT.technician_name`/`technician_dni` store the generating technician's identity as a plain-text snapshot at generation time — the technician's identity is session-only, sourced from Windows/AD, and never persisted elsewhere (see `TechnicianSessionService` in `docs/architecture.md`). The `TECHNICIAN_PROFILE` table and `NOTE_REPORT.technician_id` FK that predated this snapshot approach were removed entirely (2026-07-16); any note created before that change that only had `technician_id` set now shows a blank author in History.
 - All encrypted values use `AppKeyEncryptionService` (AES-256/GCM, replaced Windows DPAPI on 2026-07-08) — a single fixed key shared across every installation, chosen specifically so these organization-wide shared credentials can be pre-configured across many machines without per-account/per-machine setup. See `CLAUDE.md`'s Known issues/gotchas for the accepted security trade-off.
 - `NOTE_ITEM.glpi_status` tracks GLPI sync state per asset item. Only rows where `is_asset = 1` are eligible for GLPI sync; countable items always remain `N_A`. `NoteReport` aggregates these counts into `getPendingItemCount()`, `getSyncedItemCount()`, `getRejectedItemCount()` for display in the history table.

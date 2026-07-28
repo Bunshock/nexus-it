@@ -311,25 +311,3 @@ Same as UC-01 but with profile "FIN DE CONTRATO". Used for employees leaving the
 4. After any action, the Préstamos table in the background refreshes to reflect the updated return counts
 
 **Note:** This popup is separate from the regular History detail popup (UC-12) — reopening a Préstamo note from the regular Historial section shows only its GLPI sync status, not return status; return validation is only available from this Préstamos section.
-
----
-
-## UC-18 — Generate a Remito de Envío Note
-
-**Actor:** IT Technician
-**Trigger:** Selects "REMITO DE ENVÍO" in Generar Nota, when equipment is being physically shipped to another sede
-**Preconditions:** Technician profile is resolved (Name + DNI), same requirement as any other note generation
-
-**Main Flow:**
-1. Technician selects "REMITO DE ENVÍO" (third toggle, alongside "NOTA PARA USUARIO"/"NOTA PARA PROVEEDOR")
-2. Fills Destinatario Nombre, Área, and Sede (all free text — Sede is a stand-in until a dedicated Sede catalog exists)
-3. Fills Remitente Nombre (the IT Support coordinator sending the shipment — not necessarily the technician generating the note; always starts blank, no default) and, if needed, adjusts Remitente Área/Sede (both pre-filled from `app-config.json`'s `remito.remitenteArea`/`remitenteSede`, but editable per note)
-4. Adds equipment items via the same item dialog as UC-05 (asset and/or countable) — the shared equipment tables and the note is subject to the same item-limit warning as any other note type
-5. Clicks "Generar Reporte y Registrar"
-6. Preview popup shows the rendered note; technician selects Print / Email as usual
-7. Note is printed/sent; report saved to history
-
-**Alternate Flow A — Missing technician profile or Sede:** Same warning as UC-01's Alternate Flow D
-**Alternate Flow B — Validation failure:** Inline red feedback if any Destinatario or Remitente field is blank, or a Nombre field contains anything other than letters and single spaces
-
-**Note:** Deliberately different from every other note type, matching its physical source document exactly: **no Motivo field**, **no DNI printed for either party**, **no signatures at all**, and **no "Observaciones Generales" field** — the shared footer used by the other two profile types is hidden specifically when this toggle is selected. The rendered note (`remito.html`) is also the only one of the app's templates printed in **landscape**, not portrait, matching its source spreadsheet. Equipment assets on a Remito still go through the normal GLPI Pendiente → Sincronizar/Rechazar workflow (unlike Préstamo, whose assets are marked N/A) — a Remito is treated as a real custody-affecting relocation. Fully integrated into Historial (UC-08, UC-12) like every other note type — filterable, exportable, reopenable/reprintable.
