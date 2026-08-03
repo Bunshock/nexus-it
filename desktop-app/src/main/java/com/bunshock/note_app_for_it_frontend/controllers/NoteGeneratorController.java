@@ -528,7 +528,15 @@ public class NoteGeneratorController implements ItemDialogHost {
         Parent root = loader.load();
         NotePreviewController ctrl = loader.getController();
         ctrl.loadPreview(html, profileType, report, assetList, countableList);
-        ctrl.setOnSuccess(() -> showGenerationSuccess("Nota generada correctamente"));
+        ctrl.setOnSuccess(() -> {
+            showGenerationSuccess("Nota generada correctamente");
+            // Per-technician preference (Configuración → Generación de notas), any role can
+            // change it — defaults to on ("to prevent mistakes": reusing stale form data for a
+            // different note). handleClearForm() already does exactly what's needed here.
+            if (TechnicianSessionService.getInstance().isAutoClearFormAfterGeneration()) {
+                handleClearForm();
+            }
+        });
 
         javafx.scene.layout.VBox rootVBox = (javafx.scene.layout.VBox) root;
 

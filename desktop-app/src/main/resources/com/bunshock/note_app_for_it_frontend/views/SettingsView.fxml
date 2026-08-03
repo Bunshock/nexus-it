@@ -2,6 +2,7 @@
 <?import javafx.scene.layout.*?>
 <?import javafx.scene.control.*?>
 <?import javafx.geometry.Insets?>
+<?import org.controlsfx.control.ToggleSwitch?>
 
 <StackPane style="-fx-background-color: #f4f4f4;"
            xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1"
@@ -26,15 +27,21 @@
         <VBox spacing="20" style="-fx-padding: 0 30 20 30; -fx-background-color: #f4f4f4;">
         <children>
 
-            <!-- Sede (per-technician, not admin-gated — any technician sets their own).
-                 Saved via the shared "Guardar Configuración" footer button below, not a
-                 dedicated one — see SettingsController.handleSave(). -->
+            <!-- Note generation behavior — a personal preference, not admin-gated (any role can
+                 change it), same as "Nombre para mostrar" in Mi Perfil. Applies immediately on
+                 toggle, no separate save button, matching how a toggle switch behaves elsewhere.
+                 Shown first — it's a global, always-editable user setting, unlike everything else
+                 in this panel, which is an admin/superadmin-gated system configuration value. -->
             <VBox spacing="10" style="-fx-background-color: white; -fx-background-radius: 10; -fx-padding: 15 20 20 20;">
                 <children>
-                    <Label text="SEDE" styleClass="section-label"/>
-                    <Label text="Sede desde la que usted genera notas. Se imprime en cada nota y es obligatoria para poder generarlas."
-                           style="-fx-text-fill: #64748b; -fx-font-size: 12px;" wrapText="true"/>
-                    <ComboBox fx:id="cmbSede" styleClass="form-input-main, sede-combo" promptText="Seleccione una sede..." maxWidth="220"/>
+                    <Label text="GENERACIÓN DE NOTAS" styleClass="section-label"/>
+                    <HBox alignment="CENTER_LEFT" spacing="15">
+                        <children>
+                            <Label text="Limpiar el formulario automáticamente después de generar una nota"
+                                   wrapText="true" style="-fx-text-fill: #334155; -fx-font-size: 12px;" HBox.hgrow="ALWAYS"/>
+                            <ToggleSwitch fx:id="toggleAutoClearForm"/>
+                        </children>
+                    </HBox>
                 </children>
             </VBox>
 
@@ -44,8 +51,6 @@
                     <Label text="FORMATO DE ACTIVO FIJO (A/F)" styleClass="section-label"/>
                     <GridPane hgap="15" vgap="10">
                         <columnConstraints>
-                            <ColumnConstraints percentWidth="12.5"/>
-                            <ColumnConstraints percentWidth="12.5"/>
                             <ColumnConstraints percentWidth="12.5"/>
                             <ColumnConstraints percentWidth="12.5"/>
                         </columnConstraints>
@@ -58,41 +63,10 @@
                                 <Label text="SEPARADOR" styleClass="input-label-small"/>
                                 <TextField fx:id="txtAfSeparator" styleClass="form-input-main" disable="true"/>
                             </VBox>
-                            <VBox spacing="2" GridPane.columnIndex="2">
-                                <Label text="LONGITUD" styleClass="input-label-small"/>
-                                <TextField fx:id="txtAfLength" styleClass="form-input-main" disable="true"/>
-                            </VBox>
-                            <VBox spacing="2" GridPane.columnIndex="3">
-                                <Label text="RELLENO" styleClass="input-label-small"/>
-                                <TextField fx:id="txtAfFiller" styleClass="form-input-main" disable="true"/>
-                            </VBox>
                         </children>
                     </GridPane>
-                    <Label fx:id="lblAfPreview" text="Vista previa: IT-00000000"
+                    <Label fx:id="lblAfPreview" text="Vista previa: IT-AB12345678"
                            style="-fx-text-fill: #64748b; -fx-font-size: 11px;"/>
-                </children>
-            </VBox>
-
-            <!-- Email (SMTP) -->
-            <VBox spacing="10" style="-fx-background-color: white; -fx-background-radius: 10; -fx-padding: 15 20 20 20;">
-                <children>
-                    <Label text="CORREO ELECTRÓNICO (SMTP)" styleClass="section-label"/>
-                    <GridPane hgap="15" vgap="10">
-                        <columnConstraints>
-                            <ColumnConstraints percentWidth="25"/>
-                            <ColumnConstraints percentWidth="25"/>
-                        </columnConstraints>
-                        <children>
-                            <VBox spacing="2" GridPane.columnIndex="0">
-                                <Label text="DIRECCIÓN DE ENVÍO" styleClass="input-label-small"/>
-                                <TextField fx:id="txtSmtpSender" styleClass="form-input-main" disable="true"/>
-                            </VBox>
-                            <VBox spacing="2" GridPane.columnIndex="1">
-                                <Label text="CONTRASEÑA" styleClass="input-label-small"/>
-                                <PasswordField fx:id="pfSmtpPassword" styleClass="form-input-main" disable="true"/>
-                            </VBox>
-                        </children>
-                    </GridPane>
                 </children>
             </VBox>
 
@@ -155,6 +129,30 @@
                     <HBox>
                         <Button text="Ver tabla" onAction="#onOpenSnValidation" styleClass="button-secondary"/>
                     </HBox>
+                </children>
+            </VBox>
+
+            <!-- Email (SMTP) — moved to the very end: this panel's only SUPERADMIN-only field
+                 group (EDIT_SMTP_CONFIG), everything else here is at most ADMIN-level. -->
+            <VBox spacing="10" style="-fx-background-color: white; -fx-background-radius: 10; -fx-padding: 15 20 20 20;">
+                <children>
+                    <Label text="CORREO ELECTRÓNICO (SMTP)" styleClass="section-label"/>
+                    <GridPane hgap="15" vgap="10">
+                        <columnConstraints>
+                            <ColumnConstraints percentWidth="25"/>
+                            <ColumnConstraints percentWidth="25"/>
+                        </columnConstraints>
+                        <children>
+                            <VBox spacing="2" GridPane.columnIndex="0">
+                                <Label text="DIRECCIÓN DE ENVÍO" styleClass="input-label-small"/>
+                                <TextField fx:id="txtSmtpSender" styleClass="form-input-main" disable="true"/>
+                            </VBox>
+                            <VBox spacing="2" GridPane.columnIndex="1">
+                                <Label text="CONTRASEÑA" styleClass="input-label-small"/>
+                                <PasswordField fx:id="pfSmtpPassword" styleClass="form-input-main" disable="true"/>
+                            </VBox>
+                        </children>
+                    </GridPane>
                 </children>
             </VBox>
 

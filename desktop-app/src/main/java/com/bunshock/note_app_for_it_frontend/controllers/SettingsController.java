@@ -9,7 +9,7 @@ import java.util.Set;
 import java.util.function.Predicate;
 
 import com.bunshock.note_app_for_it_frontend.models.AppConfig;
-import com.bunshock.note_app_for_it_frontend.models.Sede;
+import com.bunshock.note_app_for_it_frontend.models.Permission;
 import com.bunshock.note_app_for_it_frontend.models.SnValidationRow;
 import com.bunshock.note_app_for_it_frontend.services.AdApiService;
 import com.bunshock.note_app_for_it_frontend.services.AdminSession;
@@ -59,16 +59,8 @@ public class SettingsController {
     @FXML private VBox panelSettings;
     @FXML private VBox panelSnValidation;
 
-    // Not admin-gated — any technician sets their own Sede (see updateFieldEditability()).
-    // Catalog-backed (added 2026-07-24) — strict selection from the admin-curated SEDE list,
-    // same non-editable pattern as ProviderNoteController.cmbProviderSearch. Saved through the
-    // shared "Guardar Configuración" button/handleSave() below, not a dedicated button anymore.
-    @FXML private ComboBox<Sede> cmbSede;
-
     @FXML private TextField txtAfPrefix;
     @FXML private TextField txtAfSeparator;
-    @FXML private TextField txtAfLength;
-    @FXML private TextField txtAfFiller;
     @FXML private Label     lblAfPreview;
 
     @FXML private TextField   txtSmtpSender;
@@ -82,6 +74,8 @@ public class SettingsController {
 
     @FXML private Button btnSave;
     @FXML private Label  lblSaveStatus;
+
+    @FXML private org.controlsfx.control.ToggleSwitch toggleAutoClearForm;
 
     // ── S/N validation panel fields ───────────────────────────────────
     @FXML private MenuButton                             mnuSnType;
@@ -115,22 +109,21 @@ public class SettingsController {
         AppConfig config = ConfigService.getInstance().getConfig();
         txtAfPrefix.setText(config.afFormat.prefix);
         txtAfSeparator.setText(config.afFormat.separator);
-        txtAfLength.setText(String.valueOf(config.afFormat.length));
-        txtAfFiller.setText(config.afFormat.filler);
         txtSmtpSender.setText(config.smtp.senderAddress);
         txtGlpiUrl.setText(config.glpiApi.baseUrl);
         txtAdUrl.setText(config.adApi.baseUrl);
 
         txtAfPrefix.textProperty().addListener((o, a, b) -> updateAfPreview());
         txtAfSeparator.textProperty().addListener((o, a, b) -> updateAfPreview());
-        txtAfLength.textProperty().addListener((o, a, b) -> updateAfPreview());
-        txtAfFiller.textProperty().addListener((o, a, b) -> updateAfPreview());
         updateAfPreview();
 
         setupSnTable();
 
-        refreshSedeCombo();
-        TechnicianSessionService.getInstance().addOnSedeChangeListener(this::preselectCurrentSede);
+        // Personal preference, not admin-gated — any role can change it, applies immediately
+        // (no separate Save button), same as "Nombre para mostrar" in Mi Perfil.
+        toggleAutoClearForm.setSelected(TechnicianSessionService.getInstance().isAutoClearFormAfterGeneration());
+        toggleAutoClearForm.selectedProperty().addListener((obs, was, isNow) ->
+            TechnicianSessionService.getInstance().setAutoClearFormAfterGeneration(isNow));
 
         AdminSession.getInstance().addOnActivateListener(this::onAdminStateChanged);
         AdminSession.getInstance().addOnDeactivateListener(this::onAdminStateChanged);
@@ -142,119 +135,90 @@ public class SettingsController {
     }
 
     private void updateFieldEditability() {
-        boolean adminActive = AdminSession.getInstance().isActive();
-        txtAfPrefix.setDisable(!adminActive);
-        txtAfSeparator.setDisable(!adminActive);
-        txtAfLength.setDisable(!adminActive);
-        txtAfFiller.setDisable(!adminActive);
-        txtSmtpSender.setDisable(!adminActive);
-        pfSmtpPassword.setDisable(!adminActive);
-        txtGlpiUrl.setDisable(!adminActive);
-        pfGlpiApiKey.setDisable(!adminActive);
-        txtAdUrl.setDisable(!adminActive);
-        pfAdApiToken.setDisable(!adminActive);
-        // btnSave itself is never disabled by admin state — Sede (not admin-gated) is saved
-        // through the same button, see handleSave().
+        boolean canAf   = AdminSession.getInstance().hasPermission(Permission.EDIT_AF_FORMAT_CONFIG);
+        boolean canSmtp = AdminSession.getInstance().hasPermission(Permission.EDIT_SMTP_CONFIG);
+        boolean canGlpi = AdminSession.getInstance().hasPermission(Permission.EDIT_GLPI_CONFIG);
+        boolean canAd   = AdminSession.getInstance().hasPermission(Permission.EDIT_AD_CONFIG);
+        txtAfPrefix.setDisable(!canAf);
+        txtAfSeparator.setDisable(!canAf);
+        txtSmtpSender.setDisable(!canSmtp);
+        pfSmtpPassword.setDisable(!canSmtp);
+        txtGlpiUrl.setDisable(!canGlpi);
+        pfGlpiApiKey.setDisable(!canGlpi);
+        txtAdUrl.setDisable(!canAd);
+        pfAdApiToken.setDisable(!canAd);
+        // btnSave itself is never disabled — a session with none of these permissions granted
+        // simply has every field disabled, so clicking Save is a harmless no-op (see handleSave).
     }
 
     // ── A/F preview ───────────────────────────────────────────────────
 
     private void updateAfPreview() {
-        try {
-            String prefix = txtAfPrefix.getText();
-            String sep    = txtAfSeparator.getText();
-            int length    = Integer.parseInt(txtAfLength.getText().trim());
-            String filler = txtAfFiller.getText().isEmpty() ? "0" : txtAfFiller.getText().substring(0, 1);
-            String example = filler.repeat(Math.max(0, length - 3)) + "512";
-            lblAfPreview.setText("Vista previa: " + prefix + sep
-                + example.substring(Math.max(0, example.length() - length)));
-        } catch (NumberFormatException e) {
-            lblAfPreview.setText("Vista previa: —");
-        }
-    }
-
-    // ── Sede (per-technician, saved by the shared "Guardar Configuración" button below) ─────
-
-    // Repopulates the combo from the catalog and reselects whatever the technician currently
-    // has saved — called at init, whenever Base de Datos' Sede list changes underneath this
-    // (session-cached view, same "stale catalog" family of bug already fixed elsewhere for
-    // ProviderNoteController.refreshProviders()), and every time the Settings section is shown
-    // again (MainController.handleShowSettings(), mirroring HistoryController.refresh()'s
-    // precedent) — so switching away after picking a different Sede but not saving, then
-    // switching back, shows the last *saved* value again rather than the abandoned selection.
-    public void refreshSedeCombo() {
-        cmbSede.setItems(FXCollections.observableArrayList(equipmentService.getAllSedes()));
-        preselectCurrentSede();
-    }
-
-    private void preselectCurrentSede() {
-        Integer sedeId = TechnicianSessionService.getInstance().getSedeId();
-        if (sedeId == null) {
-            cmbSede.setValue(null);
-            return;
-        }
-        cmbSede.getItems().stream()
-            .filter(s -> s.getId() == sedeId)
-            .findFirst()
-            .ifPresentOrElse(cmbSede::setValue, () -> cmbSede.setValue(null));
+        String prefix = txtAfPrefix.getText();
+        String sep    = txtAfSeparator.getText();
+        lblAfPreview.setText("Vista previa: " + prefix + sep + "AB12345678");
     }
 
     // ── Save ──────────────────────────────────────────────────────────
 
+    // Each field group is persisted only if its own permission is currently granted — a session
+    // with none of these fields disabled couldn't have typed into them anyway, but this is the
+    // actual boundary check (not just the disabled widgets), matching this app's "validate at
+    // every system boundary" convention. EDIT_SMTP_CONFIG is superadmin-only; the other three
+    // stay admin-level.
     @FXML
     private void handleSave() {
-        // Sede isn't admin-gated (any technician sets their own), so it's always saved here,
-        // regardless of admin state — previously had its own dedicated "Guardar" button next to
-        // the combo, merged into this one so a non-admin technician has a way to save it too.
-        Sede selectedSede = cmbSede.getValue();
-        TechnicianSessionService.getInstance().setSedePreference(
-            selectedSede != null ? selectedSede.getId() : null,
-            selectedSede != null ? selectedSede.getName() : null);
-
-        if (!AdminSession.getInstance().isActive()) {
-            triggerSaveStatus("Configuración guardada", "#0c8570");
-            return;
-        }
-
         AppConfig config = ConfigService.getInstance().getConfig();
+        boolean canAf   = AdminSession.getInstance().hasPermission(Permission.EDIT_AF_FORMAT_CONFIG);
+        boolean canSmtp = AdminSession.getInstance().hasPermission(Permission.EDIT_SMTP_CONFIG);
+        boolean canGlpi = AdminSession.getInstance().hasPermission(Permission.EDIT_GLPI_CONFIG);
+        boolean canAd   = AdminSession.getInstance().hasPermission(Permission.EDIT_AD_CONFIG);
 
-        config.afFormat.prefix    = txtAfPrefix.getText().trim();
-        config.afFormat.separator = txtAfSeparator.getText();
-        config.afFormat.filler    = txtAfFiller.getText().isEmpty() ? "0" : txtAfFiller.getText().substring(0, 1);
-        config.smtp.senderAddress = txtSmtpSender.getText().trim();
-        config.glpiApi.baseUrl    = txtGlpiUrl.getText().trim();
-        String adUrl   = txtAdUrl.getText().trim();
-        String adToken = pfAdApiToken.getText();
-
-        try {
-            config.afFormat.length = Integer.parseInt(txtAfLength.getText().trim());
-        } catch (NumberFormatException e) {
-            triggerSaveStatus("La longitud de A/F debe ser un número", "#ef4444");
+        if (!canAf && !canSmtp && !canGlpi && !canAd) {
+            triggerSaveStatus("No tiene permisos para modificar esta configuración", "#ef4444");
             return;
         }
+
+        if (canAf) {
+            config.afFormat.prefix    = txtAfPrefix.getText().trim();
+            config.afFormat.separator = txtAfSeparator.getText();
+        }
+        if (canSmtp) {
+            config.smtp.senderAddress = txtSmtpSender.getText().trim();
+        }
+        if (canGlpi) {
+            config.glpiApi.baseUrl = txtGlpiUrl.getText().trim();
+        }
+        String adUrl   = canAd ? txtAdUrl.getText().trim() : config.adApi.baseUrl;
+        String adToken = canAd ? pfAdApiToken.getText() : "";
 
         Runnable persist = () -> {
-            config.adApi.baseUrl = adUrl;
+            if (canAd) config.adApi.baseUrl = adUrl;
 
-            String smtpPassword = pfSmtpPassword.getText();
-            if (!smtpPassword.isBlank()) {
-                saveEncryptedSetting("smtp_password", smtpPassword);
-                pfSmtpPassword.clear();
+            if (canSmtp) {
+                String smtpPassword = pfSmtpPassword.getText();
+                if (!smtpPassword.isBlank()) {
+                    saveEncryptedSetting("smtp_password", smtpPassword);
+                    pfSmtpPassword.clear();
+                }
             }
 
-            String glpiApiKey = pfGlpiApiKey.getText();
-            if (!glpiApiKey.isBlank()) {
-                saveEncryptedSetting("glpi_api_key", glpiApiKey);
-                pfGlpiApiKey.clear();
+            if (canGlpi) {
+                String glpiApiKey = pfGlpiApiKey.getText();
+                if (!glpiApiKey.isBlank()) {
+                    saveEncryptedSetting("glpi_api_key", glpiApiKey);
+                    pfGlpiApiKey.clear();
+                }
             }
 
-            if (!adToken.isBlank()) {
-                saveEncryptedSetting("ad_api_token", adToken);
-                pfAdApiToken.clear();
+            if (canAd) {
+                if (!adToken.isBlank()) {
+                    saveEncryptedSetting("ad_api_token", adToken);
+                    pfAdApiToken.clear();
+                }
+                String effectiveToken = !adToken.isBlank() ? adToken : decryptSetting("ad_api_token");
+                AdApiService.getInstance().configure(adUrl.isBlank() ? null : adUrl, effectiveToken);
             }
-
-            String effectiveToken = !adToken.isBlank() ? adToken : decryptSetting("ad_api_token");
-            AdApiService.getInstance().configure(adUrl.isBlank() ? null : adUrl, effectiveToken);
 
             try {
                 ConfigService.getInstance().save();
@@ -264,7 +228,7 @@ public class SettingsController {
             }
         };
 
-        if (adUrl.isEmpty()) {
+        if (!canAd || adUrl.isEmpty()) {
             persist.run();
             return;
         }
@@ -616,7 +580,7 @@ public class SettingsController {
     // ── Edit row ──────────────────────────────────────────────────────
 
     private void handleEditRow(SnValidationRow row) {
-        if (!AdminSession.getInstance().isActive()) {
+        if (!AdminSession.getInstance().hasPermission(Permission.EDIT_SN_VALIDATION)) {
             showErrorDialog("Acceso restringido",
                 "Activa el modo administrador desde Configuración para editar la validación S/N.");
             return;
@@ -643,6 +607,18 @@ public class SettingsController {
         tfRegex.setTextFormatter(new TextFormatter<>(change ->
             change.getControlNewText().length() <= SN_REGEX_MAX_LENGTH ? change : null));
 
+        // This field previously had no validation at all beyond a
+        // length cap — a syntactically invalid regex (unbalanced parens, a bad quantifier, etc.)
+        // saved fine here and then threw PatternSyntaxException every time a technician typed an
+        // S/N against this model (see ItemDialogController.validateSnLength(), which now also
+        // fails safe against an already-saved bad pattern, but this is the actual point where a
+        // bad pattern should never be accepted in the first place).
+        Label lblRegexError = new Label();
+        lblRegexError.setStyle("-fx-text-fill: #ef4444; -fx-font-size: 10px;");
+        lblRegexError.setWrapText(true);
+        lblRegexError.setManaged(false);
+        lblRegexError.setVisible(false);
+
         CheckBox chkActive = new CheckBox("Validación activa");
         chkActive.setSelected(row.isActive());
         chkActive.setStyle("-fx-font-size: 12px;");
@@ -655,6 +631,16 @@ public class SettingsController {
         btnSave.getStyleClass().add("button-primary");
         btnSave.setOnAction(e -> {
             String newRegex = tfRegex.getText().trim();
+            if (!newRegex.isEmpty()) {
+                try {
+                    java.util.regex.Pattern.compile(newRegex);
+                } catch (java.util.regex.PatternSyntaxException invalidRegex) {
+                    lblRegexError.setText("Expresión regular inválida: " + invalidRegex.getDescription());
+                    lblRegexError.setManaged(true);
+                    lblRegexError.setVisible(true);
+                    return;
+                }
+            }
             equipmentService.upsertSnValidation(row.getModelId(),
                 newRegex.isEmpty() ? null : newRegex, chkActive.isSelected());
             saved[0] = true;
@@ -665,7 +651,7 @@ public class SettingsController {
         buttons.setAlignment(Pos.CENTER_RIGHT);
 
         VBox root = buildDialogRoot(420);
-        root.getChildren().addAll(path, new Separator(), lblRegex, tfRegex, chkActive, buttons);
+        root.getChildren().addAll(path, new Separator(), lblRegex, tfRegex, lblRegexError, chkActive, buttons);
 
         Scene scene = buildDialogScene(root);
         scene.setOnKeyPressed(e -> { if (e.getCode() == javafx.scene.input.KeyCode.ESCAPE) stage.close(); });
