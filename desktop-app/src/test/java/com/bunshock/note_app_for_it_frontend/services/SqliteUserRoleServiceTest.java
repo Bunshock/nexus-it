@@ -7,15 +7,17 @@ import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Statement;
 
+import com.bunshock.note_app_for_it_frontend.models.Permission;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import static org.junit.jupiter.api.Assertions.*;
 
-// IUserRoleService is read-only by design — an admin sets a role by running SQL directly
-// against USER_ROLE, not through any app code (see IUserRoleService's own doc). This test seeds
-// rows with plain INSERT statements, the same way a real admin would, rather than calling a
-// setRole()-style method that no longer exists.
+// IUserRoleService is read-only by design — a superadmin sets a role/sede/permission by running
+// SQL directly against APP_USER/ROLE_PERMISSION, not through any app code (see IUserRoleService's
+// own doc). This test seeds rows with plain INSERT statements, the same way a real superadmin
+// would, rather than calling a setRole()-style method that doesn't exist on the real service.
 class SqliteUserRoleServiceTest {
 
     @TempDir
@@ -29,9 +31,17 @@ class SqliteUserRoleServiceTest {
         url = "jdbc:sqlite:" + tempDir.resolve("user-role-test.db").toAbsolutePath();
         try (Connection c = DriverManager.getConnection(url); Statement stmt = c.createStatement()) {
             stmt.executeUpdate("""
-                CREATE TABLE USER_ROLE (
-                    username TEXT PRIMARY KEY,
-                    role     TEXT NOT NULL
+                CREATE TABLE APP_USER (
+                    id       INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username TEXT NOT NULL UNIQUE,
+                    role     TEXT NOT NULL CHECK (role IN ('USER', 'ADMIN', 'SUPERADMIN')),
+                    sede_id  INTEGER
+                )""");
+            stmt.executeUpdate("""
+                CREATE TABLE ROLE_PERMISSION (
+                    role       TEXT NOT NULL CHECK (role IN ('USER', 'ADMIN', 'SUPERADMIN')),
+                    permission TEXT NOT NULL,
+                    PRIMARY KEY (role, permission)
                 )""");
         }
         service = new SqliteUserRoleService(() -> {
@@ -40,11 +50,23 @@ class SqliteUserRoleServiceTest {
         });
     }
 
-    private void insertRole(String username, String role) throws SQLException {
+    private void insertUser(String username, String role, Integer sedeId) throws SQLException {
         try (Connection c = DriverManager.getConnection(url);
-             PreparedStatement ps = c.prepareStatement("INSERT INTO USER_ROLE (username, role) VALUES (?, ?)")) {
+             PreparedStatement ps = c.prepareStatement(
+                 "INSERT INTO APP_USER (username, role, sede_id) VALUES (?, ?, ?)")) {
             ps.setString(1, username);
             ps.setString(2, role);
+            if (sedeId == null) ps.setNull(3, java.sql.Types.INTEGER); else ps.setInt(3, sedeId);
+            ps.executeUpdate();
+        }
+    }
+
+    private void insertPermission(String role, Permission permission) throws SQLException {
+        try (Connection c = DriverManager.getConnection(url);
+             PreparedStatement ps = c.prepareStatement(
+                 "INSERT INTO ROLE_PERMISSION (role, permission) VALUES (?, ?)")) {
+            ps.setString(1, role);
+            ps.setString(2, permission.name());
             ps.executeUpdate();
         }
     }
@@ -56,13 +78,66 @@ class SqliteUserRoleServiceTest {
 
     @Test
     void getRoleReturnsWhatWasManuallyInsertedViaSql() throws SQLException {
-        insertRole("jperez", IUserRoleService.ROLE_ADMIN);
+        insertUser("jperez", IUserRoleService.ROLE_ADMIN, null);
         assertEquals(IUserRoleService.ROLE_ADMIN, service.getRole("jperez"));
     }
 
     @Test
     void getRoleIsScopedToTheExactUsername() throws SQLException {
-        insertRole("jperez", IUserRoleService.ROLE_ADMIN);
+        insertUser("jperez", IUserRoleService.ROLE_ADMIN, null);
         assertEquals(IUserRoleService.ROLE_USER, service.getRole("otheruser"));
+    }
+
+    @Test
+    void getSedeIdNullWhenNoRowExists() {
+        assertNull(service.getSedeId("nobody"));
+    }
+
+    @Test
+    void getSedeIdNullWhenRowExistsWithNoSedeAssigned() throws SQLException {
+        insertUser("jperez", IUserRoleService.ROLE_USER, null);
+        assertNull(service.getSedeId("jperez"));
+    }
+
+    @Test
+    void getSedeIdReturnsWhatWasManuallyAssignedViaSql() throws SQLException {
+        insertUser("jperez", IUserRoleService.ROLE_ADMIN, 7);
+        assertEquals(7, service.getSedeId("jperez"));
+    }
+
+    @Test
+    void getPermissionsForRoleEmptyWhenNoRowsExist() {
+        assertTrue(service.getPermissionsForRole(IUserRoleService.ROLE_ADMIN).isEmpty());
+    }
+
+    @Test
+    void getPermissionsForRoleReturnsWhatWasManuallyGrantedViaSql() throws SQLException {
+        insertPermission(IUserRoleService.ROLE_ADMIN, Permission.MANAGE_TYPES);
+        insertPermission(IUserRoleService.ROLE_ADMIN, Permission.MANAGE_BRANDS);
+        insertPermission(IUserRoleService.ROLE_SUPERADMIN, Permission.EDIT_SMTP_CONFIG);
+
+        var adminPermissions = service.getPermissionsForRole(IUserRoleService.ROLE_ADMIN);
+        assertEquals(2, adminPermissions.size());
+        assertTrue(adminPermissions.contains(Permission.MANAGE_TYPES));
+        assertTrue(adminPermissions.contains(Permission.MANAGE_BRANDS));
+        assertFalse(adminPermissions.contains(Permission.EDIT_SMTP_CONFIG));
+
+        assertEquals(java.util.Set.of(Permission.EDIT_SMTP_CONFIG),
+            service.getPermissionsForRole(IUserRoleService.ROLE_SUPERADMIN));
+    }
+
+    @Test
+    void getPermissionsForRoleIgnoresStrayUnknownPermissionString() throws SQLException {
+        try (Connection c = DriverManager.getConnection(url);
+             PreparedStatement ps = c.prepareStatement(
+                 "INSERT INTO ROLE_PERMISSION (role, permission) VALUES (?, ?)")) {
+            ps.setString(1, IUserRoleService.ROLE_ADMIN);
+            ps.setString(2, "NOT_A_REAL_PERMISSION");
+            ps.executeUpdate();
+        }
+        insertPermission(IUserRoleService.ROLE_ADMIN, Permission.MANAGE_TYPES);
+
+        assertEquals(java.util.Set.of(Permission.MANAGE_TYPES),
+            service.getPermissionsForRole(IUserRoleService.ROLE_ADMIN));
     }
 }

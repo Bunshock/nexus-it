@@ -9,7 +9,7 @@ import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 
 /**
- * Replaces WindowsDPAPIService as of 2026-07-08: DPAPI ties every encrypted value to the
+ * Replaces WindowsDPAPIService: DPAPI ties every encrypted value to the
  * specific Windows account that encrypted it, which made pre-configuring shared
  * organizational credentials (AD token, GLPI key, SMTP password, DB password) across many
  * technician machines impractical without visiting each one. This key is fixed and shared
