@@ -5,6 +5,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Supplier;
@@ -13,6 +14,7 @@ import com.bunshock.note_app_for_it_frontend.models.GlpiStatus;
 import com.bunshock.note_app_for_it_frontend.models.HistoryFilter;
 import com.bunshock.note_app_for_it_frontend.models.NoteReport;
 import com.bunshock.note_app_for_it_frontend.models.NoteReportItem;
+import com.bunshock.note_app_for_it_frontend.models.ReturnAllocationBatch;
 import com.bunshock.note_app_for_it_frontend.models.ReturnStatus;
 
 public class SqliteHistoryService implements IHistoryService {
@@ -26,28 +28,90 @@ public class SqliteHistoryService implements IHistoryService {
         return profileType != null && PRESTAMO_PROFILE_TYPES.stream().anyMatch(profileType::equalsIgnoreCase);
     }
 
+    // Config-driven, not hardcoded — mirrors UserNoteController.isFailureTriggerMotivo()'s
+    // reasoning: renaming a motivoOptions.proveedor value in app-config.json shouldn't require a
+    // code change to keep return tracking correctly gated.
+    private static boolean isProviderReturnable(String profileType, String motivo) {
+        if (!"Entrega - Proveedor".equalsIgnoreCase(profileType) || motivo == null) return false;
+        try {
+            List<String> returnable = ConfigService.getInstance().getConfig().returnableMotivosProveedor;
+            return returnable != null && returnable.stream().anyMatch(motivo::equalsIgnoreCase);
+        } catch (IllegalStateException notLoaded) {
+            // ConfigService not loaded in this context (e.g. some test setups)
+            return false;
+        }
+    }
+
+    // return_pending_count/returned_count/lost_count are weighted by quantity, not row count —
+    // an asset row always weighs 1 (a physical unit isn't divisible), but a countable row weighs
+    // its actual quantity, split across RETURNED/LOST via the pre-aggregated `alloc` subquery
+    // (NOTE_ITEM_RETURN_ALLOCATION, one row per partial action) so a partially-resolved countable
+    // (e.g. 5 loaned, 3 returned, 1 lost, 1 still pending) is counted correctly instead of as one
+    // indivisible unit. `alloc` is pre-aggregated to one row per item_id before joining so it can
+    // never fan out the surrounding SUMs the way a raw join against its many-rows-per-item shape
+    // would. The CASE-based clamp (instead of a 2-arg MAX()) keeps this portable to SQL Server,
+    // which has no scalar MAX(x, y) — see "Remote SQL Server" in CLAUDE.md.
+    //
+    // pending_count/synced_count/rejected_count fold in the second GLPI dimension
+    // (NOTE_ITEM_GLPI_RETURN_TRACKING, "synced back in") via COALESCE(igr.status, ig.status): once
+    // an item's return has been validated and this second dimension has a row at all, IT becomes
+    // the item's effective GLPI status for coloring purposes (the original sync-out is subsumed —
+    // what matters after a return is whether GLPI now correctly reflects the item being back, not
+    // whether it was correctly marked as sent out). igr only ever has rows for a returnable
+    // Provider note's asset items post-validation, so this COALESCE is a no-op (falls through to
+    // ig.status) for every other note/item — safe for Entrega/Devolución/Fin de Contrato/Préstamo/
+    // non-returnable-Provider notes, none of which are affected by this change.
     private static final String LIST_BASE_SQL = """
         SELECT r.id, r.created_at, r.profile_type,
+               r.approval_status, rr.rejection_reason,
                r.technician_name AS author_name,
                r.technician_dni AS author_dni,
                COALESCE(e.user_name, pv.name, '') AS recipient,
                COALESCE(e.motivo, p.motivo, '') AS motivo,
-               SUM(CASE WHEN ig.status = 'PENDING'  THEN 1 ELSE 0 END) AS pending_count,
-               SUM(CASE WHEN ig.status = 'SYNCED'   THEN 1 ELSE 0 END) AS synced_count,
-               SUM(CASE WHEN ig.status = 'REJECTED' THEN 1 ELSE 0 END) AS rejected_count,
+               COALESCE(sd.name, '') AS sede,
+               SUM(CASE WHEN COALESCE(igr.status, ig.status) = 'PENDING'  THEN 1 ELSE 0 END) AS pending_count,
+               SUM(CASE WHEN COALESCE(igr.status, ig.status) = 'SYNCED'   THEN 1 ELSE 0 END) AS synced_count,
+               SUM(CASE WHEN COALESCE(igr.status, ig.status) = 'REJECTED' THEN 1 ELSE 0 END) AS rejected_count,
                SUM(CASE WHEN ia.item_id IS NOT NULL THEN 1 ELSE 0 END) AS asset_count,
                SUM(CASE WHEN i.id IS NOT NULL AND ia.item_id IS NULL THEN 1 ELSE 0 END) AS countable_count,
-               SUM(CASE WHEN ir.status = 'PENDING'  THEN 1 ELSE 0 END) AS return_pending_count,
-               SUM(CASE WHEN ir.status = 'RETURNED' THEN 1 ELSE 0 END) AS returned_count,
-               SUM(CASE WHEN ir.status = 'LOST'     THEN 1 ELSE 0 END) AS lost_count
+               SUM(
+                   CASE WHEN ir.status IS NULL THEN 0
+                        WHEN ia.item_id IS NOT NULL THEN CASE WHEN ir.status = 'PENDING' THEN 1 ELSE 0 END
+                        ELSE CASE WHEN (COALESCE(ic.quantity, 0) - COALESCE(alloc.returned_qty, 0) - COALESCE(alloc.lost_qty, 0)) < 0
+                                  THEN 0
+                                  ELSE (COALESCE(ic.quantity, 0) - COALESCE(alloc.returned_qty, 0) - COALESCE(alloc.lost_qty, 0))
+                             END
+                   END
+               ) AS return_pending_count,
+               SUM(
+                   CASE WHEN ia.item_id IS NOT NULL THEN CASE WHEN ir.status = 'RETURNED' THEN 1 ELSE 0 END
+                        ELSE COALESCE(alloc.returned_qty, 0)
+                   END
+               ) AS returned_count,
+               SUM(
+                   CASE WHEN ia.item_id IS NOT NULL THEN CASE WHEN ir.status = 'LOST' THEN 1 ELSE 0 END
+                        ELSE COALESCE(alloc.lost_qty, 0)
+                   END
+               ) AS lost_count
         FROM NOTE_REPORT r
+        LEFT JOIN NOTE_REPORT_REJECTION      rr ON rr.note_report_id = r.id
         LEFT JOIN NOTE_ENTREGA_DEVOLUCION   e  ON e.note_report_id  = r.id
         LEFT JOIN NOTE_PROVEEDOR            p  ON p.note_report_id  = r.id
         LEFT JOIN PROVIDER                  pv ON pv.id             = p.provider_id
+        LEFT JOIN SEDE                       sd ON sd.id             = r.sede_id
         LEFT JOIN NOTE_ITEM                 i  ON i.note_id         = r.id
         LEFT JOIN NOTE_ITEM_ASSET           ia ON ia.item_id        = i.id
+        LEFT JOIN NOTE_ITEM_COUNTABLE       ic ON ic.item_id        = i.id
         LEFT JOIN NOTE_ITEM_GLPI_TRACKING   ig ON ig.item_id         = i.id
+        LEFT JOIN NOTE_ITEM_GLPI_RETURN_TRACKING igr ON igr.item_id  = i.id
         LEFT JOIN NOTE_ITEM_RETURN_TRACKING ir ON ir.item_id         = i.id
+        LEFT JOIN (
+            SELECT item_id,
+                   SUM(CASE WHEN status = 'RETURNED' THEN quantity ELSE 0 END) AS returned_qty,
+                   SUM(CASE WHEN status = 'LOST'     THEN quantity ELSE 0 END) AS lost_qty
+            FROM NOTE_ITEM_RETURN_ALLOCATION
+            GROUP BY item_id
+        ) alloc ON alloc.item_id = i.id
         """;
 
     private final Supplier<Connection> connector;
@@ -72,7 +136,9 @@ public class SqliteHistoryService implements IHistoryService {
             try {
                 int reportId = insertReport(c, report);
                 insertProfileDetail(c, reportId, report);
-                insertItems(c, reportId, report.getItems(), isPrestamo(report.getProfileType()));
+                boolean needsReturnTracking = isPrestamo(report.getProfileType())
+                    || isProviderReturnable(report.getProfileType(), report.getMotivo());
+                insertItems(c, reportId, report.getItems(), needsReturnTracking);
                 c.commit();
                 return reportId;
             } catch (SQLException e) {
@@ -86,7 +152,7 @@ public class SqliteHistoryService implements IHistoryService {
 
     private int insertReport(Connection c, NoteReport report) throws SQLException {
         PreparedStatement ps = c.prepareStatement(
-            "INSERT INTO NOTE_REPORT (created_at, profile_type, technician_name, technician_dni, observations, sede_id) VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO NOTE_REPORT (created_at, profile_type, technician_name, technician_dni, observations, sede_id, approval_status) VALUES (?, ?, ?, ?, ?, ?, ?)",
             PreparedStatement.RETURN_GENERATED_KEYS);
         ps.setString(1, report.getCreatedAt().toString());
         ps.setString(2, report.getProfileType());
@@ -94,6 +160,7 @@ public class SqliteHistoryService implements IHistoryService {
         ps.setString(4, report.getAuthorDni());
         ps.setString(5, report.getObservations());
         ps.setInt(6, report.getSedeId());
+        ps.setString(7, report.getApprovalStatus());
         ps.executeUpdate();
         return ps.getGeneratedKeys().getInt(1);
     }
@@ -115,18 +182,39 @@ public class SqliteHistoryService implements IHistoryService {
         } else {
             PreparedStatement ps = c.prepareStatement("""
                 INSERT INTO NOTE_ENTREGA_DEVOLUCION
-                    (note_report_id, user_name, user_dni, user_email, motivo, failure_cause, failure_details, area_evento)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    (note_report_id, user_name, user_dni, user_email, motivo)
+                VALUES (?, ?, ?, ?, ?)
                 """);
             ps.setInt(1, reportId);
             ps.setString(2, report.getUserName());
             ps.setString(3, report.getUserDni());
             ps.setString(4, report.getUserEmail());
             ps.setString(5, report.getMotivo());
-            ps.setString(6, report.getFailureCause());
-            ps.setString(7, report.getFailureDetails());
-            ps.setString(8, report.getAreaEvento());
             ps.executeUpdate();
+
+            // failure_cause/failure_details and area_evento each live in their own subtype
+            // table now — a row exists only when that dimension actually applies, instead of
+            // every ENTREGA_DEVOLUCION row always
+            // carrying both regardless of profile type/motivo.
+            if (report.getFailureCause() != null && !report.getFailureCause().isBlank()) {
+                PreparedStatement falla = c.prepareStatement("""
+                    INSERT INTO NOTE_DEVOLUCION_FALLA (note_report_id, failure_cause, failure_details)
+                    VALUES (?, ?, ?)
+                    """);
+                falla.setInt(1, reportId);
+                falla.setString(2, report.getFailureCause());
+                falla.setString(3, report.getFailureDetails());
+                falla.executeUpdate();
+            }
+            if (report.getAreaEvento() != null && !report.getAreaEvento().isBlank()) {
+                PreparedStatement areaEvento = c.prepareStatement("""
+                    INSERT INTO NOTE_PRESTAMO_AREA_EVENTO (note_report_id, area_evento)
+                    VALUES (?, ?)
+                    """);
+                areaEvento.setInt(1, reportId);
+                areaEvento.setString(2, report.getAreaEvento());
+                areaEvento.executeUpdate();
+            }
         }
     }
 
@@ -136,7 +224,7 @@ public class SqliteHistoryService implements IHistoryService {
     // dimension actually applies (see the 5-table split in DatabaseService/RemoteDatabaseService)
     // — trusting the exact same caller-supplied status values this method already trusted before
     // the split, not re-deriving the applicability rule a second time here.
-    private void insertItems(Connection c, int reportId, List<NoteReportItem> items, boolean isPrestamo) throws SQLException {
+    private void insertItems(Connection c, int reportId, List<NoteReportItem> items, boolean needsReturnTracking) throws SQLException {
         if (items == null) return;
         PreparedStatement itemPs = c.prepareStatement("""
             INSERT INTO NOTE_ITEM (note_id, type_id, brand_id, model_id, observations)
@@ -155,9 +243,11 @@ public class SqliteHistoryService implements IHistoryService {
             VALUES (?, ?, ?, ?)
             """);
 
-        // Every item on a Préstamo note (asset or countable alike) needs its own return
-        // tracked; every other note type's items are simply not applicable.
-        ReturnStatus returnStatus = isPrestamo ? ReturnStatus.PENDING : ReturnStatus.N_A;
+        // Every item on a Préstamo note (asset or countable alike) needs its own return tracked;
+        // same for a Provider note whose Motivo is in the config-driven returnable list (e.g.
+        // Garantía, Reparación — see isProviderReturnable()). Every other note type's items are
+        // simply not applicable.
+        ReturnStatus returnStatus = needsReturnTracking ? ReturnStatus.PENDING : ReturnStatus.N_A;
         for (NoteReportItem item : items) {
             itemPs.setInt(1, reportId);
             itemPs.setInt(2, item.getTypeId());
@@ -220,6 +310,7 @@ public class SqliteHistoryService implements IHistoryService {
             params.add(filter.getToDate().plusDays(1).atStartOfDay().toString());
         }
         appendIn(sql, params, "r.profile_type", filter.getProfileTypes());
+        appendIn(sql, params, "r.approval_status", filter.getApprovalStatuses());
         if (filter.getRecipientSearch() != null && !filter.getRecipientSearch().isBlank()) {
             sql.append(" AND COALESCE(e.user_name, pv.name, '') LIKE ?");
             params.add("%" + filter.getRecipientSearch().trim() + "%");
@@ -320,16 +411,55 @@ public class SqliteHistoryService implements IHistoryService {
     }
 
     @Override
-    public List<String> getDistinctItemTypes() {
-        return queryDistinct("""
-            SELECT DISTINCT t.name FROM NOTE_ITEM ni JOIN TYPE t ON t.id = ni.type_id ORDER BY t.name
-            """, java.util.Collections.emptyList());
+    public List<NoteReport> getPendingApproval() {
+        return getFiltered(HistoryFilter.pendingApproval());
+    }
+
+    // approval_status is a plain UPDATE on the always-existing NOTE_REPORT row — but
+    // rejection_reason (split into NOTE_REPORT_REJECTION, a row exists only for an
+    // actually-rejected note) needs the same check-then-insert-or-update-or-delete shape as
+    // updateItemGlpiStatus()/updateItemReturnStatus() below: a blank reason (approving, or
+    // re-approving a previously-rejected note) deletes any existing row; a real reason
+    // upserts one.
+    @Override
+    public void updateNoteApprovalStatus(int reportId, String status, String rejectionReason) {
+        try (Connection c = connector.get()) {
+            try (PreparedStatement ps = c.prepareStatement(
+                    "UPDATE NOTE_REPORT SET approval_status = ? WHERE id = ?")) {
+                ps.setString(1, status);
+                ps.setInt(2, reportId);
+                ps.executeUpdate();
+            }
+            if (rejectionReason == null || rejectionReason.isBlank()) {
+                try (PreparedStatement del = c.prepareStatement(
+                        "DELETE FROM NOTE_REPORT_REJECTION WHERE note_report_id = ?")) {
+                    del.setInt(1, reportId);
+                    del.executeUpdate();
+                }
+            } else {
+                try (PreparedStatement up = c.prepareStatement(
+                        "UPDATE NOTE_REPORT_REJECTION SET rejection_reason = ? WHERE note_report_id = ?")) {
+                    up.setString(1, rejectionReason);
+                    up.setInt(2, reportId);
+                    if (up.executeUpdate() == 0) {
+                        try (PreparedStatement ins = c.prepareStatement(
+                                "INSERT INTO NOTE_REPORT_REJECTION (note_report_id, rejection_reason) VALUES (?, ?)")) {
+                            ins.setInt(1, reportId);
+                            ins.setString(2, rejectionReason);
+                            ins.executeUpdate();
+                        }
+                    }
+                }
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to update note approval status", e);
+        }
     }
 
     @Override
-    public List<String> getDistinctSedes() {
+    public List<String> getDistinctItemTypes() {
         return queryDistinct("""
-            SELECT DISTINCT sd.name FROM NOTE_REPORT r JOIN SEDE sd ON sd.id = r.sede_id ORDER BY sd.name
+            SELECT DISTINCT t.name FROM NOTE_ITEM ni JOIN TYPE t ON t.id = ni.type_id ORDER BY t.name
             """, java.util.Collections.emptyList());
     }
 
@@ -391,15 +521,44 @@ public class SqliteHistoryService implements IHistoryService {
         }
     }
 
+    // created_at is stored as ISO-8601 text on SQLite (TEXT column, unchanged) but as a real
+    // DATETIME2 on the remote SQL Server connection (this same class runs against both — see
+    // ServiceLocator) — DATETIME2's own getString() rendering is space-separated
+    // ("yyyy-MM-dd HH:mm:ss[.fffffff]"), not 'T'-separated, so tolerate both instead of assuming
+    // SQLite's format everywhere.
+    private static LocalDateTime parseStoredTimestamp(String raw) {
+        try {
+            return LocalDateTime.parse(raw);
+        } catch (DateTimeParseException isoFailed) {
+            int spaceIdx = raw.indexOf(' ');
+            if (spaceIdx < 0) throw isoFailed;
+            return LocalDateTime.parse(raw.substring(0, spaceIdx) + "T" + raw.substring(spaceIdx + 1));
+        }
+    }
+
+    // Same space-vs-'T' tolerance as parseStoredTimestamp(), but for the two tracking-table
+    // columns that are kept as raw display strings (never parsed to LocalDateTime) — normalizes
+    // to 'T'-separated so NoteDetailController/PrestamoDetailController's
+    // getXxxUpdatedAt().substring(0, 16) display trick keeps working regardless of which engine
+    // produced the value.
+    private static String normalizeTimestampString(String raw) {
+        if (raw == null) return null;
+        int spaceIdx = raw.indexOf(' ');
+        return spaceIdx < 0 ? raw : raw.substring(0, spaceIdx) + "T" + raw.substring(spaceIdx + 1);
+    }
+
     private NoteReport mapSummary(ResultSet rs) throws SQLException {
         NoteReport r = new NoteReport();
         r.setId(rs.getInt("id"));
-        r.setCreatedAt(LocalDateTime.parse(rs.getString("created_at")));
+        r.setCreatedAt(parseStoredTimestamp(rs.getString("created_at")));
         r.setProfileType(rs.getString("profile_type"));
+        r.setApprovalStatus(rs.getString("approval_status"));
+        r.setRejectionReason(rs.getString("rejection_reason"));
         r.setAuthorName(rs.getString("author_name"));
         r.setAuthorDni(rs.getString("author_dni"));
         r.setRecipientDisplay(rs.getString("recipient"));
         r.setMotivo(rs.getString("motivo"));
+        r.setSede(rs.getString("sede"));
         r.setAssetItemCount(rs.getInt("asset_count"));
         r.setCountableItemCount(rs.getInt("countable_count"));
         r.setPendingItemCount(rs.getInt("pending_count"));
@@ -415,24 +574,29 @@ public class SqliteHistoryService implements IHistoryService {
     public NoteReport getById(int id) {
         String sql = """
             SELECT r.id, r.created_at, r.profile_type,
+                   r.approval_status, rr.rejection_reason,
                    r.technician_name AS author_name,
                    r.technician_dni AS author_dni,
                    COALESCE(r.observations, '') AS observations,
                    COALESCE(sd.name, '') AS sede,
+                   COALESCE(r.sede_id, 0) AS sede_id,
                    COALESCE(e.user_name, '')    AS user_name,
                    COALESCE(e.user_dni, '')     AS user_dni,
                    COALESCE(e.user_email, '')   AS user_email,
                    COALESCE(e.motivo, p.motivo, '') AS motivo,
-                   COALESCE(e.failure_cause, '')   AS failure_cause,
-                   COALESCE(e.failure_details, '') AS failure_details,
-                   COALESCE(e.area_evento, '')     AS area_evento,
+                   COALESCE(fd.failure_cause, '')   AS failure_cause,
+                   COALESCE(fd.failure_details, '') AS failure_details,
+                   COALESCE(ae.area_evento, '')     AS area_evento,
                    COALESCE(pv.name, '') AS provider_name,
                    COALESCE(p.provider_id, 0) AS provider_id,
                    COALESCE(p.cuit, '')          AS cuit,
                    COALESCE(p.responsible_name, '') AS responsible_name,
                    COALESCE(p.responsible_dni, '')  AS responsible_dni
             FROM NOTE_REPORT r
+            LEFT JOIN NOTE_REPORT_REJECTION    rr ON rr.note_report_id = r.id
             LEFT JOIN NOTE_ENTREGA_DEVOLUCION  e  ON e.note_report_id  = r.id
+            LEFT JOIN NOTE_DEVOLUCION_FALLA    fd ON fd.note_report_id = r.id
+            LEFT JOIN NOTE_PRESTAMO_AREA_EVENTO ae ON ae.note_report_id = r.id
             LEFT JOIN NOTE_PROVEEDOR           p  ON p.note_report_id  = r.id
             LEFT JOIN PROVIDER                 pv ON pv.id             = p.provider_id
             LEFT JOIN SEDE                     sd ON sd.id             = r.sede_id
@@ -446,12 +610,15 @@ public class SqliteHistoryService implements IHistoryService {
 
             NoteReport r = new NoteReport();
             r.setId(rs.getInt("id"));
-            r.setCreatedAt(LocalDateTime.parse(rs.getString("created_at")));
+            r.setCreatedAt(parseStoredTimestamp(rs.getString("created_at")));
             r.setProfileType(rs.getString("profile_type"));
+            r.setApprovalStatus(rs.getString("approval_status"));
+            r.setRejectionReason(rs.getString("rejection_reason"));
             r.setAuthorName(rs.getString("author_name"));
             r.setAuthorDni(rs.getString("author_dni"));
             r.setObservations(rs.getString("observations"));
             r.setSede(rs.getString("sede"));
+            r.setSedeId(rs.getInt("sede_id"));
             r.setUserName(rs.getString("user_name"));
             r.setUserDni(rs.getString("user_dni"));
             r.setUserEmail(rs.getString("user_email"));
@@ -489,9 +656,14 @@ public class SqliteHistoryService implements IHistoryService {
                    COALESCE(g.status, 'N_A') AS glpi_status,
                    g.rejection_reason AS glpi_rejection_reason,
                    g.status_updated_at AS glpi_status_updated_at,
+                   COALESCE(gr.status, 'N_A') AS glpi_return_status,
+                   gr.rejection_reason AS glpi_return_rejection_reason,
+                   gr.status_updated_at AS glpi_return_status_updated_at,
                    COALESCE(rt.status, 'N_A') AS return_status,
                    rt.rejection_reason AS return_rejection_reason,
-                   rt.status_updated_at AS return_status_updated_at
+                   rt.status_updated_at AS return_status_updated_at,
+                   COALESCE(alloc.returned_qty, 0) AS returned_quantity,
+                   COALESCE(alloc.lost_qty, 0) AS lost_quantity
             FROM NOTE_ITEM b
             JOIN TYPE t ON t.id = b.type_id
             JOIN BRAND br ON br.id = b.brand_id
@@ -499,7 +671,15 @@ public class SqliteHistoryService implements IHistoryService {
             LEFT JOIN NOTE_ITEM_ASSET           a  ON a.item_id  = b.id
             LEFT JOIN NOTE_ITEM_COUNTABLE       ct ON ct.item_id = b.id
             LEFT JOIN NOTE_ITEM_GLPI_TRACKING   g  ON g.item_id  = b.id
+            LEFT JOIN NOTE_ITEM_GLPI_RETURN_TRACKING gr ON gr.item_id = b.id
             LEFT JOIN NOTE_ITEM_RETURN_TRACKING rt ON rt.item_id = b.id
+            LEFT JOIN (
+                SELECT item_id,
+                       SUM(CASE WHEN status = 'RETURNED' THEN quantity ELSE 0 END) AS returned_qty,
+                       SUM(CASE WHEN status = 'LOST'     THEN quantity ELSE 0 END) AS lost_qty
+                FROM NOTE_ITEM_RETURN_ALLOCATION
+                GROUP BY item_id
+            ) alloc ON alloc.item_id = b.id
             WHERE b.note_id = ? ORDER BY b.id
             """);
         ps.setInt(1, reportId);
@@ -520,13 +700,51 @@ public class SqliteHistoryService implements IHistoryService {
             item.setAsset(rs.getInt("is_asset") == 1);
             item.setGlpiStatus(GlpiStatus.fromString(rs.getString("glpi_status")));
             item.setGlpiRejectionReason(rs.getString("glpi_rejection_reason"));
-            item.setGlpiStatusUpdatedAt(rs.getString("glpi_status_updated_at"));
+            item.setGlpiStatusUpdatedAt(normalizeTimestampString(rs.getString("glpi_status_updated_at")));
+            item.setGlpiReturnStatus(GlpiStatus.fromString(rs.getString("glpi_return_status")));
+            item.setGlpiReturnRejectionReason(rs.getString("glpi_return_rejection_reason"));
+            item.setGlpiReturnStatusUpdatedAt(normalizeTimestampString(rs.getString("glpi_return_status_updated_at")));
             item.setReturnStatus(ReturnStatus.fromString(rs.getString("return_status")));
             item.setReturnRejectionReason(rs.getString("return_rejection_reason"));
-            item.setReturnStatusUpdatedAt(rs.getString("return_status_updated_at"));
+            item.setReturnStatusUpdatedAt(normalizeTimestampString(rs.getString("return_status_updated_at")));
+            item.setReturnedQuantity(rs.getInt("returned_quantity"));
+            item.setLostQuantity(rs.getInt("lost_quantity"));
+            if (!item.isAsset()) {
+                if (item.getLostQuantity() > 0) {
+                    item.setLostBatches(loadAllocationBatches(c, item.getId(), ReturnStatus.LOST));
+                }
+                if (item.getReturnedQuantity() > 0) {
+                    item.setReturnedBatches(loadAllocationBatches(c, item.getId(), ReturnStatus.RETURNED));
+                }
+            }
             items.add(item);
         }
         return items;
+    }
+
+    // Each allocation batch (LOST or RETURNED) is one real event with its own single timestamp
+    // (LOST also has its own reason) — a one-query-per-countable-item follow-up, same accepted
+    // "extra query per row, scoped to a single detail view, not a bulk list" trade-off already
+    // used elsewhere in this class (see HistoryController.exportRowValues() in CLAUDE.md for the
+    // same precedent).
+    private List<ReturnAllocationBatch> loadAllocationBatches(Connection c, int itemId, ReturnStatus status) throws SQLException {
+        List<ReturnAllocationBatch> batches = new ArrayList<>();
+        try (PreparedStatement ps = c.prepareStatement("""
+                SELECT quantity, reason, updated_at FROM NOTE_ITEM_RETURN_ALLOCATION
+                WHERE item_id = ? AND status = ? ORDER BY updated_at ASC
+                """)) {
+            ps.setInt(1, itemId);
+            ps.setString(2, status.toDbString());
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    batches.add(new ReturnAllocationBatch(
+                        rs.getInt("quantity"),
+                        rs.getString("reason"),
+                        normalizeTimestampString(rs.getString("updated_at"))));
+                }
+            }
+        }
+        return batches;
     }
 
     // ── Most-used items (pinned in ItemDialogView's Type/Brand/Model combos) ───
@@ -603,25 +821,78 @@ public class SqliteHistoryService implements IHistoryService {
 
     @Override
     public void updateItemGlpiStatus(int itemId, GlpiStatus status, String reason) {
-        // Upsert, not a plain UPDATE — defensive: every real caller only ever transitions an
-        // item that already has a NOTE_ITEM_GLPI_TRACKING row (PENDING), but an upsert is
-        // correct even if that assumption is ever wrong, at no extra cost.
-        try (Connection c = connector.get();
-             PreparedStatement ps = c.prepareStatement("""
-                 INSERT INTO NOTE_ITEM_GLPI_TRACKING (item_id, status, rejection_reason, status_updated_at)
-                 VALUES (?, ?, ?, ?)
-                 ON CONFLICT(item_id) DO UPDATE SET
-                     status = excluded.status,
-                     rejection_reason = excluded.rejection_reason,
-                     status_updated_at = excluded.status_updated_at
-                 """)) {
-            ps.setInt(1, itemId);
-            ps.setString(2, status.toDbString());
-            ps.setString(3, reason);
-            ps.setString(4, LocalDateTime.now().toString());
-            ps.executeUpdate();
+        // Plain UPDATE-then-INSERT-if-missing, not an ON CONFLICT upsert (that was SQLite/
+        // PostgreSQL-only syntax — SQL Server has no ON CONFLICT/MERGE-free upsert clause at all,
+        // and this class runs unchanged against both the local SQLite and remote SQL Server
+        // connections). Mirrors the same shape already established for every other upsert in this
+        // codebase — see "Remote SQL Server" / "Upserts rewritten as plain check-then-insert/update"
+        // in CLAUDE.md. Defensive either way: every real caller only ever transitions an item that
+        // already has a NOTE_ITEM_GLPI_TRACKING row (PENDING), but the INSERT fallback is correct
+        // even if that assumption is ever wrong, at no extra cost.
+        try (Connection c = connector.get()) {
+            String updatedAt = LocalDateTime.now().toString();
+            try (PreparedStatement up = c.prepareStatement("""
+                    UPDATE NOTE_ITEM_GLPI_TRACKING
+                    SET status = ?, rejection_reason = ?, status_updated_at = ?
+                    WHERE item_id = ?
+                    """)) {
+                up.setString(1, status.toDbString());
+                up.setString(2, reason);
+                up.setString(3, updatedAt);
+                up.setInt(4, itemId);
+                if (up.executeUpdate() == 0) {
+                    try (PreparedStatement ins = c.prepareStatement("""
+                            INSERT INTO NOTE_ITEM_GLPI_TRACKING (item_id, status, rejection_reason, status_updated_at)
+                            VALUES (?, ?, ?, ?)
+                            """)) {
+                        ins.setInt(1, itemId);
+                        ins.setString(2, status.toDbString());
+                        ins.setString(3, reason);
+                        ins.setString(4, updatedAt);
+                        ins.executeUpdate();
+                    }
+                }
+            }
         } catch (SQLException e) {
             throw new RuntimeException("Failed to update item GLPI status", e);
+        }
+    }
+
+    // ── GLPI "synced back in" status update (second, independent dimension) ───
+
+    @Override
+    public void updateItemGlpiReturnStatus(int itemId, GlpiStatus status, String reason) {
+        // Same UPDATE-then-INSERT-if-missing shape as updateItemGlpiStatus() above. Unlike that
+        // one, the very first call for a given item is expected to be an INSERT — this dimension
+        // doesn't exist at all until NoteDetailController.handleProviderReceived() seeds a PENDING
+        // row the moment the item's return is validated (see NOTE_ITEM_GLPI_RETURN_TRACKING's own
+        // doc in DatabaseService).
+        try (Connection c = connector.get()) {
+            String updatedAt = LocalDateTime.now().toString();
+            try (PreparedStatement up = c.prepareStatement("""
+                    UPDATE NOTE_ITEM_GLPI_RETURN_TRACKING
+                    SET status = ?, rejection_reason = ?, status_updated_at = ?
+                    WHERE item_id = ?
+                    """)) {
+                up.setString(1, status.toDbString());
+                up.setString(2, reason);
+                up.setString(3, updatedAt);
+                up.setInt(4, itemId);
+                if (up.executeUpdate() == 0) {
+                    try (PreparedStatement ins = c.prepareStatement("""
+                            INSERT INTO NOTE_ITEM_GLPI_RETURN_TRACKING (item_id, status, rejection_reason, status_updated_at)
+                            VALUES (?, ?, ?, ?)
+                            """)) {
+                        ins.setInt(1, itemId);
+                        ins.setString(2, status.toDbString());
+                        ins.setString(3, reason);
+                        ins.setString(4, updatedAt);
+                        ins.executeUpdate();
+                    }
+                }
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to update item GLPI return status", e);
         }
     }
 
@@ -629,23 +900,82 @@ public class SqliteHistoryService implements IHistoryService {
 
     @Override
     public void updateItemReturnStatus(int itemId, ReturnStatus status, String reason) {
-        // Upsert — same reasoning as updateItemGlpiStatus() above.
-        try (Connection c = connector.get();
-             PreparedStatement ps = c.prepareStatement("""
-                 INSERT INTO NOTE_ITEM_RETURN_TRACKING (item_id, status, rejection_reason, status_updated_at)
-                 VALUES (?, ?, ?, ?)
-                 ON CONFLICT(item_id) DO UPDATE SET
-                     status = excluded.status,
-                     rejection_reason = excluded.rejection_reason,
-                     status_updated_at = excluded.status_updated_at
-                 """)) {
-            ps.setInt(1, itemId);
-            ps.setString(2, status.toDbString());
-            ps.setString(3, reason);
-            ps.setString(4, LocalDateTime.now().toString());
-            ps.executeUpdate();
+        // Same UPDATE-then-INSERT-if-missing shape as updateItemGlpiStatus() above, for the same
+        // SQL Server compatibility reason.
+        try (Connection c = connector.get()) {
+            String updatedAt = LocalDateTime.now().toString();
+            try (PreparedStatement up = c.prepareStatement("""
+                    UPDATE NOTE_ITEM_RETURN_TRACKING
+                    SET status = ?, rejection_reason = ?, status_updated_at = ?
+                    WHERE item_id = ?
+                    """)) {
+                up.setString(1, status.toDbString());
+                up.setString(2, reason);
+                up.setString(3, updatedAt);
+                up.setInt(4, itemId);
+                if (up.executeUpdate() == 0) {
+                    try (PreparedStatement ins = c.prepareStatement("""
+                            INSERT INTO NOTE_ITEM_RETURN_TRACKING (item_id, status, rejection_reason, status_updated_at)
+                            VALUES (?, ?, ?, ?)
+                            """)) {
+                        ins.setInt(1, itemId);
+                        ins.setString(2, status.toDbString());
+                        ins.setString(3, reason);
+                        ins.setString(4, updatedAt);
+                        ins.executeUpdate();
+                    }
+                }
+            }
         } catch (SQLException e) {
             throw new RuntimeException("Failed to update item return status", e);
+        }
+    }
+
+    // ── Countable partial return/lost allocation ──────────────────────────────
+
+    @Override
+    public void allocateCountableReturn(int itemId, ReturnStatus status, int quantity, String reason) {
+        if (status != ReturnStatus.RETURNED && status != ReturnStatus.LOST) {
+            throw new IllegalArgumentException("El estado de la asignación debe ser Devuelto o Perdido");
+        }
+        if (quantity <= 0) {
+            throw new IllegalArgumentException("La cantidad a asignar debe ser mayor a cero");
+        }
+        try (Connection c = connector.get()) {
+            int pending = pendingCountableQuantity(c, itemId);
+            if (quantity > pending) {
+                throw new IllegalArgumentException(
+                    "La cantidad a asignar (" + quantity + ") supera la cantidad pendiente (" + pending + ")");
+            }
+            try (PreparedStatement ins = c.prepareStatement("""
+                    INSERT INTO NOTE_ITEM_RETURN_ALLOCATION (item_id, status, quantity, reason, updated_at)
+                    VALUES (?, ?, ?, ?, ?)
+                    """)) {
+                ins.setInt(1, itemId);
+                ins.setString(2, status.toDbString());
+                ins.setInt(3, quantity);
+                ins.setString(4, reason);
+                ins.setString(5, LocalDateTime.now().toString());
+                ins.executeUpdate();
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to allocate countable return", e);
+        }
+    }
+
+    private int pendingCountableQuantity(Connection c, int itemId) throws SQLException {
+        try (PreparedStatement ps = c.prepareStatement("""
+                SELECT ct.quantity AS qty,
+                       COALESCE((SELECT SUM(quantity) FROM NOTE_ITEM_RETURN_ALLOCATION WHERE item_id = ?), 0) AS allocated
+                FROM NOTE_ITEM_COUNTABLE ct
+                WHERE ct.item_id = ?
+                """)) {
+            ps.setInt(1, itemId);
+            ps.setInt(2, itemId);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next()) return 0;
+                return rs.getInt("qty") - rs.getInt("allocated");
+            }
         }
     }
 

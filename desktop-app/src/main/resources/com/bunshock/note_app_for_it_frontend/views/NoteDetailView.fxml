@@ -37,6 +37,9 @@
                              -fx-border-width: 0 0 0 1;
                              -fx-background-radius: 0 0 10 0;">
 
+                    <VBox fx:id="vboxApproval" spacing="8" style="-fx-padding: 18 20 10 20;"/>
+                    <Separator/>
+
                     <Label text="EQUIPOS"
                            style="-fx-font-weight: bold; -fx-font-size: 11px;
                                   -fx-text-fill: #64748b; -fx-letter-spacing: 1px;

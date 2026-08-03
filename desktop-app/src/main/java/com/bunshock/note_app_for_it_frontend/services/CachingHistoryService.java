@@ -51,19 +51,37 @@ public class CachingHistoryService implements IHistoryService {
     }
 
     @Override
+    public void updateItemGlpiReturnStatus(int itemId, GlpiStatus status, String reason) {
+        primary.updateItemGlpiReturnStatus(itemId, status, reason);
+        try { local.updateItemGlpiReturnStatus(itemId, status, reason); } catch (Exception ignored) {}
+    }
+
+    @Override
     public void updateItemReturnStatus(int itemId, ReturnStatus status, String reason) {
         primary.updateItemReturnStatus(itemId, status, reason);
         try { local.updateItemReturnStatus(itemId, status, reason); } catch (Exception ignored) {}
     }
 
     @Override
-    public List<String> getDistinctItemTypes() {
-        try { return primary.getDistinctItemTypes(); } catch (Exception e) { return local.getDistinctItemTypes(); }
+    public void allocateCountableReturn(int itemId, ReturnStatus status, int quantity, String reason) {
+        primary.allocateCountableReturn(itemId, status, quantity, reason);
+        try { local.allocateCountableReturn(itemId, status, quantity, reason); } catch (Exception ignored) {}
     }
 
     @Override
-    public List<String> getDistinctSedes() {
-        try { return primary.getDistinctSedes(); } catch (Exception e) { return local.getDistinctSedes(); }
+    public List<NoteReport> getPendingApproval() {
+        try { return primary.getPendingApproval(); } catch (Exception e) { return local.getPendingApproval(); }
+    }
+
+    @Override
+    public void updateNoteApprovalStatus(int reportId, String status, String rejectionReason) {
+        primary.updateNoteApprovalStatus(reportId, status, rejectionReason);
+        try { local.updateNoteApprovalStatus(reportId, status, rejectionReason); } catch (Exception ignored) {}
+    }
+
+    @Override
+    public List<String> getDistinctItemTypes() {
+        try { return primary.getDistinctItemTypes(); } catch (Exception e) { return local.getDistinctItemTypes(); }
     }
 
     @Override

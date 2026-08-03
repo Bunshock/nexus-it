@@ -23,6 +23,8 @@ public class NoteReport {
     private String observations;
     private String sede;
     private int sedeId;
+    private String approvalStatus = "PENDING";
+    private String rejectionReason;
     private List<NoteReportItem> items;
 
     // Populated from JOIN queries — not stored directly in NOTE_REPORT
@@ -96,6 +98,12 @@ public class NoteReport {
 
     public int getSedeId() { return sedeId; }
     public void setSedeId(int sedeId) { this.sedeId = sedeId; }
+
+    public String getApprovalStatus() { return approvalStatus; }
+    public void setApprovalStatus(String approvalStatus) { this.approvalStatus = approvalStatus; }
+
+    public String getRejectionReason() { return rejectionReason; }
+    public void setRejectionReason(String rejectionReason) { this.rejectionReason = rejectionReason; }
 
     public List<NoteReportItem> getItems() { return items; }
     public void setItems(List<NoteReportItem> items) { this.items = items; }

@@ -14,12 +14,19 @@ public class HistoryFilter {
     private List<String> itemBrands;    // null = all
     private List<String> itemModels;    // null = all
     private List<String> sedes;         // null = all
+    private List<String> approvalStatuses; // null = all; values: PENDING, APPROVED, RECHAZADO
 
     public HistoryFilter() {}
 
     public static HistoryFilter pendingGlpiSync() {
         HistoryFilter f = new HistoryFilter();
         f.glpiStatuses = List.of("PENDING");
+        return f;
+    }
+
+    public static HistoryFilter pendingApproval() {
+        HistoryFilter f = new HistoryFilter();
+        f.approvalStatuses = List.of("PENDING");
         return f;
     }
 
@@ -52,4 +59,7 @@ public class HistoryFilter {
 
     public List<String> getSedes()         { return sedes; }
     public void         setSedes(List<String> v)      { sedes = v; }
+
+    public List<String> getApprovalStatuses() { return approvalStatuses; }
+    public void         setApprovalStatuses(List<String> v) { approvalStatuses = v; }
 }

@@ -1,14 +1,17 @@
 package com.bunshock.note_app_for_it_frontend;
 
+import java.lang.reflect.Field;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
+import com.bunshock.note_app_for_it_frontend.controllers.NoteDetailController;
 import com.bunshock.note_app_for_it_frontend.services.ConfigService;
 
 import javafx.application.Platform;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Parent;
+import javafx.scene.layout.VBox;
 
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -37,11 +40,13 @@ class NoteDetailViewFxmlTest {
         AtomicReference<Throwable> errorRef = new AtomicReference<>();
         CountDownLatch latch = new CountDownLatch(1);
 
+        AtomicReference<NoteDetailController> controllerRef = new AtomicReference<>();
         Platform.runLater(() -> {
             try {
                 FXMLLoader loader = new FXMLLoader(getClass().getResource(
                     "/com/bunshock/note_app_for_it_frontend/views/NoteDetailView.fxml"));
                 rootRef.set(loader.load());
+                controllerRef.set(loader.getController());
             } catch (Throwable t) {
                 errorRef.set(t);
             } finally {
@@ -54,5 +59,11 @@ class NoteDetailViewFxmlTest {
             fail("NoteDetailView.fxml failed to load: " + errorRef.get(), errorRef.get());
         }
         assertNotNull(rootRef.get());
+
+        // Catches a typo in the approval-section VBox's fx:id — added alongside the note
+        // approval workflow's Aprobar/Rechazar buttons.
+        Field f = NoteDetailController.class.getDeclaredField("vboxApproval");
+        f.setAccessible(true);
+        assertNotNull((VBox) f.get(controllerRef.get()));
     }
 }

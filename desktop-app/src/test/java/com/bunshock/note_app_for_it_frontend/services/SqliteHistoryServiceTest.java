@@ -15,6 +15,7 @@ import com.bunshock.note_app_for_it_frontend.models.GlpiStatus;
 import com.bunshock.note_app_for_it_frontend.models.HistoryFilter;
 import com.bunshock.note_app_for_it_frontend.models.NoteReport;
 import com.bunshock.note_app_for_it_frontend.models.NoteReportItem;
+import com.bunshock.note_app_for_it_frontend.models.ReturnAllocationBatch;
 import com.bunshock.note_app_for_it_frontend.models.ReturnStatus;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -84,14 +85,20 @@ class SqliteHistoryServiceTest {
                 )""");
             stmt.executeUpdate("""
                 CREATE TABLE NOTE_REPORT (
-                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-                    created_at      TEXT NOT NULL,
-                    profile_type    TEXT NOT NULL,
-                    technician_name TEXT,
-                    technician_dni  TEXT,
-                    observations    TEXT,
-                    sede            TEXT,
-                    sede_id         INTEGER REFERENCES SEDE(id)
+                    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                    created_at        TEXT NOT NULL,
+                    profile_type      TEXT NOT NULL,
+                    technician_name   TEXT,
+                    technician_dni    TEXT,
+                    observations      TEXT,
+                    sede              TEXT,
+                    sede_id           INTEGER REFERENCES SEDE(id),
+                    approval_status   TEXT NOT NULL DEFAULT 'PENDING'
+                )""");
+            stmt.executeUpdate("""
+                CREATE TABLE NOTE_REPORT_REJECTION (
+                    note_report_id   INTEGER PRIMARY KEY REFERENCES NOTE_REPORT(id),
+                    rejection_reason TEXT NOT NULL
                 )""");
             stmt.executeUpdate("""
                 CREATE TABLE NOTE_ENTREGA_DEVOLUCION (
@@ -99,10 +106,18 @@ class SqliteHistoryServiceTest {
                     user_name       TEXT,
                     user_dni        TEXT,
                     user_email      TEXT,
-                    motivo          TEXT,
-                    failure_cause   TEXT,
-                    failure_details TEXT,
-                    area_evento     TEXT
+                    motivo          TEXT
+                )""");
+            stmt.executeUpdate("""
+                CREATE TABLE NOTE_DEVOLUCION_FALLA (
+                    note_report_id  INTEGER PRIMARY KEY REFERENCES NOTE_ENTREGA_DEVOLUCION(note_report_id),
+                    failure_cause   TEXT NOT NULL,
+                    failure_details TEXT
+                )""");
+            stmt.executeUpdate("""
+                CREATE TABLE NOTE_PRESTAMO_AREA_EVENTO (
+                    note_report_id INTEGER PRIMARY KEY REFERENCES NOTE_ENTREGA_DEVOLUCION(note_report_id),
+                    area_evento    TEXT NOT NULL
                 )""");
             stmt.executeUpdate("""
                 CREATE TABLE NOTE_PROVEEDOR (
@@ -146,6 +161,22 @@ class SqliteHistoryServiceTest {
                     status            TEXT NOT NULL,
                     rejection_reason  TEXT,
                     status_updated_at TEXT
+                )""");
+            stmt.executeUpdate("""
+                CREATE TABLE NOTE_ITEM_GLPI_RETURN_TRACKING (
+                    item_id           INTEGER PRIMARY KEY REFERENCES NOTE_ITEM(id),
+                    status            TEXT NOT NULL,
+                    rejection_reason  TEXT,
+                    status_updated_at TEXT
+                )""");
+            stmt.executeUpdate("""
+                CREATE TABLE NOTE_ITEM_RETURN_ALLOCATION (
+                    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                    item_id    INTEGER NOT NULL REFERENCES NOTE_ITEM(id),
+                    status     TEXT NOT NULL,
+                    quantity   INTEGER NOT NULL,
+                    reason     TEXT,
+                    updated_at TEXT NOT NULL
                 )""");
         }
     }
@@ -539,6 +570,24 @@ class SqliteHistoryServiceTest {
         assertEquals("Campus Test", byId.getSede());
     }
 
+    // Sede on the summary-row query (getAll()/getFiltered(), backing the History table and its
+    // export) — a separate query path from getById() above, added so the History table's own
+    // Sede column doesn't need a per-row detail fetch just to display it.
+    @Test
+    void getAllIncludesSedeOnSummaryRows() throws SQLException {
+        NoteReport r = userReport("Entrega", LocalDateTime.now(), "Juan Perez", List.of());
+        r.setSedeId(resolveOrCreate("SEDE", "Campus Norte"));
+        service.save(r);
+
+        assertEquals("Campus Norte", service.getAll().get(0).getSede());
+    }
+
+    @Test
+    void getAllSedeIsBlankWhenNoSedeAssigned() {
+        service.save(userReport("Entrega", LocalDateTime.now(), "Juan Perez", List.of()));
+        assertEquals("", service.getAll().get(0).getSede());
+    }
+
     @Test
     void getByIdReturnsFailureCauseAndDetailsForDevolucion() {
         NoteReport r = userReport("Devolución", LocalDateTime.now(), "Ana Diaz",
@@ -654,6 +703,75 @@ class SqliteHistoryServiceTest {
         assertNotNull(item.getGlpiStatusUpdatedAt());
     }
 
+    // Exercises the INSERT-if-missing branch of updateItemGlpiStatus()'s UPDATE-then-INSERT
+    // rewrite directly — this method used to be an ON CONFLICT(item_id) DO UPDATE upsert, which
+    // is SQLite/PostgreSQL-only syntax SQL Server doesn't support at all (this class runs
+    // unchanged against both). Every real caller only ever transitions an already-PENDING item
+    // (so a NOTE_ITEM_GLPI_TRACKING row already exists), but the rewritten SQL must still be
+    // correct for an item with no tracking row yet — an N_A asset has none, by design (row
+    // absence IS N_A, see the NOTE_ITEM normalization notes in CLAUDE.md).
+    @Test
+    void updateItemGlpiStatusInsertsTrackingRowWhenNoneExistedYet() {
+        int id = service.save(userReport("Entrega", LocalDateTime.now(), "Juan Perez",
+            List.of(assetItem("NOTEBOOK", "DELL", "LATITUDE", "SN1", "AF1", GlpiStatus.N_A))));
+        int itemId = service.getById(id).getItems().get(0).getId();
+
+        service.updateItemGlpiStatus(itemId, GlpiStatus.SYNCED, null);
+
+        NoteReportItem item = service.getById(id).getItems().get(0);
+        assertEquals(GlpiStatus.SYNCED, item.getGlpiStatus());
+        assertNotNull(item.getGlpiStatusUpdatedAt());
+    }
+
+    // ── Second GLPI dimension (synced back in) — Provider-Reparación assets only ─────────────
+    // See NOTE_ITEM_GLPI_RETURN_TRACKING's own doc in DatabaseService: GLPI sync is one-way/
+    // no-revert, so this is a genuinely separate tracking dimension, not a status transition on
+    // the original NOTE_ITEM_GLPI_TRACKING row.
+
+    @Test
+    void updateItemGlpiReturnStatusPersistsStatusAndReason() {
+        int id = service.save(userReport("Entrega", LocalDateTime.now(), "Juan Perez",
+            List.of(assetItem("NOTEBOOK", "DELL", "LATITUDE", "SN1", "AF1", GlpiStatus.PENDING))));
+        int itemId = service.getById(id).getItems().get(0).getId();
+
+        service.updateItemGlpiReturnStatus(itemId, GlpiStatus.PENDING, null);
+        service.updateItemGlpiReturnStatus(itemId, GlpiStatus.REJECTED, "Datos incorrectos");
+
+        NoteReportItem item = service.getById(id).getItems().get(0);
+        assertEquals(GlpiStatus.REJECTED, item.getGlpiReturnStatus());
+        assertEquals("Datos incorrectos", item.getGlpiReturnRejectionReason());
+        assertNotNull(item.getGlpiReturnStatusUpdatedAt());
+    }
+
+    @Test
+    void glpiReturnStatusDefaultsToNAUntilExplicitlySeeded() {
+        int id = service.save(userReport("Entrega", LocalDateTime.now(), "Juan Perez",
+            List.of(assetItem("NOTEBOOK", "DELL", "LATITUDE", "SN1", "AF1", GlpiStatus.PENDING))));
+
+        assertEquals(GlpiStatus.N_A, service.getById(id).getItems().get(0).getGlpiReturnStatus());
+    }
+
+    // Regression coverage for LIST_BASE_SQL's COALESCE(igr.status, ig.status): once an item's
+    // return is validated (seeding the second GLPI dimension as PENDING), THAT status must drive
+    // the aggregate counts — even though the original sync-out already reached SYNCED — since
+    // what matters after a return is whether GLPI now correctly reflects the item being back.
+    @Test
+    void returnStatusAggregatesUseSecondGlpiDimensionOnceSeeded() throws Exception {
+        ConfigService.getInstance().load();
+        NoteReport r = providerReport(LocalDateTime.now(), "Proveedor SA",
+            List.of(assetItem("NOTEBOOK", "DELL", "LATITUDE", "SN1", "AF1", GlpiStatus.PENDING)));
+        r.setMotivo("Reparación");
+        int id = service.save(r);
+        int itemId = service.getById(id).getItems().get(0).getId();
+
+        service.updateItemGlpiStatus(itemId, GlpiStatus.SYNCED, null);
+        service.updateItemGlpiReturnStatus(itemId, GlpiStatus.PENDING, null);
+
+        NoteReport summary = service.getFiltered(new HistoryFilter()).get(0);
+        assertEquals(1, summary.getPendingItemCount());
+        assertEquals(0, summary.getSyncedItemCount());
+    }
+
     @Test
     void getPendingGlpiSyncReturnsOnlyReportsWithPendingItems() {
         service.save(userReport("Entrega", LocalDateTime.now(), "Pending User",
@@ -690,6 +808,99 @@ class SqliteHistoryServiceTest {
         assertEquals(ReturnStatus.N_A, full.getItems().get(0).getReturnStatus());
     }
 
+    // ── Note approval workflow ───────────────────────────────────────────────
+
+    @Test
+    void savedReportDefaultsToPendingApproval() {
+        int id = service.save(userReport("Entrega", LocalDateTime.now(), "Juan Perez", List.of()));
+
+        NoteReport full = service.getById(id);
+        assertEquals("PENDING", full.getApprovalStatus());
+        assertNull(full.getRejectionReason());
+    }
+
+    @Test
+    void getFilteredWithNoExplicitApprovalStatusesReturnsEverything() {
+        // The PENDING+APPROVED default lives in the controller (HistoryController.buildFilter()),
+        // not the service — an explicitly empty/unset filter must still return every status.
+        service.save(userReport("Entrega", LocalDateTime.now(), "A", List.of()));
+        NoteReport rejected = userReport("Entrega", LocalDateTime.now(), "B", List.of());
+        int rejectedId = service.save(rejected);
+        service.updateNoteApprovalStatus(rejectedId, "RECHAZADO", "Nota creada por error");
+
+        assertEquals(2, service.getFiltered(new HistoryFilter()).size());
+    }
+
+    @Test
+    void getFilteredHonorsExplicitApprovalStatuses() {
+        int pendingId = service.save(userReport("Entrega", LocalDateTime.now(), "A", List.of()));
+        int approvedId = service.save(userReport("Entrega", LocalDateTime.now(), "B", List.of()));
+        service.updateNoteApprovalStatus(approvedId, "APPROVED", null);
+        int rejectedId = service.save(userReport("Entrega", LocalDateTime.now(), "C", List.of()));
+        service.updateNoteApprovalStatus(rejectedId, "RECHAZADO", "Error de carga");
+
+        HistoryFilter f = new HistoryFilter();
+        f.setApprovalStatuses(List.of("PENDING", "APPROVED"));
+        List<Integer> ids = service.getFiltered(f).stream().map(NoteReport::getId).toList();
+
+        assertTrue(ids.contains(pendingId));
+        assertTrue(ids.contains(approvedId));
+        assertFalse(ids.contains(rejectedId));
+    }
+
+    @Test
+    void updateNoteApprovalStatusPersists() {
+        int id = service.save(userReport("Entrega", LocalDateTime.now(), "Juan Perez", List.of()));
+
+        service.updateNoteApprovalStatus(id, "RECHAZADO", "Tipo de nota incorrecto");
+
+        NoteReport full = service.getById(id);
+        assertEquals("RECHAZADO", full.getApprovalStatus());
+        assertEquals("Tipo de nota incorrecto", full.getRejectionReason());
+    }
+
+    @Test
+    void getPendingApprovalReturnsOnlyPending() {
+        int pendingId = service.save(userReport("Entrega", LocalDateTime.now(), "A", List.of()));
+        int approvedId = service.save(userReport("Entrega", LocalDateTime.now(), "B", List.of()));
+        service.updateNoteApprovalStatus(approvedId, "APPROVED", null);
+
+        List<Integer> ids = service.getPendingApproval().stream().map(NoteReport::getId).toList();
+        assertEquals(List.of(pendingId), ids);
+    }
+
+    // ── Provider conditional return tracking (config-driven via
+    // AppConfig.returnableMotivosProveedor — config/app-config.json ships with
+    // ["Garantía", "Reparación"], loaded here the same way several other tests in this suite
+    // already load the real config file, e.g. UserNoteFallaPersistenceTest) ──────────────────
+
+    @Test
+    void saveMarksProviderItemsReturnPendingWhenMotivoIsReturnable() throws Exception {
+        ConfigService.getInstance().load();
+        NoteReport r = providerReport(LocalDateTime.now(), "Proveedor SA",
+            List.of(assetItem("NOTEBOOK", "DELL", "LATITUDE", "SN1", "AF1", GlpiStatus.PENDING),
+                    countableItem("MOUSE", "GENIUS", "DX-120", 1)));
+        r.setMotivo("Garantía");
+        int id = service.save(r);
+
+        NoteReport full = service.getById(id);
+        for (NoteReportItem item : full.getItems()) {
+            assertEquals(ReturnStatus.PENDING, item.getReturnStatus());
+        }
+    }
+
+    @Test
+    void saveLeavesProviderItemsNAWhenMotivoIsNotReturnable() throws Exception {
+        ConfigService.getInstance().load();
+        NoteReport r = providerReport(LocalDateTime.now(), "Proveedor SA",
+            List.of(assetItem("NOTEBOOK", "DELL", "LATITUDE", "SN1", "AF1", GlpiStatus.PENDING)));
+        r.setMotivo("Otro");
+        int id = service.save(r);
+
+        NoteReport full = service.getById(id);
+        assertEquals(ReturnStatus.N_A, full.getItems().get(0).getReturnStatus());
+    }
+
     @Test
     void updateItemReturnStatusPersistsStatusAndReason() {
         int id = service.save(userReport("PRÉSTAMO", LocalDateTime.now(), "Marta Ruiz",
@@ -704,6 +915,22 @@ class SqliteHistoryServiceTest {
         NoteReportItem item = after.getItems().get(0);
         assertEquals(ReturnStatus.LOST, item.getReturnStatus());
         assertEquals("Equipo robado", item.getReturnRejectionReason());
+        assertNotNull(item.getReturnStatusUpdatedAt());
+    }
+
+    // Same INSERT-if-missing rewrite, same SQL Server compatibility reason as
+    // updateItemGlpiStatusInsertsTrackingRowWhenNoneExistedYet() above — for
+    // NOTE_ITEM_RETURN_TRACKING instead of NOTE_ITEM_GLPI_TRACKING.
+    @Test
+    void updateItemReturnStatusInsertsTrackingRowWhenNoneExistedYet() {
+        int id = service.save(userReport("Entrega", LocalDateTime.now(), "Juan Perez",
+            List.of(assetItem("NOTEBOOK", "DELL", "LATITUDE", "SN1", "AF1", GlpiStatus.N_A))));
+        int itemId = service.getById(id).getItems().get(0).getId();
+
+        service.updateItemReturnStatus(itemId, ReturnStatus.RETURNED, null);
+
+        NoteReportItem item = service.getById(id).getItems().get(0);
+        assertEquals(ReturnStatus.RETURNED, item.getReturnStatus());
         assertNotNull(item.getReturnStatusUpdatedAt());
     }
 
@@ -722,6 +949,147 @@ class SqliteHistoryServiceTest {
         NoteReport summary = service.getFiltered(new HistoryFilter()).get(0);
         assertEquals(1, summary.getReturnedItemCount());
         assertEquals(1, summary.getLostItemCount());
+        assertEquals(1, summary.getReturnPendingItemCount());
+    }
+
+    // ── Countable partial return/lost allocation (NOTE_ITEM_RETURN_ALLOCATION) ────────────────
+
+    @Test
+    void allocateCountableReturnPersistsPartialQuantitiesAcrossMultipleCalls() {
+        int id = service.save(userReport("PRÉSTAMO", LocalDateTime.now(), "Marta Ruiz",
+            List.of(countableItem("HEADSET", "LOGITECH", "H390", 5))));
+        int itemId = service.getById(id).getItems().get(0).getId();
+
+        service.allocateCountableReturn(itemId, ReturnStatus.RETURNED, 3, null);
+        service.allocateCountableReturn(itemId, ReturnStatus.LOST, 1, "Extraviado");
+
+        NoteReportItem item = service.getById(id).getItems().get(0);
+        assertEquals(3, item.getReturnedQuantity());
+        assertEquals(1, item.getLostQuantity());
+        assertEquals(1, item.getReturnPendingQuantity());
+    }
+
+    // Both LOST and RETURNED are surfaced per-batch, not just aggregated — each allocation is one
+    // real event with its own single timestamp (LOST also has its own reason), which is what lets
+    // the detail popups show a meaningful "when" for every batch instead of just a summed count.
+    @Test
+    void getByIdReturnsOneLostBatchPerAllocationEachWithItsOwnReason() {
+        int id = service.save(userReport("PRÉSTAMO", LocalDateTime.now(), "Marta Ruiz",
+            List.of(countableItem("HEADSET", "LOGITECH", "H390", 5))));
+        int itemId = service.getById(id).getItems().get(0).getId();
+
+        service.allocateCountableReturn(itemId, ReturnStatus.RETURNED, 2, null);
+        service.allocateCountableReturn(itemId, ReturnStatus.LOST, 1, "Extraviado");
+        service.allocateCountableReturn(itemId, ReturnStatus.LOST, 2, "Robado");
+
+        NoteReportItem item = service.getById(id).getItems().get(0);
+        assertEquals(2, item.getReturnedQuantity());
+        assertEquals(3, item.getLostQuantity());
+        assertEquals(0, item.getReturnPendingQuantity());
+
+        List<ReturnAllocationBatch> batches = item.getLostBatches();
+        assertEquals(2, batches.size());
+        assertEquals(1, batches.get(0).getQuantity());
+        assertEquals("Extraviado", batches.get(0).getReason());
+        assertEquals(2, batches.get(1).getQuantity());
+        assertEquals("Robado", batches.get(1).getReason());
+    }
+
+    @Test
+    void getByIdReturnsOneReturnedBatchPerAllocation() {
+        int id = service.save(userReport("PRÉSTAMO", LocalDateTime.now(), "Marta Ruiz",
+            List.of(countableItem("HEADSET", "LOGITECH", "H390", 5))));
+        int itemId = service.getById(id).getItems().get(0).getId();
+
+        service.allocateCountableReturn(itemId, ReturnStatus.RETURNED, 2, null);
+        service.allocateCountableReturn(itemId, ReturnStatus.RETURNED, 1, null);
+
+        List<ReturnAllocationBatch> batches = service.getById(id).getItems().get(0).getReturnedBatches();
+        assertEquals(2, batches.size());
+        assertEquals(2, batches.get(0).getQuantity());
+        assertEquals(1, batches.get(1).getQuantity());
+    }
+
+    @Test
+    void getByIdReturnsEmptyLostBatchesWhenNothingHasBeenLost() {
+        int id = service.save(userReport("PRÉSTAMO", LocalDateTime.now(), "Marta Ruiz",
+            List.of(countableItem("HEADSET", "LOGITECH", "H390", 5))));
+        int itemId = service.getById(id).getItems().get(0).getId();
+
+        service.allocateCountableReturn(itemId, ReturnStatus.RETURNED, 5, null);
+
+        assertTrue(service.getById(id).getItems().get(0).getLostBatches().isEmpty());
+    }
+
+    @Test
+    void getByIdReturnsEmptyReturnedBatchesWhenNothingHasBeenReturned() {
+        int id = service.save(userReport("PRÉSTAMO", LocalDateTime.now(), "Marta Ruiz",
+            List.of(countableItem("HEADSET", "LOGITECH", "H390", 5))));
+        int itemId = service.getById(id).getItems().get(0).getId();
+
+        service.allocateCountableReturn(itemId, ReturnStatus.LOST, 5, "Extraviado");
+
+        assertTrue(service.getById(id).getItems().get(0).getReturnedBatches().isEmpty());
+    }
+
+    @Test
+    void allocateCountableReturnRejectsQuantityExceedingPending() {
+        int id = service.save(userReport("PRÉSTAMO", LocalDateTime.now(), "Marta Ruiz",
+            List.of(countableItem("HEADSET", "LOGITECH", "H390", 5))));
+        int itemId = service.getById(id).getItems().get(0).getId();
+
+        service.allocateCountableReturn(itemId, ReturnStatus.RETURNED, 4, null);
+
+        assertThrows(IllegalArgumentException.class,
+            () -> service.allocateCountableReturn(itemId, ReturnStatus.LOST, 2, "Perdido"));
+    }
+
+    @Test
+    void allocateCountableReturnRejectsNonReturnedOrLostStatus() {
+        int id = service.save(userReport("PRÉSTAMO", LocalDateTime.now(), "Marta Ruiz",
+            List.of(countableItem("HEADSET", "LOGITECH", "H390", 5))));
+        int itemId = service.getById(id).getItems().get(0).getId();
+
+        assertThrows(IllegalArgumentException.class,
+            () -> service.allocateCountableReturn(itemId, ReturnStatus.PENDING, 1, null));
+    }
+
+    @Test
+    void allocateCountableReturnRejectsZeroOrNegativeQuantity() {
+        int id = service.save(userReport("PRÉSTAMO", LocalDateTime.now(), "Marta Ruiz",
+            List.of(countableItem("HEADSET", "LOGITECH", "H390", 5))));
+        int itemId = service.getById(id).getItems().get(0).getId();
+
+        assertThrows(IllegalArgumentException.class,
+            () -> service.allocateCountableReturn(itemId, ReturnStatus.RETURNED, 0, null));
+    }
+
+    // Regression coverage for the LIST_BASE_SQL rewrite: an asset row still weighs 1 (unchanged),
+    // but a partially-resolved countable must weigh its actual quantity split across
+    // pending/returned/lost, not 1 indivisible unit — this is exactly the gap the user reported
+    // (5 loaned headsets, 1 lost, should not force treating all 5 as still fully pending or
+    // fully resolved).
+    @Test
+    void returnStatusAggregatesAccountForPartialCountableQuantities() {
+        int id = service.save(userReport("PRÉSTAMO", LocalDateTime.now(), "Marta Ruiz",
+            List.of(assetItem("NOTEBOOK", "DELL", "LATITUDE", "SN1", "AF1", GlpiStatus.PENDING),
+                    countableItem("HEADSET", "LOGITECH", "H390", 5))));
+
+        NoteReport before = service.getById(id);
+        List<NoteReportItem> items = before.getItems();
+        int assetItemId = items.stream().filter(NoteReportItem::isAsset).findFirst().get().getId();
+        int countableItemId = items.stream().filter(i -> !i.isAsset()).findFirst().get().getId();
+
+        service.updateItemReturnStatus(assetItemId, ReturnStatus.RETURNED, null);
+        service.allocateCountableReturn(countableItemId, ReturnStatus.RETURNED, 3, null);
+        service.allocateCountableReturn(countableItemId, ReturnStatus.LOST, 1, "Extraviado");
+
+        NoteReport summary = service.getFiltered(new HistoryFilter()).get(0);
+        // asset RETURNED (1) + countable returned (3) = 4
+        assertEquals(4, summary.getReturnedItemCount());
+        // countable lost (1)
+        assertEquals(1, summary.getLostItemCount());
+        // countable still pending (5 - 3 - 1 = 1); asset is fully resolved, contributes 0
         assertEquals(1, summary.getReturnPendingItemCount());
     }
 }

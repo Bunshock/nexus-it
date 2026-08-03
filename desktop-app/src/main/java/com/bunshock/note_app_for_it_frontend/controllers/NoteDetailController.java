@@ -2,13 +2,21 @@ package com.bunshock.note_app_for_it_frontend.controllers;
 
 import java.io.IOException;
 
+import java.util.List;
+
 import com.bunshock.note_app_for_it_frontend.models.GlpiStatus;
 import com.bunshock.note_app_for_it_frontend.models.NoteReport;
 import com.bunshock.note_app_for_it_frontend.models.NoteReportItem;
+import com.bunshock.note_app_for_it_frontend.models.Permission;
+import com.bunshock.note_app_for_it_frontend.models.ReturnAllocationBatch;
+import com.bunshock.note_app_for_it_frontend.models.ReturnStatus;
 import com.bunshock.note_app_for_it_frontend.services.AdminSession;
+import com.bunshock.note_app_for_it_frontend.services.ConfigService;
+import com.bunshock.note_app_for_it_frontend.services.IUserRoleService;
 import com.bunshock.note_app_for_it_frontend.services.NoteGenerationService;
 import com.bunshock.note_app_for_it_frontend.services.PendingCountsService;
 import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;
+import com.bunshock.note_app_for_it_frontend.services.TechnicianSessionService;
 
 import javafx.application.Platform;
 import javafx.fxml.FXML;
@@ -27,6 +35,7 @@ import javafx.scene.control.Label;
 import javafx.scene.control.PasswordField;
 import javafx.scene.control.Separator;
 import javafx.scene.control.TextArea;
+import javafx.scene.control.TextField;
 import javafx.scene.control.TextFormatter;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Region;
@@ -47,6 +56,7 @@ public class NoteDetailController {
     @FXML private VBox    rootContainer;
     @FXML private Label   lblTitle;
     @FXML private WebView webPreview;
+    @FXML private VBox    vboxApproval;
     @FXML private VBox    vboxItems;
 
     private NoteReport report;
@@ -81,7 +91,145 @@ public class NoteDetailController {
             webPreview.getEngine().loadContent("<p style='color:red'>Error al renderizar la nota.</p>");
         }
 
+        buildApprovalSection();
         buildItemCards();
+    }
+
+    private void buildApprovalSection() {
+        vboxApproval.getChildren().clear();
+        String status = report.getApprovalStatus();
+        if (status == null) status = "PENDING";
+
+        String badgeText;
+        String badgeColor;
+        switch (status) {
+            case "APPROVED" -> {
+                badgeText = "✓ Aprobada";
+                badgeColor = "#22c55e";
+            }
+            case "RECHAZADO" -> {
+                String reason = report.getRejectionReason() != null ? ": " + report.getRejectionReason() : "";
+                badgeText = "✗ Rechazada" + reason;
+                badgeColor = "#ef4444";
+            }
+            default -> {
+                badgeText = "⏳ Pendiente de aprobación";
+                badgeColor = "#f97316";
+            }
+        }
+
+        HBox statusRow = new HBox(4);
+        statusRow.setAlignment(Pos.CENTER_LEFT);
+        statusRow.getChildren().addAll(prefixLabel("Aprobación: "), statusBadge(badgeText, badgeColor));
+        vboxApproval.getChildren().add(statusRow);
+
+        if (isSedeMismatchForAdmin()) {
+            Label warning = new Label(
+                "⚠ Esta nota pertenece a otra Sede y no puede ser auditada por este administrador.");
+            warning.setStyle("-fx-font-size: 11px; -fx-font-weight: bold; -fx-text-fill: #f59e0b;");
+            warning.setWrapText(true);
+            vboxApproval.getChildren().add(warning);
+        }
+
+        if ("PENDING".equals(status) && adminMode
+                && AdminSession.getInstance().hasPermission(Permission.APPROVE_NOTES, noteSedeIdOrNull())) {
+            Button btnApprove = new Button("Aprobar");
+            btnApprove.getStyleClass().add("button-primary");
+            btnApprove.setOnAction(e -> handleApprove());
+
+            Button btnRejectNote = new Button("Rechazar");
+            btnRejectNote.getStyleClass().add("button-secondary");
+            btnRejectNote.setOnAction(e -> handleRejectNote());
+
+            vboxApproval.getChildren().add(new HBox(8, btnApprove, btnRejectNote));
+        }
+    }
+
+    // 0 means "no Sede on this note" (SEDE ids are auto-increment starting at 1, so it can never
+    // be a real one) — treated as null, same fail-safe "no match" outcome as an admin with no
+    // Sede assigned.
+    private Integer noteSedeIdOrNull() {
+        int id = report.getSedeId();
+        return id > 0 ? id : null;
+    }
+
+    // SUPERADMIN bypasses Sede scoping entirely (see AdminSession.hasPermission(Permission,
+    // Integer)) — this is purely a UI hint for the ADMIN case, shown regardless of the note's own
+    // approval status, since GLPI/return-tracking rows are Sede-scoped the same way even after
+    // approval.
+    private boolean isSedeMismatchForAdmin() {
+        if (!adminMode || !AdminSession.getInstance().isActive()) return false;
+        if (IUserRoleService.ROLE_SUPERADMIN.equals(AdminSession.getInstance().getEffectiveRole())) return false;
+        Integer mySedeId = TechnicianSessionService.getInstance().getSedeId();
+        Integer noteSedeId = noteSedeIdOrNull();
+        return mySedeId == null || noteSedeId == null || !mySedeId.equals(noteSedeId);
+    }
+
+    private void handleApprove() {
+        AdminSession.getInstance().refreshActivity();
+        ServiceLocator.getInstance().getHistoryService().updateNoteApprovalStatus(report.getId(), "APPROVED", null);
+        report.setApprovalStatus("APPROVED");
+        report.setRejectionReason(null);
+        PendingCountsService.getInstance().notifyChanged();
+        buildApprovalSection();
+        buildItemCards();
+        if (onUpdate != null) onUpdate.run();
+    }
+
+    private void handleRejectNote() {
+        AdminSession.getInstance().refreshActivity();
+        String reason = promptNoteRejectionReason();
+        if (reason == null) return;
+        ServiceLocator.getInstance().getHistoryService().updateNoteApprovalStatus(report.getId(), "RECHAZADO", reason);
+        report.setApprovalStatus("RECHAZADO");
+        report.setRejectionReason(reason);
+        PendingCountsService.getInstance().notifyChanged();
+        buildApprovalSection();
+        buildItemCards();
+        if (onUpdate != null) onUpdate.run();
+    }
+
+    private String promptNoteRejectionReason() {
+        Stage stage = buildDialogStage();
+        String[] result = {null};
+
+        Label lblT = new Label("Motivo de rechazo de la nota");
+        lblT.getStyleClass().add("section-label");
+
+        Label lblSub = new Label("Descripción obligatoria del motivo de rechazo de esta nota.");
+        lblSub.setStyle("-fx-text-fill: #475569; -fx-font-size: 12px;");
+
+        TextArea ta = new TextArea();
+        ta.setPromptText("Ej: Tipo de nota incorrecto / Nota duplicada / Creada por error...");
+        ta.setPrefRowCount(3);
+        ta.setWrapText(true);
+        ta.getStyleClass().add("form-input-main");
+        ta.setTextFormatter(new TextFormatter<>(change ->
+            change.getControlNewText().length() <= REJECTION_REASON_MAX_LENGTH ? change : null));
+
+        Button btnCancel = new Button("Cancelar");
+        btnCancel.getStyleClass().add("button-secondary");
+        btnCancel.setOnAction(e -> stage.close());
+
+        Button btnOk = new Button("Confirmar rechazo");
+        btnOk.getStyleClass().add("button-primary");
+        btnOk.setDisable(true);
+        ta.textProperty().addListener((o, ov, nv) -> btnOk.setDisable(nv.isBlank()));
+        btnOk.setOnAction(e -> { result[0] = ta.getText().trim(); stage.close(); });
+
+        HBox buttons = new HBox(8, btnCancel, btnOk);
+        buttons.setAlignment(Pos.CENTER_RIGHT);
+
+        VBox root = buildDialogRoot(420);
+        root.getChildren().addAll(lblT, lblSub, ta, buttons);
+
+        Scene scene = buildDialogScene(root);
+        scene.setOnKeyPressed(ev -> { if (ev.getCode() == KeyCode.ESCAPE) stage.close(); });
+        stage.setScene(scene);
+        Platform.runLater(ta::requestFocus);
+        stage.showAndWait();
+
+        return result[0];
     }
 
     private void buildItemCards() {
@@ -114,13 +262,318 @@ public class NoteDetailController {
         if (item.getObservations() != null && !item.getObservations().isBlank())
             card.getChildren().add(smallLabel("Obs: " + item.getObservations()));
 
-        if (!item.isAsset()) {
-            card.getChildren().add(statusBadge("— Sin acción GLPI", "#94a3b8"));
-            return card;
+        // PENDING/RECHAZADO notes show no item-level action rows at all — an admin must approve
+        // the note itself first (see buildApprovalSection() above) before GLPI sync/reject or the
+        // Provider return-tracking row become reachable.
+        if ("APPROVED".equals(report.getApprovalStatus())) {
+            if (item.isAsset()) {
+                card.getChildren().add(buildGlpiStatusRow(item));
+                // Row absence means this dimension isn't applicable yet — only ever created once
+                // the item's return has been validated (see handleProviderReceived()).
+                if (item.getGlpiReturnStatus() != GlpiStatus.N_A) {
+                    card.getChildren().add(buildGlpiReturnStatusRow(item));
+                }
+            } else {
+                card.getChildren().add(statusBadge("— Sin acción GLPI", "#94a3b8"));
+            }
+            if (isProviderReturnableNote()) {
+                card.getChildren().add(buildProviderReturnStatusRow(item));
+            }
+        }
+        return card;
+    }
+
+    // Config-driven (AppConfig.returnableMotivosProveedor) — a returnable Provider note's items
+    // (asset or countable alike, same "whole note" semantics as Préstamo) get this row alongside
+    // the GLPI row above; a non-returnable Provider note (or any other note type) gets neither
+    // this nor any special handling here. Duplicated from SqliteHistoryService's identical check
+    // per this codebase's no-shared-abstraction convention.
+    private boolean isProviderReturnableNote() {
+        if (!"Entrega - Proveedor".equalsIgnoreCase(report.getProfileType())) return false;
+        String motivo = report.getMotivo();
+        if (motivo == null) return false;
+        try {
+            List<String> returnable = ConfigService.getInstance().getConfig().returnableMotivosProveedor;
+            return returnable != null && returnable.stream().anyMatch(motivo::equalsIgnoreCase);
+        } catch (IllegalStateException notLoaded) {
+            return false;
+        }
+    }
+
+    // Same underlying ReturnStatus/NOTE_ITEM_RETURN_TRACKING mechanism as Préstamo's own
+    // buildReturnStatusRow() (PrestamoDetailController) — only the presentation differs, per
+    // explicit design: "received back from the provider" reads differently than "returned by the
+    // borrower", so the wording here is deliberately NOT a copy of Préstamo's.
+    private VBox buildProviderReturnStatusRow(NoteReportItem item) {
+        return item.isAsset() ? buildProviderAssetReturnStatusRow(item) : buildProviderCountableReturnStatusRow(item);
+    }
+
+    private VBox buildProviderAssetReturnStatusRow(NoteReportItem item) {
+        VBox box = new VBox(8);
+        box.setStyle("-fx-padding: 4 0 0 0;");
+
+        ReturnStatus status = item.getReturnStatus();
+
+        String badgeText;
+        String badgeColor;
+        boolean showActions = false;
+
+        switch (status) {
+            case RETURNED -> {
+                String ts = item.getReturnStatusUpdatedAt() != null ? " · " + formatStatusTimestamp(item.getReturnStatusUpdatedAt()) : "";
+                badgeText = "✓ Recibido" + ts;
+                badgeColor = "#22c55e";
+            }
+            case LOST -> {
+                String reason = item.getReturnRejectionReason() != null ? ": " + item.getReturnRejectionReason() : "";
+                badgeText = "✗ No recibido" + reason;
+                badgeColor = "#ef4444";
+            }
+            case PENDING -> {
+                badgeText = "⏳ Pendiente recepción";
+                badgeColor = "#f97316";
+                // Recibido/No recibido only becomes available once GLPI sync (1) has actually
+                // gone through — validating a return before GLPI even confirms the item was sent
+                // out would let the two dimensions get out of order for no real benefit.
+                showActions = item.getGlpiStatus() == GlpiStatus.SYNCED;
+            }
+            default -> {
+                badgeText = "—";
+                badgeColor = "#94a3b8";
+            }
         }
 
-        card.getChildren().add(buildGlpiStatusRow(item));
-        return card;
+        HBox statusRow = new HBox(4);
+        statusRow.setAlignment(Pos.CENTER_LEFT);
+        statusRow.getChildren().addAll(prefixLabel("Proveedor: "), statusBadge(badgeText, badgeColor));
+        box.getChildren().add(statusRow);
+
+        if (status == ReturnStatus.PENDING && item.getGlpiStatus() != GlpiStatus.SYNCED) {
+            box.getChildren().add(smallLabel("Debe sincronizar GLPI antes de validar la recepción"));
+        }
+
+        if (showActions && adminMode
+                && AdminSession.getInstance().hasPermission(Permission.VALIDATE_RETURNS, noteSedeIdOrNull())) {
+            Button btnReceived = new Button("Recibido");
+            btnReceived.getStyleClass().add("button-primary");
+            btnReceived.setStyle(btnReceived.getStyle() + "-fx-font-size: 10px; -fx-padding: 3 8;");
+            btnReceived.setOnAction(e -> handleProviderReceived(item, btnReceived));
+
+            Button btnNotReceived = new Button("No recibido");
+            btnNotReceived.getStyleClass().add("button-secondary");
+            btnNotReceived.setStyle(btnNotReceived.getStyle() + "-fx-font-size: 10px; -fx-padding: 3 8;");
+            btnNotReceived.setOnAction(e -> handleProviderNotReceived(item));
+
+            box.getChildren().add(new HBox(8, btnReceived, btnNotReceived));
+        }
+
+        return box;
+    }
+
+    // Same partial-quantity reasoning as PrestamoDetailController.buildCountableReturnStatusRow()
+    // — a returnable Provider note's countable (e.g. 5 headsets sent for warranty) can come back
+    // in batches too, just with "received from the provider" wording instead of "returned by the
+    // borrower". Duplicated per this codebase's no-shared-abstraction convention.
+    private VBox buildProviderCountableReturnStatusRow(NoteReportItem item) {
+        VBox box = new VBox(8);
+        box.setStyle("-fx-padding: 4 0 0 0;");
+
+        if (item.getReturnStatus() == ReturnStatus.N_A) {
+            HBox statusRow = new HBox(4);
+            statusRow.setAlignment(Pos.CENTER_LEFT);
+            statusRow.getChildren().addAll(prefixLabel("Proveedor: "), statusBadge("—", "#94a3b8"));
+            box.getChildren().add(statusRow);
+            return box;
+        }
+
+        int pending = item.getReturnPendingQuantity();
+
+        HBox prefixRow = new HBox(4);
+        prefixRow.setAlignment(Pos.CENTER_LEFT);
+        prefixRow.getChildren().add(prefixLabel("Proveedor: "));
+        box.getChildren().add(prefixRow);
+
+        if (pending > 0) box.getChildren().add(statusBadge("⏳ " + qtyLabel("Pendiente", "Pendientes", pending) + ": " + pending, "#f97316"));
+        // One badge per batch, not one aggregate line, for both "no recibido" and "recibido" —
+        // each batch is one real event with its own single timestamp (a "no recibido" batch also
+        // has its own reason), so this is the only way to show a meaningful "when" for each.
+        for (ReturnAllocationBatch batch : item.getLostBatches()) {
+            String reason = batch.getReason() != null && !batch.getReason().isBlank() ? " (" + batch.getReason() + ")" : "";
+            String ts = batch.getUpdatedAt() != null ? " · " + formatStatusTimestamp(batch.getUpdatedAt()) : "";
+            box.getChildren().add(statusBadge("✗ " + qtyLabel("No recibido", "No recibidos", batch.getQuantity()) + ": " + batch.getQuantity() + reason + ts, "#ef4444"));
+        }
+        for (ReturnAllocationBatch batch : item.getReturnedBatches()) {
+            String ts = batch.getUpdatedAt() != null ? " · " + formatStatusTimestamp(batch.getUpdatedAt()) : "";
+            box.getChildren().add(statusBadge("✓ " + qtyLabel("Recibido", "Recibidos", batch.getQuantity()) + ": " + batch.getQuantity() + ts, "#22c55e"));
+        }
+
+        if (pending > 0 && adminMode
+                && AdminSession.getInstance().hasPermission(Permission.VALIDATE_RETURNS, noteSedeIdOrNull())) {
+            TextField qtyReceived = buildQuantityField(pending);
+            Button btnReceived = new Button("Recibido");
+            btnReceived.getStyleClass().add("button-primary");
+            btnReceived.setStyle(btnReceived.getStyle() + "-fx-font-size: 10px; -fx-padding: 3 8;");
+            btnReceived.setOnAction(e -> handleProviderCountableReceived(item, qtyReceived));
+            box.getChildren().add(new HBox(6, qtyReceived, btnReceived));
+
+            TextField qtyNotReceived = buildQuantityField(pending);
+            Button btnNotReceived = new Button("No recibido");
+            btnNotReceived.getStyleClass().add("button-secondary");
+            btnNotReceived.setStyle(btnNotReceived.getStyle() + "-fx-font-size: 10px; -fx-padding: 3 8;");
+            btnNotReceived.setOnAction(e -> handleProviderCountableNotReceived(item, qtyNotReceived));
+            box.getChildren().add(new HBox(6, qtyNotReceived, btnNotReceived));
+        }
+
+        return box;
+    }
+
+    private String qtyLabel(String singular, String plural, int count) {
+        return count == 1 ? singular : plural;
+    }
+
+    // "dd/MM/yyyy HH:mm hs" for a status badge's own timestamp (GLPI sync, Préstamo/Proveedor
+    // return) — was a raw ISO-ish substring (e.g. "2026-07-31T13:17"), unreadable at a glance.
+    // Falls back to the raw stored value rather than throwing if it can't be parsed.
+    private String formatStatusTimestamp(String storedTimestamp) {
+        if (storedTimestamp == null) return "";
+        try {
+            return java.time.LocalDateTime.parse(storedTimestamp)
+                .format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm 'hs'"));
+        } catch (Exception e) {
+            return storedTimestamp;
+        }
+    }
+
+    private TextField buildQuantityField(int max) {
+        TextField tf = new TextField(String.valueOf(max));
+        tf.setPrefWidth(50);
+        tf.setTextFormatter(new TextFormatter<>(change -> {
+            String newText = change.getControlNewText();
+            if (newText.isEmpty()) return change;
+            if (!newText.matches("\\d+")) return null;
+            try {
+                return Integer.parseInt(newText) <= max ? change : null;
+            } catch (NumberFormatException e) {
+                return null;
+            }
+        }));
+        return tf;
+    }
+
+    private int parseQuantity(TextField field, int max) {
+        try {
+            int v = Integer.parseInt(field.getText().trim());
+            return Math.min(Math.max(v, 0), max);
+        } catch (NumberFormatException e) {
+            return 0;
+        }
+    }
+
+    private void handleProviderReceived(NoteReportItem item, Button btnReceived) {
+        AdminSession.getInstance().refreshActivity();
+        btnReceived.setDisable(true);
+        ServiceLocator.getInstance().getHistoryService()
+            .updateItemReturnStatus(item.getId(), ReturnStatus.RETURNED, null);
+        item.setReturnStatus(ReturnStatus.RETURNED);
+        item.setReturnStatusUpdatedAt(java.time.LocalDateTime.now().toString());
+        // Seeds the second, independent GLPI dimension now that the return is validated — GLPI
+        // sync is one-way/no-revert, so the original sync-out can't be undone to reflect the item
+        // coming back; this is a separate "synced back in" event instead. See
+        // NOTE_ITEM_GLPI_RETURN_TRACKING's own doc in DatabaseService.
+        ServiceLocator.getInstance().getHistoryService()
+            .updateItemGlpiReturnStatus(item.getId(), GlpiStatus.PENDING, null);
+        item.setGlpiReturnStatus(GlpiStatus.PENDING);
+        PendingCountsService.getInstance().notifyChanged();
+        buildItemCards();
+        if (onUpdate != null) onUpdate.run();
+    }
+
+    private void handleProviderNotReceived(NoteReportItem item) {
+        AdminSession.getInstance().refreshActivity();
+        String reason = promptProviderNotReceivedReason();
+        if (reason == null) return;
+        ServiceLocator.getInstance().getHistoryService()
+            .updateItemReturnStatus(item.getId(), ReturnStatus.LOST, reason);
+        item.setReturnStatus(ReturnStatus.LOST);
+        item.setReturnRejectionReason(reason);
+        item.setReturnStatusUpdatedAt(java.time.LocalDateTime.now().toString());
+        PendingCountsService.getInstance().notifyChanged();
+        buildItemCards();
+        if (onUpdate != null) onUpdate.run();
+    }
+
+    private void handleProviderCountableReceived(NoteReportItem item, TextField qtyField) {
+        AdminSession.getInstance().refreshActivity();
+        int qty = parseQuantity(qtyField, item.getReturnPendingQuantity());
+        if (qty <= 0) return;
+        ServiceLocator.getInstance().getHistoryService()
+            .allocateCountableReturn(item.getId(), ReturnStatus.RETURNED, qty, null);
+        item.setReturnedQuantity(item.getReturnedQuantity() + qty);
+        // Same "in-memory item must reflect what was just written" fix as the whole-item status
+        // handlers above — without appending this batch here too, the new line wouldn't show up
+        // in buildProviderCountableReturnStatusRow()'s loop until the popup was reopened.
+        item.getReturnedBatches().add(new ReturnAllocationBatch(qty, null, java.time.LocalDateTime.now().toString()));
+        PendingCountsService.getInstance().notifyChanged();
+        buildItemCards();
+        if (onUpdate != null) onUpdate.run();
+    }
+
+    private void handleProviderCountableNotReceived(NoteReportItem item, TextField qtyField) {
+        AdminSession.getInstance().refreshActivity();
+        int qty = parseQuantity(qtyField, item.getReturnPendingQuantity());
+        if (qty <= 0) return;
+        String reason = promptProviderNotReceivedReason();
+        if (reason == null) return;
+        ServiceLocator.getInstance().getHistoryService()
+            .allocateCountableReturn(item.getId(), ReturnStatus.LOST, qty, reason);
+        item.setLostQuantity(item.getLostQuantity() + qty);
+        item.getLostBatches().add(new ReturnAllocationBatch(qty, reason, java.time.LocalDateTime.now().toString()));
+        PendingCountsService.getInstance().notifyChanged();
+        buildItemCards();
+        if (onUpdate != null) onUpdate.run();
+    }
+
+    private String promptProviderNotReceivedReason() {
+        Stage stage = buildDialogStage();
+        String[] result = {null};
+
+        Label lblT = new Label("Motivo de no recepción");
+        lblT.getStyleClass().add("section-label");
+
+        Label lblSub = new Label("Descripción obligatoria de por qué el equipo no fue recibido.");
+        lblSub.setStyle("-fx-text-fill: #475569; -fx-font-size: 12px;");
+
+        TextArea ta = new TextArea();
+        ta.setPromptText("Ej: Proveedor no envió el equipo / Equipo dañado en tránsito...");
+        ta.setPrefRowCount(3);
+        ta.setWrapText(true);
+        ta.getStyleClass().add("form-input-main");
+        ta.setTextFormatter(new TextFormatter<>(change ->
+            change.getControlNewText().length() <= REJECTION_REASON_MAX_LENGTH ? change : null));
+
+        Button btnCancel = new Button("Cancelar");
+        btnCancel.getStyleClass().add("button-secondary");
+        btnCancel.setOnAction(e -> stage.close());
+
+        Button btnOk = new Button("Confirmar");
+        btnOk.getStyleClass().add("button-primary");
+        btnOk.setDisable(true);
+        ta.textProperty().addListener((o, ov, nv) -> btnOk.setDisable(nv.isBlank()));
+        btnOk.setOnAction(e -> { result[0] = ta.getText().trim(); stage.close(); });
+
+        HBox buttons = new HBox(8, btnCancel, btnOk);
+        buttons.setAlignment(Pos.CENTER_RIGHT);
+
+        VBox root = buildDialogRoot(420);
+        root.getChildren().addAll(lblT, lblSub, ta, buttons);
+
+        Scene scene = buildDialogScene(root);
+        scene.setOnKeyPressed(ev -> { if (ev.getCode() == KeyCode.ESCAPE) stage.close(); });
+        stage.setScene(scene);
+        Platform.runLater(ta::requestFocus);
+        stage.showAndWait();
+
+        return result[0];
     }
 
     // A VBox, not a single HBox row — the "GLPI: " prefix + status badge sit on their own row in
@@ -141,7 +594,7 @@ public class NoteDetailController {
 
         switch (status) {
             case SYNCED -> {
-                String ts = item.getGlpiStatusUpdatedAt() != null ? " · " + item.getGlpiStatusUpdatedAt().substring(0, 16) : "";
+                String ts = item.getGlpiStatusUpdatedAt() != null ? " · " + formatStatusTimestamp(item.getGlpiStatusUpdatedAt()) : "";
                 badgeText = "✓ Sincronizado" + ts;
                 badgeColor = "#22c55e";
             }
@@ -166,7 +619,8 @@ public class NoteDetailController {
         statusRow.getChildren().addAll(prefixLabel("GLPI: "), statusBadge(badgeText, badgeColor));
         box.getChildren().add(statusRow);
 
-        if (showActions && adminMode && AdminSession.getInstance().isActive()) {
+        if (showActions && adminMode
+                && AdminSession.getInstance().hasPermission(Permission.SYNC_GLPI, noteSedeIdOrNull())) {
             Button btnSync = new Button("Sincronizar");
             btnSync.getStyleClass().add("button-primary");
             btnSync.setStyle(btnSync.getStyle() + "-fx-font-size: 10px; -fx-padding: 3 8;");
@@ -189,6 +643,12 @@ public class NoteDetailController {
         ServiceLocator.getInstance().getHistoryService()
             .updateItemGlpiStatus(item.getId(), GlpiStatus.SYNCED, null);
         item.setGlpiStatus(GlpiStatus.SYNCED);
+        // Without this, the badge kept showing no timestamp at all until the popup was closed
+        // and reopened — updateItemGlpiStatus() above writes the real timestamp to the DB, but
+        // this in-memory item was never told about it, so buildGlpiStatusRow() had nothing to
+        // format. A few ms off from the DB's own LocalDateTime.now() call is immaterial at this
+        // display's minute-level granularity.
+        item.setGlpiStatusUpdatedAt(java.time.LocalDateTime.now().toString());
         PendingCountsService.getInstance().notifyChanged();
         buildItemCards();
         if (onUpdate != null) onUpdate.run();
@@ -202,6 +662,93 @@ public class NoteDetailController {
             .updateItemGlpiStatus(item.getId(), GlpiStatus.REJECTED, reason);
         item.setGlpiStatus(GlpiStatus.REJECTED);
         item.setGlpiRejectionReason(reason);
+        item.setGlpiStatusUpdatedAt(java.time.LocalDateTime.now().toString());
+        PendingCountsService.getInstance().notifyChanged();
+        buildItemCards();
+        if (onUpdate != null) onUpdate.run();
+    }
+
+    // Second, independent GLPI dimension — only ever rendered once a returnable Provider note's
+    // asset has had its return validated (handleProviderReceived() is what seeds the row this
+    // reads). Same shape as buildGlpiStatusRow() above, just targeting
+    // updateItemGlpiReturnStatus() instead — see NOTE_ITEM_GLPI_RETURN_TRACKING's own doc in
+    // DatabaseService for why this can't just reuse the original sync-out dimension.
+    private VBox buildGlpiReturnStatusRow(NoteReportItem item) {
+        VBox box = new VBox(8);
+        box.setStyle("-fx-padding: 4 0 0 0;");
+
+        GlpiStatus status = item.getGlpiReturnStatus();
+
+        String badgeText;
+        String badgeColor;
+        boolean showActions = false;
+
+        switch (status) {
+            case SYNCED -> {
+                String ts = item.getGlpiReturnStatusUpdatedAt() != null ? " · " + formatStatusTimestamp(item.getGlpiReturnStatusUpdatedAt()) : "";
+                badgeText = "✓ Sincronizado" + ts;
+                badgeColor = "#22c55e";
+            }
+            case REJECTED -> {
+                String reason = item.getGlpiReturnRejectionReason() != null ? ": " + item.getGlpiReturnRejectionReason() : "";
+                badgeText = "✗ Rechazado" + reason;
+                badgeColor = "#ef4444";
+            }
+            case PENDING -> {
+                badgeText = "⏳ Pendiente sincronización";
+                badgeColor = "#f97316";
+                showActions = true;
+            }
+            default -> {
+                badgeText = "—";
+                badgeColor = "#94a3b8";
+            }
+        }
+
+        HBox statusRow = new HBox(4);
+        statusRow.setAlignment(Pos.CENTER_LEFT);
+        statusRow.getChildren().addAll(prefixLabel("GLPI ret.: "), statusBadge(badgeText, badgeColor));
+        box.getChildren().add(statusRow);
+
+        if (showActions && adminMode
+                && AdminSession.getInstance().hasPermission(Permission.SYNC_GLPI, noteSedeIdOrNull())) {
+            Button btnSync = new Button("Sincronizar");
+            btnSync.getStyleClass().add("button-primary");
+            btnSync.setStyle(btnSync.getStyle() + "-fx-font-size: 10px; -fx-padding: 3 8;");
+            btnSync.setOnAction(e -> handleGlpiReturnSync(item, btnSync));
+
+            Button btnReject = new Button("Rechazar");
+            btnReject.getStyleClass().add("button-secondary");
+            btnReject.setStyle(btnReject.getStyle() + "-fx-font-size: 10px; -fx-padding: 3 8;");
+            btnReject.setOnAction(e -> handleGlpiReturnReject(item));
+
+            box.getChildren().add(new HBox(8, btnSync, btnReject));
+        }
+
+        return box;
+    }
+
+    private void handleGlpiReturnSync(NoteReportItem item, Button btnSync) {
+        AdminSession.getInstance().refreshActivity();
+        btnSync.setDisable(true);
+        ServiceLocator.getInstance().getHistoryService()
+            .updateItemGlpiReturnStatus(item.getId(), GlpiStatus.SYNCED, null);
+        item.setGlpiReturnStatus(GlpiStatus.SYNCED);
+        item.setGlpiReturnStatusUpdatedAt(java.time.LocalDateTime.now().toString());
+        PendingCountsService.getInstance().notifyChanged();
+        buildItemCards();
+        if (onUpdate != null) onUpdate.run();
+    }
+
+    private void handleGlpiReturnReject(NoteReportItem item) {
+        AdminSession.getInstance().refreshActivity();
+        String reason = promptRejectionReason();
+        if (reason == null) return;
+        ServiceLocator.getInstance().getHistoryService()
+            .updateItemGlpiReturnStatus(item.getId(), GlpiStatus.REJECTED, reason);
+        item.setGlpiReturnStatus(GlpiStatus.REJECTED);
+        item.setGlpiReturnRejectionReason(reason);
+        item.setGlpiReturnStatusUpdatedAt(java.time.LocalDateTime.now().toString());
         PendingCountsService.getInstance().notifyChanged();
         buildItemCards();
         if (onUpdate != null) onUpdate.run();
