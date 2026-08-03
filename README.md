@@ -274,23 +274,30 @@ mvn test
 
 - A standalone login screen is shown before anything else in the app — no main window, no startup connectivity checks — until it succeeds. Username (pre-filled from the Windows session, still editable) + password, validated against the AD API (a bind-as-user credential check, not a stored password).
 - App access is gated by AD group membership (configurable, `adAccess.allowedGroupName` — blank skips the check while it's not yet configured).
-- A per-account role (`ADMIN`/`USER`, assigned by a database administrator via direct SQL against the `USER_ROLE` table — no in-app screen) determines whether admin mode starts already active — an `ADMIN` login skips the old password toggle entirely and never expires for that session; a `USER` login starts as a normal technician, still able to reach password-gated admin actions (catalog edits, S/N validation) per click.
+- A per-account role (`USER`/`ADMIN`/`SUPERADMIN`, plus an assigned Sede — all set by a database administrator via direct SQL against the `APP_USER` table, no in-app screen) determines whether admin mode starts already active — an `ADMIN` or `SUPERADMIN` login skips the old password toggle entirely and never expires for that session; a `USER` login starts as a normal technician, still able to reach password-gated admin actions (catalog edits, S/N validation) per click. Every admin-tier action is denied by default and only granted per role via a `ROLE_PERMISSION` table (also SQL-managed) — see [Role-based permissions](#role-based-permissions) below.
 
 ### Settings
 
-- **Sede**: a per-technician site value (own field, own "Guardar" button, not admin-gated — any technician sets their own), shown in the sidebar next to the welcome message. Mandatory to generate a note or register a Préstamo — blocked with a warning if unset, same as an incomplete AD profile. Snapshotted onto every note at generation time and printed on it (replaces the previously hardcoded "Campus" text on all 5 templates)
+- **Sede**: a superadmin-assigned per-technician site value (no self-service field anymore — set via direct SQL against `APP_USER.sede_id`), shown read-only in the sidebar next to the welcome message, styled as a standing warning ("Sede no asignada") when unset. Mandatory to generate a note or register a Préstamo — blocked with a warning (and a one-time startup popup) if unset, same as an incomplete AD profile. Snapshotted onto every note at generation time and printed on it (replaces the previously hardcoded "Campus" text on all 5 templates)
 - A/F format configuration with live preview
-- SMTP credentials (password encrypted via `AppKeyEncryptionService` — never stored in plaintext)
+- SMTP credentials (password encrypted via `AppKeyEncryptionService` — never stored in plaintext; editable only by a `SUPERADMIN`-role login, never via the shared admin password)
 - GLPI API URL and API Key (key encrypted via `AppKeyEncryptionService` — never stored in plaintext)
 - Active Directory API URL and Token (token encrypted via `AppKeyEncryptionService`, write-only field — never redisplayed once saved); saving tests the connection first and asks for confirmation if it fails
 - Settings content scrolls independently in a fixed-height panel — the "CONFIGURACIÓN" header and the "Guardar Configuración" footer both stay fixed in place; only the card list in between scrolls
-- All configuration fields are read-only/disabled unless admin mode is active; the "Guardar Configuración" button itself is always enabled, since it also saves Sede for any technician
+- Each configuration field group (A/F format, SMTP, GLPI, AD) is independently read-only/disabled unless the active session holds that specific permission; the "Guardar Configuración" button itself is always enabled and only persists the field groups the session is actually permitted to change
 - **S/N Validation table** (admin-protected): view all asset-type models with their regex pattern and active toggle; active rules sort to the top; multi-select Tipo/Marca/Modelo/Activo dropdown filters (same pattern as History's filters, Tipo→Marca→Modelo cascading) with a "Limpiar filtros" reset button
-- **Admin mode**: activated automatically at login for an account with the `ADMIN` role (see [Login](#login) above; role is set via direct SQL against `USER_ROLE`, no in-app screen) — never expires for that session. A non-admin-role technician has no self-service toggle at all, but can still unlock individual actions (catalog edits, S/N validation, GLPI sync) with the shared password, per click, exactly as before.
+- **Admin mode**: activated automatically at login for an account with the `ADMIN` or `SUPERADMIN` role (see [Login](#login) above; role is set via direct SQL against `APP_USER`, no in-app screen) — never expires for that session. A non-admin-role technician has no self-service toggle at all, but can still unlock individual ADMIN-level actions (catalog edits, S/N validation, GLPI sync) with the shared password, per click — that fallback can never reach a `SUPERADMIN`-only permission.
+
+### Role-based permissions
+
+- Every admin-tier action (catalog management, S/N validation, note approval, GLPI sync, return validation, profile overrides, and each Settings field group) is **denied by default** and only enabled per role — a new sensitive feature can't be silently reachable by everyone if a grant is forgotten when it's built.
+- Grants live in a `ROLE_PERMISSION` table, edited directly via SQL by a superadmin, same as `APP_USER`'s role/Sede assignment — there is no in-app screen for managing permissions.
+- A plain `ADMIN` is further restricted to acting (approve/reject, GLPI sync, return validation) only on notes generated at their own assigned Sede; opening a note from a different Sede shows its contents but hides the action buttons, with a warning explaining why. `SUPERADMIN` bypasses this Sede restriction entirely.
+- `SUPERADMIN` sessions show a distinct magenta title-bar badge ("MODO SUPERADMINISTRADOR"), vs. the existing teal badge for a plain `ADMIN`.
 
 ### Mi Perfil (technician identity)
 
-- Name, Username, DNI, and Email resolved from Active Directory at login time (see [Login](#login) above), refreshable on demand via "Actualizar Perfil desde AD" (a lookup, not a re-login) — read-only, editable only in admin mode, never persisted to disk
+- Name, Username, DNI, and Email resolved from Active Directory at login time (see [Login](#login) above), refreshable on demand via "Actualizar Perfil desde AD" (a lookup, not a re-login) — read-only, editable only for a session holding the profile-override permission, never persisted to disk
 - **Nombre para mostrar**: a separate, always-editable field (no admin mode required, max 20 characters) controlling only the sidebar welcome greeting ("Hola, ...!"). Pre-filled with a suggested default (the last word of the AD full name); persisted locally per technician username so it survives restarts and AD refreshes. Clearing it and saving reverts to the suggested default — or use the square ↺ reset button next to the field to do both in one click
 - Sidebar welcome message updates immediately on any change (AD refresh, admin override, or a saved display-name preference) — no restart needed
 

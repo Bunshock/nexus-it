@@ -37,8 +37,8 @@ Project-level instructions for Claude Code. These override defaults and apply to
 - Every implemented feature must have tests. Write test files **and run them** before marking a task done.
 - Desktop app: **JUnit 5 + TestFX** (`src/test/java/...`)
 - Run: `mvn test` from `desktop-app/`
-- Current test count: 307 tests, all passing.
-- Test classes: `TemplateEngineTest`, `AfFormatterTest`, `MockADServiceTest`, `AdApiServiceTest`, `AppKeyEncryptionServiceTest`, `MockEquipmentServiceTest`, `CachingServiceTest`, `GlpiStatusTest`, `ReturnStatusTest`, `NoteGenerationServiceTest`, `AdminSessionTest`, `RemoteDatabaseServiceTest`, `SqliteHistoryServiceTest`, `DatabaseServiceMigrationTest`, `HistoryControllerTest`, `InputValidationTest`, `TechnicianSessionServiceTest`, `SettingsControllerTest`, `SqliteEquipmentServiceTest`, `ServiceLocatorProvisionTest`, `UserNoteFallaPersistenceTest`, `UserNoteViewFxmlTest`, `SettingsControllerSnFilterTest`, `SettingsViewFxmlTest`, `ProfileControllerDisplayNameTest`, `ProfileViewFxmlTest`, `CatalogMigrationToolTest`, `DemoSeedSqlTest`, `StarterTemplateSqlTest`, `SqlServerSeedSqlSnValidationTest`, `NotePreviewViewFxmlTest`, `NoteDetailViewFxmlTest`, `PrestamosViewFxmlTest`, `PrestamoNewLoanViewFxmlTest`, `PrestamoDetailViewFxmlTest`, `NotePreviewControllerGlpiStatusTest`, `PendingCountsServiceTest`, `NoteGeneratorViewFxmlTest`, `SqliteUserRoleServiceTest`, `LoginControllerTest`, `LoginViewFxmlTest`, `DatabaseSectionViewFxmlTest`
+- Current test count: 351 tests, all passing.
+- Test classes: `TemplateEngineTest`, `PrestamoHistoryControllerTest`, `ProviderNoteViewFxmlTest`, `MockADServiceTest`, `AdApiServiceTest`, `AppKeyEncryptionServiceTest`, `MockEquipmentServiceTest`, `CachingServiceTest`, `GlpiStatusTest`, `ReturnStatusTest`, `NoteGenerationServiceTest`, `AdminSessionTest`, `RemoteDatabaseServiceTest`, `SqliteHistoryServiceTest`, `DatabaseServiceMigrationTest`, `HistoryControllerTest`, `InputValidationTest`, `TechnicianSessionServiceTest`, `SettingsControllerTest`, `SqliteEquipmentServiceTest`, `ServiceLocatorProvisionTest`, `UserNoteFallaPersistenceTest`, `UserNoteViewFxmlTest`, `SettingsControllerSnFilterTest`, `SettingsViewFxmlTest`, `ProfileControllerDisplayNameTest`, `ProfileViewFxmlTest`, `CatalogMigrationToolTest`, `DemoSeedSqlTest`, `StarterTemplateSqlTest`, `SqlServerSeedSqlSnValidationTest`, `NotePreviewViewFxmlTest`, `NoteDetailViewFxmlTest`, `PrestamosViewFxmlTest`, `PrestamoNewLoanViewFxmlTest`, `PrestamoDetailViewFxmlTest`, `NotePreviewControllerGlpiStatusTest`, `PendingCountsServiceTest`, `NoteGeneratorViewFxmlTest`, `SqliteUserRoleServiceTest`, `LoginControllerTest`, `LoginViewFxmlTest`, `DatabaseSectionViewFxmlTest`
 
 ---
 
@@ -118,6 +118,14 @@ Every external dependency has an interface (`IADService`, `IEquipmentService`, `
 ### Admin dialog pattern
 `requireAdmin(Runnable)` in `SettingsController` and `DatabaseSectionController` handles the full admin flow: check `AdminAuthService.isConfigured()`, prompt password, verify hash, run action. Each controller also duplicates `buildDialogStage / buildDialogRoot / buildDialogScene / centerOnContent` — this duplication is intentional (no shared utility class, per the no-abstraction rule). Do not extract a base class or helper unless explicitly requested. `MainController` and `NoteGeneratorController` duplicate the same pattern again for `showWarningNotice`/`showDialogNotice` (orange-accent warning popups) — `NoteGeneratorController` centers on `rootContainer` instead of a `contentArea`/`panelSettings`-style field, since it's a section-level controller, not the shell.
 
+**Superseded 2026-07-30**: `DatabaseSectionController`'s `requireAdmin(Runnable)` was renamed
+`requirePermission(Permission, Runnable)` — see
+[Role-based permissions (RBAC)](#role-based-permissions-rbac-a-superadmin-tier-and-sede-scoped-admin-actions-2026-07-30)
+below. `SettingsController` never had its own `requireAdmin()`/dialog-based password prompt (its
+fields were always gated by a plain `setDisable(!adminActive)` check, now `hasPermission(...)`
+per field group) — the shared `buildDialogStage`/`buildDialogRoot`/`buildDialogScene`/
+`centerOnContent` duplication described here is otherwise unaffected.
+
 **Exception, 2026-07-24**: `DatabaseSectionController.handleEditConnection()` (the remote DB host/port/name/username/password dialog) no longer calls `requireAdmin()` — explicit user decision, since `db_*` settings are per-machine (local `APP_SETTINGS` only, never synced) and the existing test-connection-before-accepting flow (see Security requirements above) already guards against silently saving a bad config, regardless of who opens the dialog. This surfaced a real, separate issue while reviewing it: `openEditConnectionDialog()`'s password field used to pre-fill with the *decrypted* current `db_password` — harmless while only an admin could reach it, but a real plaintext-disclosure risk once anyone can. Fixed in the same change: the password field is now write-only, like every other secret field in this app (SMTP/GLPI/AD) — blank by default (`promptText="Dejar en blanco para no cambiarla"`), and `db_password` is only re-saved when the field is actually non-blank; a blank save resolves to the existing decrypted password for `configure()`/`testConnection()` (so leaving it blank doesn't break the live connection), but never writes it back to `APP_SETTINGS` again. The username field was deliberately left as-is (still pre-filled, plain `TextField`) — out of scope for this change, and a username alone isn't a credential.
 
 **A second, more serious gap, caught by direct user question the same day**: reusing the stored password on a blank field is only safe when the *destination* hasn't changed. The blank-password resolution originally applied unconditionally — meaning anyone could retype `host` to a server of their own choosing, leave the password blank, and the app would submit the real, live `db_password` to that new host via the test-connection call, before anything was even saved. This doesn't require ever reading the password back (the write-only fix above didn't address it) — it lets the app itself relay the live credential to an arbitrary destination on request, which is the more dangerous vector. Fixed by comparing the typed `host`/`portStr` against the currently-stored values: a blank password is only accepted when both are unchanged from what's already configured (changing just the database name or username against the *same* already-trusted host is still fine blank); changing host or port with a blank password now shows an inline error ("Ingrese la contraseña al cambiar de servidor o puerto") and the save/test never runs at all.
@@ -138,10 +146,25 @@ Added 2026-07-24. Replaces the previous zero-friction identity model (`Technicia
 - **Login flow**: username (pre-filled from `WindowsIdentityService.getSessionEmail()` via the now-`public` `TechnicianSessionService.deriveUsernameFromEmail()` — a convenience only, never trusted for authentication) + password, submitted to a new `IADService.validateCredentials(username, password)` method (same file as `search()` — no separate interface needed). Returns a new `AdCredentialResult(valid, groups)` model. `AdApiService` calls a **new AD API endpoint that doesn't exist yet** — `POST /api/v1/ad/validate-credentials`, body `{username, password}`, response `{"valid": true/false, "groups": [...]}`, same Bearer service-account token as the existing lookup calls. This is the one piece of this feature genuinely blocked on external work; everything else was built and tested against `MockADService`'s own stub (fixed password `"password123"`, any of its 3 mock users, returns a mock `"AllowedAppUsers"` group) so the app-side flow didn't have to wait for it.
 - **App access is gated by AD group membership, not a local whitelist** — a new `AppConfig.AdAccessConfig.adAccess.allowedGroupName` (`app-config.json`'s `adAccess.allowedGroupName`) is checked against `AdCredentialResult.getGroups()` after a successful password check; failing it shows "No tiene permisos para usar esta aplicación" and the technician stays on the login screen. **The real group name is still unknown — deliberately left blank** (blank = check skipped entirely, same degrade-gracefully convention as GLPI/AD/SMTP being unconfigured elsewhere in this app) pending the user's own investigation into what it's actually called in their AD. Do not guess a value here.
 - **Role source: a new local `USER_ROLE` table** (`username` PK, `role` — `"ADMIN"`/`"USER"`), not AD groups — a deliberately separate concern from the access gate above. New `IUserRoleService`/`SqliteUserRoleService`/`CachingUserRoleService`/`MockUserRoleService`, mirroring `IEquipmentService`'s remote-first/local-fallback pattern (remote-first read, fall back to local), wired into `ServiceLocator` alongside the others. `getRole(username)` defaults to `"USER"` when no row exists — most technicians are never promoted. **Read-only by design, no in-app UI at all** — `IUserRoleService` only exposes `getRole()`; an admin promotes/demotes an account by running SQL directly against `USER_ROLE` (`INSERT`/`UPDATE`/`DELETE`), not through the app. A first version of this added a 6th flat catalog list ("USUARIOS") in Base de Datos for this, admin-gated via `requireAdmin()` — **removed same day, explicit user decision**: direct SQL was preferred over an in-app CRUD screen for something this infrequent. `getAllUsers()`/`setRole()`/`removeUser()` and the `UserRole` model were deleted along with it, not left as unused code. `MockUserRoleService` alone keeps a test-only `setRole()` (not part of the interface) purely so tests can arrange a role without touching a real database.
+  **Superseded 2026-07-30**: `USER_ROLE` was renamed `APP_USER` (surrogate PK, `sede_id` added,
+  `SUPERADMIN` added to the role `CHECK`) and `IUserRoleService` grew `getSedeId()`/
+  `getPermissionsForRole()` — see
+  [Role-based permissions (RBAC)](#role-based-permissions-rbac-a-superadmin-tier-and-sede-scoped-admin-actions-2026-07-30)
+  below. The read-only-by-direct-SQL-only design principle itself is unchanged and now also
+  governs the new `ROLE_PERMISSION` table.
 - **TEMPORARY: mock credential validation** (`AppConfig.AdAccessConfig.mockCredentialValidation`, `app-config.json`'s `adAccess.mockCredentialValidation`, default `false`) — added the same day, since the real AD API genuinely cannot be extended with the `validate-credentials` endpoint yet and the user still needed to log in and use the app. When `true`, `AdApiService.validateCredentials()` skips the HTTP call entirely (`AdApiService.mockValidateCredentials()`): it accepts **any password**, but still confirms the typed username is a real AD account via the already-working `search()` lookup, and still supplies the configured `allowedGroupName` (if set) in its returned groups so the access gate isn't accidentally defeated too. Prints an unmissable `[MOCK]` line to stdout on every use. **Must be set back to `false`** once the real endpoint exists — this is a real, accepted-for-now security bypass (any correct username logs in with any password), not a permanent config knob.
 - **`TechnicianSessionService.loginResolved(ADUser, role)`** replaces `refreshFromWindowsSession()` as the session-populating entry point (called once, by `LoginController`, after every check above already passed — this method does no AD I/O of its own). An `ADMIN` role calls `AdminSession.getInstance().activatePermanently()` — a new activation mode (alongside the existing `activate()`) that skips the 15-minute inactivity timeout entirely, since the technician's own login already proved their identity and the only UI that used to let anyone get back in after that timeout (the removed toggle) no longer exists for anyone to click. `activatePermanently()`/`activate()`/`deactivate()` all remain on one `AdminSession` singleton; `isActive()` just short-circuits `true` for a permanently-activated session instead of ever checking `lastActivity`.
+  **Superseded 2026-07-30**: `activatePermanently()` now takes a `String role` parameter (so a
+  `SUPERADMIN` login activates as `SUPERADMIN`, not `ADMIN`) — see
+  [Role-based permissions (RBAC)](#role-based-permissions-rbac-a-superadmin-tier-and-sede-scoped-admin-actions-2026-07-30)
+  below for the full redesign; `activate()`/`deactivate()` and the timeout mechanics themselves are
+  unchanged.
 - **"Actualizar Perfil desde AD" no longer re-authenticates** — `ProfileController.handleRefreshFromAd()` used to call the now-removed `refreshFromWindowsSession()` (which, on failure, wiped the whole session via a `clear(String)` method that no longer exists). It now calls a plain `search(null, null, username)` lookup and either `TechnicianSessionService.refreshProfileFromAd(ADUser)` (updates name/email/dni only, leaves username/role untouched) or `reportProfileRefreshError(message)` (sets `lastError` for the existing `lblProfileStatus` display, **without** touching the rest of the session) — an AD hiccup while refreshing a profile must not force a technician to log in again.
 - **Real, accepted feature loss for non-admin-role technicians, flagged rather than silently absorbed**: every UI element gated purely on `AdminSession.isActive()` (not wrapped in `requireAdmin()`'s own password-prompt fallback) — `NoteDetailController`'s GLPI Sync/Reject buttons, `PrestamoDetailController`'s Devuelto/No devuelto buttons, and `ProfileController`'s own manual-edit fields — become reachable only by an `ADMIN`-role login now, since there is no longer any UI path for a non-admin-role technician to make `AdminSession.isActive()` true at all. `requireAdmin()`-wrapped actions (Base de Datos catalog CRUD, S/N validation edit) are **unaffected** — that method already had its own independent per-click password fallback, untouched by any of this. Deliberately not rewiring the three admin-session-gated cases above onto `requireAdmin()` too — that would be adding functionality nobody asked for, not fixing a bug.
+  **Superseded 2026-07-30**: every one of these `isActive()`-only gates (including `requireAdmin()`
+  itself, renamed `requirePermission()`) was converted to a specific `Permission` check — see
+  [Role-based permissions (RBAC)](#role-based-permissions-rbac-a-superadmin-tier-and-sede-scoped-admin-actions-2026-07-30)
+  below.
 - **`AboutView.fxml`'s manual (section 11)** was rewritten to match: no more "Se activa desde Ajustes con el botón..." instructions, since that button is gone; now describes automatic role-based activation, the never-expiring session, and that a non-admin-role technician can still reach the `requireAdmin()`-gated actions via the shared password.
 - **Tests**: `SqliteUserRoleServiceTest` (real SQLite-backed, rows seeded with plain `INSERT` statements — matching how a real admin edits this table — not a `setRole()` call), `MockADServiceTest` additions for `validateCredentials()`, `TechnicianSessionServiceTest` additions for `loginResolved()`/`refreshProfileFromAd()`/`reportProfileRefreshError()`, `AdminSessionTest` additions for `activatePermanently()`, `LoginControllerTest` (reflection-injected fields, `MockADService`/`MockUserRoleService` via `ServiceLocator`, no real `Stage.show()` — same standing rule as `UserNoteFallaPersistenceTest`), `LoginViewFxmlTest`.
 
@@ -201,6 +224,91 @@ Added 2026-07-14, in response to a direct user need: they wanted to build up the
 **Autor filter added, History stopped auto-refreshing on open (both fixed 2026-07-10):** `HistoryFilter.authorSearch` + a `txtAuthorSearch` field alongside the recipient search, matching `COALESCE(r.technician_name, tp.name, '')` in `SqliteHistoryService.getFiltered()` — repeated inline rather than referencing the `author_name` SELECT alias, since SQL Server rejects that in a WHERE clause even though SQLite tolerates it (this query runs against both, see [Remote SQL Server](#remote-sql-server-write-through-cache)). Separately: `ViewFactory` caching every section for the session (see below) meant `HistoryController.initialize()`'s one-time `loadGlobal()` never re-ran on later visits, so a note generated after the first visit to Historial didn't appear until "Buscar" was clicked manually. `HistoryController.refresh()` (public, re-runs `loadGlobal(buildFilter())` — reuses current filters, doesn't reset them) is now called by `MainController.handleShowHistory()` on every navigation to History, via the newly-exposed `ViewFactory.getHistoryController()`.
 
 **Sede filter added to Historial and Préstamos Historial (first release).** `HistoryFilter.sedes` (`List<String>`, null = all) mirrors the existing item-type/brand/model filter shape — matched via `appendInViaCatalog(sql, params, "r.sede_id", "SEDE", filter.getSedes())` (`SqliteHistoryService.getFiltered()`), so filtering by a Sede name a technician later renamed away from still finds the notes generated under that name, same as the equipment-catalog filters. A new `IHistoryService.getDistinctSedes()` (default `emptyList()`, real implementation in `SqliteHistoryService`, remote-first/local-fallback in `CachingHistoryService`) populates the menu from Sede names actually used in History, not the full `SEDE` catalog — same "distinct values actually seen" convention as `getDistinctItemTypes()`. `HistoryController` (`mnuSede`, `selSedes`, wired in `initEquipmentMenus()`) and `PrestamoHistoryController` (`mnuSede`, `selSedes`, its own `initSedeMenu()` since that controller has no equivalent equipment-menu grouping) both got the same `MenuButton`/`CustomMenuItem` checkbox pattern already used for every other multi-select filter in this app, added to `HistoryView.fxml`/`PrestamoHistoryView.fxml`'s existing filter rows (next to Autor).
+
+**Superseded 2026-07-30, per direct user report and request**: the Sede filter's own available
+options no longer come from `getDistinctSedes()` at all — the user pointed out that a technician's
+own assigned Sede (see [Role-based permissions (RBAC)](#role-based-permissions-rbac-a-superadmin-tier-and-sede-scoped-admin-actions-2026-07-30))
+might have zero historical notes yet (a brand-new site), in which case "distinct values actually
+seen" would never surface it as a selectable option at all — a real mismatch between the filter
+dropdown and the live `SEDE` catalog. Both controllers now source their Sede menu options from
+`ServiceLocator.getInstance().getEquipmentService().getAllSedes()` instead — `HistoryController`'s
+new `sedeCatalogNames()` helper, `PrestamoHistoryController`'s `initSedeMenu()` updated in place —
+the same active-Sede-catalog source `SettingsController`/`DatabaseSectionController` already read
+from, so the filter dropdown can never drift out of sync with what's actually configured.
+`IHistoryService.getDistinctSedes()` (interface default, `SqliteHistoryService`,
+`CachingHistoryService`) was deleted outright once this left it with zero callers — no dead code,
+per this codebase's own convention.
+
+**Sede filter now defaults to the technician's own assigned Sede, not "Todas."** Same user report,
+same underlying motivation as the RBAC feature's Sede-scoping: a technician mostly cares about
+their own site's history. Both controllers gained a `resetSedeFilterToDefault()` (pre-populates
+`selSedes` with `TechnicianSessionService.getInstance().getSede()` if assigned, otherwise leaves it
+empty), called once at `initialize()` and again from `handleClearFilters()` — mirroring the exact
+"Limpiar filtros restores the default view, not a blank one" precedent this file already documents
+for `chkShowRechazado` above, rather than introducing a second, inconsistent notion of "default."
+This is a starting point only, not a restriction — the technician can still clear or change the
+Sede filter freely, unlike the RBAC feature's actual Sede-scoped permission checks, which are a
+hard block on specific actions, not a UI default. A technician with no Sede assigned at all simply
+sees the pre-existing "Todas" behavior, unchanged.
+
+**Tests**: `HistoryControllerTest` gained `resetSedeFilterToDefaultAddsTechniciansOwnSedeWhenAssigned`/
+`...LeavesEmptyWhenNoSedeAssigned` (reflection-setting `TechnicianSessionService`'s private
+`sedeName` field directly, bypassing the full login/`APP_USER` round trip since
+`resetSedeFilterToDefault()` only ever reads the public `getSede()` getter) and
+`sedeCatalogNamesReturnsActiveSedesFromEquipmentService` (a real `MockEquipmentService` wired via
+`ServiceLocator`). `PrestamoHistoryControllerTest` gained the mirrored set, plus
+`initSedeMenuOptionsComeFromEquipmentServiceCatalogNotHistory` (asserts the actual `MenuButton`'s
+built checkbox items, not just the underlying `List<String>`, to also catch a regression in
+`initSedeMenu()`'s own `populateMenu()` wiring). Full suite: 389 tests passing (383 pre-existing +
+6 new).
+
+**Sede and Motivo columns added to both history tables (2026-07-30), plus a full-detail export
+overhaul.** Direct user request. `SqliteHistoryService.LIST_BASE_SQL` gained a `LEFT JOIN SEDE sd
+ON sd.id = r.sede_id` and `COALESCE(sd.name, '') AS sede`, and `mapSummary()` now sets it — Sede
+was already filterable in History, but never actually shown as a column on a summary row (only
+`getById()`'s single-report query resolved it before this). `motivo` was already selected in
+`LIST_BASE_SQL` (added earlier for the Préstamo "Vencido" overdue check), so no query change was
+needed there — just wiring it up as a visible column.
+
+- **`HistoryController`** (`tblGlobal`, every profile type mixed together): new `colGSede`/
+  `colGMotivo` columns, positioned SEDE right after AUTOR and MOTIVO right after TIPO. Shows the
+  raw `motivo` value for every profile type, Préstamo included — direct user instruction ("for
+  Préstamo notes on the global History section, put Motivo of course").
+- **`PrestamoHistoryController`** (`tblPrestamos`, Préstamo notes only): new `colPSede`, and a new
+  `colPFechaTentativa` column reading the same `NoteReport.getMotivo()` field — but labeled "FECHA
+  TENTATIVA," not "Motivo," per explicit user direction, since `motivo` is overloaded for Préstamo
+  to store the tentative return date, not a real reason (see [Note types and profiles](#note-types-and-profiles)),
+  and every row in this table is a Préstamo.
+- **Export overhaul, per explicit user direction ("CSV/Excel exports should contain every possible
+  note value, NULLs allowed")**: `handleExportCsv()`/`handleExportXlsx()` went from 5 hardcoded
+  columns (Fecha/Tipo/Destinatario/Autor/Estado GLPI) to 25 (`HistoryController.EXPORT_HEADERS`):
+  every summary-row field (Fecha, Autor, Autor DNI, Sede, Tipo, Motivo, Destinatario, Estado,
+  Razón Rechazo, Estado GLPI, and all 8 item-count/status columns) plus 7 profile-specific detail
+  fields that only exist on a full report (Causa Falla, Detalle Falla, CUIT, Responsable,
+  Responsable DNI, Área/Evento, Observaciones) — blank for whichever profile type they don't apply
+  to, by design (accepted NULLs). A new `exportRowValues(NoteReport)` shared helper does a
+  `getById(summary.getId())` fetch per exported row to reach those 7 detail-only fields — a real,
+  explicitly-accepted performance trade-off: a large export is now noticeably slower (one extra
+  query per row) in exchange for actually containing every field. `approvalStatusDisplay(String)`
+  maps the raw `approval_status` value (`PENDING`/`APPROVED`/`RECHAZADO`) to a clean Spanish label
+  for the "Estado" export column (falls back to the raw value for anything unrecognized).
+  `PrestamoHistoryController` has no export feature at all (never did), so it needed no equivalent
+  change.
+- **Tests**: `SqliteHistoryServiceTest` gained `getAllIncludesSedeOnSummaryRows`/
+  `getAllSedeIsBlankWhenNoSedeAssigned`. `HistoryControllerTest` gained
+  `approvalStatusDisplayMapsKnownValues`/`...FallsBackToRawValueForUnknownStatus`.
+  `exportRowValues()`/the CSV/XLSX writers themselves have no dedicated test — same
+  "`ServiceLocator`-dependent, impractical to exercise in isolation" gap already accepted elsewhere
+  in this file for `HistoryController`'s other `initialize()`-adjacent methods; verified instead via
+  `mvn compile`/`mvn test` (full suite green) and direct code review. Full suite: 393 tests passing
+  (389 pre-existing + 4 new).
+
+**Login screen: Enter key submits, from either field (2026-07-30).** Direct user request.
+`pfPassword` already had `onAction="#handleLogin"` (pressing Enter while the password field was
+focused already worked); `txtUsername` was missing the same wiring — a one-line `LoginView.fxml`
+fix, `onAction="#handleLogin"` added to `txtUsername` too, so Enter submits regardless of which of
+the two fields currently has focus. No controller change needed — `handleLogin()` already reads
+both fields' current values, same as clicking "Iniciar sesión" does.
 
 All template placeholders (`{{TOKEN}}`) are named in English (`NAME`, `DNI`, `REASON`, `DATE`, `OBSERVATIONS`, `ASSET_TAG`, `COMPANY_NAME`, `CUIT`, `RESPONSIBLE_NAME`, `RESPONSIBLE_DNI`, `EXPECTED_RETURN_DATE`, `TECHNICIAN_NAME`, `TECHNICIAN_DNI`, `SEDE`, plus the item tables' `{{#ASSET_ITEMS}}` loop's `TYPE`/`BRAND`/`MODEL`/`SERIAL`/`ASSET_TAG`/`DETAILS`, `{{#COUNTABLE_ITEMS}}` loop's `TYPE`/`BRAND`/`MODEL`/`QUANTITY`/`DETAILS`, their `HAS_ASSET_ITEMS`/`HAS_COUNTABLE_ITEMS` presence-flag wrappers (see [Item list redesign](#item-list-redesign-stacked-blocks--tables)), and Devolución's `{{#FAILURE}}` loop's `FAILURE_CAUSE`/`FAILURE_DETAILS`). `DNI` and `CUIT` are kept as-is (Argentine document types with no natural English equivalent). Visible prose inside templates stays in Spanish per the UI language convention — only the token identifiers are English. `NoteGenerationService` still populates an `EMAIL` token internally (from AD/user-note data, for potential future SMTP use), but **no template renders it** — email is deliberately not printed on any note.
 
@@ -265,6 +373,13 @@ A second `TechnicianSessionService` persistence exception, same shape as "Nombre
 
 - **Storage**: `getSede()`/`setSedePreference()`, persisted in `APP_SETTINGS` keyed by `"sede_pref:" + username` (plaintext, local SQLite only). Its own listener list (`addOnSedeChangeListener`/`notifySedeListeners()`) keeps a Sede save from re-triggering the AD-identity or display-name status messages — same crosstalk fix already applied to the display-name preference (see "Nombre para mostrar" save/reset was also flashing the AD identity status message" under Known issues/gotchas).
 - **UI lives in Configuración, not Mi Perfil** — explicit user choice, even though the value is per-technician like the display name. `SettingsController`'s "SEDE" card (own `txtSede`, own "Guardar" button `handleSaveSede()`, own status label `lblSedeStatus`) is the one field in that entire panel **not** gated by `AdminSession` — every other Settings field follows `setDisable(!adminActive)`, but Sede is always editable by any technician. `TextFormatter` caps input at 255 chars, matching the DB bound below.
+  **Superseded 2026-07-30 — self-service Sede removed entirely.** `setSedePreference()`, the
+  `sede_pref:<username>` `APP_SETTINGS` key, `addOnSedeChangeListener`/`notifySedeListeners()`,
+  and the Settings "SEDE" card described in the next bullet were all deleted, not deprecated —
+  Sede is now read from the superadmin-assigned `APP_USER.sede_id`, the same value driving the
+  Sede-scoped admin permissions below. See
+  [Self-service Sede removed entirely](#self-service-sede-removed-entirely--sede-is-now-superadmin-assigned-for-every-technician)
+  under [Role-based permissions (RBAC)](#role-based-permissions-rbac-a-superadmin-tier-and-sede-scoped-admin-actions-2026-07-30).
 - **Mandatory to generate a note or register a Préstamo** — `NoteGeneratorController.handleGenerateNote()` and `PrestamoNewLoanController.handleGuardarPrestamo()` both check `getSede()` blank (right after the existing AD-profile-incomplete check) and block with `showMissingSedeError()` (same orange `showWarningNotice()` pattern as `showMissingTechnicianProfileError()`), directing the technician to Configuración.
 - **Sidebar display**: a third label (`lblSede`, `MainView.fxml`, styled like `lblUsername`) below the welcome/username block, hidden entirely (`visible/managed=false`) when unset rather than showing an empty line. `MainController.updateSedeLabel()` is called both from `updateWelcomeLabels()` (identity changes) and directly from `TechnicianSessionService.addOnSedeChangeListener(...)` (a pure Sede save, which doesn't fire the identity listener).
 - **Snapshotted onto every note, printed on every template** — `NOTE_REPORT.sede` (`TEXT`/`NVARCHAR(255)`, added to both `DatabaseService`/`RemoteDatabaseService`'s `CREATE TABLE`/migration blocks, same "any new column needs both" rule as every other column addition in this file) stores the value at generation time, same "snapshot, don't reference" pattern as `technician_name`/`technician_dni`/`observations`. `NoteGenerationService`'s three `generate*Note()` methods each gained a `sede` parameter (sourced from the live session at generation time, passed by `NoteGeneratorController`); `generateFromStoredReport()` reads `report.getSede()` for reprints. Rendered via a new `{{SEDE}}` token.
@@ -279,6 +394,8 @@ Direct follow-up to the section above, per explicit user request: Sede was free 
 - **`NOTE_REPORT.sede_id`** (nullable FK into `SEDE`) added alongside the existing `sede` TEXT column — the old column is deliberately **left in place, unused**, same "leave the old column, migrate forward" precedent as `TECHNICIAN_PROFILE`/`NOTE_REPORT.technician_id` (no `DROP COLUMN`). `SqliteHistoryService.insertReport()` now writes `sede_id`; `getById()` resolves the display name via `LEFT JOIN SEDE`, same "SQL gains JOINs, Java row-mapping code doesn't change" pattern as `provider_name`/`provider_id` — `NoteReport.getSede()`'s callers (templates, `NoteGenerationService`) needed zero changes.
 - **Historical backfill, and why newly-created rows are active, not deprecated — a deliberate deviation from the NOTE_ITEM/NOTE_PROVEEDOR precedent.** `DatabaseService.migrateSedeIdSchema()` / `RemoteDatabaseService`'s mirror (both reuse `resolveOrCreateCatalogRow()`, naturally idempotent — only ever selects `NOTE_REPORT` rows still missing `sede_id`) resolve every existing row's free-text `sede` into a matching or newly-created `SEDE` row. Unlike the catalog-FK backfill for Type/Brand/Model/Provider (which creates unmatched historical values as `deprecated=1`, since a real admin-curated active catalog already existed independently), a backfilled Sede row here is left **active** (`deprecated=0`) — `SEDE` is a brand-new table with no pre-existing catalog to fall back on, so marking every backfilled row deprecated would leave the Settings combobox with zero selectable options, blocking every technician from generating a note (Sede is mandatory) until an admin manually reactivated each one. Confirmed against the real `data/noteapp.db` this was built against: 0 existing `NOTE_REPORT` rows at the time, so the backfill was a no-op there, but the logic still needed to be correct for installations with real history.
 - **Settings: `ComboBox<Sede>` instead of a free-text field** — `cmbSede` replaces `txtSede`, non-editable strict selection from the admin-curated list, same pattern as `ProviderNoteController.cmbProviderSearch`. Populated at `initialize()` from `equipmentService.getAllSedes()`; no refresh-on-tab-show wiring was added (a deliberate scope call, not an oversight — this exact controller's own S/N Validation table already has the same "load once at init, no refresh-on-show" precedent, and Sede catalog changes are expected to be rare/admin-driven).
+  **Superseded 2026-07-30**: `cmbSede` itself was removed from `SettingsView.fxml` — self-service
+  Sede selection no longer exists at all, see the RBAC section referenced above.
 - **`TechnicianSessionService` now persists a Sede *id*, not a name** — `setSedePreference(Integer sedeId, String sedeName)` (was `setSedePreference(String value)`) stores only the id in `APP_SETTINGS` (`sede_pref:<username>`, unchanged key, just an id-as-string now instead of free text) and caches the resolved display name in memory. `getSedeId()` is new (feeds `NoteReport.sedeId`); `getSede()` keeps its existing signature/meaning (display name) for every existing caller (sidebar label, templates via `NoteGeneratorController`/`PrestamoNewLoanController`).
   - **Pre-2026-07-24 installs' stored preference (free text, not an id) is treated as unset, not crashed on** — `loadSedePreference()` tries `Integer.parseInt` on the stored value; on `NumberFormatException`, clears both fields rather than propagating. Every technician who'd already set a free-text Sede preference needs to re-select it once via the new combobox after upgrading — an accepted, explicit one-time reset, not a silent data-loss bug (there's no safe way to fuzzy-match old free text onto a specific new catalog row).
   - **Resolves the display name including deprecated rows, deliberately** — `resolveSedeName(id)` has no `deprecated = 0` filter, unlike every other "current" catalog lookup in this app. If a technician's saved Sede gets renamed by an admin (deprecating the old row), their preference should still show *something* rather than silently going blank — which, since Sede is mandatory, would otherwise block them from generating notes until they noticed and re-picked one. This is a deliberate, narrow exception to the "always filter deprecated" convention, not an inconsistency.
@@ -428,15 +545,516 @@ Added 2026-07-20, same day as the regex cap above — direct user follow-up afte
 - **`created_at`, `glpi_status_updated_at`, `return_status_updated_at` deliberately left untouched** — these are genuinely a different problem (a real date/time value stored as plain `NVARCHAR(MAX)` ISO-8601 text, not a free-text field that merely lacks a sensible bound) and the user wants to migrate them to a real `TIMESTAMP`-family type, but explicitly wants that deferred pending confirmation of which engine (SQL Server `DATETIME2` vs. a future PostgreSQL `TIMESTAMP`) the remote backend will ultimately use — see [Deferred: real timestamp type for date/time columns](#deferred-real-timestamp-type-for-datetime-columns) below. A `// TODO` comment was left directly above `NOTE_REPORT`'s `CREATE TABLE` block in `RemoteDatabaseService.java` pointing back to this decision.
 - **No test added for the narrowing migration** — same "no live SQL Server instance anywhere in this project's test infrastructure" limitation noted repeatedly elsewhere in this file (`RemoteDatabaseServiceTest` only ever exercises unreachable-host paths); `narrowNvarcharIfNeeded()`/`currentMaxLength()` query `information_schema.columns`, a SQL-Server-specific view with no SQLite equivalent, so there's no dialect-neutral stand-in database this could be tested against the way `CatalogMigrationToolTest`/`SqlServerSeedSqlSnValidationTest` manage for other SQL-Server-only logic.
 
-### Deferred: real timestamp type for date/time columns
+### Real timestamp type for date/time columns — resolved 2026-07-29 (SQL Server side), dead NOTE_REPORT columns dropped same day
 
-Flagged (not implemented) 2026-07-20, during the length-bounds work above. `NOTE_REPORT.created_at`, `NOTE_ITEM.glpi_status_updated_at`, and `NOTE_ITEM.return_status_updated_at` are all stored as plain ISO-8601 strings (`LocalDateTime.now().toString()`, written/read in `SqliteHistoryService.java` via `PreparedStatement.setString()`/`ResultSet.getString()` + `LocalDateTime.parse()`) rather than a real date/time database type — `NVARCHAR(MAX)` on SQL Server, dynamically-typed `TEXT` on SQLite. The user wants to migrate these to a proper `TIMESTAMP`-family type eventually (SQL Server `DATETIME2`, or PostgreSQL's native `TIMESTAMP` if the PostgreSQL revert currently under evaluation goes ahead instead — see `notes-app-db-schema-size-report.md` on the user's Desktop, and [PostgreSQL replaced by SQL Server](#remote-sql-server-write-through-cache) above for that decision's original context), but explicitly asked to hold off implementing until that engine choice is confirmed, rather than doing the work twice.
+Flagged as deferred 2026-07-20 (see the superseded discussion this replaces, preserved via git history), resolved 2026-07-29 alongside a database-cleanup pass the user explicitly requested ("drop the dead columns and resolve the timestamp-type question now") after being asked directly whether the schema was finished/normalized enough to hand to a DB administrator. The engine choice was confirmed as SQL Server (no PostgreSQL revert happened), so this no longer needed to wait.
 
-- **Why this isn't a trivial DDL tweak**: `SqliteHistoryService` is the *same class* used for both the local SQLite connection and the remote connection (`ServiceLocator.java` — parameterized by a `Connection` supplier, not subclassed per engine; see [SQLite schema mirrors the remote SQL Server schema](#sqlite-schema-mirrors-the-remote-sql-server-schema)). A real fix means switching the write/read code from `setString()`/`getString()`+`parse()` to `setTimestamp()`/`getTimestamp()` (the standard JDBC bridge type), which needs to keep working correctly against both a `TEXT`-affinity SQLite column and whichever real timestamp type the remote engine ends up using — a coordinated code change, not just a schema one, and one this project currently has no live SQL Server instance to validate end-to-end (same limitation noted elsewhere in this file for other SQL-Server-specific work).
-- **SQLite would stay `TEXT` regardless of the remote engine decision** — SQLite has no true fixed-size timestamp type; ISO-8601 `TEXT` is SQLite's own documented, recommended way to store date/time values, not a shortcoming to fix.
-- **Also covers `HistoryController`'s date-range filtering**: `SqliteHistoryService`'s `WHERE r.created_at >= ?` / `< ?` clauses currently rely on `LocalDateTime.toString()`'s ISO-8601 string format sorting/comparing correctly as plain text — any future change to how `created_at` is stored or bound must keep that comparison correct, not just the read/write round-trip.
+- **`RemoteDatabaseService.java`**: `NOTE_REPORT.created_at`, `NOTE_ITEM_GLPI_TRACKING.status_updated_at`, and `NOTE_ITEM_RETURN_TRACKING.status_updated_at` are now real `DATETIME2` columns instead of `NVARCHAR(MAX)`, in both the `CREATE TABLE` blocks (new installs) and a new migration path for existing ones: `migrateTimestampColumnsToDatetime2()` → `alterToDatetime2IfNeeded()` (checks `information_schema.columns.DATA_TYPE`, no-ops if already `datetime2`, otherwise runs `ALTER TABLE ... ALTER COLUMN ... DATETIME2`) → `isAlreadyDatetime2()`. Wrapped in the same swallowed try/catch as `narrowNvarcharIfNeeded()` above — an installation with some non-ISO-8601 garbage already stored would fail the `ALTER COLUMN` and is left on the old `NVARCHAR(MAX)` shape rather than blocking startup.
+- **No write-path change was needed.** `SqliteHistoryService`'s writes (`ps.setString(idx, LocalDateTime.now().toString())` / `report.getCreatedAt().toString()`) were already plain ISO-8601 `'T'`-separated strings — SQL Server implicitly (and losslessly) converts these to `DATETIME2` on `INSERT`/`UPDATE`, a documented, locale-independent conversion. Kept unchanged rather than switching to `setTimestamp()` specifically to avoid a second, riskier change with no live SQL Server instance to validate it against (same limitation noted repeatedly elsewhere in this file).
+- **Read path made tolerant of both engines' string rendering, not switched to `getTimestamp()`.** `DATETIME2`'s own `getString()` representation (`"yyyy-MM-dd HH:mm:ss[.fffffff]"`, space-separated) differs from SQLite's stored ISO-8601 text (`'T'`-separated) — the two new helpers `parseStoredTimestamp(String)` (tries `LocalDateTime.parse()` first, falls back to swapping the first space for `'T'` on `DateTimeParseException`) and `normalizeTimestampString(String)` (same space→`'T'` swap, for the two tracking-table columns that are kept as raw display strings rather than parsed to `LocalDateTime` — see `NoteDetailController`/`PrestamoDetailController`'s `.substring(0, 16)` display trick) replace the previous bare `LocalDateTime.parse(rs.getString(...))`/raw-passthrough calls at all 4 read sites in `SqliteHistoryService.java`. SQLite rows always succeed on the first ISO branch and never touch the fallback, so local-only installations are unaffected.
+- **`HistoryController`'s date-range filtering is actually improved, not just preserved**, once `created_at` is a real `DATETIME2`: `WHERE r.created_at >= ?` / `< ?` now compares as a native datetime comparison on the remote connection (SQL Server implicitly converts the bound ISO-8601 string parameter), not a lexical string comparison — the exact fragility the original deferred-timestamp entry flagged as a future risk no longer applies there. SQLite's own comparison is unchanged (still lexical over `TEXT`, still correct as long as all stored values share the same ISO-8601 format, which they do).
+- **`NOTE_REPORT.glpi_synced` and `.sede` dropped as dead columns**, same session, same user request. Both were confirmed to have zero readers/writers anywhere in the app (`glpi_synced`: never wired to anything, SQL-Server-only — `DatabaseService.java`'s SQLite schema never declared it at all; `sede`: fully superseded by `sede_id` once Sede became catalog-backed, see [Sede became catalog-backed](#sede-became-catalog-backed--sede-table-combobox-deprecated-flag-rename-2026-07-24)). `DatabaseService.java` (SQLite): new `dropDeadNoteReportColumns(Connection, Statement)`, called from `migrateSchema()` right after `migrateSedeIdSchema()` (which now guards `if (!columnExists(..., "sede")) return;` at its very start, since a database that never had — or already lost — the `sede` column has nothing left to backfill from); the `addColumnIfMissing(..., "sede", ...)` call that used to unconditionally re-add the column every startup was removed, or the drop would just get silently undone on the next run. `RemoteDatabaseService.java` mirrors this exactly (`dropDeadNoteReportColumns(Statement, Connection)`, reusing the existing `dropDefaultConstraintIfAny()` helper for `glpi_synced`'s `DEFAULT 0` before dropping it — SQL Server rejects `DROP COLUMN` on a column with an attached default constraint). Both wrapped in the same swallowed-try/catch "fail safely" pattern as every other migration step in these two files. A brand-new install never creates either column in the first place (removed from both `CREATE TABLE` blocks), so this migration only ever fires on an already-running installation.
+- **Tests**: `DatabaseServiceMigrationTest.migrateSchemaDropsDeadSedeColumnFromAPreExistingDatabase` (SQLite-side drop, verified end-to-end against a real temp database) — no SQL Server-side equivalent, same "no live SQL Server instance anywhere in this project's test infrastructure" limitation as `narrowNvarcharIfNeeded()` above; `migrateSchemaAddsPrestamoColumnsToAPreExistingDatabase`'s existing `sede`-column assertion flipped from `assertTrue` to `assertFalse` to match. Full suite: 338 tests passing (337 + 1 new).
+- **A separate, pre-existing issue surfaced while reading this code — flagged the same day, fixed the next.** `SqliteHistoryService.updateItemGlpiStatus()`/`updateItemReturnStatus()` both used `INSERT ... ON CONFLICT(item_id) DO UPDATE` — SQLite/PostgreSQL upsert syntax that SQL Server does not support at all (no `ON CONFLICT` clause exists in T-SQL; the rest of this codebase's SQL Server upserts were deliberately rewritten as plain check-then-insert/update for exactly this reason, see [Remote SQL Server](#remote-sql-server-write-through-cache)'s "Upserts rewritten as plain check-then-insert/update" section). Since `SqliteHistoryService` is reused unchanged against the remote connection, these two methods would have failed outright against a real SQL Server database — a real correctness gap given the remote engine is confirmed SQL Server going forward, not a hypothetical. Fixed by rewriting both to the same `UPDATE ...; if (executeUpdate() == 0) INSERT ...` shape already established for every other upsert in this codebase (e.g. `SqliteEquipmentService.carryForwardModelStockAcrossLink()`) — plain, portable SQL that runs correctly against both engines. Behavior is unchanged for every real caller (an item transitioning from an already-existing `PENDING` tracking row hits the `UPDATE` branch exactly as before); the `INSERT`-if-missing branch only matters defensively, for an item with no tracking row yet (row absence being how `N_A` is represented — see the `NOTE_ITEM` normalization notes above). Tests: `SqliteHistoryServiceTest.updateItemGlpiStatusInsertsTrackingRowWhenNoneExistedYet()`/`updateItemReturnStatusInsertsTrackingRowWhenNoneExistedYet()`, exercising the `INSERT` branch directly (the pre-existing `...PersistsStatusAndReason()` tests only ever exercised the `UPDATE` branch, since their fixture items already start `PENDING`). Full suite: 340 tests passing (338 + 2 new).
 
 ---
+
+## Note approval workflow (2026-07-29)
+
+`NOTE_REPORT` gains `approval_status TEXT NOT NULL DEFAULT 'PENDING'` (`PENDING`/`APPROVED`/`RECHAZADO`)
+and a nullable `rejection_reason` — every newly-generated note starts `PENDING`, so a technician
+picking the wrong note type or making a mistake can't have it affect real history until an admin
+reviews it. Explicit user motivation: "This tells if a note is valid or not... to prevent
+mistakenly-created notes to have any impact on the real history." The stricter of two options was
+picked deliberately (an extra admin step on every note, vs. zero-friction-but-retroactive
+correction) — see `project_stock_approval_af_design.md` in memory for the full tradeoff discussion.
+
+- **Gates every item-level action row, not just a display label.** While `PENDING` or `RECHAZADO`,
+  `NoteDetailController.buildItemCard()`/`PrestamoDetailController.buildItemCard()` render **no**
+  GLPI row, Préstamo return-status row, or Provider return-status row at all (see
+  [Provider conditional return tracking](#provider-conditional-return-tracking-2026-07-29) below) —
+  not even the inert "— Sin acción GLPI" badge. Only once `APPROVED` do these popups look exactly
+  as they did before this feature.
+- **Report-level Aprobar/Rechazar UI**: both detail popups gained a `vboxApproval` section
+  (`NoteDetailView.fxml`/`PrestamoDetailView.fxml`, inserted before the existing "EQUIPOS" block)
+  showing a status badge always (`⏳ Pendiente de aprobación` / `✓ Aprobada` /
+  `✗ Rechazada: {reason}`), plus **Aprobar/Rechazar buttons only while `PENDING` and admin-active**
+  — same `adminMode && AdminSession.getInstance().isActive()` gate every other admin action in
+  these popups already uses. Rejecting requires a mandatory reason, same `promptRejectionReason()`-
+  style `TextArea` pattern (300-char cap) as GLPI reject/Préstamo lost. `buildApprovalSection()`/
+  `handleApprove()`/`handleRejectNote()`/`promptNoteRejectionReason()` are duplicated verbatim
+  between `NoteDetailController` and `PrestamoDetailController` per this codebase's
+  no-shared-abstraction convention (same precedent as `buildGlpiStatusRow()`/`buildReturnStatusRow()`
+  already being independent between these two controllers).
+- **`approved_by`/`approved_at` deliberately NOT added.** Explicit user decision after being asked:
+  this is the same "who did what when" shape as the audit logging removed in
+  [Audit logging and SUPERADMIN role](#audit-logging-and-superadmin-role--built-then-descoped-for-the-first-release) —
+  add it back alongside a real audit-logging rebuild, not piecemeal under a different name now.
+- **History's default view shows PENDING + APPROVED, RECHAZADO hidden behind a checkbox.**
+  `HistoryView.fxml` gained `chkShowRechazado` ("Mostrar rechazadas", default unchecked) next to
+  "Limpiar filtros". `HistoryController.buildFilter()` sets
+  `f.setApprovalStatuses(List.of("PENDING", "APPROVED"))` when unchecked; when checked, no
+  approval-status filter is applied at all (every status shown, RECHAZADO included) — a RECHAZADO
+  note is void but still viewable on purpose, an admin didn't lose the record. `handleClearFilters()`
+  resets the checkbox to unchecked and now calls `loadGlobal(buildFilter())` instead of a bare
+  `new HistoryFilter()`, so "Limpiar filtros" restores the default view rather than momentarily
+  revealing RECHAZADO notes. The PENDING+APPROVED default lives in the **controller**, not the
+  service — `SqliteHistoryService.getFiltered()` with no explicit `approvalStatuses` still returns
+  every status, same as any other unset filter field.
+- **New sidebar badge, on the Historial nav button alongside the existing GLPI-pending badge** —
+  not a new nav row. `MainView.fxml`'s Historial `StackPane` gained a second `Label`
+  (`lblApprovalBadge`, same `.nav-badge` style). `MainController.refreshPendingCounts()` gained a
+  third count (`historyService.getPendingApproval().size()`) inside the same background-thread/
+  `Platform.runLater` structure the other counts already use.
+  **Follow-up, same day — three fixes/additions after seeing it live**:
+  - **Overlap bug**: the first attempt placed `lblApprovalBadge` at `StackPane.alignment="CENTER_LEFT"`,
+    which sat directly on top of the "Historial" label text (`.nav-button` is `-fx-alignment:
+    CENTER_LEFT`, confirmed by reading the CSS — the button's own text is left-aligned, not
+    centered, so a "opposite corner" badge collided with it instead of avoiding it). Fixed by
+    wrapping both badges in one `HBox` (`spacing="6"`, `StackPane.alignment="CENTER_RIGHT"`) so
+    they lay out automatically side-by-side at the button's right edge, immune to either badge's
+    text length changing — no more manual per-badge margin math.
+  - **Distinct color**: `lblApprovalBadge` (and its Préstamos counterpart below) got a new
+    `.nav-badge-approval` CSS class (`-fx-text-fill: #ef4444`, red) so it can't be confused with
+    the orange `.nav-badge` GLPI count sitting right next to it.
+  - **Also added to the Préstamos nav button** — explicit user reversal of the original "Historial
+    only" decision from earlier the same day. `MainView.fxml`'s Préstamos `StackPane` gained the
+    same `HBox`-wrapped pair (`lblPrestamosApprovalBadge` + the existing `lblPrestamosBadge`).
+    `MainController` gained `isPrestamoProfileType(String)` and a `prestamoApprovalPending` count —
+    derived from the *same* already-fetched `getPendingApproval()` list (filtered client-side by
+    profile type), not a second query, since that list already has to be fetched for the Historial
+    badge anyway.
+- **Schema/service shape**: `HistoryFilter.approvalStatuses` (+ static factory `pendingApproval()`,
+  mirroring `pendingGlpiSync()`); `IHistoryService.getPendingApproval()`/`updateNoteApprovalStatus()`
+  (both `default` methods, matching the existing optional-capability convention);
+  `SqliteHistoryService.updateNoteApprovalStatus()` is a plain `UPDATE NOTE_REPORT SET
+  approval_status = ?, rejection_reason = ? WHERE id = ?` — **not** the per-item
+  upsert-into-tracking-table pattern `updateItemGlpiStatus()`/`updateItemReturnStatus()` use, since
+  the `NOTE_REPORT` row always already exists by the time approval happens. `NoteReport.approvalStatus`
+  defaults to `"PENDING"` via a Java field initializer, so every `new NoteReport()` call site
+  (`NoteGeneratorController`, `PrestamoNewLoanController`) needed **no explicit line added** — the
+  default alone is enough for the column round-trip to be correct.
+- **Row-level visual accent (Historial + Préstamos Historial), added same day after being asked
+  for one**: three options were presented (a colored left-border, a dedicated "Aprobación" column,
+  or dimming RECHAZADO rows) — the left-border was picked. `HistoryController.computeRowStyle()`/
+  `PrestamoHistoryController.computeRowStyle()` both gained an `approvalBorderStyle()`/
+  `approvalBorderColor()` helper (duplicated per convention): a 4px left border, orange for
+  PENDING, red for RECHAZADO, layered on top of whatever GLPI/return-status background already
+  applies, so it reads as a second, independent signal rather than replacing the existing coloring.
+  - **A real composition bug caught while implementing the Préstamos side, not by inspection** —
+    `-fx-border-color`/`-fx-border-width` are single CSS properties, not additive: naively
+    concatenating the existing "Vencido" bottom-border (`0 0 2 0`) with a second, separate
+    `-fx-border-color`/`-fx-border-width` declaration for the approval accent would have made the
+    second silently win outright (last-write-wins), dropping the Vencido border on any row that's
+    also PENDING/RECHAZADO. Fixed by composing both into one multi-layer, comma-separated
+    declaration (`-fx-border-color: #ef4444, #f97316; -fx-border-width: 0 0 2 0, 0 0 0 4;`) — the
+    same multi-layer model this app's dialogs already use for `-fx-background-color`.
+    `HistoryController`'s own version has no second border source to compose with, so its simpler
+    single-declaration form is correct as-is.
+  - **Follow-up, same day — border-shift bug + APPROVED green accent, both from one fix.** User
+    report: rows carrying a border (PENDING/RECHAZADO) visibly shifted their content rightward
+    relative to borderless APPROVED rows — border insets consume layout space, so a border that
+    only *sometimes* exists changes that row's effective content width. The user's own suggested
+    fix and the actual root-cause fix were the same thing: make **every** row always render a
+    left border (color-only difference), so the border's width never varies and rows never shift
+    relative to each other. This simultaneously satisfied the user's second ask — a green accent
+    for APPROVED, "so the app is explicit on the note status" — since APPROVED now needed a real
+    color anyway rather than "no border." `approvalBorderColor()` in both controllers now returns
+    `#22c55e` (green) for APPROVED instead of contributing nothing, and the border-width layer for
+    that case is always appended, never conditionally omitted.
+  - **Tests**: `HistoryControllerTest` gained 3 new `computeRowStyle` cases (PENDING/RECHAZADO/
+    APPROVED); `reportWith()`'s test helper now explicitly sets `APPROVED` so the file's
+    pre-existing GLPI-color assertions aren't also implicitly testing the new border (`NoteReport`
+    defaults to PENDING). New `PrestamoHistoryControllerTest.java` (this controller had no test
+    file before) — same reflection-on-a-bare-instance approach, with a dedicated
+    `computeRowStyleCombinesOverdueBottomBorderAndApprovalLeftBorder` test specifically guarding
+    against the last-write-wins bug above. After the border-shift/green-accent follow-up, 6
+    pre-existing `HistoryControllerTest` background-color assertions were loosened from
+    `assertEquals` (exact string) to `assertTrue(...startsWith(...))`/`contains(...)`, since every
+    background now always has a trailing border suffix appended; `PrestamoHistoryControllerTest`'s
+    two "no border" cases were renamed/rewritten to assert the green border instead.
+  - **Superseded 2026-07-29 — the border approach itself was replaced with a dedicated column,
+    per direct user report.** However thin, a left/right border *always* consumes layout space,
+    which the row's own content must shrink to make room for — but the `TableView`'s column
+    *headers* never got a matching inset, so every row's cells ended up shifted a few pixels
+    relative to the header text above them ("looks kind of bad," the user's own words). Presented
+    4 options (dedicated status column / move the border to the row's right edge / a
+    background-gradient hard-stop with no layout shift at all / just a thinner border); the
+    dedicated column was picked, since it's the only one where the header and cells are
+    *structurally* guaranteed to reserve the same width, not just tuned to currently look right.
+    `HistoryController`/`PrestamoHistoryController.computeRowStyle()` no longer append any
+    approval-related border at all — `HistoryView.fxml`/`PrestamoHistoryView.fxml` each gained a
+    new, narrow (`prefWidth`/`minWidth`/`maxWidth="8"`, `resizable="false"`, `sortable="false"`,
+    blank header text), first `TableColumn` (`colGApproval`/`colPApproval`) whose cell factory
+    paints `-fx-background-color` (and `-fx-padding: 0` so the color fills the cell edge-to-edge,
+    overriding `.modern-table .table-cell`'s own `0 10` padding) from a NoteReport's approval
+    status — inline style wins over the stylesheet regardless of selector specificity, so this
+    still renders correctly on a selected (teal-background) row. `approvalBorderColor()` in both
+    controllers was renamed `approvalStatusColor()` to match its new role (a cell color, not a
+    border color) — same PENDING→orange/RECHAZADO→red/APPROVED→green mapping, unchanged.
+    `PrestamoHistoryController.computeRowStyle()` keeps its "Vencido" bottom-border exactly as
+    before (a *bottom* border doesn't shift horizontal content the way a left/right one does, so
+    it never had this problem) — with the approval left-border layer gone, the multi-layer
+    comma-separated composition this method used to need (to avoid the CSS last-write-wins bug
+    documented above) is gone too; there's only ever at most one border source now.
+    **Tests**: `HistoryControllerTest`'s 3 border-suffix tests replaced with
+    `approvalStatusColor{Pending,Rechazado,Approved}Is{Orange,Red,Green}` (calling the renamed
+    method directly) plus `computeRowStyleNoLongerAppendsAnyBorder`; `PrestamoHistoryControllerTest`
+    similarly rewritten (its own combined-border test no longer applies, since there's nothing left
+    to combine). Full suite: 342 tests passing (340 + 2 net new).
+- **Tests**: `SqliteHistoryServiceTest` (default-PENDING on save, `getFiltered` with/without explicit
+  `approvalStatuses`, `updateNoteApprovalStatus` persists, `getPendingApproval`),
+  `HistoryControllerTest` (reflection-seeded `buildFilter()` tests for the checkbox-driven default —
+  needed a `Platform.startup()` `@BeforeAll` this file didn't have before, since `DatePicker`'s
+  static init throws `NoClassDefFoundError` without a running FX toolkit),
+  `DatabaseServiceMigrationTest` (column-exists assertions), `NoteDetailViewFxmlTest`/
+  `PrestamoDetailViewFxmlTest` (extended to assert the new `vboxApproval` `fx:id` loads).
+
+## Provider conditional return tracking (2026-07-29)
+
+Reuses `ReturnStatus`/`NOTE_ITEM_RETURN_TRACKING` exactly as Préstamo already has it (see
+[Per-item return status](#per-item-return-status-returnstatus)) for Provider (Entrega - Proveedor)
+notes, gated by a new config list — some Proveedor motivos are round-trips (Garantía, Reparación),
+others are permanent departures (Otro, Devolución de préstamo), and only the former should ever show
+a return-tracking row.
+
+- **`AppConfig.returnableMotivosProveedor`** (flat top-level field, matching `failureTriggerMotivo`'s
+  style — not a nested config class) names which `motivoOptions.proveedor` values trigger this,
+  same "rename the config value, not the code" precedent `failureTriggerMotivo` already set for
+  Devolución's Falla popup. Shipped default: `["Garantía", "Reparación"]`.
+- **No controller changes needed for note creation** — a real correction of the original design
+  sketch, found by reading the actual code: `SqliteHistoryService.save()` already computes its
+  `isPrestamo` boolean entirely internally (from `report.getProfileType()`) before calling
+  `insertItems()`, never supplied by any caller. The same server-side pattern extends cleanly to
+  also check `report.getMotivo()` (already populated by the time `save()` runs, for every note type)
+  — so `NoteGeneratorController`/`NotePreviewController`/`PrestamoNewLoanController` needed **zero**
+  changes. `insertItems()`'s boolean parameter was renamed `isPrestamo` → `needsReturnTracking`
+  (`= isPrestamo(...) || isProviderReturnable(...)`) to reflect this.
+- **Distinct wording from Préstamo's, per explicit design requirement** — same underlying state
+  machine, different labels: prefix `"Proveedor: "` (was `"Préstamo: "`), badges
+  `"⏳ Pendiente recepción"` / `"✓ Recibido"` / `"✗ No recibido"`, buttons `"Recibido"` /
+  `"No recibido"`. New `NoteDetailController.buildProviderReturnStatusRow()`/
+  `handleProviderReceived()`/`handleProviderNotReceived()`/`promptProviderNotReceivedReason()` —
+  duplicated from `PrestamoDetailController`'s equivalents per the no-shared-abstraction convention,
+  not parameterized.
+- **Applies to both asset and countable items**, same "whole note, not per item-type" semantics
+  Préstamo already has — a shipped countable (e.g. cables sent for warranty replacement) needs
+  return confirmation too.
+- **Gated by the approval workflow too** — a returnable Provider note's asset shows both a GLPI row
+  and this row, but only once `APPROVED` (see [Note approval workflow](#note-approval-workflow-2026-07-29)
+  above); the single `if ("APPROVED".equals(...))` check in `buildItemCard()` wraps both.
+- **`isProviderReturnableNote()`/`isProviderReturnable()` duplicated between
+  `SqliteHistoryService` (service-side, drives `insertItems()`) and `NoteDetailController`
+  (UI-side, drives whether to render the row at all)** — same convention as `genericLabel()` being
+  duplicated three times elsewhere in this codebase.
+- **Tests**: `SqliteHistoryServiceTest` — provider items land `PENDING` when Motivo is in the
+  returnable list, `N_A` otherwise (both loading the real `config/app-config.json` via
+  `ConfigService.getInstance().load()`, same precedent several other tests in this suite already use).
+
+## Role-based permissions (RBAC), a SUPERADMIN tier, and Sede-scoped admin actions (2026-07-30)
+
+Explicit user motivation: a "prohibit-all" rule — every admin-tier action is denied by default,
+and only allowed per role — specifically to prevent a newly-added sensitive feature from being
+silently reachable by everyone if a permission check is forgotten when it's built. This replaces
+the flat `ADMIN`/`USER` split from [Login screen and role-based admin mode](#login-screen-and-role-based-admin-mode)
+with a third `SUPERADMIN` tier and a real, DB-backed permission grant system — a from-scratch
+redesign, not the audit-logging-era `SUPERADMIN` role removed in
+[Audit logging and SUPERADMIN role](#audit-logging-and-superadmin-role--built-then-descoped-for-the-first-release)
+(that removal is otherwise unaffected; this is unrelated new work, not a revival of the deleted code).
+
+### `Permission` enum + `APP_USER`/`ROLE_PERMISSION` — a hybrid, not a hardcoded map
+
+A code-only permission map (`Map<Role, Set<Permission>>` baked into `AdminSession`) was rejected
+once the user asked the obvious follow-up question: how would a superadmin's permission change
+actually reach every installation sharing one remote database? The answer is the same
+remote-first/local-fallback shape every other admin-curated catalog in this app already uses
+(`SEDE`, `PROVIDER`, etc.) — `models/Permission.java` (a plain enum: `MANAGE_TYPES`,
+`MANAGE_BRANDS`, `MANAGE_MODELS`, `MANAGE_STOCK`, `MANAGE_PROVIDERS`, `MANAGE_SEDES`,
+`EDIT_SN_VALIDATION`, `EDIT_SMTP_CONFIG`, `EDIT_GLPI_CONFIG`, `EDIT_AD_CONFIG`,
+`EDIT_AF_FORMAT_CONFIG`, `APPROVE_NOTES`, `SYNC_GLPI`, `VALIDATE_RETURNS`,
+`OVERRIDE_PROFILE_FIELDS`) defines *what actions exist* at compile time, while a new
+`ROLE_PERMISSION` table (`role`, `permission`, PK on both) defines *who currently has them* —
+edited directly via SQL by a superadmin, same "no in-app CRUD, direct SQL only" precedent
+`USER_ROLE` already established (see the removed-6th-catalog-list bullet above). **Absence of a
+row is the only "denied" state** — there is no separate explicit-deny flag, matching this
+codebase's standing "row exists only when applicable" convention (`NOTE_ITEM_GLPI_TRACKING`,
+`NOTE_ITEM_RETURN_TRACKING`, `NOTE_REPORT_REJECTION`, etc.) — a stray/unrecognized permission
+string from hand-edited SQL is silently ignored (`Permission.valueOf()`'s `IllegalArgumentException`
+swallowed in `SqliteUserRoleService.getPermissionsForRole()`), not thrown, matching this app's
+"fail safely" convention elsewhere.
+
+- **`USER_ROLE` (`username` PK, `role`) renamed to `APP_USER`** (`id` surrogate PK, `username
+  UNIQUE`, `role CHECK (role IN ('USER','ADMIN','SUPERADMIN'))`, `sede_id INTEGER REFERENCES
+  SEDE(id)`) — not just a rename: `USER` on its own is a reserved keyword/niladic function in
+  T-SQL, so the SQL Server side could never have created a table literally named `USER` at all.
+  `sede_id` folds the previously-separate concept of "which Sede is this account tied to" (see
+  below) into the same row, since both role and Sede assignment are superadmin-curated facts
+  about one account.
+- **Migration, not a breaking rename** — `DatabaseService.createUserRoleTable()` /
+  `RemoteDatabaseService`'s mirror check whether `APP_USER` already exists; if not (a pre-2026-07-30
+  install), `migrateUserRoleIntoAppUser()` copies every existing `USER_ROLE` row across (`sede_id`
+  starts `NULL` for all of them — Sede assignment is a brand-new concept, nothing to carry
+  forward) and drops the old table. `ROLE_PERMISSION` is seeded **only the first time it's
+  created**, never on every startup — `seedDefaultRolePermissions()` grants `ADMIN` every
+  `Permission` except `EDIT_SMTP_CONFIG`, and `SUPERADMIN` every `Permission` including it,
+  matching pre-RBAC status quo (a plain `ADMIN` used to be able to edit everything in Settings
+  except nothing was SUPERADMIN-only before now) plus the one new restriction the user asked for.
+  Seeding only once means a superadmin's later revocation (a `DELETE` against `ROLE_PERMISSION`)
+  is never silently re-granted on the next app launch.
+- **`IUserRoleService`** gained `getSedeId(String username)` and
+  `getPermissionsForRole(String role)` alongside the existing `getRole(username)` — implemented
+  in `SqliteUserRoleService` (plain `SELECT`s against `APP_USER`/`ROLE_PERMISSION`),
+  `CachingUserRoleService` (remote-first, local-fallback, same try/catch shape as every other
+  method on that class), and `MockUserRoleService` (in-memory; its constructor pre-seeds the same
+  ADMIN-minus-SMTP/SUPERADMIN-everything default described above, so a test that doesn't care
+  about permissions doesn't have to arrange them — `setRole()`/`setSedeId()`/
+  `setPermissionsForRole()` are test-only, not part of the interface, same convention as the
+  original `setRole()`).
+
+### `AdminSession.effectiveRole` — the shared-password fallback can never grant SUPERADMIN
+
+The single riskiest requirement in this feature, stated explicitly by the user up front: the
+existing shared-password fallback (`AdminSession.activate()`, used by `requirePermission()`'s
+`promptPassword()` path below when a technician has no elevated role of their own) must only ever
+unlock `ADMIN`-level actions, never `SUPERADMIN`-only ones like `EDIT_SMTP_CONFIG` — a shared
+password is fundamentally weaker proof of identity than a real per-account login, so it can't be
+allowed to reach the tier reserved for that stronger proof.
+
+- **`activatePermanently(String role)`** (was `activatePermanently()`, no args, always implicitly
+  `ADMIN`) now takes the role that actually logged in — `LoginController` passes
+  `IUserRoleService.getRole(username)`'s result straight through for both `ADMIN` and
+  `SUPERADMIN`. `AdminSession.effectiveRole` (new `volatile String` field) is set explicitly and
+  independently at every activation path: `activate()` (the shared-password fallback) always sets
+  it to `IUserRoleService.ROLE_ADMIN`, hardcoded, regardless of anything else — this is the one
+  line that actually enforces the "fallback never grants SUPERADMIN" requirement.
+  `activatePermanently(role)` sets it to whatever role was passed in. Both `deactivate()` and
+  `expire()` reset it to `null`.
+- **`hasPermission(Permission)`** — `false` immediately if `!isActive()` or `effectiveRole` is
+  `null`; otherwise delegates to `ServiceLocator.getInstance().getUserRoleService()
+  .getPermissionsForRole(effectiveRole).contains(permission)`. A second overload,
+  **`hasPermission(Permission, Integer noteSedeId)`**, adds the Sede-scoping described below —
+  it first re-checks the plain (non-scoped) overload, then short-circuits `true` for
+  `SUPERADMIN` regardless of Sede, otherwise requires `noteSedeId` and the session's own
+  `TechnicianSessionService.getSedeId()` to both be non-null and equal.
+- **`getEffectiveRole()`** — new public getter (`null` when inactive), used by `MainController`
+  for the superadmin title-bar badge color (see below) and by `NoteDetailController`/
+  `PrestamoDetailController`'s Sede-mismatch check.
+
+### Deny-by-default call sites — every admin-tier action converted
+
+Every place in the app that used to gate an action purely on `AdminSession.isActive()` (a binary
+"is *any* admin logged in") was converted to check a specific `Permission` instead — the actual
+"prohibit-all, allow per role" change the user asked for. None of these call sites needed a new
+UI element; each one already had a boolean gate to flip.
+
+- **`DatabaseSectionController`'s `requireAdmin(Runnable)` renamed to `requirePermission(Permission,
+  Runnable)`.** All 16 original call sites (`handleAdd/Edit/Remove` × Type/Brand/Model/Provider/
+  Sede, `handleModifyStock`) now pass the matching `Permission.MANAGE_*` constant. The method's
+  shape is otherwise unchanged: if `AdminSession.hasPermission(permission)` already holds (a real
+  login already granted it), run the action immediately and just refresh the session's activity
+  timer; otherwise fall through to the existing password-prompt fallback — but **the fallback
+  path now double-checks that `ADMIN`'s own currently-granted permission set (queried live via
+  `getPermissionsForRole(ROLE_ADMIN)`) actually contains the requested permission** before running
+  the action, even after a correct password. This is what stops the shared password from ever
+  reaching a SUPERADMIN-only permission through this path too — not just `effectiveRole` alone,
+  since `requirePermission()`'s fallback branch never calls `activate()` at all (no session state
+  changes), so `AdminSession.effectiveRole` being pinned to `ADMIN` wasn't by itself sufficient to
+  block this specific code path; the explicit re-check is a second, independent enforcement of the
+  same rule, one call site removed from `activate()` itself.
+- **`SettingsController.updateFieldEditability()`** — was one `setDisable(!adminActive)` call
+  covering every field. Now four independent checks (`EDIT_AF_FORMAT_CONFIG`, `EDIT_SMTP_CONFIG`,
+  `EDIT_GLPI_CONFIG`, `EDIT_AD_CONFIG`), each gating its own field group. `handleSave()` matches:
+  each field group is only read from its `TextField`/`PasswordField` and persisted if its own
+  permission is currently granted; a group without permission falls back to the value already in
+  `AppConfig`/`APP_SETTINGS` rather than silently blanking it out. `handleEditRow()` (S/N
+  Validation) checks `EDIT_SN_VALIDATION`.
+- **`ProfileController.updateEditability()`** — `OVERRIDE_PROFILE_FIELDS` replaces the old
+  `AdminSession.isActive()` check gating the four manual-edit identity fields.
+- **`NoteDetailController`/`PrestamoDetailController`** — `APPROVE_NOTES` (Aprobar/Rechazar),
+  `SYNC_GLPI` (Sincronizar/Rechazar), `VALIDATE_RETURNS` (Devuelto/No devuelto in
+  `PrestamoDetailController`, Recibido/No recibido in `NoteDetailController`'s Provider
+  return-tracking row) — all three now sede-scoped, see below.
+
+### Sede-scoped admin actions — a plain ADMIN only acts on their own Sede's notes
+
+A genuinely new requirement, not a straightforward permission-per-action conversion: an `ADMIN`
+account is now itself tied to one Sede (`APP_USER.sede_id`), and can only approve/reject notes,
+sync GLPI, or validate returns for notes generated *at that Sede* — not because the permission
+itself is withheld, but because the action's target doesn't match where this admin is allowed to
+act. `SUPERADMIN` bypasses this scoping entirely and can act on any Sede's notes.
+
+- **Enforced inside `hasPermission(Permission, Integer noteSedeId)`** (see above) — every one of
+  the three sede-scoped call sites now calls this overload instead of the plain one, passing the
+  note's own `sede_id` (via a small `noteSedeIdOrNull()` helper duplicated in both controllers,
+  per the no-shared-abstraction convention — `report.getSedeId()` returns a primitive `int`, `0`
+  meaning "unset", translated to `null` for the permission check). An unset note Sede or an unset
+  admin Sede both resolve to "not a match," not a silent allow — mirrors the same "unset counts as
+  no match" rule `MainController`'s own Sede-filtered badge counts use (see below).
+- **A real bug caught before it could ship**: `SqliteHistoryService.getById()` — the query both
+  detail popups use to load a report before rendering — resolved `sede_id`'s joined *name* into
+  `NoteReport.setSede(...)` but never read the raw `sede_id` column back into
+  `NoteReport.setSedeId(...)` at all. Every loaded note's `sedeId` would have silently been `0`
+  (unset), which — combined with the "unset never matches" rule above — would have made *every*
+  admin's Sede-scoped permission check fail for *every* note, regardless of Sede, defeating the
+  feature outright rather than just being slightly wrong. Fixed by adding `COALESCE(r.sede_id, 0)
+  AS sede_id` to the `SELECT` and `r.setSedeId(rs.getInt("sede_id"))` to the row mapping.
+- **Buttons-only restriction, not the whole note hidden** — explicit user choice from two
+  presented options. A Sede-mismatched admin still opens the note detail popup and sees its full
+  contents (items, status, approval state); only the action buttons for the three sede-scoped
+  permissions are withheld for that specific note.
+- **A warning banner, not just silently-missing buttons** — per the user's own follow-up ("add a
+  warning somewhere to tell the non-sede-admin that this note belongs to another Sede and cannot
+  be audited by this admin"). `isSedeMismatchForAdmin()` (duplicated in both controllers) is
+  `true` only when `adminMode && AdminSession.isActive() && effectiveRole != SUPERADMIN` and the
+  admin's own Sede doesn't match the note's — `buildApprovalSection()` inserts a plain warning
+  `Label` right after the approval-status row whenever this holds, so it's visible regardless of
+  the note's approval state, not just alongside the withheld buttons.
+
+### Self-service Sede removed entirely — Sede is now superadmin-assigned, for every technician
+
+A deliberate, explicit expansion of scope the user confirmed directly: not just admins' Sede
+tying them to an approval scope, but **every technician's own Sede** (the mandatory,
+note-generation-blocking value from [Technician Sede](#technician-sede--per-note-mandatory-2026-07-22)
+and [Sede became catalog-backed](#sede-became-catalog-backed--sede-table-combobox-deprecated-flag-rename-2026-07-24))
+is no longer a self-service preference a technician picks themselves. It's read from the same
+`APP_USER.sede_id` a superadmin assigns for the RBAC scoping above — one assignment serves both
+purposes, since a technician's own Sede and "the Sede this account is tied to" are the same fact.
+
+- **`SettingsController`'s "SEDE" card (`cmbSede`, `handleSaveSede()`, `lblSedeStatus`) was
+  removed entirely from `SettingsView.fxml`** — there is no self-service Sede UI left anywhere in
+  the app. A superadmin sets `APP_USER.sede_id` directly via SQL, same as role itself.
+- **`TechnicianSessionService`** — `setSedePreference(Integer, String)`,
+  `addOnSedeChangeListener`/`removeOnSedeChangeListener`/`notifySedeListeners()`, and
+  `loadSedePreference()`'s `APP_SETTINGS`-backed persistence were all deleted outright, not
+  deprecated in place — there is no more "preference" to persist, since Sede is now derived,
+  read-only session state, same shape as `role`. `getSede()`/`getSedeId()` keep their existing
+  method signatures and meaning (display name / catalog id) for every existing caller (sidebar
+  label, templates via `NoteGeneratorController`/`PrestamoNewLoanController`), so those call sites
+  needed zero changes. A new private `loadAssignedSede()` (called from both `loginResolved()` and
+  `applyManualOverride()`, mirroring how `loadDisplayNamePreference()` already gets called from
+  both) reads `IUserRoleService.getSedeId(username)` and resolves the display name via the
+  existing `resolveSedeName(int)` helper — unchanged, including its deliberate "resolves even a
+  deprecated row's name" exception (see the original Sede-catalog entry above for why).
+- **Unset Sede is fail-safe, not silently permitted** — per the user's explicit answer ("the
+  preference will be removed"): a technician with no `APP_USER.sede_id` assigned simply has
+  `getSede()`/`getSedeId()` return `null`, same as before this change, so the existing mandatory-
+  Sede block on note generation / Préstamo registration (`NoteGeneratorController`/
+  `PrestamoNewLoanController`) continues to apply unmodified — nothing new needed there.
+- **Sidebar Sede label reworked from "hidden when unset" to "always visible, warning-styled when
+  unset"** — `MainController.updateSedeLabel()` used to hide `lblSede` entirely when Sede was
+  blank (reasonable when a technician could just go set their own preference). Now that an unset
+  Sede requires a superadmin's action to fix, silently hiding the indicator would leave a
+  technician with no visible clue why note generation is blocked. `lblSede` is now always
+  `visible`/`managed`; it reads `"Sede no asignada"` styled via a new bold, orange
+  `.user-sede-warning` CSS class (vs. the existing muted `.user-sede` class) when unset, or
+  `"Sede: {name}"` in the original styling otherwise.
+- **A one-time startup warning popup** — `MainController.warnIfSedeUnassigned()`, called from the
+  connectivity-overlay fade-out's `setOnFinished` (the same point that used to house the
+  now-obsolete "profile unavailable" warning from the original login-screen rework — see that
+  section's comment, now genuinely correct again since this is a real new case). Reuses the
+  existing `showDialogNotice(title, message, accentColor, icon)` helper with the same orange/`⚠`
+  styling as every other warning popup in this app, rather than introducing a new dialog pattern.
+
+### Sidebar pending-count badges Sede-scoped for a plain `ADMIN`, global for `SUPERADMIN`
+
+Per the user's explicit answer ("Filter to their own Sede. Superadmin will see all sedes number
+here."). `MainController.refreshPendingCounts()` now branches on
+`AdminSession.getEffectiveRole()`: a plain `ADMIN` filters all three counts (GLPI-pending,
+approval-pending, Préstamo-return-pending) down to notes matching their own
+`TechnicianSessionService.getSede()` (name-based, matching `HistoryFilter.sedes`' existing
+`List<String>` shape — reused directly for the Préstamo count's `getFiltered()` call; the other
+two counts, which read from `getPendingGlpiSync()`/`getPendingApproval()`'s plain `List<NoteReport>`
+results with no filter parameter, are filtered client-side via a small `sameSede(NoteReport,
+String)` helper instead). `SUPERADMIN` and a non-admin technician alike see the unfiltered, global
+count — for `SUPERADMIN` because they can act on every Sede; for a non-admin technician because
+the badge is purely informational either way (they can't act on any pending item regardless of
+Sede, admin or not), so scoping it would just be inconsistent with why it's shown to non-admins at
+all in the first place.
+
+### Superadmin title-bar badge — distinct magenta, not the existing admin teal
+
+Per explicit user request: `MainController.updateAdminIndicator()` now also sets
+`lblAdminIndicator`'s text (`"MODO SUPERADMINISTRADOR"` vs. `"MODO ADMINISTRADOR"`) and CSS class
+(`.title-bar-superadmin-badge`, new, `#c026d3` magenta, vs. the existing `.title-bar-admin-badge`,
+`#0e9a82` teal) based on `IUserRoleService.ROLE_SUPERADMIN.equals(getEffectiveRole())` — same
+sizing/padding/lettering as the existing badge, color and text only.
+
+### Tests
+
+`AdminSessionTest` gained `MockUserRoleService` wiring plus cases for `effectiveRole`/
+`hasPermission`/`hasPermission(Permission, Integer)` across `activate()` vs.
+`activatePermanently(role)`, including the specific "shared-password fallback never grants a
+SUPERADMIN-only permission" requirement and the "SUPERADMIN bypasses Sede-scoping, a null note
+Sede never matches for ADMIN" cases. `SqliteUserRoleServiceTest` rewritten for the
+`APP_USER`/`ROLE_PERMISSION` schema (was hand-building the old `USER_ROLE` table), gained
+`getSedeId`/`getPermissionsForRole` coverage including the stray-unknown-permission-string
+tolerance. `TechnicianSessionServiceTest`'s Sede tests rewritten entirely around
+`MockUserRoleService.setSedeId()` instead of the deleted `setSedePreference()`/listener API,
+including a case simulating a superadmin assigning a Sede *between* two refreshes of the same
+session. `SettingsControllerTest` rewritten to check SMTP fields separately from the other three
+config groups (a plain `ADMIN` must never see them enabled, `SUPERADMIN` must). `LoginControllerTest`
+gained a `SUPERADMIN`-login case asserting `AdminSession.getEffectiveRole()` directly.
+`CachingServiceTest` gained `CachingUserRoleService` read/fallback coverage for all three
+`IUserRoleService` methods (this class had no test coverage at all before this change).
+`DatabaseServiceMigrationTest` gained three `createUserRoleTable()` cases: brand-new-database
+seeding, migrating an existing `USER_ROLE` table's data forward, and idempotency (re-running must
+never silently re-grant a permission a superadmin already revoked). Full suite: 378 tests passing.
+
+## Login: unregistered-account and username-substring-match bugs fixed (2026-07-30)
+
+Direct user report, caught by manually testing login right after the RBAC feature above shipped:
+an account with no `APP_USER` row could still log in (silently defaulted to `USER` role, no
+error), and typing only a few letters of a real AD username logged in *as that other, unrelated
+account* with no error either. Two independent bugs, both in the authentication path itself, not
+the RBAC/permission layer built earlier the same day:
+
+- **Root cause 1 — no registration gate at all.** `LoginController` never checked whether the
+  authenticated AD account had a row in `APP_USER`; `IUserRoleService.getRole()`'s existing
+  `ROLE_USER` default (designed as a *permission* fallback — "most technicians are never
+  promoted") was being relied on, unintentionally, as an implicit "anyone with valid AD credentials
+  may use the app" gate. Fixed with a new `IUserRoleService.isRegistered(String username)` (real
+  `APP_USER` existence check, implemented in `SqliteUserRoleService`/`CachingUserRoleService`/
+  `MockUserRoleService` — `MockUserRoleService.isRegistered()` is just `roles.containsKey(username)`,
+  so any test already calling `setRole()` registers implicitly, no test rewrites needed).
+  `LoginController.handleLogin()` now rejects with **"Usuario no registrado en la aplicación.
+  Solicite acceso a un administrador."** — a new, specific message, distinct from the existing
+  generic "Ingrese usuario y contraseña." (empty fields) and "Usuario o contraseña incorrectos."
+  (bad credentials) — right after resolving the profile, before ever calling `getRole()`.
+- **Root cause 2 — substring username matching reused for authentication.** `search()`'s username
+  matching is a deliberate substring `.contains()` (needed elsewhere for partial-username recipient
+  lookups in note generation) — but two places reused it for identity resolution, where only an
+  exact match should ever count:
+  1. `AdApiService.mockValidateCredentials()` (the temporary stand-in for the AD API's
+     not-yet-built `validate-credentials` endpoint — see [Login screen and role-based admin mode](#login-screen-and-role-based-admin-mode))
+     treated "search() returned anything" as "known user," so a login attempt with only a few
+     matching letters of someone else's real username passed the check entirely, with no password
+     check at all (mock mode already skips password checking by design — this was strictly more
+     permissive than even that). Fixed via a new `containsExactUsernameMatch(List<ADUser>,
+     String)` static helper (mirrors this file's existing `matchesUsername`/`matchesDni` small-testable-helper
+     pattern) requiring `u.getUsername().equalsIgnoreCase(username)`, not just a non-empty result.
+  2. `LoginController.handleLogin()` itself took `profile.get(0)` — the first `search()` result —
+     unconditionally, with the same latent flaw: a substring hit could resolve to the wrong
+     account's `ADUser`, and thus the wrong session identity, even independent of bug 2.1 above.
+     Fixed as a second, independent layer of defense: the profile is now resolved via
+     `profile.stream().filter(u -> u.getUsername().equalsIgnoreCase(username)).findFirst()`,
+     falling through to the existing "No se pudo obtener el perfil desde Active Directory."
+     message if nothing matches exactly.
+- **"Wrong password" vs. "wrong username" is still not distinguished** — deliberately left as-is,
+  per explicit user direction: the real AD API's `validate-credentials` endpoint doesn't exist yet
+  (see [Login screen and role-based admin mode](#login-screen-and-role-based-admin-mode)'s
+  `mockCredentialValidation` bullet), so there's no way to know *which* part was wrong yet. The
+  existing generic "Usuario o contraseña incorrectos." stays until that endpoint exists and can
+  report the two cases separately.
+- **Tests**: `LoginControllerTest.validAdCredentialsButNotRegisteredInAppUserIsRejected()` (a real
+  `MockADService` account, deliberately never registered via `mockUserRoleService.setRole()`, must
+  be rejected with the new message) and `.partialUsernameNeverResolvesToADifferentRealAccount()`
+  (a custom `IADService` stub whose `search()` reproduces real substring matching and whose
+  `validateCredentials()` naively returns valid — proving `LoginController`'s own exact-match
+  filtering catches it even if some `IADService` implementation's credential check doesn't).
+  `AdApiServiceTest` gained `containsExactUsernameMatchRejectsSubstringOnlyResult()`/
+  `AcceptsExactMatchCaseInsensitive()`/`FalseForEmptyResults()`, same reflection-tested-static-helper
+  convention as this file's other small `AdApiService` helpers. Full suite: 383 tests passing
+  (378 pre-existing + 5 new).
 
 ## Remito de Envío — built, then removed before the first release
 
@@ -471,9 +1089,10 @@ rather than free text) rather than assuming the deleted code is still relevant.
 ## Config files
 
 ### `config/app-config.json`
-- `afFormat`: `prefix`, `separator`, `length`, `filler` — controls A/F number formatting
+- `afFormat`: `prefix`, `separator` — controls A/F derivation (`prefix + separator + serialNumber`). **`length`/`filler`/`inputPattern` were removed 2026-07-29** — see [A/F format simplification](#af-format-simplification-2026-07-29) below.
 - `motivoOptions`: per-profile Motivo dropdown values (`entrega`, `finDeContrato`, `proveedor`, `devolucion`). `entrega` and `finDeContrato` are separate keys (each an independent list) — **added 2026-07-20**, replacing an earlier setup where Fin de Contrato silently reused `entrega`'s list (`UserNoteController.updateMotivoVisibility()` mapped `btnTypeFinContrato` to the `"entrega"` key). Explicit user request to give Fin de Contrato its own options; both new installs and the seeded config were pre-filled with a copy of `entrega`'s list as a starting point, meant to be edited independently going forward.
 - `fallaOptions`: failure-cause combobox values shown by the Falla detail popup (Devolución only)
+- `returnableMotivosProveedor` (added 2026-07-29, default `["Garantía", "Reparación"]`): names which `motivoOptions.proveedor` values expect the equipment to come back — see [Provider conditional return tracking](#provider-conditional-return-tracking-2026-07-29).
 - `catalog.genericLabel` (default `"Genérico / Otro"`, added 2026-07-23): seeds the name of the single global "no specific brand/model" catalog row **the first time it's created only** — not live-synced, an admin renames it afterward through the ordinary catalog UI. See [Global "Genérico / Otro" MODEL row](#global-genérico--otro-model-row--collapsing-the-per-link-duplicate-2026-07-23).
 - `smtp`: `host`, `port`, `senderAddress` (password stored encrypted in DB, never here)
 - `adApi.baseUrl`, `glpiApi.baseUrl`: external service URLs
@@ -493,11 +1112,11 @@ Types, brands, `typeBrands` junction entries, models, `snValidations`. Loaded by
 
 ## SQLite tables
 
-`TYPE`, `BRAND`, `BRAND_TYPE_LINK`, `MODEL`, `SN_VALIDATION`, `PROVIDER`, `SEDE`, `USER_ROLE`, `NOTE_REPORT`, `NOTE_ENTREGA_DEVOLUCION`, `NOTE_PROVEEDOR`, `NOTE_ITEM`, `NOTE_ITEM_ASSET`, `NOTE_ITEM_COUNTABLE`, `NOTE_ITEM_GLPI_TRACKING`, `NOTE_ITEM_RETURN_TRACKING`, `APP_SETTINGS`
+`TYPE`, `BRAND`, `BRAND_TYPE_LINK`, `MODEL`, `MODEL_STOCK`, `SN_VALIDATION`, `PROVIDER`, `SEDE`, `APP_USER`, `ROLE_PERMISSION`, `NOTE_REPORT`, `NOTE_REPORT_REJECTION`, `NOTE_ENTREGA_DEVOLUCION`, `NOTE_DEVOLUCION_FALLA`, `NOTE_PRESTAMO_AREA_EVENTO`, `NOTE_PROVEEDOR`, `NOTE_ITEM`, `NOTE_ITEM_ASSET`, `NOTE_ITEM_COUNTABLE`, `NOTE_ITEM_GLPI_TRACKING`, `NOTE_ITEM_RETURN_TRACKING`, `APP_SETTINGS`
 
-`USER_ROLE` (`username` PK, `role`) is a flat username→role mapping (`"ADMIN"`/`"USER"`), unrelated to AD group membership (which gates app access at login, checked live against the AD API, not stored here) — see [Login screen and role-based admin mode](#login-screen-and-role-based-admin-mode).
+`APP_USER` (`id` surrogate PK, `username UNIQUE`, `role` — `"ADMIN"`/`"USER"`/`"SUPERADMIN"`, `sede_id` FK→`SEDE`, nullable) is a username→role/Sede mapping, unrelated to AD group membership (which gates app access at login, checked live against the AD API, not stored here) — see [Login screen and role-based admin mode](#login-screen-and-role-based-admin-mode). Renamed from `USER_ROLE` (which had no `sede_id` and no `SUPERADMIN` tier) on 2026-07-30 — see [Role-based permissions (RBAC)](#role-based-permissions-rbac-a-superadmin-tier-and-sede-scoped-admin-actions-2026-07-30). `ROLE_PERMISSION` (`role`, `permission`, PK on both) is the deny-by-default permission grant table the same feature added — a permission is denied unless a matching row exists.
 
-`NOTE_ENTREGA_DEVOLUCION` has `failure_cause`/`failure_details` columns (Devolución's Falla flow — always `NULL` for other note types) and an `area_evento` column (Préstamo-only optional context field — see [Préstamos section](#préstamos-section-internal-equipment-loans)). `NOTE_PROVEEDOR` has `responsible_name`/`responsible_dni` columns (the provider's own receiving person — see [Two-signature layout](#two-signature-layout)). `NOTE_REPORT` has `technician_name`/`technician_dni` columns (see [Technician identity](#technician-identity--session-only-sourced-from-windowsad)) — `SqliteHistoryService`'s history queries read these straight off `NOTE_REPORT`. `NOTE_REPORT` also has a `sede` column (per-technician site, mandatory, printed on every note — see [Technician Sede](#technician-sede--per-note-mandatory-2026-07-22)). **`TECHNICIAN_PROFILE` and `NOTE_REPORT.technician_id` were removed 2026-07-16** (see [Technician identity](#technician-identity--session-only-sourced-from-windowsad)'s last bullet) — an already-running installation's existing table/column are simply left in place, unused, since no `DROP` migration was added. Both the SQLite (`DatabaseService`) and SQL Server (`RemoteDatabaseService.ensureSchema()`) DDL must stay in sync — see [SQLite schema mirrors the remote SQL Server schema](#sqlite-schema-mirrors-the-remote-sql-server-schema).
+`NOTE_ENTREGA_DEVOLUCION` (Devolución's Falla flow and Préstamo's Área/Evento moved out into their own subtype tables 2026-07-30 — see [NOTE_ENTREGA_DEVOLUCION and NOTE_REPORT normalized further](#note_entrega_devolucion-and-note_report-normalized-further-2026-07-30) below): `NOTE_DEVOLUCION_FALLA` (`failure_cause`/`failure_details`, row exists only for Devolución+Falla) and `NOTE_PRESTAMO_AREA_EVENTO` (`area_evento`, row exists only when a Préstamo note actually captured one — itself optional). `NOTE_PROVEEDOR` has `responsible_name`/`responsible_dni` columns (the provider's own receiving person — see [Two-signature layout](#two-signature-layout)). `NOTE_REPORT` has `technician_name`/`technician_dni` columns (see [Technician identity](#technician-identity--session-only-sourced-from-windowsad)) — `SqliteHistoryService`'s history queries read these straight off `NOTE_REPORT`. `NOTE_REPORT` also has a `sede_id` FK (per-technician site, mandatory, printed on every note — see [Technician Sede](#technician-sede--per-note-mandatory-2026-07-22) and [Sede became catalog-backed](#sede-became-catalog-backed--sede-table-combobox-deprecated-flag-rename-2026-07-24)); the old free-text `sede` column was dropped 2026-07-29. `NOTE_REPORT.rejection_reason` moved into `NOTE_REPORT_REJECTION` 2026-07-30 (same section below) — a row exists only for a note that's actually been rejected. **`TECHNICIAN_PROFILE` and `NOTE_REPORT.technician_id` were removed 2026-07-16** (see [Technician identity](#technician-identity--session-only-sourced-from-windowsad)'s last bullet) — an already-running installation's existing table/column are simply left in place, unused, since no `DROP` migration was added. Both the SQLite (`DatabaseService`) and SQL Server (`RemoteDatabaseService.ensureSchema()`) DDL must stay in sync — see [SQLite schema mirrors the remote SQL Server schema](#sqlite-schema-mirrors-the-remote-sql-server-schema).
 
 **`NOTE_ITEM` normalized into 5 tables (2026-07-22)** — explicit, standing user requirement: no nullable/sentinel-value columns representing "doesn't apply to this row," even when the practical cost is negligible. This was a direct correction of an initially-proposed cheaper "just make the columns nullable" fix — the user wants this same normalized shape favored by default in any future schema work with a similar all-nulls-for-some-rows pattern, not just this one table. The old wide `NOTE_ITEM` (16 columns: `is_asset`, `serial_number`/`a_f` vs `quantity`, the `glpi_*`/`return_*` tracking triples) had one whole tracking dimension and one of asset-vs-countable always sitting at a dead `NULL`/`'N_A'` value depending on the item's type and the note's profile. Split into:
 - `NOTE_ITEM` (slim base): `id, note_id, type_name, brand_name, model_name, observations` — always fully populated. **`type_name`/`brand_name`/`model_name` were themselves replaced with `type_id`/`brand_id`/`model_id` real foreign keys the same day, in a follow-up phase — see "Catalog-FK redesign" below. Kept here as the historical starting shape this split began from.**
@@ -551,9 +1170,407 @@ Direct continuation of the Catalog-FK redesign above, prompted by a user questio
 - **Second follow-up, same day** — two more Base de Datos consistency gaps, both direct user reports after the fix above landed: (1) the generic *model* still sorted alphabetically among real models in `listModels` (`getModelsForBrandAndType()`'s SQL orders everything by name together) instead of sitting last like the generic *brand* already does — `refreshModelsForBrandType()` now pulls it out and re-appends it at the end, mirroring `refreshBrandsForType()`. (2) Neither `listBrands` nor `listModels` had any custom cell styling at all, unlike `ItemDialogController`'s combo boxes (italic, `#94a3b8` grey, via `GENERIC_STYLE`) — `DatabaseSectionController` gained its own `GENERIC_STYLE` constant (duplicated, per convention) and a shared `applyGenericCellStyle(ListView<T>)` helper wired onto both lists in `initialize()`, so the generic entry now reads visually the same way in Base de Datos as it does in the note-generation Item dialog. No divider/separator line was added — only the italic styling was requested.
 - **Tests**: `SqliteEquipmentServiceTest.addBrandForTypeDoesNotLinkTheGenericBrand`, `DatabaseServiceMigrationTest.cleanupStrayGenericBrandLinksRemovesOnlyEmptyLinks` (covers both the empty-link-removed and model-still-attached-link-preserved cases, plus idempotent re-run). `DatabaseSectionController` itself has no dedicated test (same "`initialize()` reaches `ServiceLocator` directly" gap already accepted elsewhere in this file for `MainController`/`HistoryController`) — verified by `mvn clean compile`/`mvn test` (full suite green) and a dry-run query against the user's actual `data/noteapp.db` confirming the exact stray link it would remove. Full suite: 287 tests passing (280 pre-existing + 7 new).
 
+### Model stock (`MODEL_STOCK`) — per-(Type,Brand) rollups in Base de Datos (2026-07-29)
+
+New table `MODEL_STOCK(brand_type_id, model_id, stock)`, PK `(brand_type_id, model_id)` — **not**
+a plain `MODEL.stock` column, specifically because the single shared global "Genérico / Otro"
+`MODEL` row (`brand_type_id IS NULL`, see above) is reused across every Type+Brand it's offered
+under, and stock needs to be tracked independently per (Type,Brand) usage of it, not as one shared
+number. For a normal (non-generic) model, `brand_type_id` is redundantly the same value the
+model's own row already carries — one natural row, functionally identical to a plain column, just
+expressed as a join.
+
+- **`cleanupStrayGenericBrandLinks()` updated (both engines)** — this method (runs every startup,
+  see above) used to delete a generic-brand `BRAND_TYPE_LINK` whenever it had zero `MODEL` rows;
+  it now also checks `MODEL_STOCK` and skips deletion if a stock row exists there too, or a
+  legitimately-stocked generic-brand link would get silently deleted on next startup.
+- **Rename-carry-forward (real gap found while writing tests, not part of the original design) —
+  a direct model rename and the Type/Brand rename cascade need *different* carry-forward logic.**
+  `SqliteEquipmentService.renameModel()`/`cascadeAfterTypeOrBrandRename()` deprecate an old `MODEL`
+  row and create/reactivate a *different* row id on any real rename; since `MODEL_STOCK`'s PK
+  includes `model_id`, both cascades would silently orphan existing stock unless carried forward.
+  `carryForwardModelStock(oldModelId, newModelId)` (plain rename — the model's own `brand_type_id`
+  never changes) and `carryForwardModelStockAcrossLink(oldLinkId, oldModelId, newLinkId, newModelId)`
+  (Type/Brand cascade — the scope itself changes too) are **not interchangeable**: a first attempt
+  used the plain-rename version for the cascade too, which left stock keyed to the now-stale
+  `oldLinkId` — caught immediately by `renamingTypeCarriesStockForwardThroughCascade`, a new test
+  written specifically because this exact interaction wasn't obvious from the design alone.
+- **`IEquipmentService`** gained `getModelStock(modelId, brandId, typeId)`/`setModelStock(...)` plus
+  three batched rollup reads — `getStockTotalsByType()`/`getStockTotalsByBrandForType(typeId)`/
+  `getStockTotalsByModelForBrandAndType(brandId, typeId)`, each returning a `Map<Integer,Integer>`
+  computed with **one query per list-refresh, not one per row** — implemented in
+  `SqliteEquipmentService` (the Model-level rollup mirrors `getModelsForBrandAndType()`'s existing
+  UNION-with-global-row shape), `CachingEquipmentService` (the file's two existing fixed templates),
+  and `MockEquipmentService` (new in-memory `List<int[]>`, mirroring `typeBrands`'s existing shape).
+  **Known, deliberately out-of-scope gap**: `MockEquipmentService.getModelsForBrandAndType()`
+  doesn't union in the global generic model at all (a pre-existing gap, unrelated to this feature) —
+  Mock's stock implementation follows that same narrower scoping as-is, not fixed here.
+- **`DatabaseSectionController`**: the old `applyGenericCellStyle()`/`GENERIC_STYLE`-only cell
+  factory (Brands/Models only) was replaced by a single `applyCatalogCellFactory(ListView<T>,
+  Function<T,Integer> stockLookup)` applied to all three cascading lists (Types too, which
+  previously had no custom cell factory at all — just `toString()`), from a `Map` fetched once per
+  `refreshTypes()`/`refreshBrandsForType()`/`refreshModelsForBrandType()` call. `openAddModelDialog()`
+  gained a "STOCK INICIAL" field (default `0`); a new dedicated
+  `openEditModelDialog(EquipmentModel, brandId, typeId)` (name + stock together) replaces
+  `handleEditModel()`'s previous routing through the shared `openRenameDialog()` — same "own
+  dialog when an entity needs more than a name" precedent `openEditTypeDialog()` already set for
+  the `requires_serial` flag. Brand/Provider/Sede keep using `openRenameDialog()` unaffected.
+  **A rename resolves the target model id fresh from the catalog by name** before writing stock
+  (not `model.getId()`, which may now point at a deprecated row after `renameModel()` swaps ids) —
+  same pattern `openAddModelDialog()` already uses to resolve a newly-created model's id, since
+  `addModel()`/`renameModel()` don't return one directly.
+  **Redesigned into a real two-column layout, same day, after direct user feedback** — the
+  original `item.toString() + " · Stock: N"` concatenated-text approach was replaced with a proper
+  two-`Label` row (`lblName` left, `lblStock` right-aligned via `-fx-alignment: CENTER_RIGHT` +
+  `minWidth="50"`, spaced apart by a `Region` with `HBox.setHgrow(ALWAYS)`) set as the cell's
+  `graphic`. Each of the three `ListView`s gained a plain sibling `HBox` header row ("NOMBRE" /
+  "STOCK", padded to roughly line up with `.modern-list .list-cell`'s own `7 12` padding) directly
+  above it in FXML — since it's outside the `ListView`'s own scrollable viewport, it stays fixed
+  while the list scrolls, with no extra wiring needed. **Selected-row text color is now handled
+  manually** (a `selectedProperty()` listener calling `refreshTextStyle()`) since `.modern-list
+  .list-cell:filled:selected`'s CSS `-fx-text-fill` only affects a `Cell`'s own text, not an
+  arbitrary graphic's child `Label`s — mirrors the existing dark/light + generic-italic states the
+  plain-text version used to get for free from CSS.
+- **Second follow-up, same day — header right-alignment, value styling, and an in-app modify-stock
+  action, all from one direct user feedback pass.**
+  - **The "STOCK" header label itself wasn't right-aligned to match the value column below it** —
+    the previous fix right-aligned `lblStock` (the cell's own value `Label`), but the sticky
+    `HBox` header row above each `ListView` still had its "STOCK" `Label` left/default-aligned, so
+    the column header visually sat out of line with the numbers under it. Fixed by adding
+    `alignment="CENTER_RIGHT"` (alongside the existing `minWidth="50" prefWidth="50"
+    maxWidth="50"`) to all three header rows' STOCK `Label`s in `DatabaseSectionView.fxml`, so the
+    header's own box now matches the cell's `lblStock` box exactly, not just its width.
+  - **Stock values are now always bold, green when `> 0`, red otherwise** — `refreshTextStyle()`'s
+    `lblStock` styling no longer depends on selection/generic state (unlike `lblName`, which still
+    needs to react to both): `"-fx-font-weight: bold; -fx-text-fill: " + (stock > 0 ? "#22c55e" :
+    "#ef4444") + ";"`, applied unconditionally. Gives an at-a-glance signal for "needs restocking"
+    across all three cascading lists without opening any dialog.
+  - **A real ListCell layout gotcha, caught while making the alignment actually hold**: a
+    `ListCell`'s `graphic` is **not** automatically stretched to the cell's rendered width the way
+    a plain `HBox`'s direct children are (`VBox`/`HBox`'s own `fillWidth` default doesn't apply
+    here) — so the invisible `Region` spacer (`HBox.setHgrow(ALWAYS)`) had nothing real to grow
+    into, and `lblStock` never actually reached the list's true right edge despite its own
+    right-alignment being correct in isolation. Fixed with
+    `row.prefWidthProperty().bind(widthProperty().subtract(24))` on the cell's root `HBox` (24 =
+    `.modern-list .list-cell`'s own `7 12` padding, both sides) — forces the row to actually claim
+    the cell's full available width first, so the spacer has real space to distribute.
+  - **In-app stock modification, added per direct user request** ("let's add a way to modify
+    stock in-app... add a modify stock button") — a new "Stock" button in the Models list footer
+    (`DatabaseSectionView.fxml`, between "Editar" and "Eliminar"), wired to
+    `handleModifyStock()`/`openModifyStockDialog(EquipmentModel, brandId, typeId)` — a minimal
+    stock-only dialog (no name field), separate from `openEditModelDialog()` (name + stock
+    together, used by the Model list's own "Editar" button) since a technician adjusting stock day
+    to day shouldn't have to go through a rename-capable dialog to do it.
+- **Third follow-up — Type/Brand rollup counters went stale after a stock edit, and the STOCK
+  header still didn't line up.** Two direct user reports, fixed together.
+  - **Stale rollups**: `openModifyStockDialog()`/`openEditModelDialog()`'s save handlers only
+    called `refreshModelsForBrandType(brandId, typeId)` after `setModelStock(...)` — the Type- and
+    Brand-level totals (which sum every Model under their scope) never got refetched, so
+    `listTypes`/`listBrands` kept showing the pre-edit numbers until the technician switched away
+    from and back to the current Type (re-triggering the selection-change listeners that call
+    `refreshTypes()`/`refreshBrandsForType()`), or restarted the app. Fixed with a new
+    `refreshStockRollupsOnly(typeId)` — refetches `getStockTotalsByType()`/
+    `getStockTotalsByBrandForType(typeId)` and re-applies `applyCatalogCellFactory(...)` to
+    `listTypes`/`listBrands` with the fresh maps, **without** calling `setItems(...)` on either
+    list. This matters: `refreshTypes()`/`refreshBrandsForType()` both reset `listBrands`'/
+    `listModels`' items and selection outright — correct for actual Type/Brand *navigation*, but
+    wrong here, since the technician is mid-browsing a Model, not switching Types. Re-applying just
+    the cell factory forces JavaFX to redraw the existing (unchanged) items with the new numbers,
+    leaving selection/scroll position untouched. Called from both save handlers, right after
+    `refreshModelsForBrandType(...)`.
+  - **Header still not aligned**: fixed with the scrollbar-spacer theory above — plausible, and
+    genuinely a real (if minor) gap, but a user screenshot the same day proved it wasn't the actual
+    bug. The screenshot showed "NOMBRE"/"STOCK" sitting right next to each other at the header's
+    far *left*, nowhere near the right-aligned "0"/"6" values below — not a small few-pixel
+    offset, a completely un-grown header. **Root cause**: `HBox.hgrow="ALWAYS"` was set directly
+    on the "NOMBRE" `Label` (not on a separate spacer `Region`, unlike the proven-working
+    title-row pattern right above it in the same FXML file — `TIPOS`/`+ Agregar` correctly stretch
+    apart via `<Region HBox.hgrow="ALWAYS"/>`). `hgrow` only tells the parent `HBox` how to
+    *allocate* leftover space to a child — it does **not** override that child's own `maxWidth`. A
+    `Region`/`Pane` subclass has an effectively unbounded computed max width, so a spacer `Region`
+    readily consumes whatever space `hgrow` hands it; a `Labeled` (`Label`, `Button`, ...) computes
+    its `maxWidth` from its own *content* by default, so `HBox.hgrow="ALWAYS"` on a bare `Label`
+    reserves space the `HBox` layout algorithm can't actually give it (capped by the label's own
+    max width) — the leftover space is simply left empty *after* the label instead of being
+    granted to it, so every following sibling (`STOCK`) renders immediately after the label's true
+    (small) content width, exactly matching the screenshot. Fixed by replacing
+    `HBox.hgrow="ALWAYS"` on the "NOMBRE" `Label` with a plain `<Region HBox.hgrow="ALWAYS"/>`
+    between "NOMBRE" and "STOCK" in all three header rows — the same working pattern already used
+    elsewhere in this exact file, not a new idiom.
+  - **The scrollbar-spacer fix above is still correct and still in place** — it addresses a real,
+    separate few-pixel gap that only shows up once a list has enough rows to display a scrollbar;
+    it just wasn't the (much larger) bug the screenshot actually showed. Both fixes are needed for
+    full pixel alignment: the `Region` spacer gets "STOCK" to the list's true right edge, and
+    `bindHeaderScrollbarSpacer()` keeps it there once a scrollbar appears.
+  - **No test added for either** — same "impractical to exercise in isolation" gap already
+    accepted elsewhere in this file for `DatabaseSectionController`'s other UI-driven behavior
+    (`initialize()` calls `ServiceLocator` directly; both dialogs build their `TextField`/`Region`
+    nodes dynamically in Java, not declared in FXML). Verified via `mvn compile`/`mvn test` (full
+    suite green) plus a user-provided screenshot confirming the fix visually.
+- **Fourth follow-up — stock numbers blended into the selected-row background.** Direct user
+  report with a screenshot: the green (`#22c55e`) in-stock color had low contrast against
+  `.modern-list`'s selected-row background (`#6ebdb0`, a light teal-green), making the number hard
+  to read the moment its row was selected. Changed to plain black (`#000000`) for `stock > 0`,
+  per explicit user request over trying a different shade of green — black reads clearly against
+  both the white unselected background and the teal selected one. Red (`#ef4444`, out of stock)
+  already had enough contrast against both and was left unchanged.
+- **Fifth follow-up — the "NOMBRE"/"STOCK" header row removed entirely**, explicit user decision
+  ("I ended up not liking it") after seeing it fixed and live. This supersedes every header-row-specific
+  fix in the three follow-ups above (the alignment fixes, the scrollbar spacer, all of it) — that
+  code no longer exists, kept here as historical record only, not something to re-derive if a
+  header is ever reintroduced. Removed: the three `HBox` header rows (`DatabaseSectionView.fxml`),
+  their `spacerTypesScrollbar`/`spacerBrandsScrollbar`/`spacerModelsScrollbar` `fx:id`s, the
+  corresponding `@FXML Region` fields, `bindHeaderScrollbarSpacer()` and its `LIST_SCROLLBAR_WIDTH`
+  constant, and the `initialize()` calls wiring them up — all dead code once the header markup was
+  gone, deleted rather than left unused per this codebase's no-dead-code convention (including the
+  now-unused `ScrollBar`/`Bindings` imports). **The cell-level stock column itself is unaffected**
+  — `applyCatalogCellFactory()`'s two-`Label` row (name left, stock right-aligned, bold,
+  black/red-by-value) still renders exactly as before; only the sticky label row that used to sit
+  above each `ListView` is gone. No test changes needed — no test asserted the header row's
+  presence. Full suite: still 340 tests passing.
+- **`CatalogMigrationTool.migrateModelStock()`** — added after `migrateModels()`, same
+  check-then-insert-or-update shape as every other `migrate*()` method (otherwise moving a
+  locally-built catalog to a remote database would silently drop all stock numbers).
+- **Tests**: `SqliteEquipmentServiceTest` (round-trip get/set, each rollup level, the global-generic
+  union case, both rename-carries-forward cases above, lazy `BRAND_TYPE_LINK` creation for the
+  generic brand's first stock entry), `MockEquipmentServiceTest`, `CachingServiceTest`
+  (primary-fail/local-fallback), `CatalogMigrationToolTest` (schema copy + new migrate test, plus
+  an orphaned-row-skipped case), `DatabaseServiceMigrationTest` (table-exists assertion, plus a new
+  `cleanupStrayGenericBrandLinksSkipsLinkWithOnlyStockNoModels` case). Built second in this
+  session's 4-feature batch, right after [A/F format simplification](#af-format-simplification-2026-07-29)
+  below — full suite: 320 tests passing after this feature.
+
 **Schema migration pattern**: `CREATE TABLE IF NOT EXISTS` silently no-ops on a database that already has the table from an older schema version — a column added after initial release will **never** land on an existing `data/noteapp.db` unless explicitly migrated. `DatabaseService.migrateSchema()` (called from `initialize()`, after all `CREATE TABLE` calls) runs idempotent `ALTER TABLE ... ADD COLUMN` statements via `addColumnIfMissing()`, which swallows the "column already exists" `SQLException` (SQLite has no `ADD COLUMN IF NOT EXISTS`). `RemoteDatabaseService.ensureSchema()` has no such native clause in T-SQL, so it guards every `ALTER TABLE ... ADD` with a Java-side `columnExists()` check instead (queries `information_schema.columns`, which SQL Server supports natively). **Any new column on an existing table must be added to `migrateSchema()`/`ensureSchema()`, not just the `CREATE TABLE` block** — forgetting this was the exact cause of a `SQLException` when previewing History notes after the Falla/responsible-person columns were added but not migrated.
 
 See `docs/database.md` for full ERD.
+
+### NOTE_ENTREGA_DEVOLUCION and NOTE_REPORT normalized further (2026-07-30)
+
+A fresh schema-normalization audit (explicit user request — "review the database schema for full
+relational normalization," a standing preference, see [[feedback_db_normalization]] in memory) found
+two more instances of the exact "doesn't apply to this row" pattern the `NOTE_ITEM` 5-table split
+(above) already fixed, both missed at the time because they predate that split or were added after
+it without being revisited:
+
+- **`NOTE_ENTREGA_DEVOLUCION`** mixed all 4 profile types it's used by (Entrega, Devolución, Fin de
+  Contrato, Préstamo) on one table — `failure_cause`/`failure_details` were only ever populated for
+  Devolución+Falla, `area_evento` only for Préstamo (and even there, optional). Split into
+  `NOTE_DEVOLUCION_FALLA` (`note_report_id` PK/FK → `NOTE_ENTREGA_DEVOLUCION`, `failure_cause`
+  `NOT NULL`, `failure_details` nullable — same "row exists only when the dimension applies, but a
+  genuinely optional attribute within that row can still be NULL" shape as `NOTE_ITEM_GLPI_TRACKING`'s
+  own `rejection_reason`) and `NOTE_PRESTAMO_AREA_EVENTO` (`note_report_id` PK/FK, `area_evento`
+  `NOT NULL` — the row itself simply doesn't exist when Área/Evento was left blank). The base
+  `NOTE_ENTREGA_DEVOLUCION` table is left with just `note_report_id`/`user_name`/`user_dni`/
+  `user_email`/`motivo` — `motivo` stays, since every profile type that uses this table has one.
+- **`NOTE_REPORT.rejection_reason`** (added 2026-07-29 alongside the approval workflow, uncommitted
+  at the time of this audit) is null unless `approval_status = 'RECHAZADO'` — the same pattern,
+  caught immediately since it was brand new. Split into `NOTE_REPORT_REJECTION` (`note_report_id`
+  PK/FK → `NOTE_REPORT`, `rejection_reason NOT NULL`) — a row exists only for a note that's
+  actually been rejected. `approval_status` itself stays directly on `NOTE_REPORT` — every note has
+  one, applicable uniformly, unlike `rejection_reason` which only ever means something for one of
+  its three values.
+- **Both decisions were explicitly confirmed with the user before implementing** (per this
+  project's own "never make schema changes without asking first" rule) — presented as findings with
+  options (split now / flag only / leave as-is) rather than assumed; the user chose the full split
+  for both.
+- **No Java-side ripple at all** — `NoteReport.java`'s plain `failureCause`/`failureDetails`/
+  `areaEvento`/`rejectionReason` fields, every controller, `NoteGenerationService`, and all 5 HTML
+  templates needed zero changes, exactly the same "normalization is a DB-layer concern" outcome
+  already observed for the `NOTE_ITEM` split and the catalog-FK redesign — only `SqliteHistoryService.java`
+  and the two DDL files (plus their duplicated test schema copies) ever touched these columns
+  directly.
+- **`SqliteHistoryService` changes**: `insertProfileDetail()`'s ENTREGA_DEVOLUCION branch now does
+  a 5-column base insert, then a conditional insert into `NOTE_DEVOLUCION_FALLA` (only when
+  `failureCause` is non-blank) and `NOTE_PRESTAMO_AREA_EVENTO` (only when `areaEvento` is
+  non-blank). `updateNoteApprovalStatus()` now does a plain `UPDATE` for `approval_status`, then a
+  check-then-insert-or-update-or-delete for `rejection_reason` — the same shape
+  `updateItemGlpiStatus()`/`updateItemReturnStatus()` already use (delete the row when
+  approving/re-approving with a blank reason, upsert it when rejecting with a real one). `getById()`
+  gained 3 more `LEFT JOIN`s (`NOTE_REPORT_REJECTION`, `NOTE_DEVOLUCION_FALLA`,
+  `NOTE_PRESTAMO_AREA_EVENTO`) — same "SQL gains JOINs, Java row-mapping code doesn't change"
+  pattern as the catalog-FK redesign; result-column names (`rejection_reason`, `failure_cause`,
+  `failure_details`, `area_evento`) are unchanged. `LIST_BASE_SQL` gained the
+  `NOTE_REPORT_REJECTION` join too (History needs to show the rejection reason without a second
+  query per row).
+- **Migration mechanics — much simpler than the `NOTE_ITEM`/`MODEL` rebuilds above**: none of the 4
+  retired columns are referenced by FK from any other table, so both engines use a plain
+  backfill-then-`DROP COLUMN` (SQLite 3.35+ supports `DROP COLUMN` natively; SQL Server always
+  has), no table-rename/rebuild dance needed. `migrateRejectionReasonSchema()`/
+  `migrateEntregaDevolucionSplitSchema()` (duplicated per this codebase's no-shared-abstraction
+  convention, in both `DatabaseService.java` and `RemoteDatabaseService.java`) each guard on
+  `columnExists()` (no-op once migrated, including on a brand-new install, which never creates the
+  retired columns at all) and use `INSERT OR IGNORE`/`NOT EXISTS` for the backfill so a retry after
+  a partially-failed `DROP COLUMN` never double-inserts. `failure_cause`/`failure_details`/
+  `area_evento`/`rejection_reason` are deliberately **not** re-added via `addColumnIfMissing()`
+  anymore — same "stop re-adding a retired column" precedent already established for
+  `NOTE_REPORT.sede`.
+- **Tests**: `DatabaseServiceMigrationTest` gained
+  `migrateSchemaBackfillsRejectionReasonIntoOwnTableAndDropsColumn()` and
+  `migrateSchemaBackfillsFailureAndAreaEventoIntoOwnTablesAndDropsColumns()` — both seed a
+  pre-existing database with real data in the old columns (not just empty tables) and assert it
+  lands correctly in the new tables, the old columns are gone, and an unrelated row/column is
+  untouched; the existing `migrateSchemaAddsPrestamoColumnsToAPreExistingDatabase` test's stale
+  assertions (which expected `area_evento`/`rejection_reason` to land back on the old tables) were
+  corrected to expect the new tables instead. `SqliteHistoryServiceTest`'s own duplicated schema
+  copy updated to match (same "every new column/table needs its test schema copies updated too"
+  precedent already established elsewhere in this file) — no behavioral test changes needed there,
+  since `NoteReport`'s Java-side shape never changed. Full suite: 344 tests passing (342 pre-existing
+  + 2 new).
+
+### App-layer length-cap audit against SQL Server `NVARCHAR(n)` bounds (2026-07-30)
+
+Direct user follow-up to the schema-normalization pass above, after being told SQL Server bounds
+most free-text columns but SQLite never enforces a declared column length at all — meaning the
+*only* real enforcement for a local-only installation is whichever `TextFormatter` cap the input
+widget happens to have. Audited every typed free-text field in the app against its target SQL
+Server column and found **7 fields with no cap matching their column's bound at all** — some had
+no length restriction of any kind, one (`ProviderNoteController.txtCuit`) had no `TextFormatter`
+whatsoever. All fixed with a plain `length() <= N ? change : null` cap, same mechanism already used
+throughout this codebase (Detalles/Observaciones Generales/regex/etc.) — no new validation
+machinery introduced.
+
+- **`ItemDialogController.txtSerial`** → `NOTE_ITEM_ASSET.serial_number` `NVARCHAR(255)`. New
+  `SERIAL_MAX_LENGTH = 255`. `txtAF` (the derived A/F display field, `editable="false"` since the
+  2026-07-29 A/F simplification) is **not** separately capped — nothing is ever typed into it
+  directly, and since it's just `prefix + separator + serial`, with prefix/separator both short
+  config values, capping `serial` already keeps `a_f` within its own `NVARCHAR(255)` bound in every
+  realistic case.
+- **`UserNoteController.txtUserName`** and **`PrestamoNewLoanController.txtUserName`** (its own
+  duplicate, per this codebase's no-shared-abstraction convention) → `NOTE_ENTREGA_DEVOLUCION.user_name`
+  `NVARCHAR(255)`. Both gained `USER_NAME_MAX_LENGTH = 255`. `UserNoteController`'s copy already had
+  a letter+space-only character restriction — the length check was folded into the same formatter,
+  ahead of the character-set check. `PrestamoNewLoanController`'s copy had no restriction of any
+  kind (it doubles as an AD search-by-name box), so only the length cap was added, deliberately not
+  the letter-only restriction — adding that would be new, unrequested behavior on a field this
+  codebase never constrained that way.
+- **`ProfileController.txtProfileName`** → `NOTE_REPORT.technician_name` `NVARCHAR(255)`. New
+  `PROFILE_NAME_MAX_LENGTH = 255`, folded into the existing letter+space formatter the same way.
+- **`ProviderNoteController.txtProviderResponsibleName`** → `NOTE_PROVEEDOR.responsible_name`
+  `NVARCHAR(255)`; **`txtCuit`** → `NOTE_PROVEEDOR.cuit` `NVARCHAR(255)` (this one had **no**
+  `TextFormatter` at all before — not even a character restriction). New
+  `RESPONSIBLE_NAME_MAX_LENGTH`/`CUIT_MAX_LENGTH = 255`.
+- **`DatabaseSectionController`'s 8 catalog-name dialogs** (Add/Edit Type, Add Brand, Add/Edit
+  Model, Add Provider, Add Sede, and the shared `openRenameDialog()` used by Brand/Model/Provider/Sede
+  renames) → `TYPE`/`BRAND`/`MODEL`/`PROVIDER`/`SEDE.name`, all `NVARCHAR(255)`. None had any cap
+  before. One shared `CATALOG_NAME_MAX_LENGTH = 255` constant + a `catalogNameFormatter()` factory
+  method (returns a **new** `TextFormatter` instance per call — a `TextFormatter` can only ever be
+  attached to one control at a time, so a single shared instance across 8 `TextField`s would have
+  silently detached from all but the last) — one shared helper here, not duplicated 8 times, since
+  every use is within this same class rather than across controllers.
+- **Fields deliberately left unchanged, and why**: `ProfileController.txtProfileEmail` is never
+  written to any DB column (technician identity is session-only — see
+  [Technician identity](#technician-identity--session-only-sourced-from-windowsad) — only
+  `display_name_pref` persists, in local-only `APP_SETTINGS`; `sede_pref` no longer exists at all
+  as of 2026-07-30, see [Role-based permissions (RBAC)](#role-based-permissions-rbac-a-superadmin-tier-and-sede-scoped-admin-actions-2026-07-30)); `UserNoteController`
+  has no email field at all (`user_email` is populated straight from the AD lookup result, never
+  typed); DNI fields (`txtUserDni`, `txtProfileDni`, `txtProviderResponsibleDni`) were already
+  capped at 8 digits, far under any column's bound; `motivo`/`failure_cause` are ComboBox
+  selections from config lists, never typed (see the existing "DB-side length bounds" entry above
+  for why those two specifically have no `TextFormatter`).
+- **Tests**: `UserNoteViewFxmlTest`/`PrestamoNewLoanViewFxmlTest`/`ProfileViewFxmlTest` each gained
+  a length-cap regression test (real FXML load + reflection-obtained field, same
+  `observationsFieldRejectsInputBeyond300Characters()` precedent). New `ProviderNoteViewFxmlTest.java`
+  (no prior test loaded `ProviderNoteView.fxml`) — `initialize()` eagerly calls
+  `refreshProviders()` → `ServiceLocator.getInstance().getEquipmentService().getAllProviders()`, so
+  this needed `ServiceLocator.getInstance().setEquipmentService(new MockEquipmentService())` in
+  setup, same precedent as `SettingsViewFxmlTest`/`DatabaseSectionViewFxmlTest`; covers both new
+  caps (`txtProviderResponsibleName`, `txtCuit`). **`ItemDialogController.txtSerial` and
+  `DatabaseSectionController`'s 8 catalog-name fields have no dedicated test** — same two
+  already-accepted gaps in this file: `ItemDialogController.initialize()` calls `ServiceLocator`
+  directly (same reason `txtObs`'s own cap has no test), and every one of
+  `DatabaseSectionController`'s catalog dialogs is a real, modally-shown `Stage`
+  (`buildAndShow()` → `stage.showAndWait()`) — this suite has a standing rule against leaving a
+  `Stage.show()`-driven test in the permanent run (proven flaky, see the Falla-persistence
+  investigation elsewhere in this file). Verified via `mvn compile`/`mvn test` (full suite green)
+  and direct code review instead. Full suite: 350 tests passing (344 pre-existing + 6 new).
+
+### Edge-case / malformed-input audit (2026-07-30)
+
+Direct user follow-up to the length-cap audit above — checked for input that could cause an
+unhandled runtime exception rather than just an unbounded value, starting from a concrete example
+the user gave (negative stock).
+
+- **`SqliteEquipmentService.setModelStock()` now rejects `stock < 0`** (`IllegalArgumentException`,
+  Spanish message, same "exception-for-user-facing-validation" pattern `addType`/`removeBrand`
+  already use). The UI's own `tfStock` `TextFormatter` (`\d{0,9}`, no minus sign possible) already
+  made this unreachable through the 3 Base de Datos dialogs today — this is a boundary check on the
+  actual persistence method every caller goes through, not a UI-reachable bug fix. Deliberately
+  **not** duplicated into `MockEquipmentService`, matching the established precedent that
+  validation logic lives only in the real `SqliteEquipmentService` (confirmed by checking
+  `MockEquipmentService.addType()`, which has no matching duplicate-name check either — Mock is a
+  simpler in-memory stand-in, validation-specific behavior is tested against the real service).
+  `CachingEquipmentService.setModelStock()` needed no change — it already calls
+  `primary.setModelStock(...)` with no surrounding try/catch, so the exception propagates as a
+  "fail loudly" write failure, same as every other primary-write error in that class.
+- **A real crash risk found, not hypothetical**: `ItemDialogController.validateSnLength()`'s
+  `sn.matches(regex)` had no protection against a syntactically invalid regex — `SettingsController`'s
+  S/N Validation edit dialog let an admin save any string as `regex_pattern` with zero syntax
+  checking. A bad pattern (unbalanced parens, an invalid quantifier, etc.) would compile fine as a
+  *string* but throw `PatternSyntaxException` the moment any technician typed an S/N against that
+  model — on every keystroke, since this method runs from `txtSerial`'s text-property listener.
+  Fixed at both ends:
+  - **`SettingsController.openEditDialog()`** (the S/N Validation "Editar" dialog) now calls
+    `Pattern.compile(newRegex)` in a try/catch before saving — a new `lblRegexError` (red, inline,
+    same "validate at the boundary" precedent as every other catalog dialog's error label) blocks
+    the save and shows `PatternSyntaxException.getDescription()` if the pattern doesn't compile.
+    This is the fix that actually matters — a bad pattern should never reach the database at all.
+  - **`ItemDialogController.validateSnLength()`** now wraps `sn.matches(regex)` in its own
+    try/catch, defensively — an installation that already had a bad pattern saved before the check
+    above existed (or any other write path into `SN_VALIDATION`) must not crash S/N entry for
+    every technician. Fails safe: treats a `PatternSyntaxException` as "pattern check skipped, not
+    blocking" — same "fail safely, don't crash, don't block the user" precedent this project
+    already applies to AD/GLPI/SMTP unreachability.
+- **Tests**: `SqliteEquipmentServiceTest.setModelStockRejectsNegativeStock()` — the negative-stock
+  guard is the only one of these three fixes with a feasible unit test. Neither regex fix has a
+  dedicated test, both for reasons already established elsewhere in this file:
+  `ItemDialogController`'s `initialize()` calls `ServiceLocator` directly (same reason `txtObs`'s/
+  `txtSerial`'s own caps have no test) and reflection-seeding every field `validateSnLength()`
+  touches (`cmbModel`, `containerAssetFields`, `chkSinSN`, `flowSnPattern`, `equipmentService`,
+  ...) for one small catch block isn't a good size/value tradeoff; `SettingsController.openEditDialog()`
+  builds `tfRegex`/`lblRegexError` dynamically and opens a real modal `Stage`
+  (`showAndWait()`) — this suite's standing rule against `Stage.show()`-driven tests in the
+  permanent run (see the Falla-persistence investigation elsewhere in this file) applies here too.
+  Verified via `mvn compile`/`mvn test` (full suite green) and direct code review instead. Full
+  suite: 351 tests passing (350 pre-existing + 1 new).
+
+### `database/sqlserver/01-schema.sql` brought back in sync with `RemoteDatabaseService.ensureSchema()`
+
+This hand-maintained script had drifted significantly — it had zero test coverage (no test loads
+or runs it, unlike the seed scripts), so nothing caught it. It still reflected roughly the schema
+as it stood right after the `NOTE_ITEM` 5-table split: missing `SEDE`, `USER_ROLE`, `MODEL_STOCK`,
+`NOTE_REPORT_REJECTION`, `NOTE_DEVOLUCION_FALLA`, `NOTE_PRESTAMO_AREA_EVENTO`; missing every
+`deprecated` column; `NOTE_ITEM`/`NOTE_PROVEEDOR` still on the pre-catalog-FK text-column shape;
+`MODEL.brand_type_id` still `NOT NULL`; still creating the now-dead `NOTE_REPORT.glpi_synced` on
+every fresh install; almost every free-text column still `NVARCHAR(MAX)` instead of its real
+bound; `created_at`/`status_updated_at` still `NVARCHAR(MAX)` instead of `DATETIME2`.
+
+Rewritten to mirror the current `ensureSchema()` line-by-line, in the same order: all 20
+`CREATE TABLE` blocks (including the 3 `MODEL` indexes), then every migration step for an
+already-running installation, translated faithfully — most as set-based `INSERT`/`UPDATE`
+(idiomatic for a hand-run script), but the two truly row-by-row resolve-or-create migrations
+(`NOTE_ITEM`/`NOTE_PROVEEDOR`'s text-to-FK conversion) kept as T-SQL cursors, matching the Java's
+own per-row logic exactly rather than approximating it with a set-based query that might not
+handle every edge case (e.g. the "Genérico / Otro" fallback resolution) the same way.
+
+**Also fixed the same day, in `02-seed-equipment.sql.example`**: it still seeded a brand literally
+named `'Generic'` — predating the rename to `'Genérico / Otro'`. Since `01-schema.sql`'s rename
+only fires on a row still named `'Generic'`, running this seed script after `01-schema.sql` on a
+fresh install would have created a stray duplicate `'Generic'` brand alongside the real fallback.
+Fixed to seed `'Genérico / Otro'` directly.
+
+**No test coverage added for `01-schema.sql` itself — a known, accepted gap, not an oversight.**
+Unlike the seed scripts (`02-seed-equipment.sql.example`, `starter-template.sql.example`,
+`demo-seed.sql`), which are plain portable `SELECT`/`INSERT`/`DELETE` and can run against a SQLite
+stand-in for testing (see `SqlServerSeedSqlSnValidationTest`/`StarterTemplateSqlTest`/
+`DemoSeedSqlTest`), `01-schema.sql` is now saturated with genuine T-SQL-only control flow
+(`BEGIN`/`END`, cursors, `TRY`/`CATCH`, dynamic SQL via `sp_executesql`, `sys.indexes`/
+`sys.tables`/`information_schema.columns`) that SQLite cannot parse at all — there is no
+dialect-neutral stand-in this could run against, same "no live SQL Server instance anywhere in
+this project's test infrastructure" limitation already documented repeatedly elsewhere in this
+file. Verified instead by careful line-by-line transcription against the current, exact
+`RemoteDatabaseService.ensureSchema()` Java source (re-read in full immediately before writing
+this script) and a structural sanity check (`BEGIN`/`END`/`TRY`/`CATCH` block-count balance).
+Existing test suite (351 tests) still green — nothing in `src/main/java` was touched by this pass.
 
 ### `APP_SETTINGS` keys in use
 
@@ -568,7 +1585,7 @@ See `docs/database.md` for full ERD.
 | `db_username` | AES (AppKeyEncryptionService) | Remote DB username |
 | `db_password` | AES (AppKeyEncryptionService) | Remote DB password |
 | `display_name_pref:<username>` | No | Per-technician sidebar greeting-name preference (see [Technician identity](#technician-identity--session-only-sourced-from-windowsad)) — one row per technician username, not a secret |
-| `sede_pref:<username>` | No | Per-technician Sede (site) **catalog id** (as of 2026-07-24 — was free text before), set via Settings' `cmbSede` — see [Technician Sede](#technician-sede-per-note-mandatory-2026-07-22) and [Sede became catalog-backed](#sede-became-catalog-backed--sede-table-combobox-deprecated-flag-rename-2026-07-24) below. Snapshotted onto `NOTE_REPORT.sede_id` and printed on every note; one row per technician username, not a secret |
+| ~~`sede_pref:<username>`~~ | — | **Removed 2026-07-30** — Sede is no longer a self-service preference at all; it's read from the superadmin-assigned `APP_USER.sede_id` instead (see [Role-based permissions (RBAC)](#role-based-permissions-rbac-a-superadmin-tier-and-sede-scoped-admin-actions-2026-07-30)). Kept here, struck through, as a historical pointer — a pre-2026-07-30 install may still have stray rows under this key in `APP_SETTINGS`; nothing reads them anymore. |
 
 ### Equipment seed data — no longer auto-seeded (2026-07-14)
 
@@ -652,6 +1669,41 @@ Added 2026-07-13. `cmbBrand`/`cmbModel`'s synthetic fallback entry (shown when a
 - **Pre-existing items saved with the old "Generic" label won't re-match on edit.** `prefillAsset()`/`prefillCountable()` look up the combobox item whose name equals the stored `NOTE_ITEM.brand_name`/`model_name` text exactly. A note generated before this rename with brand/model literally `"Generic"` will fail to preselect anything when reopened for editing (the field shows blank) — same class of trade-off as every other denormalized "snapshot, don't reference" field in this schema (see `NOTE_ITEM` in [SQLite tables](#sqlite-tables)). Not fixed; flagged as a known cosmetic edge case for very old notes, not retroactively migrated.
 - **Live-filter search attempted and reverted 2026-07-16**: `cmbType`/`cmbBrand`/`cmbModel` were briefly made `setEditable(true)` with a custom `StringConverter` + text-listener filtering (typing narrowed the dropdown, matching only committed a real catalog item, never free text — functionally worked). Reverted same day, purely on visual grounds — user found the editable-combobox look unconvincing (an editable ComboBox's internal editor `TextField` replaces the closed-box `ButtonCell` display these dialogs relied on for the "Genérico / Otro" italic styling). If searchable Type/Brand/Model combos are revisited, don't just reintroduce `setEditable(true)`; consider a non-editable approach (e.g. a small dedicated filter `TextField` above/beside the combo, or a `PopOver`-based custom picker) that doesn't change the ComboBox's own rendered chrome.
 
+### A/F format simplification (2026-07-29)
+
+The org's A/F format changed to `IT-<serial number>` — no longer an independently-typed, padded
+number. A/F is now fully derived: `prefix + separator + serialNumber`, recomputed live as the
+technician types S/N — no separate raw-number field, no padding logic.
+
+- **`AppConfig.AfFormat` shrunk to just `prefix`/`separator`** — `length`/`filler`/`inputPattern`
+  deleted entirely, both from the model and `app-config.json`/`.example`. `@JsonIgnoreProperties(ignoreUnknown = true)`
+  was already present, so a stale config file with the old keys still deserializes fine — no
+  migration step needed.
+- **`ItemDialogController`**: `formatAF()`/`extractAfRaw()`/`refreshAfFlow()`/`afTypeDescription()`/
+  `afPlaceholder()` and the `flowAfPattern` preview `TextFlow` (both controller field and FXML node)
+  were deleted outright, replaced by a single `recomputeAf()` — `prefix+separator+S/N` when
+  `chkEnableAF` is selected, blank otherwise — wired to `txtSerial`'s existing text-change listener
+  (so A/F updates on every S/N keystroke) and called from `handleAfToggle()`/`handleSinSnToggle()`.
+  `txtAF` is now `editable="false"` (FXML) — a derived display field, not typed input.
+- **"Incluir A/F" (`chkEnableAF`) now defaults `selected="true"`** (was unchecked) and **force-disables/
+  unchecks when "Sin S/N" (`chkSinSN`) is checked** — new interaction in `handleSinSnToggle()`,
+  mirroring how Sin S/N already disables the S/N field itself: there's nothing to derive A/F from
+  with no serial. `prefillAsset()` simplified to `chkEnableAF.setSelected(af != null && !af.isEmpty())`
+  + `handleAfToggle()` (S/N is already prefilled by that point, so `recomputeAf()` reproduces the
+  stored value) — no raw-suffix extraction needed since there's no raw suffix anymore.
+- **`SettingsController`/`SettingsView.fxml`**: `txtAfLength`/`txtAfFiller` fields, their FXML
+  `GridPane` columns, and `handleSave()`'s `Integer.parseInt` validation were all removed.
+  `updateAfPreview()` simplified to plain `prefix + separator + "AB12345678"` concatenation.
+- **`AfFormatterTest.java` deleted outright** — confirmed via grep that no `AfFormatter` class
+  exists anywhere in `main/`; the file defined and tested a private, self-contained reimplementation
+  of the old padding algorithm, exercising zero production code. `SettingsControllerTest`'s
+  `txtAfLength`/`txtAfFiller` field-injection lines were removed to match.
+- **No changes needed in `AssetItem`/`NoteReportItem`/`NoteGenerationService`** — they only ever
+  passed through whatever string was already in `af`/`getAf()`, agnostic to how it was constructed.
+- Built first in this session's 4-feature batch, as an intentional warm-up (fully resolved design,
+  no open questions) — full suite: 302 tests passing (307 pre-existing − 5 deleted `AfFormatterTest`
+  cases), all green.
+
 ### Close ("×") icon on note popups
 
 Added 2026-07-16. `NotePreviewView.fxml` (shown right after "Generar Nota" succeeds) and `NoteDetailView.fxml` (shown when reopening a note from History — the same popup for both a regular technician and an admin, gated by `NoteDetailController.open()`'s `adminMode` parameter) each gained a small "✕" button in the top-right of their teal gradient header, via a `Region HBox.hgrow="ALWAYS"` spacer pushing a new `Button` (`styleClass="dialog-header-close-button"`) to the far right. Each wires to the popup's existing close handler (`onAction="#handleCancel"` for `NotePreviewController`, `onAction="#handleClose"` for `NoteDetailController`) rather than duplicating close logic — behaves identically to each popup's existing "Cancelar"/"Cerrar" footer button, just reachable without scrolling down to the footer.
@@ -674,6 +1726,30 @@ Added 2026-07-16. Every template's item list used to render each item as 5 stack
 - **Column headers kept in full** ("N° Serie", "N° Activo Fijo", "Cantidad", "Detalles", not abbreviated) — explicit user choice, consistent with wording already used elsewhere on the note.
 - **Applied identically to all 5 templates**, including `devolucion.html`, which previously had its own distinct CSS-grid-based item layout (2-column grid per item, not stacked "Label: value" lines like the other 4) — now unified onto the same `.note-table` markup/CSS as everywhere else. Its `@media print` rule that force-sharpened the old grid's borders (`.item-entry, .item-label, .item-value`) was retargeted to `.note-table th, .note-table td` rather than left dangling on now-nonexistent classes.
 - **Tests**: `NoteGenerationServiceTest.java` updated throughout — assertions on the old `item-property`/`item-value`/`items-list-container` markup and `"Cant: N"` text replaced with `note-table`/exact `<td>...</td>` cell-sequence checks; `countableItemShowsQuantityOnlyWhenGreaterThanOne` renamed to `countableItemAlwaysShowsQuantityInDedicatedColumn` to match the new always-show-the-number behavior. `TemplateEngineTest.java` gained two new cases for the nested-loop behavior (`nestedLoopInsideOuterBlockExpandsAgainstTheSameLoopsMap`, `nestedLoopWrapperHidesWholeBlockWhenOuterLoopIsEmpty`).
+
+### Item table redesign, round 2: merged "Equipo" column + zebra rows, no outer box — superseded same week
+
+Direct user report with a screenshot: for a note with only 1-2 items, the 2026-07-16 table design above (outer bordered box + tab, 6 separate columns, a heavy 2px header rule, a 1px rule under every row) was "too many lines, for too little information" — a lot of visual chrome around very little actual content. Three redesigns (merged-column table with zebra rows / a no-table compact inline list / the same 6 columns with the box and per-row lines stripped) were mocked up as an HTML artifact against the user's own real data (rendered at real print font/size, same precedent as the signature-box and original table-vs-stacked-blocks redesigns) before picking one — **Option A** (merged column + zebra) was chosen 2026-07-29, with Option B (compact inline list) named up front as the fallback if A "fails" once seen for real.
+
+Option A shipped (Tipo/Marca/Modelo merged into one "Equipo" column, outer box removed, zebra-striped rows) but was **replaced the very next day (2026-07-30) — see the round-3 entry directly below** — the fallback condition was hit for real, for two concrete reasons the mockup comparison never surfaced: the target printer is black & white, so the `#f4f4f4` zebra shading that was supposed to separate rows printed as no visible difference at all; and the table's own row height/padding still left more empty vertical space between items than the user wanted, even without the shading. This whole entry is kept as historical record of what was tried and specifically why it didn't hold up in the real print environment — not something to resurrect without addressing both points (any future table-based option needs a *lines-or-marks* row separator that survives B&W printing, not a background color).
+
+- **Tipo/Marca/Modelo collapse into one "Equipo" column** — a bold primary line (`{{TYPE}}`) with a lighter, smaller secondary line below it (`{{BRAND}} {{MODEL}}`), via two stacked `<div class="equipo-name">`/`<div class="equipo-sub">` inside the cell. Asset tables go from 6 columns to 4 (Equipo, N° Serie, N° Activo Fijo, Detalles); countable tables go from 5 to 3 (Equipo, Cantidad, Detalles).
+- **The outer `.items-section` bordered box + "Lista de equipamiento" tab (added 2026-07-16, see above) is removed entirely**, per Option A's design.
+- **Header row**: single 1.4pt line, uppercase, smaller (9.5pt), `#555` gray.
+- **Row separation**: alternating `#f4f4f4` background (`tbody tr:nth-child(odd)`) instead of a `border-bottom` on every `<td>` — **this specific mechanism is what failed on a B&W printer**, since a light gray fill and white are visually identical once color is stripped out.
+- **Tests**: `NoteGenerationServiceTest`'s two exact-markup assertions updated to the merged-cell shape; a real, one-time visual check (generate a real note, dump + render the HTML, confirm, delete the test) was run before calling it done — same precedent used again for round 3 below.
+
+### Item table redesign, round 3: Option B, compact inline list (2026-07-30)
+
+Direct follow-up the next day: "the printer is black and white so the grey background is not showing, and there is so much empty space in between the items." Rather than patch Option A's row-separator mechanism, the user went straight to the fallback already agreed on the day before — **Option B**, the no-table compact list — since that option never depended on background color or a table's row chrome to begin with.
+
+- **No table at all.** Each item is one flex row (`.item-row`: `display: flex; justify-content: space-between; align-items: baseline;`) — equipment name/brand/model on the left, technical details on the right in smaller gray text. Rows within one list are separated only by a thin `1px solid #ccc` bottom border (`.item-row:last-child` drops it, so the list's own last row doesn't end in a trailing rule) — a **line**, not a fill color, so it survives B&W printing exactly as well as every other rule already used elsewhere on these notes (signature lines, section separators). Row padding is `5px 2px` — deliberately tighter than round 2's table-cell padding, directly addressing "so much empty space."
+- **A combined `{{META}}` token, built server-side, replaces separate `{{SERIAL}}`/`{{ASSET_TAG}}`/`{{QUANTITY}}`/`{{DETAILS}}` cells** — `NoteGenerationService` gained `assetMeta(serial, af, details)` / `countableMeta(quantity, details)` / `joinMeta(String...)`, mirroring the exact "combine conditionally in Java, not in the template" precedent `failureLoop()`'s `FAILURE_TEXT` already established (see [Template engine](#template-engine)'s gotcha entries): each non-blank piece is joined with `" · "`, so a blank S/N (Sin S/N checked) or empty Detalles never leaves a dangling separator. Assets render `"S/N: {serial} · A/F: {af} · {details}"` (any blank piece dropped entirely, not just its value); countables render `"Cantidad: {n} · {details}"` (Cantidad always shown, since quantity always has a value). Both the live-generation path (`buildAssetItemTokens()`/`buildCountableItemTokens()`) and the reprint path (`generateFromStoredReport()`'s inline item loop) call these same two helpers, so a reopened historical note computes `META` identically to a freshly-generated one.
+- **`TYPE`/`BRAND`/`MODEL` needed no Java change** — same as round 2, these were already separate per-entry tokens; the left-hand line is just `<span class="item-equipo">{{TYPE}}</span> — {{BRAND}} {{MODEL}}` in the template.
+- **`.item-list + .item-list { margin-top: 14px; }`** separates the asset list from the countable list when a note has both (mirrors round 2's `.note-table + .note-table` spacing rule) — each list still independently vanishes via the unchanged `HAS_ASSET_ITEMS`/`HAS_COUNTABLE_ITEMS` presence-flag wrapping.
+- **`devolucion.html`'s print-media border-sharpening rule retargeted again** — round 2 had it forcing `.note-table th`'s crispness; now targets `.item-row` (`border-width: 1pt !important`), since that's the only remaining thin rule in this layout that print rendering could blur.
+- **Applied identically to all 5 templates** — CSS block and markup block were confirmed byte-identical across all 5 files (checksummed) both before and after this edit.
+- **Tests**: `NoteGenerationServiceTest`'s markup assertions rewritten again for the new `.item-row`/`.item-equipo`/`.item-meta` shape (`countableItemAlwaysShowsQuantityInDedicatedColumn` renamed `countableItemAlwaysShowsQuantityInMetaLine` to match); the two `indexOf("<table class=\"note-table\">")` ordering checks (Préstamo return-date-below-items, Provider motivo-below-items) updated to `indexOf("<div class=\"item-list\">")`. Same one-time real-render visual check run and removed before calling this done. Full suite: still 342 tests passing (no net count change — assertions rewritten in place, not added).
 
 ### S/N Validation panel — multi-select filters (Tipo/Marca/Modelo/Activo)
 

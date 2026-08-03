@@ -8,9 +8,11 @@
 
 - **FR-03**: The system shall enforce S/N length validation based on a configurable Type/Brand mapping table.
 
-- **FR-04**: The system shall automatically format A/F numbers based on four global parameters: Prefix, Separator, Length, and Filler character.
+- **FR-04**: The system shall derive the A/F value live from the item's Serial Number as `Prefix + Separator + SerialNumber` (both globally configurable), with no independent A/F entry — disabling S/N (via "Sin S/N") shall force-disable A/F inclusion too, since there is nothing to derive it from.
 
 - **FR-05**: The system shall calculate the item quantity logic: allow 'Quantity' input only if 'S/N' is disabled.
+
+- **FR-05a**: The system shall track a current stock quantity per Model, scoped per Type+Brand combination it is offered under (so the single shared "Genérico / Otro" model can carry an independent stock number for each Type+Brand it is used with), editable by an administrator from the Base de Datos section, with summed rollups shown at the Model, Brand, and Type level.
 
 ##### 2. Data & Persistence
 
@@ -32,13 +34,17 @@
 
 ##### 4. Security & Administration
 
-- **FR-13**: The system shall require an Admin Password or Environment Key to modify critical settings (like Server IP). All general configuration fields in Settings (A/F format, SMTP, GLPI API URL/Key, AD API URL/Token) and the "Guardar Configuración" button are disabled unless an admin session is active. Saving a new database or AD API connection tests it first and requires confirmation before persisting if the test fails.
+- **FR-13**: The system shall require an Admin Password, Environment Key, or a sufficiently-privileged login role to modify critical settings (like Server IP). Every general configuration field in Settings (A/F prefix/separator, SMTP, GLPI API URL/Key, AD API URL/Token) is independently disabled unless the active session holds the specific permission for that field group — SMTP configuration additionally requires the SUPERADMIN role specifically, never satisfied by the shared admin password alone. Saving a new database or AD API connection tests it first and requires confirmation before persisting if the test fails.
 
 - **FR-14**: The system shall protect the "Genérico / Otro" brand entry from deletion.
 
-- **FR-15**: The system shall require every technician to log in (AD username + password) before showing the main application window, gate application access on AD group membership, and automatically activate a non-expiring admin session for accounts with the ADMIN role — replacing the previous self-service, password-toggled admin session. A non-admin-role technician retains per-action password prompts for individual admin-gated actions (catalog edits, S/N validation edits) but cannot activate the broader session.
+- **FR-15**: The system shall require every technician to log in (AD username + password) before showing the main application window, gate application access on AD group membership, and automatically activate a non-expiring admin session for accounts with the ADMIN or SUPERADMIN role — replacing the previous self-service, password-toggled admin session. A non-admin-role technician retains per-action password prompts for individual admin-gated actions (catalog edits, S/N validation edits), but that shared-password fallback can only ever grant ADMIN-level permissions, never SUPERADMIN-only ones.
 
-- **FR-15a**: The system shall support a per-account role (ADMIN/USER), independent of AD group membership, resolved read-only at login; roles are assigned by a database administrator via direct SQL against the USER_ROLE table, not through an in-app screen.
+- **FR-15a**: The system shall support a per-account role (USER/ADMIN/SUPERADMIN) and an assigned Sede, independent of AD group membership, resolved read-only at login; roles, Sede assignments, and permission grants are set by a database administrator via direct SQL against the APP_USER and ROLE_PERMISSION tables, not through an in-app screen.
+
+- **FR-15b**: The system shall deny every admin-tier action by default and only permit it when the active session's role has been explicitly granted the matching permission — adding a new sensitive feature must never be silently reachable by every role unless a grant is added for it.
+
+- **FR-15c**: The system shall restrict a plain ADMIN's approve/reject, GLPI sync, and return-validation actions to notes generated at that ADMIN's own assigned Sede, showing a warning when an ADMIN opens a note belonging to a different Sede; the SUPERADMIN role shall bypass this restriction and act on notes from any Sede.
 
 - **FR-16**: The system shall allow administrators to manage per-model S/N regex validation rules (enable/disable, view pattern) from an admin-protected table in Settings.
 
@@ -64,7 +70,17 @@
 
 ##### 7. Technician Identity & Traceability
 
-- **FR-26**: The system shall require each technician to configure a Sede (site) value, editable by any technician (not admin-gated) from Settings, and shall block note generation (and direct Préstamo entry) with a warning until it is set — the same traceability requirement already enforced for the technician's AD-resolved Name/DNI. The configured Sede shall be displayed in the sidebar and snapshotted onto every generated note, printed on the note itself.
+- **FR-26**: The system shall require each technician to have a Sede (site) assigned by a database administrator (not a self-service preference), and shall block note generation (and direct Préstamo entry) with a warning until one is assigned — the same traceability requirement already enforced for the technician's AD-resolved Name/DNI. The assigned Sede shall always be visible in the sidebar (styled as a standing warning when unassigned) and snapshotted onto every generated note, printed on the note itself.
+
+##### 8. Note Approval Workflow
+
+- **FR-27**: The system shall require every newly-generated note to start in a PENDING approval state, and shall hide all item-level GLPI sync, Préstamo return, and Provider return action rows in the note detail popups until an administrator explicitly approves the note (APPROVED) — a rejected note (RECHAZADO, with a mandatory reason) is treated as void, with no item-level actions ever made available.
+
+- **FR-28**: The history view shall show PENDING and APPROVED notes by default, with a checkbox to additionally reveal RECHAZADO notes; a sidebar badge on the Historial nav item shall show the count of notes currently awaiting approval.
+
+##### 9. Provider Equipment Return Tracking
+
+- **FR-29**: The system shall track a return status (Pendiente/Recibido/No recibido) per item on a Provider note whenever its Motivo is in an administrator-configured list of returnable motivos (e.g. Garantía, Reparación), using the same underlying mechanism as Préstamo return tracking (FR-22) but with Provider-appropriate wording, and leaving items on non-returnable Provider notes untracked (same as Entrega/Fin de Contrato).
 
 ### Non-Functional Requirements (NFR)
 
@@ -82,7 +98,7 @@
 
 - **US 1.1** - **Per-Item Technical Detail Toggle**: As a user, I want a pop-up to show for each item I add to a note so that I can specifically select Type/Brand/Model, enable or disable S/N and A/F fields, or add a detailed note for that item only.
     - ***Acceptance Criteria***:
-        - Both S/N and A/F fields must be disabled by default when adding an item.
+        - S/N is enabled by default; A/F is included by default (derived from S/N) — disabling S/N ("Sin S/N") forces A/F off too, since it has nothing to derive from.
         - The user must be able to toggle these fields via a modal or pop-up before the item is finalized in the list.
         - The printed/generated note must only display the enabled fields for that specific row.
         - Serial Numbers are automatically converted to uppercase by default. This can be toggled off with a checkbox (enabled by default).
@@ -93,10 +109,10 @@
         - The system must allow clearing a selection to "reset" the filters.
         - If the server is offline, the selectors must use the last known data stored in the local cache.
 
-- **US 1.3** - **Advanced A/F Auto-Formatting**: As a user, I want to input only the numeric part of an A/F, so that the system automatically pads and prefixes it based on global settings (e.g., "512" becomes "IT-00000512").
+- **US 1.3** - **A/F Derived from Serial Number**: As a user, I want the A/F value to be computed automatically from the item's Serial Number, so that I never have to type it separately (e.g., S/N "AB12345678" with Prefix "IT" and Separator "-" becomes "IT-AB12345678").
     - ***Acceptance Criteria***:
-        - Settings must allow configuration of Prefix, Separator, Length, and Filler character.
-        - The formatting must be applied automatically to the output report.
+        - Settings must allow configuration of Prefix and Separator.
+        - The A/F field recomputes live as the Serial Number is typed and is not independently editable.
 
 - **US 1.4** - **Item Quantity & S/N Logic**: As a user, I want to be able to specify a quantity for items that don't have a Serial Number, so that I can add multiple "Generic" items (like headsets) quickly.
     - ***Acceptance Criteria***:
@@ -218,3 +234,29 @@
         - Every item on a Préstamo note (asset or countable) has its own return status, independent of GLPI sync status.
         - The Préstamos Historial table color-codes rows by return status and flags overdue pending loans.
         - Only an active admin session can mark an item as returned or lost; marking an item lost requires a reason.
+
+##### 8. Role-Based Access Control
+
+- **US 8.1** - **Deny-by-Default Permissions**: As a superadmin, I want every admin-tier action to be denied by default and only enabled per role, so that a newly-added sensitive feature can never be silently accessible to everyone if I forget to protect it when I build it.
+    - ***Acceptance Criteria***:
+        - Every admin-tier action (catalog management, S/N validation edits, note approval, GLPI sync, return validation, profile overrides, and each Settings configuration field) is denied unless the active session's role has an explicit grant for it.
+        - Permission grants are managed by editing a database table directly via SQL — there is no in-app screen for assigning permissions.
+        - A brand-new admin-tier action added to the app in the future starts denied to every role until a grant row is added for it.
+
+- **US 8.2** - **Superadmin-Only Sensitive Settings**: As a superadmin, I want SMTP configuration to be editable only by a real superadmin login, never by the shared admin password, so that a shared fallback credential can't reach the app's email-sending configuration.
+    - ***Acceptance Criteria***:
+        - The SMTP host/sender/password fields in Settings stay disabled for a plain ADMIN, including one who entered the shared admin password correctly.
+        - The same fields become editable for a SUPERADMIN-role login.
+        - Every other Settings field group (A/F format, GLPI, AD) remains reachable by a plain ADMIN, matching pre-existing behavior.
+
+- **US 8.3** - **Sede-Scoped Admin Actions**: As an ADMIN assigned to one Sede, I want to only approve/reject notes, sync GLPI, or validate returns for notes generated at my own Sede, so that I can't accidentally act on another site's records.
+    - ***Acceptance Criteria***:
+        - Opening a note generated at a different Sede still shows its full contents, but the approve/reject, GLPI sync, and return-validation buttons are hidden.
+        - A clear warning is shown explaining that the note belongs to another Sede and cannot be actioned by this admin.
+        - A SUPERADMIN-role login can act on notes from any Sede, with no such restriction.
+
+- **US 8.4** - **Superadmin-Assigned Sede**: As a technician, I want my Sede to be assigned by a superadmin rather than picked by me, so that the value used for both note traceability and admin-scoping is consistent and can't be self-reported incorrectly.
+    - ***Acceptance Criteria***:
+        - There is no Sede selector left anywhere in Settings or Mi Perfil — Sede is entirely read-only from the technician's perspective.
+        - A technician with no Sede assigned sees a standing warning in the sidebar (not just a hidden/blank line) and a one-time popup at startup, and cannot generate a note or register a Préstamo until a superadmin assigns one.
+        - A sidebar badge showing pending GLPI-sync/approval/return counts is scoped to a plain ADMIN's own Sede, and shows the global count for a SUPERADMIN or a non-admin technician.

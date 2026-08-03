@@ -42,6 +42,7 @@ flowchart TB
         IEquipmentServiceImpl["IEquipmentService impls"]
         IHistoryServiceImpl["IHistoryService impls"]
         IEmailServiceImpl["IEmailService impls"]
+        IUserRoleServiceImpl["IUserRoleService impls"]
         AdminSession
         ConfigService
         AppKeyEncryptionService
@@ -80,13 +81,16 @@ flowchart TB
     IHistoryServiceImpl --> NoteAppDb
     IHistoryServiceImpl --> SqlServer
     IEmailServiceImpl --> SMTP
+    IUserRoleServiceImpl --> NoteAppDb
+    IUserRoleServiceImpl --> SqlServer
     ConfigService --> AppConfigJson
     TemplateEngine --> HtmlTemplates
     AppKeyEncryptionService --> NoteAppDb
     TechnicianSessionService --> IADServiceImpl
+    TechnicianSessionService --> IUserRoleServiceImpl
     TechnicianSessionService --> NoteAppDb
     WindowsIdentityService --> Windows
-    AdminSession --> NoteAppDb
+    AdminSession --> IUserRoleServiceImpl
 ```
 
 **Reading this diagram**: every arrow crossing a subgraph boundary is real — a controller calling `ServiceLocator`, a service reading/writing a file or making a network call. Arrows *within* the UI and Service subgraphs are intentionally omitted here (that's what the [Service Dependency Map](#service-dependency-map) and the [service class diagram](#service-abstraction-strategy-pattern) are for) — this diagram's job is the big picture: which layer talks to which external thing, not which specific controller calls which specific method.
@@ -192,6 +196,8 @@ classDiagram
     class IUserRoleService {
         <<interface>>
         +getRole(username) String
+        +getSedeId(username) Integer
+        +getPermissionsForRole(role) Set~Permission~
     }
     class SqliteUserRoleService
     class MockUserRoleService
@@ -213,6 +219,11 @@ classDiagram
         +removeType(id) removeBrand(id) removeModel(id) removeProvider(id)
         +renameType(id, name) renameBrand(id, name) renameModel(id, name) renameProvider(id, name)
         +setRequiresSerial(typeId, requiresSerial)
+        +getModelStock(modelId, brandId, typeId) int
+        +setModelStock(modelId, brandId, typeId, stock)
+        +getStockTotalsByType() Map~int,int~
+        +getStockTotalsByBrandForType(typeId) Map~int,int~
+        +getStockTotalsByModelForBrandAndType(brandId, typeId) Map~int,int~
     }
     class SqliteEquipmentService
     class MockEquipmentService
@@ -231,6 +242,8 @@ classDiagram
         +getMostUsedTypeNames(days, minUses, limit) getMostUsedBrandNames(type, ...) getMostUsedModelNames(type, brand, ...)
         +updateItemGlpiStatus(itemId, GlpiStatus, reason)
         +updateItemReturnStatus(itemId, ReturnStatus, reason)
+        +getPendingApproval() List~NoteReport~
+        +updateNoteApprovalStatus(reportId, status, rejectionReason)
     }
     class SqliteHistoryService
     class CachingHistoryService
@@ -270,7 +283,49 @@ classDiagram
 
 ### Login screen (LoginController) and IUserRoleService
 
-Added 2026-07-24. `App.java` shows a small login `Scene` (`LoginController` + `views/LoginView.fxml`) before `MainView` is built at all — a successful login is what triggers `App.showMainApp(Stage)`, the entire previous `start()` body. `LoginController.handleLogin()`: `IADService.validateCredentials(username, password)` → AD group-membership check (`AppConfig.adAccess.allowedGroupName`, blank = skipped) → `search(null, null, username)` profile lookup → `IUserRoleService.getRole(username)` → `TechnicianSessionService.loginResolved(ADUser, role)`, activating `AdminSession` permanently (no 15-minute expiry) for an `ADMIN` role. `IUserRoleService` is intentionally **read-only** — just `getRole(username)` — following the same remote-first/local-fallback `CachingXxxService` shape as `IEquipmentService`, backed by a flat `USER_ROLE(username, role)` table. **No in-app UI edits this table**: a first version added a 6th catalog list ("Usuarios") to Base de Datos for this, removed the same day per explicit user preference for direct SQL over an in-app CRUD screen for something this infrequent.
+Added 2026-07-24. `App.java` shows a small login `Scene` (`LoginController` + `views/LoginView.fxml`) before `MainView` is built at all — a successful login is what triggers `App.showMainApp(Stage)`, the entire previous `start()` body. `LoginController.handleLogin()`: `IADService.validateCredentials(username, password)` → AD group-membership check (`AppConfig.adAccess.allowedGroupName`, blank = skipped) → `search(null, null, username)` profile lookup → `IUserRoleService.getRole(username)` → `TechnicianSessionService.loginResolved(ADUser, role)`, activating `AdminSession` permanently (no 15-minute expiry, via `activatePermanently(role)`) for an `ADMIN` or `SUPERADMIN` role. `IUserRoleService` is intentionally **read-only** — following the same remote-first/local-fallback `CachingXxxService` shape as `IEquipmentService`, backed by an `APP_USER(id, username, role, sede_id)` table (renamed from `USER_ROLE` on 2026-07-30, which had no `sede_id`/`SUPERADMIN` tier — see below). **No in-app UI edits this table**: a first version added a 6th catalog list ("Usuarios") to Base de Datos for this, removed the same day per explicit user preference for direct SQL over an in-app CRUD screen for something this infrequent.
+
+### Role-based permissions (RBAC), `Permission`, and Sede-scoped admin actions
+
+Added 2026-07-30. A "prohibit-all, allow per role" redesign, on top of the plain `ADMIN`/`USER`
+split above: `models/Permission.java` is a compile-time enum of every admin-tier action
+(`MANAGE_TYPES`, `MANAGE_BRANDS`, `MANAGE_MODELS`, `MANAGE_STOCK`, `MANAGE_PROVIDERS`,
+`MANAGE_SEDES`, `EDIT_SN_VALIDATION`, `EDIT_SMTP_CONFIG`, `EDIT_GLPI_CONFIG`, `EDIT_AD_CONFIG`,
+`EDIT_AF_FORMAT_CONFIG`, `APPROVE_NOTES`, `SYNC_GLPI`, `VALIDATE_RETURNS`,
+`OVERRIDE_PROFILE_FIELDS`); a new `ROLE_PERMISSION(role, permission)` table is the DB-backed grant
+list a superadmin edits directly via SQL — the absence of a row is the only "denied" state.
+
+- **`AdminSession.effectiveRole`** is set independently at every activation path: the
+  shared-password fallback (`activate()`) always hardcodes `IUserRoleService.ROLE_ADMIN`,
+  regardless of anything else, so it can never unlock a `SUPERADMIN`-only permission;
+  `activatePermanently(role)` sets whatever role actually logged in. `hasPermission(Permission)`
+  checks `getPermissionsForRole(effectiveRole)`; a second overload,
+  `hasPermission(Permission, Integer noteSedeId)`, additionally requires the acting `ADMIN`'s own
+  `TechnicianSessionService.getSedeId()` to match the target note's Sede (`SUPERADMIN` bypasses
+  this scoping entirely).
+- **Every previously `AdminSession.isActive()`-only gate was converted** to a specific
+  `Permission` check: `DatabaseSectionController.requireAdmin(Runnable)` →
+  `requirePermission(Permission, Runnable)`; `SettingsController.updateFieldEditability()` split
+  from one blanket check into four independent `Permission` checks (one per config-field group);
+  `ProfileController`'s manual-edit fields → `OVERRIDE_PROFILE_FIELDS`;
+  `NoteDetailController`/`PrestamoDetailController`'s GLPI Sync/Reject, Devuelto/No devuelto, and
+  Recibido/No recibido buttons → `SYNC_GLPI`/`VALIDATE_RETURNS` (all three Sede-scoped, via the
+  second `hasPermission` overload above, with a warning banner shown when a Sede-mismatched
+  `ADMIN` opens a note it can't act on).
+- **Sede is no longer a self-service technician preference at all** — it's read from the same
+  superadmin-assigned `APP_USER.sede_id` driving the scoping above, for every technician, not just
+  admins. `SettingsController`'s old "SEDE" card and `TechnicianSessionService`'s
+  `setSedePreference()`/listener API were deleted outright. An unassigned Sede shows as a
+  standing orange "Sede no asignada" sidebar warning (was previously just hidden) plus a one-time
+  startup popup, since fixing it now requires a superadmin's action rather than the technician's
+  own.
+- **Sidebar pending-count badges** (`MainController.refreshPendingCounts()`) are Sede-filtered for
+  a plain `ADMIN` (their own Sede only) and global for `SUPERADMIN`/a non-admin technician. The
+  title-bar admin badge (`lblAdminIndicator`) renders in a distinct magenta
+  (`.title-bar-superadmin-badge`) for `SUPERADMIN`, vs. the existing teal for a plain `ADMIN`.
+
+See `CLAUDE.md`'s "Role-based permissions (RBAC)" section for the full design discussion,
+including the rejected code-only-permission-map alternative and every Sede-scoping edge case.
 
 ### Active Directory Integration (AdApiService)
 `AdApiService` (singleton, `configure(baseUrl, apiToken)` / `isConfigured()`) is the active `IADService` implementation, calling `<baseUrl>/api/v1/ad/users` with `dni`/`name`/`username` query params (server-side ANDs whatever is supplied) and an `Authorization: Bearer <token>` header. `MockADService` is test-only now — `ServiceLocator` always wires `AdApiService`.
@@ -330,10 +385,10 @@ Templates live in `src/main/resources/.../templates/`. `NoteGenerationService` s
 `DatabaseService` initializes a local `data/noteapp.db` on first run. The schema mirrors the remote SQL Server structure closely (same table names, column types differing only where the dialect requires it — see `RemoteDatabaseService.ensureSchema()`). The `Generic` brand is inserted as protected default data on initialization.
 
 ### Admin Mode (AdminSession)
-`AdminSession` is a singleton that tracks whether an admin session is currently active. Controllers register listeners via `addOnActivateListener` / `addOnDeactivateListener`. Activation is done via `SettingsController.handleToggleAdmin()` which calls `requireAdmin(Runnable)` — this checks if a password is configured (`AdminAuthService.isConfigured()`), prompts for it, verifies against the stored SHA-256 hash, then fires the callback. Sessions auto-expire after 15 minutes of inactivity. `SettingsController`'s own configuration fields (A/F format, SMTP, GLPI API) and its "Guardar Configuración" button are disabled unless admin mode is active, via the same listener pair (`SettingsController.updateFieldEditability()`).
+`AdminSession` is a singleton that tracks whether an admin session is currently active, plus (as of 2026-07-30) which role is active (`effectiveRole`) and permission checks against it. Controllers register listeners via `addOnActivateListener` / `addOnDeactivateListener`. Primary activation is via `LoginController` at login time (`activatePermanently(role)`, no 15-minute expiry — the technician's own login already proved their identity) for an `ADMIN` or `SUPERADMIN` role. A secondary, shared-password fallback (`activate()`, always resolves to `ADMIN`, 15-minute inactivity timeout) is used by `DatabaseSectionController.requirePermission(Permission, Runnable)` when the current session doesn't already hold the needed permission — this checks if a password is configured (`AdminAuthService.isConfigured()`), prompts for it, verifies against the stored SHA-256 hash, then re-checks that `ADMIN`'s own currently-granted permission set actually contains what was asked for before running the callback (so the fallback can never reach a `SUPERADMIN`-only permission, even with a correct password). See "Role-based permissions (RBAC)" above for the full `Permission`/`hasPermission()` design. `SettingsController`'s own configuration fields (A/F format, SMTP, GLPI API, AD API) are gated per field group by their own specific `Permission`, not one blanket admin-active check, via `SettingsController.updateFieldEditability()`.
 
-### Note Detail Popup (admin-integrated GLPI actions)
-`NoteDetailController.open(NoteReport, boolean adminMode, Window owner, Runnable onUpdate)` opens a floating stage showing the rendered HTML note alongside a scrollable item card list. When `adminMode` is true and `AdminSession.getInstance().isActive()`, each PENDING item's card includes Sync and Reject buttons. The `adminMode` flag is set from the caller by reading `AdminSession.getInstance().isActive()` at open time. No separate admin tab or view — actions are embedded directly in the popup.
+### Note Detail Popup (admin-integrated GLPI/approval/return actions)
+`NoteDetailController.open(NoteReport, boolean adminMode, Window owner, Runnable onUpdate)` opens a floating stage showing the rendered HTML note alongside a scrollable item card list. Each admin-gated action (Aprobar/Rechazar, Sincronizar/Rechazar GLPI, Recibido/No recibido) checks `adminMode && AdminSession.hasPermission(Permission, noteSedeId)` — the specific `Permission` for that action, additionally Sede-scoped so a plain `ADMIN` only acts on notes from their own assigned Sede (`SUPERADMIN` bypasses this scoping). The `adminMode` flag is set from the caller by reading `AdminSession.getInstance().isActive()` at open time. `PrestamoDetailController` mirrors this for Préstamo return actions (Devuelto/No devuelto). No separate admin tab or view — actions are embedded directly in the popup, with a warning banner shown instead when a Sede-mismatched `ADMIN` opens a note it can't act on.
 
 ### History Filtering
 `HistoryController` uses `MenuButton` with `CustomMenuItem(CheckBox, false)` to build non-closing multi-select dropdowns for note type, GLPI status, and equipment type/brand/model. Equipment dropdowns cascade: tipo → refreshBrandMenu() → refreshModelMenu() each time a selection changes. Distinct values for type/brand/model are read from `NOTE_ITEM` historical data (not the current catalog) via `IHistoryService.getDistinctItemTypes/Brands/Models()`. Filter state is assembled into a `HistoryFilter` and passed to `IHistoryService.getFiltered()`. **Autor filter** (added 2026-07-10): a free-text field alongside the recipient search, matching `COALESCE(r.technician_name, tp.name)` — repeated inline in `SqliteHistoryService.getFiltered()`'s WHERE clause rather than referencing the `author_name` SELECT alias, since SQL Server doesn't allow referencing a SELECT alias in WHERE (SQLite tolerates it, but this query runs against both — see `ServiceLocator`'s dual wiring of `SqliteHistoryService` for local vs. remote).
@@ -347,7 +402,7 @@ Templates live in `src/main/resources/.../templates/`. `NoteGenerationService` s
 Added 2026-07-17. Closes the gap left by the existing Préstamo note type (see `docs/use-cases.md` UC-01/UC-16): generating one captured a tentative return date but gave no way to track the loan afterward. Reuses the GLPI-sync pattern (`GlpiStatus`, `NoteDetailController.buildGlpiStatusRow()`, `HistoryController`'s row-gradient coloring) for a new, orthogonal per-item dimension — `ReturnStatus` (`N_A`/`PENDING`/`RETURNED`/`LOST`) — tracked on both asset **and** countable items (unlike GLPI, which is asset-only), via 3 new `NOTE_ITEM` columns (`return_status`, `return_rejection_reason`, `return_status_updated_at`).
 
 - **Two entry points, both kept**: Generar Nota → Préstamo still prints a note (unchanged); the new Préstamos → "Cargar Nuevo Préstamo" tab (`PrestamoNewLoanController`) saves a loan directly via `IHistoryService.save()` with no HTML render/print/email step at all.
-- **Área / Evento**: an optional context field (`NOTE_ENTREGA_DEVOLUCION.area_evento`) — the signer is still always Name+DNI; this just records e.g. "Área de Sistemas" or "Capacitación anual" alongside it.
+- **Área / Evento**: an optional context field (`NOTE_PRESTAMO_AREA_EVENTO.area_evento`, split out of `NOTE_ENTREGA_DEVOLUCION` 2026-07-30 — see `docs/database.md`) — the signer is still always Name+DNI; this just records e.g. "Área de Sistemas" or "Capacitación anual" alongside it.
 - **`ItemDialogHost`/`AdSearchHost`**: two minimal callback interfaces extracted so `PrestamoNewLoanController` can reuse the existing item-add and AD-search popups (previously hard-typed to `NoteGeneratorController`/`UserNoteController`) without duplicating either ~700-/~150-line controller wholesale — see CLAUDE.md's "Préstamos section" for the full rationale (a deliberate, scoped exception to the no-shared-abstraction convention).
 - **`PrestamoHistoryController`**: a Préstamo-scoped, GLPI-free sibling of `HistoryController`, reusing the existing `IHistoryService.getFiltered()` (profile type fixed to Préstamo) — no new listing query. Adds an overdue "Vencido" visual (red border) when a row has pending items past its tentative return date.
 - **`PrestamoDetailController`**: a separate popup (not a branch inside `NoteDetailController`, which stays GLPI-only) showing per-item return status with admin-gated "Validar devolución"/"Marcar como perdido" actions, mirroring `buildGlpiStatusRow()`'s exact admin-gating pattern.
@@ -443,6 +498,7 @@ flowchart LR
     SettingsController --> AdminAuthService
 
     ProfileController --> DatabaseService
+    ProfileController -->|gates manual-edit fields via OVERRIDE_PROFILE_FIELDS| AdminSession
 
     UserNoteController --> ServiceLocator
     UserNoteController -->|Motivo options| ConfigService

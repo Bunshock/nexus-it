@@ -1,10 +1,7 @@
 {
   "afFormat" : {
     "prefix" : "IT",
-    "separator" : "-",
-    "length" : 8,
-    "filler" : "0",
-    "inputPattern" : "\\d"
+    "separator" : "-"
   },
   "motivoOptions" : {
     "entrega" : [ "Ingreso", "Reposición", "Préstamo", "Otro" ],
@@ -14,6 +11,7 @@
   },
   "fallaOptions" : [ "Pantalla rota", "No enciende", "Daño por líquido", "Batería agotada / no carga", "Falla de software / sistema operativo", "Componente faltante o dañado", "Otro" ],
   "failureTriggerMotivo" : "Falla",
+  "returnableMotivosProveedor" : [ "Garantía", "Reparación" ],
   "smtp" : {
     "host" : "smtp.gmail.com",
     "port" : 587,
