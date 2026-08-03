@@ -69,7 +69,6 @@ public class NoteGenerationService {
         tokens.put("TEMPLATE_NAME", "Entrega - Proveedor");
         tokens.put("DATE", LocalDateTime.now().format(DT_FMT));
         tokens.put("COMPANY_NAME", providerName);
-        tokens.put("CUIT", cuit);
         tokens.put("RESPONSIBLE_NAME", responsibleName);
         tokens.put("RESPONSIBLE_DNI", responsibleDni);
         tokens.put("REASON", motivo != null ? motivo : "");
@@ -83,6 +82,7 @@ public class NoteGenerationService {
         loops.put("HAS_ASSET_ITEMS", presenceFlag(!assets.isEmpty()));
         loops.put("COUNTABLE_ITEMS", buildCountableItemTokens(countables));
         loops.put("HAS_COUNTABLE_ITEMS", presenceFlag(!countables.isEmpty()));
+        loops.put("HAS_CUIT", cuitLoop(cuit));
 
         return engine.render(template, tokens, loops);
     }
@@ -111,7 +111,6 @@ public class NoteGenerationService {
         tokens.put("SEDE", orEmpty(report.getSede()));
         tokens.put("OBSERVATIONS", orEmpty(report.getObservations()));
         tokens.put("COMPANY_NAME", orEmpty(report.getProviderName()));
-        tokens.put("CUIT", orEmpty(report.getCuit()));
         tokens.put("RESPONSIBLE_NAME", orEmpty(report.getResponsibleName()));
         tokens.put("RESPONSIBLE_DNI", orEmpty(report.getResponsibleDni()));
 
@@ -120,16 +119,22 @@ public class NoteGenerationService {
         if (report.getItems() != null) {
             for (NoteReportItem item : report.getItems()) {
                 Map<String, String> t = new LinkedHashMap<>();
+                String details = orEmpty(item.getObservations());
                 t.put("TYPE",  orEmpty(item.getTypeName()));
                 t.put("BRAND", orEmpty(item.getBrandName()));
                 t.put("MODEL", orEmpty(item.getModelName()));
-                t.put("DETAILS", orEmpty(item.getObservations()));
+                t.put("DETAILS", details);
                 if (item.isAsset()) {
-                    t.put("SERIAL",    orEmpty(item.getSerialNumber()));
-                    t.put("ASSET_TAG", orEmpty(item.getAf()));
+                    String serial = orEmpty(item.getSerialNumber());
+                    String af = orEmpty(item.getAf());
+                    t.put("SERIAL",    serial);
+                    t.put("ASSET_TAG", af);
+                    t.put("META", assetMeta(serial, af, details));
                     assetTokens.add(t);
                 } else {
-                    t.put("QUANTITY", String.valueOf(item.getQuantity()));
+                    int quantity = item.getQuantity();
+                    t.put("QUANTITY", String.valueOf(quantity));
+                    t.put("META", countableMeta(quantity, details));
                     countableTokens.add(t);
                 }
             }
@@ -142,6 +147,7 @@ public class NoteGenerationService {
         loops.put("HAS_COUNTABLE_ITEMS", presenceFlag(!countableTokens.isEmpty()));
         loops.put("FAILURE", failureLoop(report.getFailureCause(), report.getFailureDetails()));
         loops.put("HAS_AREA_EVENT", areaEventLoop(report.getAreaEvento()));
+        loops.put("HAS_CUIT", cuitLoop(report.getCuit()));
 
         return engine.render(template, tokens, loops);
     }
@@ -149,6 +155,16 @@ public class NoteGenerationService {
     private List<Map<String, String>> areaEventLoop(String areaEvento) {
         if (areaEvento == null || areaEvento.isBlank()) return List.of();
         return List.of(Map.of("AREA_EVENT", areaEvento));
+    }
+
+    // CUIT is optional ("Incluir CUIT" checkbox in ProviderNoteController) — same nested-loop
+    // shape as areaEventLoop() above, and for the same reason: expandLoops() only replaces tokens
+    // from the loop's own per-entry map, not the top-level tokens map, so CUIT can't be a bare
+    // top-level token referenced inside a conditional block (see NoteGenerationService's own
+    // "Nested loops" doc in CLAUDE.md for the full gotcha).
+    private List<Map<String, String>> cuitLoop(String cuit) {
+        if (cuit == null || cuit.isBlank()) return List.of();
+        return List.of(Map.of("CUIT", cuit));
     }
 
     private List<Map<String, String>> failureLoop(String failureCause, String failureDetails) {
@@ -166,12 +182,16 @@ public class NoteGenerationService {
         List<Map<String, String>> result = new ArrayList<>();
         for (AssetItem a : assets) {
             Map<String, String> t = new LinkedHashMap<>();
+            String serial = a.getSerial().get();
+            String af = a.getAf().get();
+            String details = a.getObservations().get();
             t.put("TYPE", a.getType().get());
             t.put("BRAND", a.getBrand().get());
             t.put("MODEL", a.getModel().get());
-            t.put("SERIAL", a.getSerial().get());
-            t.put("ASSET_TAG", a.getAf().get());
-            t.put("DETAILS", a.getObservations().get());
+            t.put("SERIAL", serial);
+            t.put("ASSET_TAG", af);
+            t.put("DETAILS", details);
+            t.put("META", assetMeta(serial, af, details));
             result.add(t);
         }
         return result;
@@ -181,14 +201,40 @@ public class NoteGenerationService {
         List<Map<String, String>> result = new ArrayList<>();
         for (CountableItem c : countables) {
             Map<String, String> t = new LinkedHashMap<>();
+            int quantity = c.getQuantity().get();
+            String details = c.getObservations().get();
             t.put("TYPE", c.getType().get());
             t.put("BRAND", c.getBrand().get());
             t.put("MODEL", c.getModel().get());
-            t.put("QUANTITY", String.valueOf(c.getQuantity().get()));
-            t.put("DETAILS", c.getObservations().get());
+            t.put("QUANTITY", String.valueOf(quantity));
+            t.put("DETAILS", details);
+            t.put("META", countableMeta(quantity, details));
             result.add(t);
         }
         return result;
+    }
+
+    // Builds the compact list layout's right-hand "meta" line (Option B) — only the
+    // pieces that actually have a value are joined, so a blank S/N (Sin S/N) or empty Detalles
+    // never leaves a dangling separator behind. Same "combine conditionally in Java, not in the
+    // template" precedent as failureLoop()'s FAILURE_TEXT above.
+    private String assetMeta(String serial, String af, String details) {
+        return joinMeta(
+            serial != null && !serial.isBlank() ? "S/N: " + serial : null,
+            af != null && !af.isBlank() ? "A/F: " + af : null,
+            details);
+    }
+
+    private String countableMeta(int quantity, String details) {
+        return joinMeta("Cantidad: " + quantity, details);
+    }
+
+    private String joinMeta(String... parts) {
+        List<String> nonBlank = new ArrayList<>();
+        for (String p : parts) {
+            if (p != null && !p.isBlank()) nonBlank.add(p);
+        }
+        return String.join(" · ", nonBlank);
     }
 
     // Backs the "HAS_X" nested-loop wrapper keys (see TemplateEngine's nested-loop support) —

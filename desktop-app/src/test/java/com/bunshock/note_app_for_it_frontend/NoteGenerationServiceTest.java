@@ -42,7 +42,7 @@ class NoteGenerationServiceTest {
         assertTrue(html.contains("NOTEBOOK"));
         assertTrue(html.contains("SN123"));
         assertTrue(html.contains("AF-001"));
-        assertTrue(html.contains("note-table"));
+        assertTrue(html.contains("item-list"));
     }
 
     @Test
@@ -52,7 +52,7 @@ class NoteGenerationServiceTest {
             oneAsset(), List.of(), "");
 
         assertFalse(html.contains("{{"));
-        assertTrue(html.contains("note-table"));
+        assertTrue(html.contains("item-list"));
         assertTrue(html.contains("quien devuelve") || html.contains("Quien devuelve"));
         assertTrue(html.contains("Ana Diaz"));
         assertTrue(html.contains("28999111"));
@@ -116,7 +116,7 @@ class NoteGenerationServiceTest {
         assertTrue(html.contains("Préstamo"));
         assertTrue(html.contains("Marcos Tecnico"));
 
-        int itemsIdx = html.indexOf("<table class=\"note-table\">");
+        int itemsIdx = html.indexOf("<div class=\"item-list\">");
         int returnDateIdx = html.indexOf("20/08/2026");
         int observationsIdx = html.indexOf("Observaciones");
         assertTrue(itemsIdx < returnDateIdx, "Expected return date should appear below the item table");
@@ -141,7 +141,7 @@ class NoteGenerationServiceTest {
     }
 
     @Test
-    void countableItemAlwaysShowsQuantityInDedicatedColumn() throws Exception {
+    void countableItemAlwaysShowsQuantityInMetaLine() throws Exception {
         String single = service.generateUserNote("ENTREGA", "Juan Perez", "1", "j@test.com",
             null, "Marcos Tecnico", "27555111", "Campus Test", null, null, null,
             List.of(), oneCountable(1), "");
@@ -149,8 +149,23 @@ class NoteGenerationServiceTest {
             null, "Marcos Tecnico", "27555111", "Campus Test", null, null, null,
             List.of(), oneCountable(5), "");
 
-        assertTrue(single.contains("<td>MOUSE</td><td>GENIUS</td><td>DX-120</td><td>1</td>"));
-        assertTrue(multiple.contains("<td>MOUSE</td><td>GENIUS</td><td>DX-120</td><td>5</td>"));
+        // oneCountable() sets observations to "Nuevo" (non-blank), so META joins both pieces.
+        assertTrue(single.contains("<span class=\"item-equipo\">MOUSE</span> — GENIUS DX-120"));
+        assertTrue(single.contains("<div class=\"item-meta\">Cantidad: 1 · Nuevo</div>"));
+        assertTrue(multiple.contains("<div class=\"item-meta\">Cantidad: 5 · Nuevo</div>"));
+    }
+
+    // Regression: the "Equipos" title used to live inside the {{#HAS_ASSET_ITEMS}} block, so a
+    // note with only countable items (no assets at all) rendered with no title at all above its
+    // item list. The title is now unconditional (a note always has at least one item, asset or
+    // countable — enforced at generation time), positioned before both item-list blocks.
+    @Test
+    void equipmentTitleShowsEvenWhenNoteHasOnlyCountableItems() throws Exception {
+        String countableOnly = service.generateUserNote("ENTREGA", "Juan Perez", "1", "j@test.com",
+            null, "Marcos Tecnico", "27555111", "Campus Test", null, null, null,
+            List.of(), oneCountable(3), "");
+
+        assertTrue(countableOnly.contains("item-list-header-text\">Equipos"));
     }
 
     @Test
@@ -169,7 +184,7 @@ class NoteGenerationServiceTest {
         assertTrue(html.contains("Marcos Tecnico"));
         assertTrue(html.contains("27555111"));
 
-        int itemsIdx = html.indexOf("<table class=\"note-table\">");
+        int itemsIdx = html.indexOf("<div class=\"item-list\">");
         int motivoIdx = html.indexOf("Alta");
         assertTrue(itemsIdx < motivoIdx, "Motivo should appear below the item table");
     }
@@ -183,6 +198,20 @@ class NoteGenerationServiceTest {
         assertFalse(html.contains("{{"));
         assertTrue(html.contains("Proveedor SA"));
         assertTrue(html.contains("Marcos Tecnico"));
+    }
+
+    // "Incluir CUIT" checkbox in ProviderNoteController — unchecked passes a blank CUIT through
+    // to generateProviderNote(), which must omit the whole ", CUIT: ..." clause rather than
+    // printing a dangling label with nothing after it.
+    @Test
+    void generatesProviderNoteOmitsCuitClauseWhenCuitIsBlank() throws Exception {
+        String html = service.generateProviderNote("Proveedor SA", "",
+            "", "", "Alta", "Marcos Tecnico", "27555111", "Campus Test",
+            oneAsset(), List.of(), "");
+
+        assertFalse(html.contains("{{"));
+        assertFalse(html.contains("CUIT"));
+        assertTrue(html.contains("Proveedor SA"));
     }
 
     @Test
@@ -225,7 +254,10 @@ class NoteGenerationServiceTest {
         assertTrue(html.contains("MONITOR"));
         assertTrue(html.contains("SNX1"));
         assertTrue(html.contains("AF-777"));
-        assertTrue(html.contains("<td>CABLE HDMI</td><td></td><td></td><td>3</td><td></td>"));
+        // No brand/model/observations set on this NoteReportItem, so META is just "Cantidad: 3",
+        // no dangling " · " separator for the blank Detalles piece.
+        assertTrue(html.contains("<span class=\"item-equipo\">CABLE HDMI</span>"));
+        assertTrue(html.contains("<div class=\"item-meta\">Cantidad: 3</div>"));
     }
 
     @Test

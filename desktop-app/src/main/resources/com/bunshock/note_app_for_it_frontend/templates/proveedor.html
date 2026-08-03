@@ -122,48 +122,80 @@
                 text-align: justify;
             }
 
-            /* --- Item Section (bordered container around both tables) --- */
-
-            .items-section {
-                border: 1.5pt solid black;
-                border-radius: 8px;
-                padding: 18px 16px 6px;
-                margin: 18px 0;
-                position: relative;
-                page-break-inside: avoid;
+            /* Symmetric top margin, .intro-text excluded (it sits right after the header — this
+               would just add unwanted space there) — makes the gap above every .outro-text block
+               (e.g. above Motivo, right after the item lists) match its own margin-bottom below,
+               so text doesn't sit closer to one separator than the other. */
+            .outro-text {
+                margin-top: 20px;
             }
 
-            .items-section-tab {
-                position: absolute;
-                top: -11px;
-                left: 14px;
-                background: #fff;
-                padding: 0 8px;
-                font-size: 10.5pt;
-                font-weight: bold;
-                letter-spacing: 0.04em;
-                text-transform: uppercase;
-            }
+            /* --- Item list: compact single-line rows, no table, no background shading
+               (Option B — replaces the zebra-row table: the printer is black &
+               white so the zebra shading never showed, and the table's row height/padding
+               left too much empty vertical space between items) --- */
 
-            .note-table {
+            .item-list {
                 width: 100%;
-                border-collapse: collapse;
-                margin-bottom: 12px;
+                page-break-inside: avoid;
+                border-bottom: 1.2pt solid black;
+                padding-bottom: 4px;
             }
 
-            .note-table + .note-table {
-                margin-top: 22px;
+            .item-list + .item-list {
+                margin-top: 14px;
             }
 
-            .note-table th, .note-table td {
-                text-align: left;
+            .item-list-header {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                margin-bottom: 8px;
+            }
+
+            .item-list-header-rule-left {
+                width: 16px;
+                border-top: 1.2pt solid black;
+            }
+
+            .item-list-header-text {
+                font-size: 9.5pt;
+                font-weight: bold;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+                white-space: nowrap;
+            }
+
+            .item-list-header-rule {
+                flex: 1;
+                border-top: 1.2pt solid black;
+            }
+
+            .item-row {
+                display: flex;
+                justify-content: space-between;
+                align-items: baseline;
+                gap: 16px;
+                padding: 5px 2px;
+                border-bottom: 1px solid #ccc;
+            }
+
+            .item-row:last-child {
+                border-bottom: none;
+            }
+
+            .item-main {
                 font-size: 11pt;
-                padding: 6px 8px;
-                border-bottom: 1px solid black;
             }
 
-            .note-table th {
-                border-bottom: 2px solid black;
+            .item-equipo {
+                font-weight: bold;
+            }
+
+            .item-meta {
+                font-size: 9.8pt;
+                color: #444;
+                white-space: nowrap;
             }
 
             /* --- Separator Line below text --- */
@@ -259,37 +291,35 @@
                 <div class="intro-text">
                     <p>
                         En la sede {{SEDE}} de la Universidad Siglo 21, en el día de la fecha, el área de Soporte IT
-                        realiza la entrega a <strong>{{COMPANY_NAME}}</strong>, CUIT: <strong>{{CUIT}}</strong> del siguiente equipamiento:
+                        realiza la entrega a <strong>{{COMPANY_NAME}}</strong>{{#HAS_CUIT}}, CUIT: <strong>{{CUIT}}</strong>{{/HAS_CUIT}} del siguiente equipamiento:
                     </p>
                 </div>
 
-                <div class="items-section">
-                    <span class="items-section-tab">Lista de equipamiento</span>
-
-                    {{#HAS_ASSET_ITEMS}}
-                    <table class="note-table">
-                        <thead>
-                            <tr><th>Tipo</th><th>Marca</th><th>Modelo</th><th>N° Serie</th><th>N° Activo Fijo</th><th>Detalles</th></tr>
-                        </thead>
-                        <tbody>
-                            {{#ASSET_ITEMS}}<tr><td>{{TYPE}}</td><td>{{BRAND}}</td><td>{{MODEL}}</td><td>{{SERIAL}}</td><td>{{ASSET_TAG}}</td><td>{{DETAILS}}</td></tr>
-                            {{/ASSET_ITEMS}}
-                        </tbody>
-                    </table>
-                    {{/HAS_ASSET_ITEMS}}
-
-                    {{#HAS_COUNTABLE_ITEMS}}
-                    <table class="note-table">
-                        <thead>
-                            <tr><th>Tipo</th><th>Marca</th><th>Modelo</th><th>Cantidad</th><th>Detalles</th></tr>
-                        </thead>
-                        <tbody>
-                            {{#COUNTABLE_ITEMS}}<tr><td>{{TYPE}}</td><td>{{BRAND}}</td><td>{{MODEL}}</td><td>{{QUANTITY}}</td><td>{{DETAILS}}</td></tr>
-                            {{/COUNTABLE_ITEMS}}
-                        </tbody>
-                    </table>
-                    {{/HAS_COUNTABLE_ITEMS}}
+                <div class="item-list-header">
+                    <span class="item-list-header-rule-left"></span>
+                    <span class="item-list-header-text">Equipos</span>
+                    <span class="item-list-header-rule"></span>
                 </div>
+
+                {{#HAS_ASSET_ITEMS}}
+                <div class="item-list">
+                    {{#ASSET_ITEMS}}<div class="item-row">
+                        <div class="item-main"><span class="item-equipo">{{TYPE}}</span> — {{BRAND}} {{MODEL}}</div>
+                        <div class="item-meta">{{META}}</div>
+                    </div>
+                    {{/ASSET_ITEMS}}
+                </div>
+                {{/HAS_ASSET_ITEMS}}
+
+                {{#HAS_COUNTABLE_ITEMS}}
+                <div class="item-list">
+                    {{#COUNTABLE_ITEMS}}<div class="item-row">
+                        <div class="item-main"><span class="item-equipo">{{TYPE}}</span> — {{BRAND}} {{MODEL}}</div>
+                        <div class="item-meta">{{META}}</div>
+                    </div>
+                    {{/COUNTABLE_ITEMS}}
+                </div>
+                {{/HAS_COUNTABLE_ITEMS}}
 
                 <div class="outro-text">
                     <p>
