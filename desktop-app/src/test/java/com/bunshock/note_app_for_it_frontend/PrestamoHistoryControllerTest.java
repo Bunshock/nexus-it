@@ -170,4 +170,47 @@ class PrestamoHistoryControllerTest {
         assertTrue(itemLabels.contains("Campus Norte"));
         assertTrue(itemLabels.contains("Campus Sur"));
     }
+
+    // ── populateMenu "Todas" checkbox (duplicated from HistoryController's own version) ──────
+
+    @Test
+    void populateMenuPreventsUncheckingTodasWhenNothingElseSelected() throws Exception {
+        javafx.scene.control.MenuButton btn = new javafx.scene.control.MenuButton();
+        Set<String> selected = new java.util.LinkedHashSet<>();
+        Method m = PrestamoHistoryController.class.getDeclaredMethod("populateMenu",
+            javafx.scene.control.MenuButton.class, java.util.List.class, Set.class, Runnable.class);
+        m.setAccessible(true);
+        m.invoke(controller, btn, java.util.List.of("A", "B"), selected, (Runnable) () -> {});
+
+        javafx.scene.control.CheckBox todasChk = (javafx.scene.control.CheckBox)
+            ((javafx.scene.control.CustomMenuItem) btn.getItems().get(0)).getContent();
+        assertTrue(todasChk.isSelected(), "Todas starts checked when nothing is selected");
+
+        todasChk.setSelected(false);
+
+        assertTrue(todasChk.isSelected(),
+            "unchecking Todas with nothing else selected must snap back — direct user report that "
+                + "it could otherwise be left unchecked while the filter still silently matched everything");
+        assertTrue(selected.isEmpty(), "the underlying filter set is untouched by the snap-back");
+    }
+
+    @Test
+    void populateMenuStillTurnsTodasOffWhenAnItemIsSelected() throws Exception {
+        javafx.scene.control.MenuButton btn = new javafx.scene.control.MenuButton();
+        Set<String> selected = new java.util.LinkedHashSet<>();
+        Method m = PrestamoHistoryController.class.getDeclaredMethod("populateMenu",
+            javafx.scene.control.MenuButton.class, java.util.List.class, Set.class, Runnable.class);
+        m.setAccessible(true);
+        m.invoke(controller, btn, java.util.List.of("A", "B"), selected, (Runnable) () -> {});
+
+        javafx.scene.control.CheckBox todasChk = (javafx.scene.control.CheckBox)
+            ((javafx.scene.control.CustomMenuItem) btn.getItems().get(0)).getContent();
+        javafx.scene.control.CheckBox itemA = (javafx.scene.control.CheckBox)
+            ((javafx.scene.control.CustomMenuItem) btn.getItems().get(2)).getContent();
+
+        itemA.setSelected(true);
+
+        assertFalse(todasChk.isSelected(), "selecting a real item still turns Todas off normally");
+        assertEquals(Set.of("A"), selected);
+    }
 }

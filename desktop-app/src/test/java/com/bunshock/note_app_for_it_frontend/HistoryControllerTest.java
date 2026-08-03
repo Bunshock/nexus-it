@@ -12,7 +12,9 @@ import com.bunshock.note_app_for_it_frontend.models.NoteReport;
 
 import javafx.application.Platform;
 import javafx.scene.control.CheckBox;
+import javafx.scene.control.CustomMenuItem;
 import javafx.scene.control.DatePicker;
+import javafx.scene.control.MenuButton;
 import javafx.scene.control.TextField;
 
 import org.junit.jupiter.api.BeforeAll;
@@ -291,6 +293,47 @@ class HistoryControllerTest {
         List<String> expanded = expandProfileTypeLabels(new LinkedHashSet<>(Set.of("Entrega", "Préstamo")));
         assertTrue(expanded.containsAll(List.of("ENTREGA", "Entrega", "PRÉSTAMO", "Préstamo")));
         assertEquals(4, expanded.size());
+    }
+
+    // ── populateMenu "Todas" checkbox ────────────────────────────────────
+
+    private Method populateMenuMethod() throws Exception {
+        Method m = HistoryController.class.getDeclaredMethod(
+            "populateMenu", MenuButton.class, List.class, Set.class, Runnable.class);
+        m.setAccessible(true);
+        return m;
+    }
+
+    @Test
+    void populateMenuPreventsUncheckingTodasWhenNothingElseSelected() throws Exception {
+        MenuButton btn = new MenuButton();
+        Set<String> selected = new LinkedHashSet<>();
+        populateMenuMethod().invoke(controller, btn, List.of("A", "B"), selected, (Runnable) () -> {});
+
+        CheckBox todasChk = (CheckBox) ((CustomMenuItem) btn.getItems().get(0)).getContent();
+        assertTrue(todasChk.isSelected(), "Todas starts checked when nothing is selected");
+
+        todasChk.setSelected(false);
+
+        assertTrue(todasChk.isSelected(),
+            "unchecking Todas with nothing else selected must snap back — direct user report that "
+                + "it could otherwise be left unchecked while the filter still silently matched everything");
+        assertTrue(selected.isEmpty(), "the underlying filter set is untouched by the snap-back");
+    }
+
+    @Test
+    void populateMenuStillTurnsTodasOffWhenAnItemIsSelected() throws Exception {
+        MenuButton btn = new MenuButton();
+        Set<String> selected = new LinkedHashSet<>();
+        populateMenuMethod().invoke(controller, btn, List.of("A", "B"), selected, (Runnable) () -> {});
+
+        CheckBox todasChk = (CheckBox) ((CustomMenuItem) btn.getItems().get(0)).getContent();
+        CheckBox itemA = (CheckBox) ((CustomMenuItem) btn.getItems().get(2)).getContent();
+
+        itemA.setSelected(true);
+
+        assertFalse(todasChk.isSelected(), "selecting a real item still turns Todas off normally");
+        assertEquals(Set.of("A"), selected);
     }
 
     // ── buildFilter (approval-status default) ───────────────────────────────

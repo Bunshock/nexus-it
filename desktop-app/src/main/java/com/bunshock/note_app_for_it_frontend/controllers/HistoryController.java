@@ -212,7 +212,18 @@ public class HistoryController {
         }
 
         todasChk.selectedProperty().addListener((obs, old, newVal) -> {
-            if (lock[0] || suppressCallbacks || !newVal) return;
+            if (lock[0] || suppressCallbacks) return;
+            if (!newVal) {
+                // "Todas" can only ever go true->false when nothing else is selected (an
+                // individual checkbox being checked already un-checks it directly, above, under
+                // lock — see that listener). Manually unchecking it here would leave nothing
+                // visibly selected while the filter still silently matches everything — direct
+                // user report. Snap it back instead of allowing that dead state.
+                lock[0] = true;
+                todasChk.setSelected(true);
+                lock[0] = false;
+                return;
+            }
             lock[0] = true;
             selected.clear();
             btn.getItems().stream()
