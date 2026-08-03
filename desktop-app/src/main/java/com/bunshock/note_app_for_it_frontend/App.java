@@ -45,6 +45,9 @@ public class App extends Application {
     // away, regardless of what any particular monitor's headroom happens to be.
     private static final double WINDOW_SHADOW_MARGIN = 12;
 
+    private static App instance;
+    private Stage primaryStage;
+
     @Override
     public void init() throws Exception {
         ConfigService.getInstance().load();
@@ -54,10 +57,28 @@ public class App extends Application {
 
     @Override
     public void start(Stage stage) throws Exception {
+        instance = this;
+        primaryStage = stage;
         stage.getIcons().add(new Image(getClass().getResourceAsStream("images/favicon.png")));
         stage.setTitle("Universidad Siglo 21 - Soporte IT - Registro de Movimientos y Generación de Notas");
         stage.initStyle(StageStyle.TRANSPARENT);
         showLoginScreen(stage);
+    }
+
+    public static App getInstance() { return instance; }
+
+    /**
+     * Returns to the login screen from an active session — MainController's "Cerrar sesión"
+     * action. Reuses showLoginScreen() itself (same screen, same success callback back into
+     * showMainApp()) rather than duplicating it, so a logout behaves exactly like the very
+     * first login.
+     */
+    public void showLoginAgain() {
+        try {
+            showLoginScreen(primaryStage);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to return to login screen after logout", e);
+        }
     }
 
     /**
@@ -70,11 +91,23 @@ public class App extends Application {
         Parent loginRoot = loader.load();
         com.bunshock.note_app_for_it_frontend.controllers.LoginController controller = loader.getController();
 
+        // Reset whatever MainView's window chrome may have applied (maximized state, min size) —
+        // a no-op on the very first call from start(), where none of this has been set yet; needed
+        // when this is reached again via showLoginAgain() after logout, since MainView's own
+        // 900x600 min size would otherwise block the login screen's fixed 420x560 size.
+        stage.setMaximized(false);
+        stage.setMinWidth(0);
+        stage.setMinHeight(0);
+
         Scene loginScene = new Scene(loginRoot, 420, 560);
         loginScene.setFill(Color.TRANSPARENT);
         stage.setScene(loginScene);
         stage.setResizable(false);
-        stage.centerOnScreen();
+        // centerOnScreen() must run after show(), not before — a Stage's actual width/height
+        // aren't reliably finalized until its peer is created at show time, so calling it earlier
+        // uses a stale/estimated size and skews the result (visibly, on a small fixed-size window
+        // like this one — it read as sitting above true center).
+        stage.setOnShown(e -> stage.centerOnScreen());
         stage.show();
 
         controller.setOnLoginSuccess(() -> {

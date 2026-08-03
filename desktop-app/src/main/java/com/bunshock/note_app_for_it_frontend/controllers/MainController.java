@@ -3,9 +3,12 @@ package com.bunshock.note_app_for_it_frontend.controllers;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import com.bunshock.note_app_for_it_frontend.App;
 import com.bunshock.note_app_for_it_frontend.models.HistoryFilter;
+import com.bunshock.note_app_for_it_frontend.models.NoteReport;
 import com.bunshock.note_app_for_it_frontend.services.AdminSession;
 import com.bunshock.note_app_for_it_frontend.services.IHistoryService;
+import com.bunshock.note_app_for_it_frontend.services.IUserRoleService;
 import com.bunshock.note_app_for_it_frontend.services.PendingCountsService;
 import com.bunshock.note_app_for_it_frontend.services.RemoteDatabaseService;
 import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;
@@ -66,7 +69,9 @@ public class MainController {
     @FXML private Label lblAdminIndicator;
 
     @FXML private Label lblHistoryBadge;
+    @FXML private Label lblApprovalBadge;
     @FXML private Label lblPrestamosBadge;
+    @FXML private Label lblPrestamosApprovalBadge;
 
     @FXML private Circle circleAD;
     @FXML private Circle circleGLPI;
@@ -82,12 +87,12 @@ public class MainController {
     @FXML private Button btnMinimizeWindow;
     @FXML private Button btnMaximizeRestoreWindow;
     @FXML private Button btnCloseWindow;
+    @FXML private Button btnLogout;
 
     private final ViewFactory viewFactory = new ViewFactory();
 
     public void initialize() {
         TechnicianSessionService.getInstance().addOnChangeListener(this::updateWelcomeLabels);
-        TechnicianSessionService.getInstance().addOnSedeChangeListener(this::updateSedeLabel);
         updateWelcomeLabels();
 
         showSection(viewFactory.getGeneratorView());
@@ -135,9 +140,13 @@ public class MainController {
     private void updateSedeLabel() {
         String sede = TechnicianSessionService.getInstance().getSede();
         boolean hasSede = sede != null && !sede.isBlank();
-        lblSede.setText(hasSede ? "Sede: " + sede : "");
-        lblSede.setVisible(hasSede);
-        lblSede.setManaged(hasSede);
+        // Unlike the old self-service preference, Sede is now superadmin-assigned — an unset
+        // Sede blocks note generation entirely (see NoteGeneratorController/PrestamoNewLoanController),
+        // so this must read as a standing warning rather than just being hidden.
+        lblSede.setText(hasSede ? "Sede: " + sede : "Sede no asignada");
+        lblSede.getStyleClass().setAll(hasSede ? "user-sede" : "user-sede-warning");
+        lblSede.setVisible(true);
+        lblSede.setManaged(true);
     }
 
     /**
@@ -359,12 +368,28 @@ public class MainController {
         ParallelTransition fadeOut = new ParallelTransition(fade, unblur);
         // Technician identity is guaranteed resolved by the time MainView exists at all — login
         // (App.java/LoginController) already succeeded before this overlay was ever shown, so
-        // there's no "profile unavailable" case left to warn about here anymore.
+        // there's no "profile unavailable" case left to warn about here anymore. Sede, however,
+        // is a separate, superadmin-assigned value that can genuinely still be unset the first
+        // time a new technician logs in, so it gets its own warning right after this overlay.
         fadeOut.setOnFinished(e -> {
             loadingStage.close();
             rootPane.setEffect(null);
+            warnIfSedeUnassigned();
         });
         fadeOut.play();
+    }
+
+    // Sede is superadmin-assigned (no more self-service preference), and is mandatory to
+    // generate a note or register a Préstamo — a technician who hasn't been assigned one yet
+    // needs to know immediately, not discover it only when a note-generation attempt fails.
+    private void warnIfSedeUnassigned() {
+        String sede = TechnicianSessionService.getInstance().getSede();
+        if (sede == null || sede.isBlank()) {
+            showDialogNotice("Sede no asignada",
+                "Un administrador todavía no le asignó una Sede. No podrá generar notas ni "
+                    + "registrar préstamos hasta que se le asigne una.",
+                "#f59e0b", "⚠");
+        }
     }
 
     private void startStatusMonitor() {
@@ -433,6 +458,10 @@ public class MainController {
         // reserves its layout space while hidden, which would throw off the welcome/username
         // block's vertical centering (MainView.fxml) for the common non-admin case.
         lblAdminIndicator.setManaged(active);
+
+        boolean superadmin = IUserRoleService.ROLE_SUPERADMIN.equals(AdminSession.getInstance().getEffectiveRole());
+        lblAdminIndicator.setText(superadmin ? "MODO SUPERADMINISTRADOR" : "MODO ADMINISTRADOR");
+        lblAdminIndicator.getStyleClass().setAll(superadmin ? "title-bar-superadmin-badge" : "title-bar-admin-badge");
     }
 
     private void handleAdminExpiry() {
@@ -444,36 +473,87 @@ public class MainController {
     // stored raw (see CLAUDE.md), so a filter for Préstamo has to match every form it's stored in.
     private static final List<String> PRESTAMO_PROFILE_TYPES = List.of("PRÉSTAMO", "PRESTAMO", "Préstamo");
 
+    private static boolean isPrestamoProfileType(String profileType) {
+        return profileType != null && PRESTAMO_PROFILE_TYPES.stream().anyMatch(profileType::equalsIgnoreCase);
+    }
+
+    // A note with no resolved Sede (mySede blank/null, or the report's own Sede blank/null)
+    // never matches — mirrors AdminSession.hasPermission(Permission, Integer)'s own
+    // "unset counts as no match" rule for Sede-scoped actions, so this badge count and the
+    // buttons it points at never disagree about which notes are actually "mine."
+    private static boolean sameSede(NoteReport report, String mySede) {
+        return mySede != null && !mySede.isBlank()
+            && report.getSede() != null && mySede.equalsIgnoreCase(report.getSede());
+    }
+
     /**
-     * Recomputes the Historial (GLPI-pending) and Préstamos (return-pending) sidebar badge
-     * counts on a background thread — called once at startup and again whenever
-     * PendingCountsService.notifyChanged() fires (a note was saved, a GLPI sync/reject action
-     * happened, or a Préstamo return/lost action happened). Visible to every technician, not
-     * admin-gated — the underlying pending/orange rows are already visible to anyone who opens
-     * Historial or Préstamos; only the actual sync/validate actions are admin-gated.
+     * Recomputes the Historial (GLPI-pending / approval-pending) and Préstamos (return-pending /
+     * approval-pending) sidebar badge counts on a background thread — called once at startup and
+     * again whenever PendingCountsService.notifyChanged() fires (a note was saved, a GLPI
+     * sync/reject action happened, a Préstamo return/lost action happened, or a note was
+     * approved/rejected). Visible to every technician, not admin-gated — the underlying
+     * pending/orange rows are already visible to anyone who opens Historial or Préstamos; only
+     * the actual sync/validate/approve actions are admin-gated.
+     *
+     * A plain ADMIN only ever acts on their own Sede's notes (see AdminSession.hasPermission's
+     * Sede-scoping) — counting every other Sede's pending items here would just be noise they
+     * can't act on. SUPERADMIN acts across every Sede, so its badge stays global. A regular
+     * (non-admin) technician has no Sede-scoped permission at all, so the badge is global for
+     * them too — the count is informational either way, not a claim they can act on it.
      */
     private void refreshPendingCounts() {
         Thread t = new Thread(() -> {
             int glpiPending;
+            int approvalPending;
             int prestamoPending;
+            int prestamoApprovalPending;
             try {
                 IHistoryService historyService = ServiceLocator.getInstance().getHistoryService();
-                glpiPending = historyService.getPendingGlpiSync().size();
+                String effectiveRole = AdminSession.getInstance().getEffectiveRole();
+                boolean scopeToOwnSede = IUserRoleService.ROLE_ADMIN.equals(effectiveRole);
+                String mySede = scopeToOwnSede ? TechnicianSessionService.getInstance().getSede() : null;
+
+                List<NoteReport> glpiSync = historyService.getPendingGlpiSync();
+                if (scopeToOwnSede) {
+                    glpiSync = glpiSync.stream().filter(r -> sameSede(r, mySede)).toList();
+                }
+                glpiPending = glpiSync.size();
+
+                List<NoteReport> pendingApproval = historyService.getPendingApproval();
+                if (scopeToOwnSede) {
+                    pendingApproval = pendingApproval.stream().filter(r -> sameSede(r, mySede)).toList();
+                }
+                approvalPending = pendingApproval.size();
+                // Approval applies to every profile type, Préstamo included — the Historial badge
+                // counts all of them, the Préstamos badge counts just the subset relevant there.
+                // No second query needed; both counts come from the one already-fetched list.
+                prestamoApprovalPending = (int) pendingApproval.stream()
+                    .filter(r -> isPrestamoProfileType(r.getProfileType()))
+                    .count();
 
                 HistoryFilter prestamoFilter = new HistoryFilter();
                 prestamoFilter.setProfileTypes(PRESTAMO_PROFILE_TYPES);
+                if (scopeToOwnSede && mySede != null && !mySede.isBlank()) {
+                    prestamoFilter.setSedes(List.of(mySede));
+                }
                 prestamoPending = (int) historyService.getFiltered(prestamoFilter).stream()
                     .filter(r -> r.getReturnPendingItemCount() > 0)
                     .count();
             } catch (Exception e) {
                 glpiPending = 0;
+                approvalPending = 0;
                 prestamoPending = 0;
+                prestamoApprovalPending = 0;
             }
             int finalGlpiPending = glpiPending;
+            int finalApprovalPending = approvalPending;
             int finalPrestamoPending = prestamoPending;
+            int finalPrestamoApprovalPending = prestamoApprovalPending;
             Platform.runLater(() -> {
                 updateBadge(lblHistoryBadge, finalGlpiPending);
+                updateBadge(lblApprovalBadge, finalApprovalPending);
                 updateBadge(lblPrestamosBadge, finalPrestamoPending);
+                updateBadge(lblPrestamosApprovalBadge, finalPrestamoApprovalPending);
             });
         }, "pending-counts-refresh");
         t.setDaemon(true);
@@ -593,12 +673,64 @@ public class MainController {
     @FXML
     private void handleShowSettings() {
         showSection(viewFactory.getSettingsView());
-        // Resets the Sede combo to whatever's actually saved, discarding any unsaved selection
-        // left over from a previous visit — mirrors handleShowHistory()'s refresh() call above.
-        viewFactory.getSettingsController().refreshSedeCombo();
     }
     @FXML private void handleShowAbout()     { showSection(viewFactory.getAboutView()); }
     @FXML private void handleShowProfile()   { showSection(viewFactory.getProfileView()); }
+
+    /**
+     * Ends the current technician's session and returns to the login screen — deactivates
+     * AdminSession (regardless of role/timeout state) and fully resets TechnicianSessionService
+     * before handing control back to App.showLoginAgain(), which reuses the exact same login flow
+     * as the app's very first launch. A fresh login rebuilds MainView (and this MainController,
+     * and its ViewFactory) from scratch, so there is nothing else to reset here — the old
+     * instance is discarded entirely once the login screen replaces it.
+     */
+    @FXML
+    private void handleLogout() {
+        if (!confirmLogout()) return;
+
+        AdminSession.getInstance().deactivate();
+        AdminSession.getInstance().clearListenersForLogout();
+        PendingCountsService.getInstance().clearListenersForLogout();
+        TechnicianSessionService.getInstance().clearSessionForLogout();
+
+        App.getInstance().showLoginAgain();
+    }
+
+    private boolean confirmLogout() {
+        boolean[] confirmed = {false};
+        Stage stage = buildDialogStage();
+        centerOnContent(stage);
+
+        Label lblTitle = new Label("Cerrar sesión");
+        lblTitle.getStyleClass().add("section-label");
+
+        Label lblMsg = new Label("¿Cerrar la sesión actual? Deberá volver a iniciar sesión para continuar.");
+        lblMsg.setStyle("-fx-text-fill: #475569; -fx-font-size: 12px;");
+        lblMsg.setWrapText(true);
+
+        Button btnCancel = new Button("Cancelar");
+        btnCancel.getStyleClass().add("button-secondary");
+        btnCancel.setOnAction(e -> stage.close());
+
+        Button btnConfirm = new Button("Cerrar sesión");
+        btnConfirm.setStyle("-fx-background-color: #ef4444; -fx-text-fill: white; " +
+            "-fx-background-radius: 6; -fx-font-weight: bold; -fx-cursor: hand;");
+        btnConfirm.setOnAction(e -> { confirmed[0] = true; stage.close(); });
+
+        HBox buttons = new HBox(8, btnCancel, btnConfirm);
+        buttons.setAlignment(Pos.CENTER_RIGHT);
+
+        VBox root = buildDialogRoot(380, "#1a1a1a");
+        root.getChildren().addAll(lblTitle, lblMsg, buttons);
+
+        Scene scene = buildDialogScene(root);
+        scene.setOnKeyPressed(ev -> { if (ev.getCode() == KeyCode.ESCAPE) stage.close(); });
+        stage.setScene(scene);
+        stage.showAndWait();
+
+        return confirmed[0];
+    }
 
     // ── Custom title bar (App.java sets StageStyle.UNDECORATED — no native chrome, so drag-to-
     // move, edge resize, and minimize/maximize/close all have to be reimplemented by hand here) ──

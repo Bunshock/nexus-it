@@ -306,13 +306,10 @@
                        text="Muestra los datos del técnico que aparecen como responsable en cada nota generada: nombre, nombre de usuario, DNI y correo. Estos cuatro campos se completan automáticamente desde Active Directory a partir de la sesión de Windows activa al abrir la aplicación, y se muestran deshabilitados (no editables) en el uso normal."
                        style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
                 <Label wrapText="true"
-                       text="El botón &quot;Actualizar Perfil desde AD&quot; vuelve a consultar Active Directory bajo demanda — útil si los datos no se cargaron correctamente al iniciar la aplicación, o si cambiaron en el directorio institucional. Si la actualización falla, un mensaje indica el motivo (no se pudo identificar el usuario de Windows, el usuario no existe en Active Directory, o no se pudo conectar con Active Directory) y sugiere pedirle a un administrador que complete los datos manualmente."
+                       text="El botón &quot;Actualizar Perfil desde AD&quot; vuelve a consultar Active Directory bajo demanda — útil si los datos no se cargaron correctamente al iniciar la aplicación, o si cambiaron en el directorio institucional. Si la actualización falla, un mensaje indica el motivo (no se pudo identificar el usuario de Windows, el usuario no existe en Active Directory, o no se pudo conectar con Active Directory). Estos cuatro campos no se pueden editar manualmente desde ningún rol — si un dato es incorrecto, debe corregirse en Active Directory."
                        style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
                 <Label wrapText="true"
                        text="&quot;Nombre para mostrar&quot; es un campo aparte (máximo 20 caracteres), siempre editable (no requiere modo administrador), que controla únicamente el saludo de la barra lateral (&quot;Hola, ...!&quot;) — no afecta las notas generadas. Se completa automáticamente con una sugerencia a partir del nombre completo, pero puede reemplazarse por el nombre que el técnico prefiera y guardarse con su propio botón &quot;Guardar&quot;. Vaciar el campo y guardar restablece la sugerencia automática — el botón cuadrado &quot;↺&quot; junto al campo hace ambas cosas en un solo clic. Esta preferencia se recuerda entre sesiones y no se pierde al actualizar el perfil desde AD."
-                       style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
-                <Label wrapText="true"
-                       text="Una cuenta con rol de administrador (modo administrador activo, ver sección 11) puede completar o corregir manualmente el nombre, usuario, DNI y correo — útil si Active Directory no tiene el dato correcto o si el equipo no está en el dominio institucional. Esta corrección manual se pierde al reiniciar la aplicación o al volver a actualizar desde AD."
                        style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
 
                 <Separator/>
@@ -416,7 +413,7 @@
                 <Label text="11.  Modo administrador"
                        style="-fx-font-size: 15px; -fx-font-weight: bold; -fx-text-fill: #0c8570;"/>
                 <Label wrapText="true"
-                       text="El modo administrador desbloquea, mientras está activo: la edición de todos los campos de Ajustes (sección 10) y de Mi Perfil (sección 7), la sección Base de Datos completa (sección 9), la edición de reglas de validación de S/N (sección 10.4), y los botones de sincronización/rechazo GLPI en el detalle de una nota del Historial (sección 8)."
+                       text="El modo administrador desbloquea, mientras está activo: la edición de todos los campos de Ajustes (sección 10), la sección Base de Datos completa (sección 9), la edición de reglas de validación de S/N (sección 10.4), y los botones de sincronización/rechazo GLPI en el detalle de una nota del Historial (sección 8)."
                        style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
                 <Label wrapText="true"
                        text="Se activa automáticamente al iniciar sesión si la cuenta tiene rol de administrador asignado — no hay un botón para activarlo manualmente. Mientras está activo, se muestra una etiqueta &quot;MODO ADMINISTRADOR&quot; en la barra de título de la aplicación, y permanece activo durante toda la sesión (no expira por inactividad)."

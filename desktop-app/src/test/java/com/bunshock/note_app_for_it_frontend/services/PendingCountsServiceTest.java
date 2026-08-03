@@ -56,4 +56,18 @@ class PendingCountsServiceTest {
             service.removeOnChangeListener(listenerB);
         }
     }
+
+    @Test
+    void clearListenersForLogoutRemovesEveryRegisteredListener() {
+        AtomicInteger callsA = new AtomicInteger(0);
+        AtomicInteger callsB = new AtomicInteger(0);
+        service.addOnChangeListener(callsA::incrementAndGet);
+        service.addOnChangeListener(callsB::incrementAndGet);
+
+        service.clearListenersForLogout();
+        service.notifyChanged();
+
+        assertEquals(0, callsA.get(), "clearListenersForLogout() must remove every listener, not just one");
+        assertEquals(0, callsB.get());
+    }
 }

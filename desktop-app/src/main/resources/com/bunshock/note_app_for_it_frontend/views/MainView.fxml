@@ -29,6 +29,9 @@
                <HBox.margin><Insets left="10"/></HBox.margin>
             </Label>
             <Region HBox.hgrow="ALWAYS"/>
+            <Button fx:id="btnLogout" text="Cerrar sesión" onAction="#handleLogout" styleClass="title-bar-logout-button">
+               <HBox.margin><Insets right="10"/></HBox.margin>
+            </Button>
             <Button fx:id="btnMinimizeWindow" text="─" onAction="#handleMinimizeWindow" styleClass="title-bar-button"/>
             <Button fx:id="btnMaximizeRestoreWindow" onAction="#handleMaximizeRestoreWindow" styleClass="title-bar-button"/>
             <Button fx:id="btnCloseWindow" text="✕" onAction="#handleCloseWindow" styleClass="title-bar-button,title-bar-button-close"/>
@@ -107,22 +110,32 @@
                <children>
                   <ToggleButton text="Historial" fx:id="btnHistory" toggleGroup="$navigationGroup"
                         maxWidth="Infinity" styleClass="nav-button" onAction="#handleShowHistory"/>
-                  <Label fx:id="lblHistoryBadge" text="" styleClass="nav-badge"
-                         visible="false" managed="false" mouseTransparent="true"
-                         StackPane.alignment="CENTER_RIGHT">
+                  <HBox spacing="6" alignment="CENTER_RIGHT" mouseTransparent="true"
+                        StackPane.alignment="CENTER_RIGHT">
                      <StackPane.margin><Insets right="15"/></StackPane.margin>
-                  </Label>
+                     <children>
+                        <Label fx:id="lblApprovalBadge" text="" styleClass="nav-badge, nav-badge-approval"
+                               visible="false" managed="false"/>
+                        <Label fx:id="lblHistoryBadge" text="" styleClass="nav-badge"
+                               visible="false" managed="false"/>
+                     </children>
+                  </HBox>
                </children>
             </StackPane>
             <StackPane maxWidth="Infinity">
                <children>
                   <ToggleButton text="Préstamos" fx:id="btnPrestamos" toggleGroup="$navigationGroup"
                         maxWidth="Infinity" styleClass="nav-button" onAction="#handleShowPrestamos"/>
-                  <Label fx:id="lblPrestamosBadge" text="" styleClass="nav-badge"
-                         visible="false" managed="false" mouseTransparent="true"
-                         StackPane.alignment="CENTER_RIGHT">
+                  <HBox spacing="6" alignment="CENTER_RIGHT" mouseTransparent="true"
+                        StackPane.alignment="CENTER_RIGHT">
                      <StackPane.margin><Insets right="15"/></StackPane.margin>
-                  </Label>
+                     <children>
+                        <Label fx:id="lblPrestamosApprovalBadge" text="" styleClass="nav-badge, nav-badge-approval"
+                               visible="false" managed="false"/>
+                        <Label fx:id="lblPrestamosBadge" text="" styleClass="nav-badge"
+                               visible="false" managed="false"/>
+                     </children>
+                  </HBox>
                </children>
             </StackPane>
             <ToggleButton text="Base de Datos" fx:id="btnData" toggleGroup="$navigationGroup"

@@ -32,7 +32,7 @@
     -fx-padding: 0 0 0 8;
 }
 
-/* Admin-mode badge — moved here from the sidebar's welcome block (2026-07-14): that block sat
+/* Admin-mode badge — moved here from the sidebar's welcome block: that block sat
    inside a fixed-height-budget VBox (see App.java's window-height comments), so showing/hiding
    this label shifted the welcome text's centered position and, on tight screens, could push the
    sidebar's required height past what was available. The title bar is a fixed-height row that
@@ -40,6 +40,18 @@
    (#0e9a82), shrunk to fit the shorter title bar. */
 .title-bar-admin-badge {
     -fx-background-color: #0e9a82;
+    -fx-text-fill: white;
+    -fx-font-size: 9px;
+    -fx-font-weight: bold;
+    -fx-letter-spacing: 1.5px;
+    -fx-padding: 3 8;
+    -fx-background-radius: 3;
+}
+
+/* Superadmin gets a distinct magenta badge instead of the regular admin's teal one, so the
+   two roles are never visually confused at a glance. */
+.title-bar-superadmin-badge {
+    -fx-background-color: #c026d3;
     -fx-text-fill: white;
     -fx-font-size: 9px;
     -fx-font-weight: bold;
@@ -71,6 +83,37 @@
 
 .title-bar-button-close:hover {
     -fx-background-color: #e53935;
+}
+
+/* "Cerrar sesión" title-bar button — placed in the title bar (not the sidebar) specifically
+   because this row's height is fixed and independent of the sidebar/content BorderPane
+   row-sharing behavior that already forces the whole window taller when the sidebar's own
+   min-height grows (see the window-height comments in MainController/App.java) — a sidebar
+   button caused exactly that regression, this can't. Deliberately not given the
+   .title-bar-button class — that class fixes a 42x36 icon-button size for minimize/maximize/
+   close, too narrow for this button's text label. */
+.title-bar-logout-button {
+    -fx-background-color: rgba(239, 68, 68, 0.25);
+    -fx-background-radius: 4;
+    -fx-border-color: rgba(239, 68, 68, 0.9);
+    -fx-border-width: 1;
+    -fx-border-radius: 4;
+    -fx-text-fill: white;
+    -fx-font-size: 11px;
+    -fx-cursor: hand;
+    -fx-padding: 6 12;
+}
+
+.title-bar-logout-button:hover {
+    -fx-background-color: #e53935;
+    -fx-border-color: #e53935;
+    -fx-text-fill: white;
+    -fx-effect: dropshadow(three-pass-box, rgba(0, 0, 0, 0.2), 4, 0, 0, 1);
+}
+
+.title-bar-logout-button:pressed {
+    -fx-background-color: #c62828;
+    -fx-border-color: #c62828;
 }
 
 /* Small "×" dismiss button in the teal gradient header of note popups
@@ -510,6 +553,40 @@
     -fx-text-fill: white;
 }
 
+/* ControlsFX ToggleSwitch (Configuración → Generación de notas) — overrides the library's
+   default light-blue selected color (#0b99c9, see controlsfx's own toggleswitch.css) with the
+   app's teal accent, and widens the track a little. Selector names (.thumb-area, .thumb) come
+   straight from ControlsFX's own stylesheet, not guessed.
+
+   Widening via the control's own -fx-pref-width had no visible effect — ToggleSwitchSkin sizes
+   itself from the thumb-area's own computed size, not the Control's reported prefWidth, so
+   setting it a level too high was a no-op. Widening .thumb-area's own horizontal padding instead
+   (default 0.75em 1.333333em, i.e. ~7 16 7 16 at this control's base font size) directly grows
+   the Region that's actually measured, which the skin has to respect.
+
+   Vertical padding is deliberately left at 0.75em, unchanged — a first attempt hardcoded it to a
+   flat 7px here too, which no longer exactly matched .thumb's own still-em-based 0.75em padding
+   at this control's actual font size, so the thumb (circle) rendered taller than the track
+   (rectangle) it sits in. Keeping both sides on the same 0.75em keeps them sized consistently
+   regardless of what that resolves to in px. */
+.toggle-switch .thumb-area {
+    -fx-padding: 0.75em 26px 0.75em 26px;
+}
+
+.toggle-switch:selected .thumb-area {
+    -fx-background-color:
+            linear-gradient(to bottom, derive(-fx-text-box-border, -20%), derive(-fx-text-box-border, -30%)),
+            linear-gradient(to bottom, derive(#0c8570, 30%), #0c8570);
+}
+
+.toggle-switch:selected:focused .thumb-area {
+    -fx-background-color:
+            -fx-focus-color,
+            linear-gradient(to bottom, derive(-fx-text-box-border, -20%), derive(-fx-text-box-border, -30%)),
+            -fx-faint-focus-color,
+            linear-gradient(to bottom, derive(#0c8570, 30%), #0c8570);
+}
+
 /* --- Common styles - END --- */
 
 /* --- MainView styles - START --- */
@@ -572,6 +649,15 @@
     -fx-font-family: "Segoe UI", sans-serif;
 }
 
+/* Shown instead of .user-sede when a superadmin hasn't assigned this technician a Sede yet —
+   a note can't be generated without one, so this needs to read as a warning, not routine info. */
+.user-sede-warning {
+    -fx-text-fill: #f59e0b;
+    -fx-font-size: 10px;
+    -fx-font-weight: bold;
+    -fx-font-family: "Segoe UI", sans-serif;
+}
+
 /* Sidebar button */
 .nav-button {
     -fx-background-color: rgba(255, 255, 255, 0.03);
@@ -602,12 +688,19 @@
     -fx-effect: innershadow(three-pass-box, rgba(0, 0, 0, 0.3), 5, 0, 0, 2);
 }
 
+
 /* Pending-count badge overlaid on Historial/Préstamos nav buttons (StackPane.alignment=
    CENTER_RIGHT) — same orange used for "Pendiente" status badges elsewhere in the app. */
 .nav-badge {
     -fx-text-fill: #f97316;
     -fx-font-size: 11px;
     -fx-font-weight: bold;
+}
+
+/* Pending-approval count, next to the GLPI-pending badge on the same nav button — a distinct
+   color (not orange) so the two aren't mistaken for the same count. */
+.nav-badge-approval {
+    -fx-text-fill: #ef4444;
 }
 
 /* Sidebar logo frame style */
