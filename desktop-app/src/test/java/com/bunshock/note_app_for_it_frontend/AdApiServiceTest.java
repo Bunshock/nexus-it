@@ -100,14 +100,48 @@ class AdApiServiceTest {
         return (String) m.invoke(null, digits);
     }
 
+    @SuppressWarnings("unchecked")
+    private boolean containsExactUsernameMatch(List<ADUser> results, String username) throws Exception {
+        Method m = AdApiService.class.getDeclaredMethod("containsExactUsernameMatch", List.class, String.class);
+        m.setAccessible(true);
+        return (boolean) m.invoke(null, results, username);
+    }
+
     @Test
     void dotFormatGroupsByThreeFromTheRight() throws Exception {
         assertEquals("45.933.368", dotFormat("45933368"));
         assertEquals("1.111.111", dotFormat("1111111"));
     }
 
+    // Guards the fix for a real login bug: mockValidateCredentials() used to accept "known user"
+    // whenever search() returned anything at all — since search()'s own username matching is a
+    // deliberate substring .contains() (needed for partial-username recipient lookups elsewhere),
+    // typing just a few letters of a real employee's username was enough to authenticate as them,
+    // with no password check. containsExactUsernameMatch() is the fix: only an exact match counts.
+    @Test
+    void containsExactUsernameMatchRejectsSubstringOnlyResult() throws Exception {
+        ADUser lgarcia = new ADUser("38987654", "Leandro Garcia", "lgarcia",
+            "lgarcia@ues21.edu.ar", "OU=BuenosAires,OU=Docentes,DC=ues21");
+        assertFalse(containsExactUsernameMatch(List.of(lgarcia), "garcia"),
+            "a substring match must not count as a known user for authentication");
+        assertFalse(containsExactUsernameMatch(List.of(lgarcia), "gar"));
+    }
+
+    @Test
+    void containsExactUsernameMatchAcceptsExactMatchCaseInsensitive() throws Exception {
+        ADUser lgarcia = new ADUser("38987654", "Leandro Garcia", "lgarcia",
+            "lgarcia@ues21.edu.ar", "OU=BuenosAires,OU=Docentes,DC=ues21");
+        assertTrue(containsExactUsernameMatch(List.of(lgarcia), "lgarcia"));
+        assertTrue(containsExactUsernameMatch(List.of(lgarcia), "LGarcia"));
+    }
+
+    @Test
+    void containsExactUsernameMatchFalseForEmptyResults() throws Exception {
+        assertFalse(containsExactUsernameMatch(List.of(), "anything"));
+    }
+
     /**
-     * Documents a confirmed, accepted limitation (2026-07-10) — not a bug to "fix" here. Two
+     * Documents a confirmed, accepted limitation — not a bug to "fix" here. Two
      * real AD users share the same first 5 DNI digits, one stored undotted ("40858705"), one
      * stored dotted ("40.858.711"). A partial-DNI search for the dotted user only succeeds when
      * the typed prefix happens to land on a dot boundary (5 digits) or is the full exact value
@@ -359,7 +393,7 @@ class AdApiServiceTest {
         assertFalse(matchesAllWords(dto, List.of("joaquin")));
     }
 
-    // ── matchesDni / matchesUsername (2026-07-10 AND-enforcement fix) ──────────
+    // ── matchesDni / matchesUsername (AND-enforcement fix) ──────────
 
     @Test
     void matchesDniTrueWhenActualStartsWithTyped() throws Exception {

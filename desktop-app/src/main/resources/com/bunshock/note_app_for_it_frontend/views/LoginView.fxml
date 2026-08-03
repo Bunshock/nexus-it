@@ -40,7 +40,7 @@
                     <children>
                         <Label text="USUARIO" styleClass="input-label-small"/>
                         <TextField fx:id="txtUsername" styleClass="form-input-main" maxWidth="Infinity"
-                                   promptText="usuario.dominio"/>
+                                   promptText="usuario.dominio" onAction="#handleLogin"/>
                     </children>
                 </VBox>
 

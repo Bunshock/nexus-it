@@ -21,9 +21,11 @@ import javafx.scene.control.TextField;
 /**
  * Standalone login screen shown before MainView (and its startup connectivity overlay) is
  * even constructed — see App.java. Validates AD credentials, then AD group membership (app
- * access gate), then resolves the full profile and USER_ROLE, populating
- * TechnicianSessionService exactly once other checks pass. An ADMIN-role login activates
- * AdminSession immediately (no separate password prompt — this login already proved identity).
+ * access gate), then resolves the exact-matching AD profile, then requires an APP_USER row to
+ * exist at all (a valid AD account with no row is not permitted to use the app), then reads its
+ * role/Sede, populating TechnicianSessionService exactly once every check passes. An ADMIN- or
+ * SUPERADMIN-role login activates AdminSession immediately (no separate password prompt — this
+ * login already proved identity).
  */
 public class LoginController {
 
@@ -89,8 +91,16 @@ public class LoginController {
                     return;
                 }
 
+                // Exact match required — search() does substring matching (needed elsewhere for
+                // partial-username recipient lookups), but resolving the just-authenticated
+                // account must never land on a different account that merely contains what was
+                // typed as a substring.
                 List<ADUser> profile = ServiceLocator.getInstance().getAdService().search(null, null, username);
-                if (profile.isEmpty()) {
+                ADUser user = profile.stream()
+                    .filter(u -> u.getUsername().equalsIgnoreCase(username))
+                    .findFirst()
+                    .orElse(null);
+                if (user == null) {
                     Platform.runLater(() -> {
                         setBusy(false);
                         showError("No se pudo obtener el perfil desde Active Directory.");
@@ -98,13 +108,23 @@ public class LoginController {
                     return;
                 }
 
-                ADUser user = profile.get(0);
+                // A valid AD account with no APP_USER row must not be let in at all — getRole()'s
+                // ROLE_USER default is a permission fallback for already-registered accounts, not
+                // an implicit "anyone with valid AD credentials may use the app" gate.
+                if (!ServiceLocator.getInstance().getUserRoleService().isRegistered(user.getUsername())) {
+                    Platform.runLater(() -> {
+                        setBusy(false);
+                        showError("Usuario no registrado en la aplicación. Solicite acceso a un administrador.");
+                    });
+                    return;
+                }
+
                 String role = ServiceLocator.getInstance().getUserRoleService().getRole(user.getUsername());
 
                 Platform.runLater(() -> {
                     TechnicianSessionService.getInstance().loginResolved(user, role);
-                    if (IUserRoleService.ROLE_ADMIN.equals(role)) {
-                        AdminSession.getInstance().activatePermanently();
+                    if (IUserRoleService.ROLE_ADMIN.equals(role) || IUserRoleService.ROLE_SUPERADMIN.equals(role)) {
+                        AdminSession.getInstance().activatePermanently(role);
                     }
                     if (onLoginSuccess != null) onLoginSuccess.run();
                 });

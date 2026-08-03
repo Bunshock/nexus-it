@@ -36,12 +36,12 @@ public class TechnicianSessionService {
     private volatile String lastError;
     private volatile UpdateSource lastUpdateSource;
     private volatile String displayNamePreference;
-    private volatile Integer sedeIdPreference;
+    private volatile Integer sedeId;
     private volatile String sedeName;
+    private volatile Boolean autoClearFormAfterGeneration;
 
     private final List<Runnable> onChangeListeners = new ArrayList<>();
     private final List<Runnable> onDisplayNameChangeListeners = new ArrayList<>();
-    private final List<Runnable> onSedeChangeListeners = new ArrayList<>();
 
     private TechnicianSessionService() {}
 
@@ -51,7 +51,10 @@ public class TechnicianSessionService {
      * Populates the session from an already-authenticated login (LoginController): the AD
      * credential check and group-membership gate already ran, and {@code user} is the result
      * of the existing {@code search(null, null, username)} profile lookup — this method does
-     * no AD I/O of its own. {@code role} is the login-time USER_ROLE lookup ("ADMIN"/"USER").
+     * no AD I/O of its own. {@code role} is the login-time APP_USER lookup
+     * ("USER"/"ADMIN"/"SUPERADMIN"). Sede is resolved here too — it's a superadmin-assigned
+     * attribute (APP_USER.sede_id), not a self-service preference, so it can only ever change
+     * between logins, never mid-session.
      */
     public synchronized void loginResolved(ADUser user, String role) {
         name = user.getFullName();
@@ -62,7 +65,8 @@ public class TechnicianSessionService {
         lastError = null;
         lastUpdateSource = UpdateSource.AD;
         loadDisplayNamePreference();
-        loadSedePreference();
+        loadAssignedSede();
+        loadAutoClearFormPreference();
         notifyListeners();
     }
 
@@ -75,7 +79,8 @@ public class TechnicianSessionService {
         this.lastError = null;
         this.lastUpdateSource = UpdateSource.MANUAL;
         loadDisplayNamePreference();
-        loadSedePreference();
+        loadAssignedSede();
+        loadAutoClearFormPreference();
         notifyListeners();
     }
 
@@ -163,59 +168,65 @@ public class TechnicianSessionService {
         return "display_name_pref:" + username;
     }
 
-    /** The technician's configured Sede (site) display name, or null if not set yet. Resolved
-     * from the stored sede_id at load time — see loadSedePreference(). */
+    /**
+     * Whether Generar Nota's form should clear itself automatically right after a note is
+     * generated — a per-technician preference, any role can change it, defaulting to {@code true}
+     * ("to prevent mistakes" — reusing stale form data for a new note) when nothing has been
+     * saved yet. Same persisted-preference shape as the display name above.
+     */
+    public boolean isAutoClearFormAfterGeneration() {
+        Boolean pref = autoClearFormAfterGeneration;
+        return pref == null || pref;
+    }
+
+    public synchronized void setAutoClearFormAfterGeneration(boolean value) {
+        if (username == null) return;
+        saveSetting(autoClearFormPreferenceKey(username), Boolean.toString(value));
+        autoClearFormAfterGeneration = value;
+    }
+
+    private void loadAutoClearFormPreference() {
+        if (username == null) { autoClearFormAfterGeneration = null; return; }
+        String stored = loadSetting(autoClearFormPreferenceKey(username));
+        autoClearFormAfterGeneration = stored != null ? Boolean.parseBoolean(stored) : null;
+    }
+
+    private static String autoClearFormPreferenceKey(String username) {
+        return "auto_clear_form_pref:" + username;
+    }
+
+    /** The technician's superadmin-assigned Sede (site) display name, or null if not assigned
+     * yet. Resolved from APP_USER.sede_id at login time — see loadAssignedSede(). */
     public String getSede() { return sedeName; }
 
-    /** The technician's configured Sede id, or null if not set yet — this is what gets
-     * persisted onto NOTE_REPORT.sede_id at note-generation time. */
-    public Integer getSedeId() { return sedeIdPreference; }
+    /** The technician's superadmin-assigned Sede id, or null if not assigned yet — this is what
+     * gets persisted onto NOTE_REPORT.sede_id at note-generation time, and what an ADMIN-role
+     * session's Sede-scoped permission checks are compared against (see AdminSession). */
+    public Integer getSedeId() { return sedeId; }
 
-    /**
-     * Sets the technician's Sede preference from a catalog selection (the Settings ComboBox<Sede>
-     * item), persisting only the id in APP_SETTINGS keyed by username — same key/mechanism the
-     * old free-text version used (sede_pref:<username>), just storing an id instead of a name now
-     * (added 2026-07-24, when Sede became catalog-backed). Its own listener list keeps a Sede
-     * save from re-triggering the AD-identity or display-name status messages, same reasoning as
-     * the existing listener split between those two.
-     */
-    public synchronized void setSedePreference(Integer sedeId, String sedeName) {
-        if (username == null) return;
-        if (sedeId == null) {
-            deleteSetting(sedePreferenceKey(username));
-            this.sedeIdPreference = null;
-            this.sedeName = null;
-        } else {
-            saveSetting(sedePreferenceKey(username), String.valueOf(sedeId));
-            this.sedeIdPreference = sedeId;
-            this.sedeName = sedeName;
-        }
-        notifySedeListeners();
-    }
-
-    private void loadSedePreference() {
-        String stored = username != null ? loadSetting(sedePreferenceKey(username)) : null;
-        if (stored == null) {
-            sedeIdPreference = null;
+    // Sede is no longer a self-service preference — it's assigned by a superadmin directly via
+    // SQL against APP_USER.sede_id, read here at login (or manual-override) time, same as role
+    // itself. Resolves regardless of deprecated status — a technician's assigned Sede should
+    // still display *something* even if an admin renamed/deprecated that Sede since, rather than
+    // silently going blank (which would also block note generation, since Sede is mandatory). If
+    // the row was genuinely deleted, or no Sede has been assigned at all, this leaves both fields
+    // null, same as never having one.
+    private void loadAssignedSede() {
+        if (username == null) {
+            sedeId = null;
             sedeName = null;
             return;
         }
+        Integer assigned;
         try {
-            sedeIdPreference = Integer.parseInt(stored);
-        } catch (NumberFormatException notAnId) {
-            // Pre-2026-07-24 installs stored the Sede as free text, not a catalog id — treat as
-            // unset rather than crash; the technician re-picks it once via the new combobox.
-            sedeIdPreference = null;
-            sedeName = null;
-            return;
+            assigned = ServiceLocator.getInstance().getUserRoleService().getSedeId(username);
+        } catch (Exception e) {
+            assigned = null;
         }
-        sedeName = resolveSedeName(sedeIdPreference);
+        sedeId = assigned;
+        sedeName = assigned != null ? resolveSedeName(assigned) : null;
     }
 
-    // Resolves regardless of deprecated status — a technician's own saved preference should
-    // still display *something* even if an admin renamed/deprecated that Sede since, rather
-    // than silently going blank (which would also block note generation, since Sede is
-    // mandatory). If the row was genuinely deleted this returns null, same as never having set one.
     private String resolveSedeName(int sedeId) {
         try (Connection c = DatabaseService.getInstance().getConnection();
              PreparedStatement ps = c.prepareStatement("SELECT name FROM SEDE WHERE id = ?")) {
@@ -226,10 +237,6 @@ public class TechnicianSessionService {
         } catch (SQLException e) {
             return null;
         }
-    }
-
-    private static String sedePreferenceKey(String username) {
-        return "sede_pref:" + username;
     }
 
     private String loadSetting(String key) {
@@ -277,9 +284,29 @@ public class TechnicianSessionService {
         Platform.runLater(() -> listeners.forEach(Runnable::run));
     }
 
-    private void notifySedeListeners() {
-        List<Runnable> listeners = new ArrayList<>(onSedeChangeListeners);
-        Platform.runLater(() -> listeners.forEach(Runnable::run));
+    /**
+     * Full reset for logout (MainController's "Cerrar sesión" action) — clears both the session
+     * state and every registered listener. Clearing the listener lists too is only safe because
+     * logout tears down the entire MainView/ViewFactory tree along with it: every listener still
+     * registered at this point (MainController's own, plus ProfileController's/SettingsController's
+     * — none of which ever unregister themselves, since before logout existed a MainController was
+     * never rebuilt mid-process) belongs to a controller instance about to be discarded, and a
+     * fresh MainController/ViewFactory registers its own listeners again right after the next
+     * login succeeds.
+     */
+    public synchronized void clearSessionForLogout() {
+        name = null;
+        username = null;
+        email = null;
+        dni = null;
+        role = null;
+        lastError = null;
+        lastUpdateSource = null;
+        displayNamePreference = null;
+        sedeId = null;
+        sedeName = null;
+        onChangeListeners.clear();
+        onDisplayNameChangeListeners.clear();
     }
 
     public void addOnChangeListener(Runnable listener) { onChangeListeners.add(listener); }
@@ -287,9 +314,6 @@ public class TechnicianSessionService {
 
     public void addOnDisplayNameChangeListener(Runnable listener) { onDisplayNameChangeListeners.add(listener); }
     public void removeOnDisplayNameChangeListener(Runnable listener) { onDisplayNameChangeListeners.remove(listener); }
-
-    public void addOnSedeChangeListener(Runnable listener) { onSedeChangeListeners.add(listener); }
-    public void removeOnSedeChangeListener(Runnable listener) { onSedeChangeListeners.remove(listener); }
 
     public String getName() { return name; }
     public String getUsername() { return username; }

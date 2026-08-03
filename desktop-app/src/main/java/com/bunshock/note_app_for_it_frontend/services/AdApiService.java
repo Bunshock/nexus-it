@@ -192,8 +192,14 @@ public class AdApiService implements IADService {
             + "- password for \"" + username + "\" was NOT checked. Remove this once the real "
             + "validate-credentials endpoint exists on the AD API.");
 
-        boolean knownUser = !search(null, null, username).isEmpty();
-        if (!knownUser) return new AdCredentialResult(false, List.of());
+        // Exact match required — search()'s username matching is a deliberate substring
+        // .contains() (needed elsewhere for partial-username recipient lookups), but reusing
+        // that here let a login with only a few matching letters of someone else's real
+        // username through as "known", with no password check at all. Authentication must
+        // resolve to the exact account that was typed, not merely one whose username contains it.
+        if (!containsExactUsernameMatch(search(null, null, username), username)) {
+            return new AdCredentialResult(false, List.of());
+        }
 
         List<String> groups = new ArrayList<>();
         try {
@@ -261,7 +267,7 @@ public class AdApiService implements IADService {
      * Non-blank DNI yields [digitsOnly] or [digitsOnly, dotted] when dotting actually changes
      * the value.
      *
-     * Investigated 2026-07-10 whether generating extra dotted guesses anchored to an assumed
+     * Investigated whether generating extra dotted guesses anchored to an assumed
      * final length (7 or 8 digits) could recover partial-DNI searches against dotted-stored
      * records — e.g. for the DNI "40858711" (stored dotted as "40.858.711"), trying "40.858.7"
      * as a guess for the 6-digit-typed prefix "408587". That guess is a character-for-character
@@ -332,6 +338,10 @@ public class AdApiService implements IADService {
         List<String> l = new ArrayList<>(1);
         l.add(null);
         return l;
+    }
+
+    private static boolean containsExactUsernameMatch(List<ADUser> results, String username) {
+        return results.stream().anyMatch(u -> u.getUsername().equalsIgnoreCase(username));
     }
 
     private static boolean isBlank(String s) { return s == null || s.isBlank(); }

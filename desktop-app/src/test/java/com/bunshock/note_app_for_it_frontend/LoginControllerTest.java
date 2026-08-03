@@ -45,7 +45,7 @@ class LoginControllerTest {
     private TextField txtUsername;
     private PasswordField pfPassword;
     private Label lblLoginStatus;
-    // IUserRoleService is read-only in production (an admin edits USER_ROLE via SQL, not app
+    // IUserRoleService is read-only in production (a superadmin edits APP_USER via SQL, not app
     // code) — kept as its concrete Mock type here so tests can still seed a role, via
     // MockUserRoleService's own test-only setRole(), not part of the interface.
     private MockUserRoleService mockUserRoleService;
@@ -103,6 +103,25 @@ class LoginControllerTest {
         assertEquals("jperez", TechnicianSessionService.getInstance().getUsername());
         assertEquals(IUserRoleService.ROLE_ADMIN, TechnicianSessionService.getInstance().getRole());
         assertTrue(AdminSession.getInstance().isActive());
+        assertEquals(IUserRoleService.ROLE_ADMIN, AdminSession.getInstance().getEffectiveRole());
+    }
+
+    @Test
+    void successfulLoginWithSuperadminRoleActivatesSuperadminSession() throws Exception {
+        mockUserRoleService.setRole("jperez", IUserRoleService.ROLE_SUPERADMIN);
+        CountDownLatch latch = new CountDownLatch(1);
+
+        runOnFx(() -> {
+            txtUsername.setText("jperez");
+            pfPassword.setText(MOCK_PASSWORD);
+            controller.setOnLoginSuccess(latch::countDown);
+            invoke("handleLogin");
+        });
+
+        assertTrue(latch.await(5, TimeUnit.SECONDS), "login did not complete in time");
+        assertEquals(IUserRoleService.ROLE_SUPERADMIN, TechnicianSessionService.getInstance().getRole());
+        assertTrue(AdminSession.getInstance().isActive());
+        assertEquals(IUserRoleService.ROLE_SUPERADMIN, AdminSession.getInstance().getEffectiveRole());
     }
 
     @Test
@@ -131,6 +150,62 @@ class LoginControllerTest {
 
         waitUntilStatusContains("incorrectos");
         assertFalse(TechnicianSessionService.getInstance().isResolved());
+    }
+
+    @Test
+    void validAdCredentialsButNotRegisteredInAppUserIsRejected() throws Exception {
+        // "jperez" is a real MockADService account (so credentials + AD group + profile lookup
+        // all succeed), but mockUserRoleService.setRole() is deliberately never called for it —
+        // reproduces a real AD account with no APP_USER row at all, which must be rejected
+        // outright, not silently defaulted to a normal USER-role login.
+        CountDownLatch latch = new CountDownLatch(1);
+
+        runOnFx(() -> {
+            txtUsername.setText("jperez");
+            pfPassword.setText(MOCK_PASSWORD);
+            controller.setOnLoginSuccess(latch::countDown);
+            invoke("handleLogin");
+        });
+
+        waitUntilStatusContains("no registrado");
+        assertFalse(TechnicianSessionService.getInstance().isResolved());
+        assertFalse(AdminSession.getInstance().isActive());
+        assertEquals(1, latch.getCount(), "onLoginSuccess must not fire for an unregistered account");
+    }
+
+    @Test
+    void partialUsernameNeverResolvesToADifferentRealAccount() throws Exception {
+        // Defense-in-depth: even if some IADService.validateCredentials() implementation were
+        // laxer than it should be about what counts as a "known" username (mockValidateCredentials()
+        // in AdApiService used to have exactly this flaw — see AdApiServiceTest's
+        // containsExactUsernameMatch coverage for that fix), LoginController's own profile
+        // resolution must still never accept a search() hit that's merely a substring of what was
+        // typed — it must resolve to the exact account, or fail, never silently pick a different
+        // real person because their username happens to contain the typed fragment.
+        mockUserRoleService.setRole("lgarcia", IUserRoleService.ROLE_USER);
+        ServiceLocator.getInstance().setAdService(new IADService() {
+            @Override public List<ADUser> search(String dni, String name, String username) {
+                // Simulates search()'s real substring behavior: "garcia" matches stored "lgarcia".
+                if (username != null && "lgarcia".contains(username.toLowerCase())) {
+                    return List.of(new ADUser("38987654", "Leandro Garcia", "lgarcia",
+                        "lgarcia@ues21.edu.ar", "OU=BuenosAires,OU=Docentes,DC=ues21"));
+                }
+                return List.of();
+            }
+            @Override public AdCredentialResult validateCredentials(String username, String password) {
+                return new AdCredentialResult(true, List.of());
+            }
+        });
+
+        runOnFx(() -> {
+            txtUsername.setText("garcia");
+            pfPassword.setText("anything");
+            invoke("handleLogin");
+        });
+
+        waitUntilStatusContains("perfil");
+        assertFalse(TechnicianSessionService.getInstance().isResolved(),
+            "must never resolve the session to \"lgarcia\" just because their username contains what was typed");
     }
 
     @Test
