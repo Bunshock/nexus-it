@@ -247,6 +247,9 @@ class MockEquipmentServiceTest {
     }
 
     // ── Stock ────────────────────────────────────────────────────────────────
+    // MockEquipmentService is a plain in-memory list with no FK enforcement, so any int works as
+    // a stand-in sedeId — unlike SqliteEquipmentServiceTest, there's no real SEDE row to insert.
+    private static final int SEDE_ID = 1;
 
     @Test
     void modelStockDefaultsToZero() {
@@ -256,7 +259,7 @@ class MockEquipmentServiceTest {
         EquipmentBrand brand = service.getBrandsForType(notebook.getId()).get(0);
         EquipmentModel model = service.getModelsForBrandAndType(brand.getId(), notebook.getId()).get(0);
 
-        assertEquals(0, service.getModelStock(model.getId(), brand.getId(), notebook.getId()));
+        assertEquals(0, service.getModelStock(model.getId(), brand.getId(), notebook.getId(), SEDE_ID));
     }
 
     @Test
@@ -267,11 +270,26 @@ class MockEquipmentServiceTest {
         EquipmentBrand brand = service.getBrandsForType(notebook.getId()).get(0);
         EquipmentModel model = service.getModelsForBrandAndType(brand.getId(), notebook.getId()).get(0);
 
-        service.setModelStock(model.getId(), brand.getId(), notebook.getId(), 8);
-        assertEquals(8, service.getModelStock(model.getId(), brand.getId(), notebook.getId()));
+        service.setModelStock(model.getId(), brand.getId(), notebook.getId(), SEDE_ID, 8);
+        assertEquals(8, service.getModelStock(model.getId(), brand.getId(), notebook.getId(), SEDE_ID));
 
-        service.setModelStock(model.getId(), brand.getId(), notebook.getId(), 3);
-        assertEquals(3, service.getModelStock(model.getId(), brand.getId(), notebook.getId()));
+        service.setModelStock(model.getId(), brand.getId(), notebook.getId(), SEDE_ID, 3);
+        assertEquals(3, service.getModelStock(model.getId(), brand.getId(), notebook.getId(), SEDE_ID));
+    }
+
+    @Test
+    void setModelStockIsIndependentPerSede() {
+        EquipmentType notebook = service.getAllTypes().stream()
+            .filter(t -> t.getName().equalsIgnoreCase("Notebook"))
+            .findFirst().orElseThrow();
+        EquipmentBrand brand = service.getBrandsForType(notebook.getId()).get(0);
+        EquipmentModel model = service.getModelsForBrandAndType(brand.getId(), notebook.getId()).get(0);
+
+        service.setModelStock(model.getId(), brand.getId(), notebook.getId(), 1, 10);
+        service.setModelStock(model.getId(), brand.getId(), notebook.getId(), 2, 4);
+
+        assertEquals(10, service.getModelStock(model.getId(), brand.getId(), notebook.getId(), 1));
+        assertEquals(4, service.getModelStock(model.getId(), brand.getId(), notebook.getId(), 2));
     }
 
     @Test
@@ -284,11 +302,25 @@ class MockEquipmentServiceTest {
         for (EquipmentBrand b : brands) {
             List<EquipmentModel> models = service.getModelsForBrandAndType(b.getId(), notebook.getId());
             if (models.isEmpty()) continue;
-            service.setModelStock(models.get(0).getId(), b.getId(), notebook.getId(), 5);
+            service.setModelStock(models.get(0).getId(), b.getId(), notebook.getId(), SEDE_ID, 5);
             expectedTotal += 5;
         }
 
-        assertEquals(expectedTotal, service.getStockTotalsByType().getOrDefault(notebook.getId(), 0));
+        assertEquals(expectedTotal, service.getStockTotalsByType(SEDE_ID).getOrDefault(notebook.getId(), 0));
+    }
+
+    @Test
+    void getStockTotalsByTypeWithNullSedeCombinesEverySede() {
+        EquipmentType notebook = service.getAllTypes().stream()
+            .filter(t -> t.getName().equalsIgnoreCase("Notebook"))
+            .findFirst().orElseThrow();
+        EquipmentBrand brand = service.getBrandsForType(notebook.getId()).get(0);
+        EquipmentModel model = service.getModelsForBrandAndType(brand.getId(), notebook.getId()).get(0);
+
+        service.setModelStock(model.getId(), brand.getId(), notebook.getId(), 1, 4);
+        service.setModelStock(model.getId(), brand.getId(), notebook.getId(), 2, 6);
+
+        assertEquals(10, service.getStockTotalsByType(null).getOrDefault(notebook.getId(), 0));
     }
 
     @Test
@@ -299,9 +331,9 @@ class MockEquipmentServiceTest {
         EquipmentBrand brand = service.getBrandsForType(notebook.getId()).get(0);
         EquipmentModel model = service.getModelsForBrandAndType(brand.getId(), notebook.getId()).get(0);
 
-        service.setModelStock(model.getId(), brand.getId(), notebook.getId(), 12);
+        service.setModelStock(model.getId(), brand.getId(), notebook.getId(), SEDE_ID, 12);
 
-        assertEquals(12, service.getStockTotalsByModelForBrandAndType(brand.getId(), notebook.getId())
+        assertEquals(12, service.getStockTotalsByModelForBrandAndType(brand.getId(), notebook.getId(), SEDE_ID)
             .getOrDefault(model.getId(), 0));
     }
 }

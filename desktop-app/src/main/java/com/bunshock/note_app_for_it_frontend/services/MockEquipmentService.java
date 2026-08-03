@@ -29,7 +29,7 @@ public class MockEquipmentService implements IEquipmentService {
     private final List<SnValidation> snValidations = new ArrayList<>();
     private final List<EquipmentProvider> providers = new ArrayList<>();
     private final List<Sede> sedes = new ArrayList<>();
-    private final List<int[]> modelStocks = new ArrayList<>(); // [brandTypeId, modelId, stock]
+    private final List<int[]> modelStocks = new ArrayList<>(); // [brandTypeId, modelId, sedeId, stock]
 
     private int nextTypeId = 1000;
     private int nextBrandId = 1000;
@@ -316,54 +316,58 @@ public class MockEquipmentService implements IEquipmentService {
     // for getModelsForBrandAndType() — a pre-existing gap, not something this feature fixes.
 
     @Override
-    public int getModelStock(int modelId, int brandId, int typeId) {
+    public int getModelStock(int modelId, int brandId, int typeId, int sedeId) {
         int linkId = findTypeBrandLinkId(brandId, typeId);
         if (linkId == -1) return 0;
         return modelStocks.stream()
-            .filter(s -> s[0] == linkId && s[1] == modelId)
-            .mapToInt(s -> s[2])
+            .filter(s -> s[0] == linkId && s[1] == modelId && s[2] == sedeId)
+            .mapToInt(s -> s[3])
             .findFirst().orElse(0);
     }
 
     @Override
-    public void setModelStock(int modelId, int brandId, int typeId, int stock) {
+    public void setModelStock(int modelId, int brandId, int typeId, int sedeId, int stock) {
         int linkId = ensureTypeBrandLink(brandId, typeId);
         for (int[] s : modelStocks) {
-            if (s[0] == linkId && s[1] == modelId) {
-                s[2] = stock;
+            if (s[0] == linkId && s[1] == modelId && s[2] == sedeId) {
+                s[3] = stock;
                 return;
             }
         }
-        modelStocks.add(new int[]{linkId, modelId, stock});
+        modelStocks.add(new int[]{linkId, modelId, sedeId, stock});
     }
 
+    // sedeId null means "every Sede combined" (summed), matching SqliteEquipmentService's
+    // convention above.
     @Override
-    public Map<Integer, Integer> getStockTotalsByType() {
+    public Map<Integer, Integer> getStockTotalsByType(Integer sedeId) {
         Map<Integer, Integer> result = new HashMap<>();
         for (int[] s : modelStocks) {
+            if (sedeId != null && s[2] != sedeId) continue;
             typeBrands.stream().filter(tb -> tb[0] == s[0]).findFirst()
-                .ifPresent(tb -> result.merge(tb[1], s[2], Integer::sum));
+                .ifPresent(tb -> result.merge(tb[1], s[3], Integer::sum));
         }
         return result;
     }
 
     @Override
-    public Map<Integer, Integer> getStockTotalsByBrandForType(int typeId) {
+    public Map<Integer, Integer> getStockTotalsByBrandForType(int typeId, Integer sedeId) {
         Map<Integer, Integer> result = new HashMap<>();
         for (int[] s : modelStocks) {
+            if (sedeId != null && s[2] != sedeId) continue;
             typeBrands.stream().filter(tb -> tb[0] == s[0] && tb[1] == typeId).findFirst()
-                .ifPresent(tb -> result.merge(tb[2], s[2], Integer::sum));
+                .ifPresent(tb -> result.merge(tb[2], s[3], Integer::sum));
         }
         return result;
     }
 
     @Override
-    public Map<Integer, Integer> getStockTotalsByModelForBrandAndType(int brandId, int typeId) {
+    public Map<Integer, Integer> getStockTotalsByModelForBrandAndType(int brandId, int typeId, Integer sedeId) {
         Map<Integer, Integer> result = new HashMap<>();
         int linkId = findTypeBrandLinkId(brandId, typeId);
         if (linkId == -1) return result;
         for (int[] s : modelStocks) {
-            if (s[0] == linkId) result.merge(s[1], s[2], Integer::sum);
+            if (s[0] == linkId && (sedeId == null || s[2] == sedeId)) result.merge(s[1], s[3], Integer::sum);
         }
         return result;
     }

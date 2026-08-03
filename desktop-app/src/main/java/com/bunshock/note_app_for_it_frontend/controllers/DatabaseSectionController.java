@@ -26,6 +26,7 @@ import com.bunshock.note_app_for_it_frontend.services.IEquipmentService;
 import com.bunshock.note_app_for_it_frontend.services.IUserRoleService;
 import com.bunshock.note_app_for_it_frontend.services.RemoteDatabaseService;
 import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;
+import com.bunshock.note_app_for_it_frontend.services.TechnicianSessionService;
 
 import javafx.animation.FadeTransition;
 import javafx.application.Platform;
@@ -69,6 +70,7 @@ public class DatabaseSectionController {
     @FXML private ListView<EquipmentModel> listModels;
     @FXML private ListView<EquipmentProvider> listProviders;
     @FXML private ListView<Sede> listSedes;
+    @FXML private ComboBox<Sede> cmbStockSede;
 
     // Toggle between the cascading Types/Brands/Models row and the flat/independent
     // Providers/Sedes row — a 5th catalog list (Sedes) made a single shared row too cramped.
@@ -77,12 +79,21 @@ public class DatabaseSectionController {
     @FXML private ToggleButton btnOtherCatalogs;
     @FXML private HBox rowEquipmentCatalog;
     @FXML private HBox rowOtherCatalogs;
+    @FXML private HBox rowStockSede;
 
     private IEquipmentService equipmentService;
+
+    // Stock is now tracked per Sede (see IEquipmentService.getModelStock/setModelStock) — null
+    // means "every Sede combined" (summed), only ever selectable by a SUPERADMIN; a plain
+    // ADMIN/USER is locked to their own superadmin-assigned Sede, mirroring the same
+    // ADMIN-own-Sede/SUPERADMIN-sees-all split already used for note approval/GLPI/return
+    // permissions (AdminSession.hasPermission(Permission, Integer)).
+    private Integer currentStockSedeId;
 
     public void initialize() {
         equipmentService = ServiceLocator.getInstance().getEquipmentService();
         loadConnectionDisplay();
+        initStockSedeSelector();
         refreshTypes();
         refreshSedes();
 
@@ -90,6 +101,8 @@ public class DatabaseSectionController {
             boolean showEquipment = next == btnEquipmentCatalog;
             rowEquipmentCatalog.setVisible(showEquipment);
             rowEquipmentCatalog.setManaged(showEquipment);
+            rowStockSede.setVisible(showEquipment);
+            rowStockSede.setManaged(showEquipment);
             rowOtherCatalogs.setVisible(!showEquipment);
             rowOtherCatalogs.setManaged(!showEquipment);
         });
@@ -306,7 +319,7 @@ public class DatabaseSectionController {
     // ── Equipment catalog ────────────────────────────────────────────
 
     private void refreshTypes() {
-        Map<Integer, Integer> stockByType = equipmentService.getStockTotalsByType();
+        Map<Integer, Integer> stockByType = equipmentService.getStockTotalsByType(currentStockSedeId);
         listTypes.setItems(FXCollections.observableArrayList(equipmentService.getAllTypes()));
         applyCatalogCellFactory(listTypes, t -> stockByType.getOrDefault(t.getId(), 0));
         listBrands.setItems(FXCollections.observableArrayList());
@@ -326,7 +339,7 @@ public class DatabaseSectionController {
                 .findFirst()
                 .ifPresent(brands::add);
         }
-        Map<Integer, Integer> stockByBrand = equipmentService.getStockTotalsByBrandForType(typeId);
+        Map<Integer, Integer> stockByBrand = equipmentService.getStockTotalsByBrandForType(typeId, currentStockSedeId);
         listBrands.setItems(FXCollections.observableArrayList(brands));
         applyCatalogCellFactory(listBrands, b -> stockByBrand.getOrDefault(b.getId(), 0));
         listModels.setItems(FXCollections.observableArrayList());
@@ -362,7 +375,8 @@ public class DatabaseSectionController {
             models.remove(generic);
             models.add(generic);
         }
-        Map<Integer, Integer> stockByModel = equipmentService.getStockTotalsByModelForBrandAndType(brandId, typeId);
+        Map<Integer, Integer> stockByModel =
+            equipmentService.getStockTotalsByModelForBrandAndType(brandId, typeId, currentStockSedeId);
         listModels.setItems(FXCollections.observableArrayList(models));
         applyCatalogCellFactory(listModels, m -> stockByModel.getOrDefault(m.getId(), 0));
     }
@@ -373,10 +387,10 @@ public class DatabaseSectionController {
     // navigating. Re-applying the cell factory with a freshly-fetched stock Map forces the
     // existing (unchanged) items to redraw with the new numbers, without touching items/selection.
     private void refreshStockRollupsOnly(int typeId) {
-        Map<Integer, Integer> stockByType = equipmentService.getStockTotalsByType();
+        Map<Integer, Integer> stockByType = equipmentService.getStockTotalsByType(currentStockSedeId);
         applyCatalogCellFactory(listTypes, t -> stockByType.getOrDefault(t.getId(), 0));
 
-        Map<Integer, Integer> stockByBrand = equipmentService.getStockTotalsByBrandForType(typeId);
+        Map<Integer, Integer> stockByBrand = equipmentService.getStockTotalsByBrandForType(typeId, currentStockSedeId);
         applyCatalogCellFactory(listBrands, b -> stockByBrand.getOrDefault(b.getId(), 0));
     }
 
@@ -457,6 +471,80 @@ public class DatabaseSectionController {
         });
     }
 
+    // A plain ADMIN/USER is locked to their own superadmin-assigned Sede (no way to view or edit
+    // another Sede's stock from here) — the combo box is populated with just that one Sede and
+    // disabled, so it reads as an indicator, not a control. A SUPERADMIN gets the full list plus
+    // a leading null entry meaning "Todas" (every Sede combined/summed), defaulting to it —
+    // confirmed with the user rather than assumed, since "Todas" isn't itself an editable target
+    // (see requireConcreteStockSede()).
+    private void initStockSedeSelector() {
+        cmbStockSede.setConverter(new javafx.util.StringConverter<>() {
+            @Override public String toString(Sede s) { return s == null ? "Todas" : s.getName(); }
+            @Override public Sede fromString(String s) { return null; }
+        });
+        boolean isSuperadmin = IUserRoleService.ROLE_SUPERADMIN
+            .equals(TechnicianSessionService.getInstance().getRole());
+        if (isSuperadmin) {
+            List<Sede> items = new ArrayList<>();
+            items.add(null);
+            items.addAll(equipmentService.getAllSedes());
+            cmbStockSede.setItems(FXCollections.observableArrayList(items));
+            cmbStockSede.getSelectionModel().selectFirst();
+            currentStockSedeId = null;
+            cmbStockSede.setDisable(false);
+        } else {
+            Integer mySedeId = TechnicianSessionService.getInstance().getSedeId();
+            currentStockSedeId = mySedeId;
+            List<Sede> items = new ArrayList<>();
+            if (mySedeId != null) {
+                equipmentService.getAllSedes().stream()
+                    .filter(s -> s.getId() == mySedeId)
+                    .findFirst()
+                    .ifPresent(items::add);
+            }
+            cmbStockSede.setItems(FXCollections.observableArrayList(items));
+            if (!items.isEmpty()) cmbStockSede.getSelectionModel().selectFirst();
+            cmbStockSede.setDisable(true);
+        }
+        cmbStockSede.valueProperty().addListener((obs, old, sel) -> {
+            currentStockSedeId = sel == null ? null : sel.getId();
+            refreshTypes();
+            updateEquipmentCatalogButtonLabel();
+        });
+        updateEquipmentCatalogButtonLabel();
+    }
+
+    private static final String EQUIPMENT_CATALOG_BASE_LABEL = "CATÁLOGO DE EQUIPOS";
+
+    // Direct user request: the toggle button itself must name the Sede its stock numbers belong
+    // to, so a technician can't mistake one Sede's counts for another's just by not noticing the
+    // (disabled, easy-to-miss) selector next to it.
+    private void updateEquipmentCatalogButtonLabel() {
+        Sede sel = cmbStockSede.getValue();
+        String sedeLabel;
+        if (sel != null) {
+            sedeLabel = sel.getName();
+        } else if (IUserRoleService.ROLE_SUPERADMIN.equals(TechnicianSessionService.getInstance().getRole())) {
+            sedeLabel = "Todas las sedes";
+        } else {
+            // A non-superadmin technician with no APP_USER.sede_id assigned at all — same
+            // "Sede no asignada" wording MainController's own sidebar warning label uses.
+            sedeLabel = "Sede no asignada";
+        }
+        btnEquipmentCatalog.setText(EQUIPMENT_CATALOG_BASE_LABEL + " : " + sedeLabel);
+    }
+
+    // Editing a stock number always requires one concrete Sede — a combined "Todas" number has
+    // no single row to write to. Called at the top of every stock-writing dialog (Add/Edit
+    // Model, Modify Stock) so a SUPERADMIN viewing "Todas" is asked to pick a specific Sede from
+    // cmbStockSede first, rather than silently writing to an arbitrary one.
+    private boolean requireConcreteStockSede() {
+        if (currentStockSedeId != null) return true;
+        showErrorDialog("Seleccione una sede",
+            "Seleccione una sede específica (no \"Todas\") en el selector de Stock — Sede para modificar el stock.");
+        return false;
+    }
+
     private void refreshProviders() {
         listProviders.setItems(FXCollections.observableArrayList(equipmentService.getAllProviders()));
     }
@@ -501,7 +589,11 @@ public class DatabaseSectionController {
 
     // Quick, stock-only alternative to "Editar" (which also lets you rename) — added per direct
     // user request for a faster path when only the quantity needs to change. Its own permission
-    // since a future role might adjust stock without full model-management rights.
+    // since a future role might adjust stock without full model-management rights. Sede-scoped
+    // (unlike MANAGE_MODELS above, which governs catalog structure, not any one Sede's numbers):
+    // an ADMIN can only ever be viewing their own assigned Sede here anyway (see
+    // initStockSedeSelector()), and SUPERADMIN bypasses Sede-scoping entirely, so this only
+    // actually changes behavior for the shared-password fallback path.
     @FXML
     private void handleModifyStock() {
         EquipmentModel sel = listModels.getSelectionModel().getSelectedItem();
@@ -509,7 +601,8 @@ public class DatabaseSectionController {
         EquipmentType  type  = listTypes.getSelectionModel().getSelectedItem();
         EquipmentBrand brand = listBrands.getSelectionModel().getSelectedItem();
         if (type == null || brand == null) return;
-        requirePermission(Permission.MANAGE_STOCK, () -> openModifyStockDialog(sel, brand.getId(), type.getId()));
+        requirePermission(Permission.MANAGE_STOCK, currentStockSedeId,
+            () -> openModifyStockDialog(sel, brand.getId(), type.getId()));
     }
 
     @FXML
@@ -842,6 +935,7 @@ public class DatabaseSectionController {
     }
 
     private void openAddModelDialog() {
+        if (!requireConcreteStockSede()) return;
         Stage stage = buildDialogStage();
         centerOnContent(stage);
 
@@ -930,7 +1024,7 @@ public class DatabaseSectionController {
                 .findFirst()
                 .ifPresent(newModelId -> {
                     int stock = tfStock.getText().isBlank() ? 0 : Integer.parseInt(tfStock.getText().trim());
-                    equipmentService.setModelStock(newModelId, brand.getId(), type.getId(), stock);
+                    equipmentService.setModelStock(newModelId, brand.getId(), type.getId(), currentStockSedeId, stock);
                 });
             EquipmentType  selT = listTypes.getSelectionModel().getSelectedItem();
             EquipmentBrand selB = listBrands.getSelectionModel().getSelectedItem();
@@ -959,6 +1053,7 @@ public class DatabaseSectionController {
     // than through the shared openRenameDialog() every other entity still uses. Same precedent as
     // openEditTypeDialog() getting its own dedicated dialog for the requires_serial flag.
     private void openEditModelDialog(EquipmentModel model, int brandId, int typeId) {
+        if (!requireConcreteStockSede()) return;
         Stage stage = buildDialogStage();
         centerOnContent(stage);
 
@@ -973,7 +1068,7 @@ public class DatabaseSectionController {
 
         Label lblS = new Label("STOCK"); lblS.getStyleClass().add("input-label-small");
         TextField tfStock = new TextField(
-            String.valueOf(equipmentService.getModelStock(model.getId(), brandId, typeId)));
+            String.valueOf(equipmentService.getModelStock(model.getId(), brandId, typeId, currentStockSedeId)));
         tfStock.getStyleClass().add("form-input-main");
         tfStock.setTextFormatter(new TextFormatter<>(change ->
             change.getControlNewText().matches("\\d{0,9}") ? change : null));
@@ -1007,7 +1102,7 @@ public class DatabaseSectionController {
                 .findFirst()
                 .orElse(model.getId());
             int stock = tfStock.getText().isBlank() ? 0 : Integer.parseInt(tfStock.getText().trim());
-            equipmentService.setModelStock(targetModelId, brandId, typeId, stock);
+            equipmentService.setModelStock(targetModelId, brandId, typeId, currentStockSedeId, stock);
             refreshModelsForBrandType(brandId, typeId);
             refreshStockRollupsOnly(typeId);
             stage.close();
@@ -1027,6 +1122,7 @@ public class DatabaseSectionController {
     // Stock-only dialog — a faster path than openEditModelDialog() above when the name isn't
     // changing, reached via the Models list's own "Stock" button.
     private void openModifyStockDialog(EquipmentModel model, int brandId, int typeId) {
+        if (!requireConcreteStockSede()) return;
         Stage stage = buildDialogStage();
         centerOnContent(stage);
 
@@ -1038,7 +1134,7 @@ public class DatabaseSectionController {
 
         Label lblS = new Label("STOCK"); lblS.getStyleClass().add("input-label-small");
         TextField tfStock = new TextField(
-            String.valueOf(equipmentService.getModelStock(model.getId(), brandId, typeId)));
+            String.valueOf(equipmentService.getModelStock(model.getId(), brandId, typeId, currentStockSedeId)));
         tfStock.getStyleClass().add("form-input-main");
         tfStock.setTextFormatter(new TextFormatter<>(change ->
             change.getControlNewText().matches("\\d{0,9}") ? change : null));
@@ -1051,7 +1147,7 @@ public class DatabaseSectionController {
         btnSave.getStyleClass().add("button-primary");
         btnSave.setOnAction(e -> {
             int stock = tfStock.getText().isBlank() ? 0 : Integer.parseInt(tfStock.getText().trim());
-            equipmentService.setModelStock(model.getId(), brandId, typeId, stock);
+            equipmentService.setModelStock(model.getId(), brandId, typeId, currentStockSedeId, stock);
             refreshModelsForBrandType(brandId, typeId);
             refreshStockRollupsOnly(typeId);
             stage.close();
@@ -1308,6 +1404,42 @@ public class DatabaseSectionController {
         if (!ServiceLocator.getInstance().getUserRoleService()
                 .getPermissionsForRole(IUserRoleService.ROLE_ADMIN).contains(permission)) {
             showErrorDialog("Acceso denegado", "Esta acción requiere permisos de superadministrador.");
+            return;
+        }
+        action.run();
+    }
+
+    // Sede-scoped variant, for MANAGE_STOCK — mirrors AdminSession.hasPermission(Permission,
+    // Integer)'s own scoping rule (SUPERADMIN bypasses it; a real ADMIN login must have their own
+    // assigned Sede match sedeId) for an already-active session. The shared-password fallback
+    // below always resolves to ADMIN-level (never SUPERADMIN, see AdminSession.activate()), so it
+    // must enforce the same Sede match explicitly here too — activate() itself has no sedeId to
+    // check against, so this is the one place that rule is actually applied for that path.
+    private void requirePermission(Permission permission, Integer sedeId, Runnable action) {
+        if (AdminSession.getInstance().hasPermission(permission, sedeId)) {
+            AdminSession.getInstance().refreshActivity();
+            action.run();
+            return;
+        }
+        if (!AdminAuthService.isConfigured()) {
+            showErrorDialog("Administrador no configurado",
+                "Contacte al desarrollador para configurar el acceso de administrador.");
+            return;
+        }
+        Optional<String> pwd = promptPassword();
+        if (pwd.isEmpty()) return;
+        if (!AdminAuthService.verify(pwd.get())) {
+            showErrorDialog("Acceso denegado", "Contraseña incorrecta.");
+            return;
+        }
+        if (!ServiceLocator.getInstance().getUserRoleService()
+                .getPermissionsForRole(IUserRoleService.ROLE_ADMIN).contains(permission)) {
+            showErrorDialog("Acceso denegado", "Esta acción requiere permisos de superadministrador.");
+            return;
+        }
+        Integer mySedeId = TechnicianSessionService.getInstance().getSedeId();
+        if (sedeId == null || mySedeId == null || !mySedeId.equals(sedeId)) {
+            showErrorDialog("Acceso denegado", "Esta acción requiere permisos sobre la sede seleccionada.");
             return;
         }
         action.run();

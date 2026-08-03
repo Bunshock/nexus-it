@@ -102,11 +102,18 @@ class CatalogMigrationToolTest {
                     deprecated INTEGER NOT NULL DEFAULT 0
                 )""");
             s.executeUpdate("""
+                CREATE TABLE SEDE (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL UNIQUE,
+                    deprecated INTEGER NOT NULL DEFAULT 0
+                )""");
+            s.executeUpdate("""
                 CREATE TABLE MODEL_STOCK (
                     brand_type_id INTEGER NOT NULL REFERENCES BRAND_TYPE_LINK(id),
                     model_id      INTEGER NOT NULL REFERENCES MODEL(id),
+                    sede_id       INTEGER NOT NULL REFERENCES SEDE(id),
                     stock         INTEGER NOT NULL DEFAULT 0,
-                    PRIMARY KEY (brand_type_id, model_id)
+                    PRIMARY KEY (brand_type_id, model_id, sede_id)
                 )""");
         }
     }
@@ -254,28 +261,53 @@ class CatalogMigrationToolTest {
     }
 
     @Test
+    void migratesSedesWithRemappedIds() throws SQLException {
+        try (Statement s = source.createStatement()) {
+            s.executeUpdate("INSERT INTO SEDE (id, name, deprecated) VALUES (1, 'Campus Norte', 0)");
+        }
+        // Same "target already has an unrelated row consuming id=1" setup as setUp()'s TYPE
+        // seed, so a migrated Sede landing on the same id as its source row would be a
+        // coincidence, not proof the remapping actually happened.
+        try (Statement s = target.createStatement()) {
+            s.executeUpdate("INSERT INTO SEDE (name, deprecated) VALUES ('Dummy Sede', 0)");
+        }
+
+        Map<Integer, Integer> sedeIds = CatalogMigrationTool.migrateSedes(source, target);
+
+        assertNotEquals(1, (int) sedeIds.get(1));
+        assertEquals("Campus Norte", nameOf(target, "SEDE", sedeIds.get(1)));
+
+        // Re-run: same source, no new data — must match the existing row by name, not duplicate.
+        Map<Integer, Integer> sedeIdsAgain = CatalogMigrationTool.migrateSedes(source, target);
+        assertEquals(sedeIds.get(1), sedeIdsAgain.get(1));
+    }
+
+    @Test
     void migratesModelStockWithRemappedIds() throws SQLException {
         seedSourceCatalog();
         try (Statement s = source.createStatement()) {
-            s.executeUpdate("INSERT INTO MODEL_STOCK (brand_type_id, model_id, stock) VALUES (1, 1, 14)");
+            s.executeUpdate("INSERT INTO SEDE (id, name, deprecated) VALUES (1, 'Campus Norte', 0)");
+            s.executeUpdate("INSERT INTO MODEL_STOCK (brand_type_id, model_id, sede_id, stock) VALUES (1, 1, 1, 14)");
         }
 
         Map<Integer, Integer> typeIds = CatalogMigrationTool.migrateTypes(source, target);
         Map<Integer, Integer> brandIds = CatalogMigrationTool.migrateBrands(source, target);
         Map<Integer, Integer> linkIds = CatalogMigrationTool.migrateBrandTypeLinks(source, target, typeIds, brandIds);
         Map<Integer, Integer> modelIds = CatalogMigrationTool.migrateModels(source, target, linkIds);
-        CatalogMigrationTool.migrateModelStock(source, target, linkIds, modelIds);
+        Map<Integer, Integer> sedeIds = CatalogMigrationTool.migrateSedes(source, target);
+        CatalogMigrationTool.migrateModelStock(source, target, linkIds, modelIds, sedeIds);
 
         try (Statement s = target.createStatement();
              ResultSet rs = s.executeQuery(
                  "SELECT stock FROM MODEL_STOCK WHERE brand_type_id = " + linkIds.get(1)
-                     + " AND model_id = " + modelIds.get(1))) {
-            assertTrue(rs.next(), "stock row must land on the remapped (link, model) id pair");
+                     + " AND model_id = " + modelIds.get(1)
+                     + " AND sede_id = " + sedeIds.get(1))) {
+            assertTrue(rs.next(), "stock row must land on the remapped (link, model, sede) id triple");
             assertEquals(14, rs.getInt("stock"));
         }
 
         // Re-run: same source, no new data — stock should update in place, not duplicate.
-        CatalogMigrationTool.migrateModelStock(source, target, linkIds, modelIds);
+        CatalogMigrationTool.migrateModelStock(source, target, linkIds, modelIds, sedeIds);
         try (Statement s = target.createStatement();
              ResultSet rs = s.executeQuery("SELECT COUNT(*) FROM MODEL_STOCK")) {
             rs.next();
@@ -287,16 +319,18 @@ class CatalogMigrationToolTest {
     void migrateModelStockSkipsRowsWhoseLinkOrModelWasNotMigrated() throws SQLException {
         seedSourceCatalog();
         try (Statement s = source.createStatement()) {
+            s.executeUpdate("INSERT INTO SEDE (id, name, deprecated) VALUES (1, 'Campus Norte', 0)");
             // References model_id=99, which was never migrated — a data-integrity gap, same
             // convention as skipsOrphanedLinkWhenParentWasNotMigrated above.
-            s.executeUpdate("INSERT INTO MODEL_STOCK (brand_type_id, model_id, stock) VALUES (1, 99, 5)");
+            s.executeUpdate("INSERT INTO MODEL_STOCK (brand_type_id, model_id, sede_id, stock) VALUES (1, 99, 1, 5)");
         }
 
         Map<Integer, Integer> typeIds = CatalogMigrationTool.migrateTypes(source, target);
         Map<Integer, Integer> brandIds = CatalogMigrationTool.migrateBrands(source, target);
         Map<Integer, Integer> linkIds = CatalogMigrationTool.migrateBrandTypeLinks(source, target, typeIds, brandIds);
         Map<Integer, Integer> modelIds = CatalogMigrationTool.migrateModels(source, target, linkIds);
-        CatalogMigrationTool.migrateModelStock(source, target, linkIds, modelIds);
+        Map<Integer, Integer> sedeIds = CatalogMigrationTool.migrateSedes(source, target);
+        CatalogMigrationTool.migrateModelStock(source, target, linkIds, modelIds, sedeIds);
 
         try (Statement s = target.createStatement();
              ResultSet rs = s.executeQuery("SELECT COUNT(*) FROM MODEL_STOCK")) {

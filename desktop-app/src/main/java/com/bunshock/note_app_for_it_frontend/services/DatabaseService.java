@@ -111,7 +111,28 @@ public class DatabaseService {
 
         migrateCatalogFkSchema(conn, stmt);
         migrateGenericModelSchema(conn, stmt);
+        migrateModelStockSedeSchema(conn, stmt);
         cleanupStrayGenericBrandLinks(conn);
+    }
+
+    // MODEL_STOCK gained sede_id as part of its primary key — stock is now tracked per Sede,
+    // not one shared global number. Nothing else has an FK pointing INTO MODEL_STOCK, so an
+    // already-running installation's old-shape table is simply dropped and recreated rather than
+    // attempting to split its existing numbers across Sedes — there's no correct way to guess
+    // that split. Explicit user decision: every (model, Sede) pair starts at 0, and an admin
+    // re-enters real counts going forward.
+    private void migrateModelStockSedeSchema(Connection conn, Statement stmt) throws SQLException {
+        if (tableExists(conn, "MODEL_STOCK") && !columnExists(conn, "MODEL_STOCK", "sede_id")) {
+            stmt.executeUpdate("DROP TABLE MODEL_STOCK");
+            stmt.executeUpdate("""
+                CREATE TABLE MODEL_STOCK (
+                    brand_type_id INTEGER NOT NULL REFERENCES BRAND_TYPE_LINK(id),
+                    model_id      INTEGER NOT NULL REFERENCES MODEL(id),
+                    sede_id       INTEGER NOT NULL REFERENCES SEDE(id),
+                    stock         INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY (brand_type_id, model_id, sede_id)
+                )""");
+        }
     }
 
     // ItemDialogController used to lazily create a real BRAND_TYPE_LINK the first time a
@@ -925,12 +946,15 @@ public class DatabaseService {
         // an independent, non-shared stock number per (Type,Brand) it's used under. For every
         // other (non-generic) model, brand_type_id here is redundantly the same value MODEL's
         // own row already carries — one natural row, functionally identical to a plain column.
+        // sede_id makes stock genuinely per-site: the same Model at two Sedes carries two
+        // independent counts, not one shared global number.
         stmt.executeUpdate("""
             CREATE TABLE IF NOT EXISTS MODEL_STOCK (
                 brand_type_id INTEGER NOT NULL REFERENCES BRAND_TYPE_LINK(id),
                 model_id      INTEGER NOT NULL REFERENCES MODEL(id),
+                sede_id       INTEGER NOT NULL REFERENCES SEDE(id),
                 stock         INTEGER NOT NULL DEFAULT 0,
-                PRIMARY KEY (brand_type_id, model_id)
+                PRIMARY KEY (brand_type_id, model_id, sede_id)
             )""");
     }
 

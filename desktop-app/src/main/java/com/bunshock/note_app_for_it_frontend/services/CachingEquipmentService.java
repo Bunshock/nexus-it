@@ -176,31 +176,31 @@ public class CachingEquipmentService implements IEquipmentService {
     }
 
     @Override
-    public int getModelStock(int modelId, int brandId, int typeId) {
-        try { return primary.getModelStock(modelId, brandId, typeId); }
-        catch (Exception e) { return local.getModelStock(modelId, brandId, typeId); }
+    public int getModelStock(int modelId, int brandId, int typeId, int sedeId) {
+        try { return primary.getModelStock(modelId, brandId, typeId, sedeId); }
+        catch (Exception e) { return local.getModelStock(modelId, brandId, typeId, sedeId); }
     }
 
     @Override
-    public void setModelStock(int modelId, int brandId, int typeId, int stock) {
-        primary.setModelStock(modelId, brandId, typeId, stock);
-        try { local.setModelStock(modelId, brandId, typeId, stock); } catch (Exception ignored) {}
+    public void setModelStock(int modelId, int brandId, int typeId, int sedeId, int stock) {
+        primary.setModelStock(modelId, brandId, typeId, sedeId, stock);
+        try { local.setModelStock(modelId, brandId, typeId, sedeId, stock); } catch (Exception ignored) {}
     }
 
     @Override
-    public Map<Integer, Integer> getStockTotalsByType() {
-        try { return primary.getStockTotalsByType(); } catch (Exception e) { return local.getStockTotalsByType(); }
+    public Map<Integer, Integer> getStockTotalsByType(Integer sedeId) {
+        try { return primary.getStockTotalsByType(sedeId); } catch (Exception e) { return local.getStockTotalsByType(sedeId); }
     }
 
     @Override
-    public Map<Integer, Integer> getStockTotalsByBrandForType(int typeId) {
-        try { return primary.getStockTotalsByBrandForType(typeId); }
-        catch (Exception e) { return local.getStockTotalsByBrandForType(typeId); }
+    public Map<Integer, Integer> getStockTotalsByBrandForType(int typeId, Integer sedeId) {
+        try { return primary.getStockTotalsByBrandForType(typeId, sedeId); }
+        catch (Exception e) { return local.getStockTotalsByBrandForType(typeId, sedeId); }
     }
 
     @Override
-    public Map<Integer, Integer> getStockTotalsByModelForBrandAndType(int brandId, int typeId) {
-        try { return primary.getStockTotalsByModelForBrandAndType(brandId, typeId); }
-        catch (Exception e) { return local.getStockTotalsByModelForBrandAndType(brandId, typeId); }
+    public Map<Integer, Integer> getStockTotalsByModelForBrandAndType(int brandId, int typeId, Integer sedeId) {
+        try { return primary.getStockTotalsByModelForBrandAndType(brandId, typeId, sedeId); }
+        catch (Exception e) { return local.getStockTotalsByModelForBrandAndType(brandId, typeId, sedeId); }
     }
 }

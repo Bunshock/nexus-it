@@ -68,16 +68,21 @@ public interface IEquipmentService {
 
     // Stock (Base de Datos: Type/Brand/Model rollups). Keyed by (modelId, brandId, typeId) rather
     // than just modelId — the single global "Genérico / Otro" model carries an independent stock
-    // number per (Type,Brand) it's used under, not one shared number across all of them.
-    int getModelStock(int modelId, int brandId, int typeId);
+    // number per (Type,Brand) it's used under, not one shared number across all of them. sedeId is
+    // required (not nullable) here — reading or writing one concrete stock number always requires
+    // one concrete Sede context; there's no such thing as "the" stock number independent of site.
+    int getModelStock(int modelId, int brandId, int typeId, int sedeId);
 
-    void setModelStock(int modelId, int brandId, int typeId, int stock);
+    void setModelStock(int modelId, int brandId, int typeId, int sedeId, int stock);
 
     // Batched rollup reads — one query per list-refresh, not one per row. Map key is the
     // Type/Brand/Model id respectively; a missing key means 0 (no MODEL_STOCK rows for it).
-    Map<Integer, Integer> getStockTotalsByType();
+    // sedeId is nullable here, unlike getModelStock/setModelStock above: null means "every Sede
+    // combined" (summed), used for SUPERADMIN's default Base de Datos view; non-null scopes the
+    // rollup to one specific Sede, same as a plain ADMIN's own assigned Sede.
+    Map<Integer, Integer> getStockTotalsByType(Integer sedeId);
 
-    Map<Integer, Integer> getStockTotalsByBrandForType(int typeId);
+    Map<Integer, Integer> getStockTotalsByBrandForType(int typeId, Integer sedeId);
 
-    Map<Integer, Integer> getStockTotalsByModelForBrandAndType(int brandId, int typeId);
+    Map<Integer, Integer> getStockTotalsByModelForBrandAndType(int brandId, int typeId, Integer sedeId);
 }

@@ -309,7 +309,10 @@
     -fx-border-color: #0c8570;
 }
 
-/* Settings' Sede ComboBox only — shorter than the standard form-input-main height. Scoped to
+/* A shorter ComboBox variant — same white/bordered look as .form-input-main, just less tall.
+   Originally built for Settings' self-service Sede selector (removed 2026-07-30, see
+   "Self-service Sede removed entirely" in CLAUDE.md); reused as-is for Base de Datos' "Stock —
+   Sede" selector, the next ComboBox in the app that wanted this same shorter height. Scoped to
    .combo-box.sede-combo (a compound selector, so it outweighs the plain .form-input-main class
    rule above) rather than touching .form-input-main itself, so no other ComboBox/TextField in
    the app is affected. Mirrors .combo-box.form-input-filter's own pattern of zeroing the
@@ -325,6 +328,15 @@
 }
 .combo-box.sede-combo > .arrow-button {
     -fx-padding: 0 8;
+}
+/* Disabled state (a plain ADMIN/USER's locked-to-their-own-Sede case, see
+   DatabaseSectionController.initStockSedeSelector()) — JavaFX's default disabled opacity (0.4,
+   inherited from .control:disabled) made the Sede name nearly unreadable, direct user report.
+   Bumped up, same "less faded than the default" precedent as .text-field:disabled (0.5) above,
+   just a bit higher again since this text is informational (which Sede's numbers are showing),
+   not a blocked-input hint the user needs to visually deprioritize. */
+.combo-box.sede-combo:disabled {
+    -fx-opacity: 0.75;
 }
 
 /* Compact input for filter bars (date pickers + combo boxes) */

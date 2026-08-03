@@ -87,7 +87,8 @@ public class CatalogMigrationTool {
                 Map<Integer, Integer> brandIds = migrateBrands(sqlite, remoteConn);
                 Map<Integer, Integer> linkIds = migrateBrandTypeLinks(sqlite, remoteConn, typeIds, brandIds);
                 Map<Integer, Integer> modelIds = migrateModels(sqlite, remoteConn, linkIds);
-                migrateModelStock(sqlite, remoteConn, linkIds, modelIds);
+                Map<Integer, Integer> sedeIds = migrateSedes(sqlite, remoteConn);
+                migrateModelStock(sqlite, remoteConn, linkIds, modelIds, sedeIds);
                 migrateSnValidations(sqlite, remoteConn, modelIds);
                 migrateProviders(sqlite, remoteConn);
                 remoteConn.commit();
@@ -299,47 +300,96 @@ public class CatalogMigrationTool {
         return idMap;
     }
 
-    // Same check-then-insert-or-update shape as every other migrate*() method — matched on the
-    // remapped (brand_type_id, model_id) pair itself, since that's MODEL_STOCK's own PK.
-    static void migrateModelStock(Connection sqlite, Connection remote,
-            Map<Integer, Integer> linkIds, Map<Integer, Integer> modelIds) throws SQLException {
+    // Same shape as migrateBrands()/migrateProviders() — SEDE is a flat table (name UNIQUE +
+    // deprecated), migrated here (not previously covered by this tool at all) specifically so
+    // MODEL_STOCK's sede_id can be remapped below, same as every other catalog FK this tool moves.
+    static Map<Integer, Integer> migrateSedes(Connection sqlite, Connection remote) throws SQLException {
+        Map<Integer, Integer> idMap = new HashMap<>();
         try (Statement s = sqlite.createStatement();
-             ResultSet rs = s.executeQuery("SELECT brand_type_id, model_id, stock FROM MODEL_STOCK")) {
+             ResultSet rs = s.executeQuery("SELECT id, name, deprecated FROM SEDE")) {
+            int count = 0;
+            while (rs.next()) {
+                String name = rs.getString("name");
+                int deprecated = rs.getInt("deprecated");
+                Integer existingId = findId(remote, "SELECT id FROM SEDE WHERE name = ?", name);
+                int newId;
+                if (existingId != null) {
+                    try (PreparedStatement up = remote.prepareStatement(
+                            "UPDATE SEDE SET deprecated = ? WHERE id = ?")) {
+                        up.setInt(1, deprecated);
+                        up.setInt(2, existingId);
+                        up.executeUpdate();
+                    }
+                    newId = existingId;
+                } else {
+                    try (PreparedStatement ins = remote.prepareStatement(
+                            "INSERT INTO SEDE (name, deprecated) VALUES (?, ?)",
+                            PreparedStatement.RETURN_GENERATED_KEYS)) {
+                        ins.setString(1, name);
+                        ins.setInt(2, deprecated);
+                        ins.executeUpdate();
+                        try (ResultSet keys = ins.getGeneratedKeys()) {
+                            keys.next();
+                            newId = keys.getInt(1);
+                        }
+                    }
+                }
+                idMap.put(rs.getInt("id"), newId);
+                count++;
+            }
+            System.out.println("Sedes: " + count + " migrated.");
+        }
+        return idMap;
+    }
+
+    // Same check-then-insert-or-update shape as every other migrate*() method — matched on the
+    // remapped (brand_type_id, model_id, sede_id) triple, since that's MODEL_STOCK's own PK.
+    static void migrateModelStock(Connection sqlite, Connection remote,
+            Map<Integer, Integer> linkIds, Map<Integer, Integer> modelIds,
+            Map<Integer, Integer> sedeIds) throws SQLException {
+        try (Statement s = sqlite.createStatement();
+             ResultSet rs = s.executeQuery("SELECT brand_type_id, model_id, sede_id, stock FROM MODEL_STOCK")) {
             int count = 0;
             while (rs.next()) {
                 int oldLinkId = rs.getInt("brand_type_id");
                 int oldModelId = rs.getInt("model_id");
+                int oldSedeId = rs.getInt("sede_id");
                 Integer newLinkId = linkIds.get(oldLinkId);
                 Integer newModelId = modelIds.get(oldModelId);
-                if (newLinkId == null || newModelId == null) {
+                Integer newSedeId = sedeIds.get(oldSedeId);
+                if (newLinkId == null || newModelId == null || newSedeId == null) {
                     System.err.println("Skipping MODEL_STOCK (brand_type_id=" + oldLinkId
-                        + ", model_id=" + oldModelId + ") — its link or model wasn't migrated.");
+                        + ", model_id=" + oldModelId + ", sede_id=" + oldSedeId
+                        + ") — its link, model, or sede wasn't migrated.");
                     continue;
                 }
                 int stock = rs.getInt("stock");
                 Integer existing;
                 try (PreparedStatement sel = remote.prepareStatement(
-                        "SELECT stock FROM MODEL_STOCK WHERE brand_type_id = ? AND model_id = ?")) {
+                        "SELECT stock FROM MODEL_STOCK WHERE brand_type_id = ? AND model_id = ? AND sede_id = ?")) {
                     sel.setInt(1, newLinkId);
                     sel.setInt(2, newModelId);
+                    sel.setInt(3, newSedeId);
                     try (ResultSet found = sel.executeQuery()) {
                         existing = found.next() ? found.getInt(1) : null;
                     }
                 }
                 if (existing != null) {
                     try (PreparedStatement up = remote.prepareStatement(
-                            "UPDATE MODEL_STOCK SET stock = ? WHERE brand_type_id = ? AND model_id = ?")) {
+                            "UPDATE MODEL_STOCK SET stock = ? WHERE brand_type_id = ? AND model_id = ? AND sede_id = ?")) {
                         up.setInt(1, stock);
                         up.setInt(2, newLinkId);
                         up.setInt(3, newModelId);
+                        up.setInt(4, newSedeId);
                         up.executeUpdate();
                     }
                 } else {
                     try (PreparedStatement ins = remote.prepareStatement(
-                            "INSERT INTO MODEL_STOCK (brand_type_id, model_id, stock) VALUES (?, ?, ?)")) {
+                            "INSERT INTO MODEL_STOCK (brand_type_id, model_id, sede_id, stock) VALUES (?, ?, ?, ?)")) {
                         ins.setInt(1, newLinkId);
                         ins.setInt(2, newModelId);
-                        ins.setInt(3, stock);
+                        ins.setInt(3, newSedeId);
+                        ins.setInt(4, stock);
                         ins.executeUpdate();
                     }
                 }

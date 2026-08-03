@@ -813,34 +813,40 @@ public class SqliteEquipmentService implements IEquipmentService {
         }
     }
 
-    // Moves a single MODEL_STOCK row from (oldLinkId, oldModelId) to (newLinkId, newModelId),
-    // merging into an existing row at the destination rather than overwriting it — used by the
-    // Type/Brand rename cascade above, where both the link and the model row change together.
+    // Moves every MODEL_STOCK row (one per Sede) from (oldLinkId, oldModelId) to
+    // (newLinkId, newModelId), merging into an existing row at the destination per Sede rather
+    // than overwriting it — used by the Type/Brand rename cascade above, where both the link and
+    // the model row change together.
     private void carryForwardModelStockAcrossLink(Connection c, int oldLinkId, int oldModelId,
             int newLinkId, int newModelId) throws SQLException {
         if (oldLinkId == newLinkId && oldModelId == newModelId) return;
-        Integer stock = null;
+        List<int[]> rows = new ArrayList<>(); // [sedeId, stock]
         try (PreparedStatement sel = c.prepareStatement(
-                "SELECT stock FROM MODEL_STOCK WHERE brand_type_id = ? AND model_id = ?")) {
+                "SELECT sede_id, stock FROM MODEL_STOCK WHERE brand_type_id = ? AND model_id = ?")) {
             sel.setInt(1, oldLinkId);
             sel.setInt(2, oldModelId);
             try (ResultSet rs = sel.executeQuery()) {
-                if (rs.next()) stock = rs.getInt(1);
+                while (rs.next()) rows.add(new int[] {rs.getInt(1), rs.getInt(2)});
             }
         }
-        if (stock == null) return;
-        try (PreparedStatement up = c.prepareStatement(
-                "UPDATE MODEL_STOCK SET stock = stock + ? WHERE brand_type_id = ? AND model_id = ?")) {
-            up.setInt(1, stock);
-            up.setInt(2, newLinkId);
-            up.setInt(3, newModelId);
-            if (up.executeUpdate() == 0) {
-                try (PreparedStatement ins = c.prepareStatement(
-                        "INSERT INTO MODEL_STOCK (brand_type_id, model_id, stock) VALUES (?, ?, ?)")) {
-                    ins.setInt(1, newLinkId);
-                    ins.setInt(2, newModelId);
-                    ins.setInt(3, stock);
-                    ins.executeUpdate();
+        for (int[] row : rows) {
+            int sedeId = row[0];
+            int stock = row[1];
+            try (PreparedStatement up = c.prepareStatement(
+                    "UPDATE MODEL_STOCK SET stock = stock + ? WHERE brand_type_id = ? AND model_id = ? AND sede_id = ?")) {
+                up.setInt(1, stock);
+                up.setInt(2, newLinkId);
+                up.setInt(3, newModelId);
+                up.setInt(4, sedeId);
+                if (up.executeUpdate() == 0) {
+                    try (PreparedStatement ins = c.prepareStatement(
+                            "INSERT INTO MODEL_STOCK (brand_type_id, model_id, sede_id, stock) VALUES (?, ?, ?, ?)")) {
+                        ins.setInt(1, newLinkId);
+                        ins.setInt(2, newModelId);
+                        ins.setInt(3, sedeId);
+                        ins.setInt(4, stock);
+                        ins.executeUpdate();
+                    }
                 }
             }
         }
@@ -852,35 +858,38 @@ public class SqliteEquipmentService implements IEquipmentService {
         }
     }
 
-    // Moves (merging, not overwriting) every MODEL_STOCK row from oldModelId to newModelId,
-    // preserving each row's existing brand_type_id — correct for a plain renameModel() call,
-    // where the model's own scope never changes (only its row id does). NOT used by the
-    // Type/Brand cascade above, since that changes the scope (link) too — see
+    // Moves (merging, not overwriting) every MODEL_STOCK row — one per Sede — from oldModelId to
+    // newModelId, preserving each row's existing brand_type_id/sede_id — correct for a plain
+    // renameModel() call, where the model's own scope never changes (only its row id does). NOT
+    // used by the Type/Brand cascade above, since that changes the scope (link) too — see
     // carryForwardModelStockAcrossLink() for that case.
     private void carryForwardModelStock(Connection c, int oldModelId, int newModelId) throws SQLException {
         if (oldModelId == newModelId) return;
-        List<int[]> rows = new ArrayList<>(); // [brand_type_id, stock]
+        List<int[]> rows = new ArrayList<>(); // [brand_type_id, sede_id, stock]
         try (PreparedStatement sel = c.prepareStatement(
-                "SELECT brand_type_id, stock FROM MODEL_STOCK WHERE model_id = ?")) {
+                "SELECT brand_type_id, sede_id, stock FROM MODEL_STOCK WHERE model_id = ?")) {
             sel.setInt(1, oldModelId);
             try (ResultSet rs = sel.executeQuery()) {
-                while (rs.next()) rows.add(new int[] {rs.getInt(1), rs.getInt(2)});
+                while (rs.next()) rows.add(new int[] {rs.getInt(1), rs.getInt(2), rs.getInt(3)});
             }
         }
         for (int[] row : rows) {
             int brandTypeId = row[0];
-            int stock = row[1];
+            int sedeId = row[1];
+            int stock = row[2];
             try (PreparedStatement up = c.prepareStatement(
-                    "UPDATE MODEL_STOCK SET stock = stock + ? WHERE brand_type_id = ? AND model_id = ?")) {
+                    "UPDATE MODEL_STOCK SET stock = stock + ? WHERE brand_type_id = ? AND model_id = ? AND sede_id = ?")) {
                 up.setInt(1, stock);
                 up.setInt(2, brandTypeId);
                 up.setInt(3, newModelId);
+                up.setInt(4, sedeId);
                 if (up.executeUpdate() == 0) {
                     try (PreparedStatement ins = c.prepareStatement(
-                            "INSERT INTO MODEL_STOCK (brand_type_id, model_id, stock) VALUES (?, ?, ?)")) {
+                            "INSERT INTO MODEL_STOCK (brand_type_id, model_id, sede_id, stock) VALUES (?, ?, ?, ?)")) {
                         ins.setInt(1, brandTypeId);
                         ins.setInt(2, newModelId);
-                        ins.setInt(3, stock);
+                        ins.setInt(3, sedeId);
+                        ins.setInt(4, stock);
                         ins.executeUpdate();
                     }
                 }
@@ -895,14 +904,15 @@ public class SqliteEquipmentService implements IEquipmentService {
     // ── Stock (Base de Datos: Type/Brand/Model rollups) ─────────────────
 
     @Override
-    public int getModelStock(int modelId, int brandId, int typeId) {
+    public int getModelStock(int modelId, int brandId, int typeId, int sedeId) {
         try (Connection c = connector.get()) {
             Integer linkId = findBrandTypeLinkId(c, brandId, typeId);
             if (linkId == null) return 0;
             try (PreparedStatement ps = c.prepareStatement(
-                    "SELECT stock FROM MODEL_STOCK WHERE brand_type_id = ? AND model_id = ?")) {
+                    "SELECT stock FROM MODEL_STOCK WHERE brand_type_id = ? AND model_id = ? AND sede_id = ?")) {
                 ps.setInt(1, linkId);
                 ps.setInt(2, modelId);
+                ps.setInt(3, sedeId);
                 try (ResultSet rs = ps.executeQuery()) {
                     return rs.next() ? rs.getInt(1) : 0;
                 }
@@ -913,7 +923,7 @@ public class SqliteEquipmentService implements IEquipmentService {
     }
 
     @Override
-    public void setModelStock(int modelId, int brandId, int typeId, int stock) {
+    public void setModelStock(int modelId, int brandId, int typeId, int sedeId, int stock) {
         // Boundary validation — the UI's own tfStock TextFormatter
         // already blocks typing a minus sign, but this is the actual persistence boundary every
         // caller goes through (including any future direct caller), so it's checked here too,
@@ -927,16 +937,18 @@ public class SqliteEquipmentService implements IEquipmentService {
         try (Connection c = connector.get()) {
             int linkId = ensureBrandTypeLink(c, brandId, typeId);
             try (PreparedStatement up = c.prepareStatement(
-                    "UPDATE MODEL_STOCK SET stock = ? WHERE brand_type_id = ? AND model_id = ?")) {
+                    "UPDATE MODEL_STOCK SET stock = ? WHERE brand_type_id = ? AND model_id = ? AND sede_id = ?")) {
                 up.setInt(1, stock);
                 up.setInt(2, linkId);
                 up.setInt(3, modelId);
+                up.setInt(4, sedeId);
                 if (up.executeUpdate() == 0) {
                     try (PreparedStatement ins = c.prepareStatement(
-                            "INSERT INTO MODEL_STOCK (brand_type_id, model_id, stock) VALUES (?, ?, ?)")) {
+                            "INSERT INTO MODEL_STOCK (brand_type_id, model_id, sede_id, stock) VALUES (?, ?, ?, ?)")) {
                         ins.setInt(1, linkId);
                         ins.setInt(2, modelId);
-                        ins.setInt(3, stock);
+                        ins.setInt(3, sedeId);
+                        ins.setInt(4, stock);
                         ins.executeUpdate();
                     }
                 }
@@ -946,35 +958,52 @@ public class SqliteEquipmentService implements IEquipmentService {
         }
     }
 
+    // sedeId null means "every Sede combined" (summed) — SUPERADMIN's default Base de Datos view;
+    // non-null scopes the rollup to one specific Sede.
     @Override
-    public Map<Integer, Integer> getStockTotalsByType() {
+    public Map<Integer, Integer> getStockTotalsByType(Integer sedeId) {
+        if (sedeId == null) {
+            return queryStockMap(
+                "SELECT btl.type_id, SUM(ms.stock) FROM MODEL_STOCK ms " +
+                "JOIN BRAND_TYPE_LINK btl ON btl.id = ms.brand_type_id GROUP BY btl.type_id");
+        }
         return queryStockMap(
             "SELECT btl.type_id, SUM(ms.stock) FROM MODEL_STOCK ms " +
-            "JOIN BRAND_TYPE_LINK btl ON btl.id = ms.brand_type_id GROUP BY btl.type_id");
+            "JOIN BRAND_TYPE_LINK btl ON btl.id = ms.brand_type_id " +
+            "WHERE ms.sede_id = ? GROUP BY btl.type_id", sedeId);
     }
 
     @Override
-    public Map<Integer, Integer> getStockTotalsByBrandForType(int typeId) {
+    public Map<Integer, Integer> getStockTotalsByBrandForType(int typeId, Integer sedeId) {
+        if (sedeId == null) {
+            return queryStockMap(
+                "SELECT btl.brand_id, SUM(ms.stock) FROM MODEL_STOCK ms " +
+                "JOIN BRAND_TYPE_LINK btl ON btl.id = ms.brand_type_id WHERE btl.type_id = ? " +
+                "GROUP BY btl.brand_id", typeId);
+        }
         return queryStockMap(
             "SELECT btl.brand_id, SUM(ms.stock) FROM MODEL_STOCK ms " +
-            "JOIN BRAND_TYPE_LINK btl ON btl.id = ms.brand_type_id WHERE btl.type_id = ? " +
-            "GROUP BY btl.brand_id", typeId);
+            "JOIN BRAND_TYPE_LINK btl ON btl.id = ms.brand_type_id " +
+            "WHERE btl.type_id = ? AND ms.sede_id = ? GROUP BY btl.brand_id", typeId, sedeId);
     }
 
     // Mirrors getModelsForBrandAndType()'s UNION-with-global-row shape — the global generic
     // model's stock must be summed too, since it's offered for every brand+type combination.
     @Override
-    public Map<Integer, Integer> getStockTotalsByModelForBrandAndType(int brandId, int typeId) {
-        String sql = """
+    public Map<Integer, Integer> getStockTotalsByModelForBrandAndType(int brandId, int typeId, Integer sedeId) {
+        String base = """
             SELECT ms.model_id, SUM(ms.stock) FROM MODEL_STOCK ms
             WHERE ms.model_id IN (
                 SELECT m.id FROM MODEL m JOIN BRAND_TYPE_LINK btl ON btl.id = m.brand_type_id
                 WHERE btl.type_id = ? AND btl.brand_id = ? AND m.deprecated = 0
                 UNION
                 SELECT m.id FROM MODEL m WHERE m.brand_type_id IS NULL AND m.deprecated = 0
-            ) GROUP BY ms.model_id
+            )
             """;
-        return queryStockMap(sql, typeId, brandId);
+        if (sedeId == null) {
+            return queryStockMap(base + " GROUP BY ms.model_id", typeId, brandId);
+        }
+        return queryStockMap(base + " AND ms.sede_id = ? GROUP BY ms.model_id", typeId, brandId, sedeId);
     }
 
     private Integer findBrandTypeLinkId(Connection c, int brandId, int typeId) throws SQLException {

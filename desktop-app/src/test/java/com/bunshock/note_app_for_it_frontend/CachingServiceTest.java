@@ -91,17 +91,19 @@ class CachingServiceTest {
 
     // ── Stock ────────────────────────────────────────────────────────
 
+    private static final int SEDE_ID = 1;
+
     @Test
     void stockReadsReturnLocalWhenPrimaryThrows() {
         var notebook = local.getAllTypes().stream()
             .filter(t -> t.getName().equalsIgnoreCase("Notebook")).findFirst().orElseThrow();
         var brand = local.getBrandsForType(notebook.getId()).get(0);
         var model = local.getModelsForBrandAndType(brand.getId(), notebook.getId()).get(0);
-        local.setModelStock(model.getId(), brand.getId(), notebook.getId(), 9);
+        local.setModelStock(model.getId(), brand.getId(), notebook.getId(), SEDE_ID, 9);
 
         CachingEquipmentService failingPrimary = new CachingEquipmentService(
             new FailingEquipmentService(), local);
-        assertEquals(9, failingPrimary.getModelStock(model.getId(), brand.getId(), notebook.getId()));
+        assertEquals(9, failingPrimary.getModelStock(model.getId(), brand.getId(), notebook.getId(), SEDE_ID));
     }
 
     @Test
@@ -111,10 +113,10 @@ class CachingServiceTest {
         var brand = primary.getBrandsForType(notebook.getId()).get(0);
         var model = primary.getModelsForBrandAndType(brand.getId(), notebook.getId()).get(0);
 
-        caching.setModelStock(model.getId(), brand.getId(), notebook.getId(), 6);
+        caching.setModelStock(model.getId(), brand.getId(), notebook.getId(), SEDE_ID, 6);
 
-        assertEquals(6, primary.getModelStock(model.getId(), brand.getId(), notebook.getId()));
-        assertEquals(6, local.getModelStock(model.getId(), brand.getId(), notebook.getId()));
+        assertEquals(6, primary.getModelStock(model.getId(), brand.getId(), notebook.getId(), SEDE_ID));
+        assertEquals(6, local.getModelStock(model.getId(), brand.getId(), notebook.getId(), SEDE_ID));
     }
 
     @Test
@@ -127,8 +129,8 @@ class CachingServiceTest {
         CachingEquipmentService failingLocal = new CachingEquipmentService(
             primary, new FailingEquipmentService());
         assertDoesNotThrow(() ->
-            failingLocal.setModelStock(model.getId(), brand.getId(), notebook.getId(), 4));
-        assertEquals(4, primary.getModelStock(model.getId(), brand.getId(), notebook.getId()));
+            failingLocal.setModelStock(model.getId(), brand.getId(), notebook.getId(), SEDE_ID, 4));
+        assertEquals(4, primary.getModelStock(model.getId(), brand.getId(), notebook.getId(), SEDE_ID));
     }
 
     // ── User role / permissions ─────────────────────────────────────
@@ -202,8 +204,8 @@ class CachingServiceTest {
     private static class FailingEquipmentService extends MockEquipmentService {
         @Override public java.util.List<com.bunshock.note_app_for_it_frontend.models.EquipmentType> getAllTypes() { throw new RuntimeException("primary down"); }
         @Override public void addType(String n, boolean a) { throw new RuntimeException("primary down"); }
-        @Override public int getModelStock(int modelId, int brandId, int typeId) { throw new RuntimeException("primary down"); }
-        @Override public void setModelStock(int modelId, int brandId, int typeId, int stock) { throw new RuntimeException("primary down"); }
+        @Override public int getModelStock(int modelId, int brandId, int typeId, int sedeId) { throw new RuntimeException("primary down"); }
+        @Override public void setModelStock(int modelId, int brandId, int typeId, int sedeId, int stock) { throw new RuntimeException("primary down"); }
     }
 
     private static class MockHistoryService implements com.bunshock.note_app_for_it_frontend.services.IHistoryService {

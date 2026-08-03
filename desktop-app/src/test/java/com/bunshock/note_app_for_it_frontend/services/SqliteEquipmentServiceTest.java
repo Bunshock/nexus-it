@@ -87,8 +87,9 @@ class SqliteEquipmentServiceTest {
                 CREATE TABLE MODEL_STOCK (
                     brand_type_id INTEGER NOT NULL REFERENCES BRAND_TYPE_LINK(id),
                     model_id      INTEGER NOT NULL REFERENCES MODEL(id),
+                    sede_id       INTEGER NOT NULL REFERENCES SEDE(id),
                     stock         INTEGER NOT NULL DEFAULT 0,
-                    PRIMARY KEY (brand_type_id, model_id)
+                    PRIMARY KEY (brand_type_id, model_id, sede_id)
                 )""");
         }
     }
@@ -486,10 +487,27 @@ class SqliteEquipmentServiceTest {
         }
     }
 
+    // Stock is now scoped per Sede — every stock test needs a real SEDE row to key against,
+    // since MODEL_STOCK.sede_id is a NOT NULL FK.
+    private int insertSede(String name) throws SQLException {
+        try (Connection c = DriverManager.getConnection(url);
+             java.sql.PreparedStatement ps = c.prepareStatement(
+                 "INSERT INTO SEDE (name, deprecated) VALUES (?, 0)",
+                 Statement.RETURN_GENERATED_KEYS)) {
+            ps.setString(1, name);
+            ps.executeUpdate();
+            try (java.sql.ResultSet keys = ps.getGeneratedKeys()) {
+                keys.next();
+                return keys.getInt(1);
+            }
+        }
+    }
+
     // ── Stock (MODEL_STOCK rollups) ─────────────────────────────────────────
 
     @Test
-    void setModelStockThenGetModelStockRoundTrips() {
+    void setModelStockThenGetModelStockRoundTrips() throws SQLException {
+        int sedeId = insertSede("Campus Norte");
         service.addType("NOTEBOOK", true);
         EquipmentType notebook = findType("NOTEBOOK");
         service.addBrandForType("DELL", notebook.getId());
@@ -497,22 +515,42 @@ class SqliteEquipmentServiceTest {
         service.addModel("LATITUDE", dell.getId(), notebook.getId());
         EquipmentModel latitude = service.getModelsForBrandAndType(dell.getId(), notebook.getId()).get(0);
 
-        assertEquals(0, service.getModelStock(latitude.getId(), dell.getId(), notebook.getId()),
+        assertEquals(0, service.getModelStock(latitude.getId(), dell.getId(), notebook.getId(), sedeId),
             "no MODEL_STOCK row yet — should read as 0, not throw");
 
-        service.setModelStock(latitude.getId(), dell.getId(), notebook.getId(), 14);
-        assertEquals(14, service.getModelStock(latitude.getId(), dell.getId(), notebook.getId()));
+        service.setModelStock(latitude.getId(), dell.getId(), notebook.getId(), sedeId, 14);
+        assertEquals(14, service.getModelStock(latitude.getId(), dell.getId(), notebook.getId(), sedeId));
 
         // Overwrite, not accumulate.
-        service.setModelStock(latitude.getId(), dell.getId(), notebook.getId(), 5);
-        assertEquals(5, service.getModelStock(latitude.getId(), dell.getId(), notebook.getId()));
+        service.setModelStock(latitude.getId(), dell.getId(), notebook.getId(), sedeId, 5);
+        assertEquals(5, service.getModelStock(latitude.getId(), dell.getId(), notebook.getId(), sedeId));
+    }
+
+    // Two Sedes must carry fully independent numbers for the same Model.
+    @Test
+    void setModelStockIsIndependentPerSede() throws SQLException {
+        int sedeA = insertSede("Campus Norte");
+        int sedeB = insertSede("Campus Sur");
+        service.addType("NOTEBOOK", true);
+        EquipmentType notebook = findType("NOTEBOOK");
+        service.addBrandForType("DELL", notebook.getId());
+        EquipmentBrand dell = service.getBrandsForType(notebook.getId()).get(0);
+        service.addModel("LATITUDE", dell.getId(), notebook.getId());
+        EquipmentModel latitude = service.getModelsForBrandAndType(dell.getId(), notebook.getId()).get(0);
+
+        service.setModelStock(latitude.getId(), dell.getId(), notebook.getId(), sedeA, 10);
+        service.setModelStock(latitude.getId(), dell.getId(), notebook.getId(), sedeB, 3);
+
+        assertEquals(10, service.getModelStock(latitude.getId(), dell.getId(), notebook.getId(), sedeA));
+        assertEquals(3, service.getModelStock(latitude.getId(), dell.getId(), notebook.getId(), sedeB));
     }
 
     // The UI's own tfStock TextFormatter already blocks typing a
     // minus sign, but setModelStock() is the actual persistence boundary every caller goes
     // through, so it must reject a negative value directly too.
     @Test
-    void setModelStockRejectsNegativeStock() {
+    void setModelStockRejectsNegativeStock() throws SQLException {
+        int sedeId = insertSede("Campus Norte");
         service.addType("NOTEBOOK", true);
         EquipmentType notebook = findType("NOTEBOOK");
         service.addBrandForType("DELL", notebook.getId());
@@ -521,13 +559,14 @@ class SqliteEquipmentServiceTest {
         EquipmentModel latitude = service.getModelsForBrandAndType(dell.getId(), notebook.getId()).get(0);
 
         assertThrows(IllegalArgumentException.class, () ->
-            service.setModelStock(latitude.getId(), dell.getId(), notebook.getId(), -1));
+            service.setModelStock(latitude.getId(), dell.getId(), notebook.getId(), sedeId, -1));
         // rejecting the call must not leave a stray MODEL_STOCK row behind
-        assertEquals(0, service.getModelStock(latitude.getId(), dell.getId(), notebook.getId()));
+        assertEquals(0, service.getModelStock(latitude.getId(), dell.getId(), notebook.getId(), sedeId));
     }
 
     @Test
     void setModelStockLazilyCreatesTheBrandTypeLinkWhenNoneExists() throws SQLException {
+        int sedeId = insertSede("Campus Norte");
         // The generic brand deliberately has no real BRAND_TYPE_LINK until something actually
         // needs one — setting stock for a Type it's never been linked to is exactly that case.
         service.addType("NOTEBOOK", true);
@@ -538,12 +577,13 @@ class SqliteEquipmentServiceTest {
         int genericModelId = insertGlobalGenericModel("Genérico / Otro");
 
         assertDoesNotThrow(() ->
-            service.setModelStock(genericModelId, generic.getId(), notebookId, 3));
-        assertEquals(3, service.getModelStock(genericModelId, generic.getId(), notebookId));
+            service.setModelStock(genericModelId, generic.getId(), notebookId, sedeId, 3));
+        assertEquals(3, service.getModelStock(genericModelId, generic.getId(), notebookId, sedeId));
     }
 
     @Test
-    void getStockTotalsByTypeSumsAcrossBrands() {
+    void getStockTotalsByTypeSumsAcrossBrands() throws SQLException {
+        int sedeId = insertSede("Campus Norte");
         service.addType("NOTEBOOK", true);
         int notebookId = findType("NOTEBOOK").getId();
         service.addBrandForType("DELL", notebookId);
@@ -557,14 +597,34 @@ class SqliteEquipmentServiceTest {
         EquipmentModel latitude = service.getModelsForBrandAndType(dell.getId(), notebookId).get(0);
         EquipmentModel elitebook = service.getModelsForBrandAndType(hp.getId(), notebookId).get(0);
 
-        service.setModelStock(latitude.getId(), dell.getId(), notebookId, 4);
-        service.setModelStock(elitebook.getId(), hp.getId(), notebookId, 6);
+        service.setModelStock(latitude.getId(), dell.getId(), notebookId, sedeId, 4);
+        service.setModelStock(elitebook.getId(), hp.getId(), notebookId, sedeId, 6);
 
-        assertEquals(10, service.getStockTotalsByType().getOrDefault(notebookId, 0));
+        assertEquals(10, service.getStockTotalsByType(sedeId).getOrDefault(notebookId, 0));
+    }
+
+    // sedeId == null means "every Sede combined" — used by SUPERADMIN's default Base de Datos
+    // view.
+    @Test
+    void getStockTotalsByTypeWithNullSedeCombinesEverySede() throws SQLException {
+        int sedeA = insertSede("Campus Norte");
+        int sedeB = insertSede("Campus Sur");
+        service.addType("NOTEBOOK", true);
+        int notebookId = findType("NOTEBOOK").getId();
+        service.addBrandForType("DELL", notebookId);
+        EquipmentBrand dell = service.getBrandsForType(notebookId).get(0);
+        service.addModel("LATITUDE", dell.getId(), notebookId);
+        EquipmentModel latitude = service.getModelsForBrandAndType(dell.getId(), notebookId).get(0);
+
+        service.setModelStock(latitude.getId(), dell.getId(), notebookId, sedeA, 4);
+        service.setModelStock(latitude.getId(), dell.getId(), notebookId, sedeB, 6);
+
+        assertEquals(10, service.getStockTotalsByType(null).getOrDefault(notebookId, 0));
     }
 
     @Test
-    void getStockTotalsByBrandForTypeSumsAcrossModels() {
+    void getStockTotalsByBrandForTypeSumsAcrossModels() throws SQLException {
+        int sedeId = insertSede("Campus Norte");
         service.addType("NOTEBOOK", true);
         int notebookId = findType("NOTEBOOK").getId();
         service.addBrandForType("DELL", notebookId);
@@ -574,14 +634,15 @@ class SqliteEquipmentServiceTest {
         List<EquipmentModel> dellModels = service.getModelsForBrandAndType(dell.getId(), notebookId);
 
         for (EquipmentModel m : dellModels) {
-            service.setModelStock(m.getId(), dell.getId(), notebookId, 3);
+            service.setModelStock(m.getId(), dell.getId(), notebookId, sedeId, 3);
         }
 
-        assertEquals(6, service.getStockTotalsByBrandForType(notebookId).getOrDefault(dell.getId(), 0));
+        assertEquals(6, service.getStockTotalsByBrandForType(notebookId, sedeId).getOrDefault(dell.getId(), 0));
     }
 
     @Test
     void getStockTotalsByModelForBrandAndTypeIncludesGlobalGenericRow() throws SQLException {
+        int sedeId = insertSede("Campus Norte");
         int genericModelId = insertGlobalGenericModel("Genérico / Otro");
         service.addType("NOTEBOOK", true);
         int notebookId = findType("NOTEBOOK").getId();
@@ -591,44 +652,47 @@ class SqliteEquipmentServiceTest {
         EquipmentModel latitude = service.getModelsForBrandAndType(dell.getId(), notebookId).stream()
             .filter(m -> m.getName().equals("LATITUDE")).findFirst().orElseThrow();
 
-        service.setModelStock(latitude.getId(), dell.getId(), notebookId, 7);
-        service.setModelStock(genericModelId, dell.getId(), notebookId, 2);
+        service.setModelStock(latitude.getId(), dell.getId(), notebookId, sedeId, 7);
+        service.setModelStock(genericModelId, dell.getId(), notebookId, sedeId, 2);
 
-        Map<Integer, Integer> totals = service.getStockTotalsByModelForBrandAndType(dell.getId(), notebookId);
+        Map<Integer, Integer> totals =
+            service.getStockTotalsByModelForBrandAndType(dell.getId(), notebookId, sedeId);
         assertEquals(7, totals.getOrDefault(latitude.getId(), 0));
         assertEquals(2, totals.getOrDefault(genericModelId, 0));
     }
 
     @Test
-    void renamingModelCarriesStockForward() {
+    void renamingModelCarriesStockForward() throws SQLException {
+        int sedeId = insertSede("Campus Norte");
         service.addType("NOTEBOOK", true);
         int notebookId = findType("NOTEBOOK").getId();
         service.addBrandForType("DELL", notebookId);
         EquipmentBrand dell = service.getBrandsForType(notebookId).get(0);
         service.addModel("LATITUDE", dell.getId(), notebookId);
         int oldModelId = service.getModelsForBrandAndType(dell.getId(), notebookId).get(0).getId();
-        service.setModelStock(oldModelId, dell.getId(), notebookId, 9);
+        service.setModelStock(oldModelId, dell.getId(), notebookId, sedeId, 9);
 
         service.renameModel(oldModelId, "LATITUDE 5440");
 
         int newModelId = service.getModelsForBrandAndType(dell.getId(), notebookId).stream()
             .filter(m -> m.getName().equals("LATITUDE 5440")).findFirst().orElseThrow().getId();
         assertNotEquals(oldModelId, newModelId);
-        assertEquals(9, service.getModelStock(newModelId, dell.getId(), notebookId),
+        assertEquals(9, service.getModelStock(newModelId, dell.getId(), notebookId, sedeId),
             "stock must follow the model to its new row id after a rename");
-        assertEquals(0, service.getModelStock(oldModelId, dell.getId(), notebookId),
+        assertEquals(0, service.getModelStock(oldModelId, dell.getId(), notebookId, sedeId),
             "the old (now-deprecated) row's stock should be moved, not duplicated");
     }
 
     @Test
-    void renamingTypeCarriesStockForwardThroughCascade() {
+    void renamingTypeCarriesStockForwardThroughCascade() throws SQLException {
+        int sedeId = insertSede("Campus Norte");
         service.addType("NOTEBOOK", true);
         EquipmentType notebook = findType("NOTEBOOK");
         service.addBrandForType("DELL", notebook.getId());
         EquipmentBrand dell = service.getBrandsForType(notebook.getId()).get(0);
         service.addModel("LATITUDE", dell.getId(), notebook.getId());
         int oldModelId = service.getModelsForBrandAndType(dell.getId(), notebook.getId()).get(0).getId();
-        service.setModelStock(oldModelId, dell.getId(), notebook.getId(), 11);
+        service.setModelStock(oldModelId, dell.getId(), notebook.getId(), sedeId, 11);
 
         service.renameType(notebook.getId(), "LAPTOP");
 
@@ -636,7 +700,7 @@ class SqliteEquipmentServiceTest {
         EquipmentBrand dellUnderLaptop = service.getBrandsForType(laptop.getId()).get(0);
         int newModelId = service.getModelsForBrandAndType(dellUnderLaptop.getId(), laptop.getId()).get(0).getId();
 
-        assertEquals(11, service.getModelStock(newModelId, dellUnderLaptop.getId(), laptop.getId()),
+        assertEquals(11, service.getModelStock(newModelId, dellUnderLaptop.getId(), laptop.getId(), sedeId),
             "a Type rename cascades to clone the model, and its stock must follow the clone");
     }
 

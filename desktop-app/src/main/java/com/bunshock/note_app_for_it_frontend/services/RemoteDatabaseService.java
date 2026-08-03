@@ -155,13 +155,17 @@ public class RemoteDatabaseService {
             // Mirrors DatabaseService's identical SQLite MODEL_STOCK table — brand_type_id is
             // stored explicitly (not inferred from model_id) so the single global "Genérico /
             // Otro" model can carry an independent stock number per (Type,Brand) it's used under.
+            // sede_id makes stock genuinely per-site: the same Model at two Sedes carries two
+            // independent counts, not one shared global number.
             createTableIfMissing(stmt, "MODEL_STOCK", """
                 CREATE TABLE MODEL_STOCK (
                     brand_type_id INT NOT NULL REFERENCES BRAND_TYPE_LINK(id),
                     model_id      INT NOT NULL REFERENCES MODEL(id),
+                    sede_id       INT NOT NULL REFERENCES SEDE(id),
                     stock         INT NOT NULL DEFAULT 0,
-                    CONSTRAINT pk_model_stock PRIMARY KEY (brand_type_id, model_id)
+                    CONSTRAINT pk_model_stock PRIMARY KEY (brand_type_id, model_id, sede_id)
                 )""");
+            migrateModelStockSedeSchema(stmt, c);
             // Login-time role/sede/permission lookup — not the same thing as AD group
             // membership, which gates app access at all and is checked against the AD API at
             // login time, not stored here. Named APP_USER, not USER — USER is a reserved
@@ -607,6 +611,25 @@ public class RemoteDatabaseService {
                 del.setInt(1, linkId);
                 del.executeUpdate();
             }
+        }
+    }
+
+    // MODEL_STOCK gained sede_id as part of its primary key — mirrors DatabaseService's identical
+    // SQLite migration. Nothing else has an FK pointing INTO MODEL_STOCK, so an already-running
+    // installation's old-shape table is simply dropped and recreated rather than attempting to
+    // split its existing numbers across Sedes — explicit user decision: every (model, Sede) pair
+    // starts at 0, and an admin re-enters real counts going forward.
+    private void migrateModelStockSedeSchema(Statement stmt, Connection c) throws SQLException {
+        if (tableExists(c, "MODEL_STOCK") && !columnExists(c, "MODEL_STOCK", "sede_id")) {
+            stmt.executeUpdate("DROP TABLE MODEL_STOCK");
+            stmt.executeUpdate("""
+                CREATE TABLE MODEL_STOCK (
+                    brand_type_id INT NOT NULL REFERENCES BRAND_TYPE_LINK(id),
+                    model_id      INT NOT NULL REFERENCES MODEL(id),
+                    sede_id       INT NOT NULL REFERENCES SEDE(id),
+                    stock         INT NOT NULL DEFAULT 0,
+                    CONSTRAINT pk_model_stock PRIMARY KEY (brand_type_id, model_id, sede_id)
+                )""");
         }
     }
 

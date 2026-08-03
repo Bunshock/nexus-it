@@ -520,6 +520,65 @@ class DatabaseServiceMigrationTest {
         }
     }
 
+    // MODEL_STOCK gained sede_id as part of its primary key — an already-running installation's
+    // old-shape table (no sede_id, one global number per Model) has no correct way to attribute
+    // its existing numbers to any one Sede, so the explicit user decision was to reset: drop the
+    // old table, recreate it in the new shape, every (model, Sede) pair starts at 0.
+    @Test
+    void migrateModelStockSedeSchemaResetsOldShapeTableToZero() throws Exception {
+        String url = "jdbc:sqlite:" + tempDir.resolve("model-stock-sede-migration.db").toAbsolutePath();
+        try (Connection c = DriverManager.getConnection(url); Statement stmt = c.createStatement()) {
+            invokeCreateEquipmentTables(stmt);
+            assertTrue(hasColumn(c, "MODEL_STOCK", "sede_id"),
+                "a brand-new install must already have the new shape, straight from createEquipmentTables()");
+
+            // Simulate a pre-existing installation still on the old (no sede_id) shape.
+            stmt.executeUpdate("DROP TABLE MODEL_STOCK");
+            stmt.executeUpdate("""
+                CREATE TABLE MODEL_STOCK (
+                    brand_type_id INTEGER NOT NULL REFERENCES BRAND_TYPE_LINK(id),
+                    model_id      INTEGER NOT NULL REFERENCES MODEL(id),
+                    stock         INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY (brand_type_id, model_id)
+                )""");
+            stmt.executeUpdate("INSERT INTO TYPE (id, name) VALUES (1, 'NOTEBOOK')");
+            stmt.executeUpdate("INSERT INTO BRAND (id, name) VALUES (1, 'DELL')");
+            stmt.executeUpdate("INSERT INTO BRAND_TYPE_LINK (id, type_id, brand_id) VALUES (1, 1, 1)");
+            stmt.executeUpdate("INSERT INTO MODEL (id, brand_type_id, name) VALUES (1, 1, 'LATITUDE')");
+            stmt.executeUpdate("INSERT INTO MODEL_STOCK (brand_type_id, model_id, stock) VALUES (1, 1, 25)");
+            assertFalse(hasColumn(c, "MODEL_STOCK", "sede_id"), "old shape confirmed before migrating");
+
+            invokeMigrateModelStockSedeSchema(c, stmt);
+
+            assertTrue(hasColumn(c, "MODEL_STOCK", "sede_id"),
+                "the table must be on the new (sede_id) shape after migration");
+            assertEquals(0, singleInt(c, "SELECT COUNT(*) FROM MODEL_STOCK"),
+                "old-shape numbers are reset, not preserved or guessed at — explicit user decision");
+        }
+    }
+
+    // Re-running against an already-migrated (new-shape) table must be a no-op — never drop and
+    // re-create a table that's already correct, or a real installation's stock would be silently
+    // wiped on every single startup.
+    @Test
+    void migrateModelStockSedeSchemaIsNoOpOnAnAlreadyMigratedTable() throws Exception {
+        String url = "jdbc:sqlite:" + tempDir.resolve("model-stock-sede-idempotent.db").toAbsolutePath();
+        try (Connection c = DriverManager.getConnection(url); Statement stmt = c.createStatement()) {
+            invokeCreateEquipmentTables(stmt);
+            stmt.executeUpdate("INSERT INTO TYPE (id, name) VALUES (1, 'NOTEBOOK')");
+            stmt.executeUpdate("INSERT INTO BRAND (id, name) VALUES (1, 'DELL')");
+            stmt.executeUpdate("INSERT INTO SEDE (id, name) VALUES (1, 'Campus Norte')");
+            stmt.executeUpdate("INSERT INTO BRAND_TYPE_LINK (id, type_id, brand_id) VALUES (1, 1, 1)");
+            stmt.executeUpdate("INSERT INTO MODEL (id, brand_type_id, name) VALUES (1, 1, 'LATITUDE')");
+            stmt.executeUpdate("INSERT INTO MODEL_STOCK (brand_type_id, model_id, sede_id, stock) VALUES (1, 1, 1, 25)");
+
+            invokeMigrateModelStockSedeSchema(c, stmt);
+
+            assertEquals(25, singleInt(c, "SELECT stock FROM MODEL_STOCK WHERE brand_type_id = 1 AND model_id = 1 AND sede_id = 1"),
+                "already-current data must survive a re-run untouched");
+        }
+    }
+
     // A link with zero MODEL rows can still carry a legitimate MODEL_STOCK row for the global
     // generic model (stock is tracked per (Type,Brand) usage of it, independent of whether that
     // usage has any of its own MODEL rows) — cleanupStrayGenericBrandLinks() must not delete it.
@@ -532,9 +591,10 @@ class DatabaseServiceMigrationTest {
 
             stmt.executeUpdate("INSERT INTO TYPE (id, name) VALUES (1, 'NOTEBOOK')");
             stmt.executeUpdate("INSERT INTO BRAND (id, name) VALUES (1, 'Genérico / Otro')");
+            stmt.executeUpdate("INSERT INTO SEDE (id, name) VALUES (1, 'Campus Norte')");
             // No MODEL rows under this link at all, but it does carry a stock number — must survive.
             stmt.executeUpdate("INSERT INTO BRAND_TYPE_LINK (id, type_id, brand_id) VALUES (1, 1, 1)");
-            stmt.executeUpdate("INSERT INTO MODEL_STOCK (brand_type_id, model_id, stock) VALUES (1, 999, 14)");
+            stmt.executeUpdate("INSERT INTO MODEL_STOCK (brand_type_id, model_id, sede_id, stock) VALUES (1, 999, 1, 14)");
 
             invokeCleanupStrayGenericBrandLinks(c);
 
@@ -567,6 +627,12 @@ class DatabaseServiceMigrationTest {
 
     private void invokeMigrateGenericModelSchema(Connection c, Statement stmt) throws Exception {
         Method m = DatabaseService.class.getDeclaredMethod("migrateGenericModelSchema", Connection.class, Statement.class);
+        m.setAccessible(true);
+        m.invoke(DatabaseService.getInstance(), c, stmt);
+    }
+
+    private void invokeMigrateModelStockSedeSchema(Connection c, Statement stmt) throws Exception {
+        Method m = DatabaseService.class.getDeclaredMethod("migrateModelStockSedeSchema", Connection.class, Statement.class);
         m.setAccessible(true);
         m.invoke(DatabaseService.getInstance(), c, stmt);
     }

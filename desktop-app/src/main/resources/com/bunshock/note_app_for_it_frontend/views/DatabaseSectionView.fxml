@@ -65,6 +65,17 @@
             </children>
         </HBox>
 
+        <!-- Stock Sede context: locked to the technician's own Sede for a plain ADMIN/USER
+             (combo shows just that one Sede, disabled); a SUPERADMIN gets every Sede plus a
+             leading "Todas" (combined/summed) entry, selectable. Only relevant to the equipment
+             catalog row (Providers/Sedes have no stock), so shown/hidden alongside it. -->
+        <HBox fx:id="rowStockSede" alignment="CENTER_LEFT" spacing="10">
+            <children>
+                <Label text="STOCK — SEDE:" styleClass="input-label-small"/>
+                <ComboBox fx:id="cmbStockSede" prefWidth="220" styleClass="form-input-main, sede-combo"/>
+            </children>
+        </HBox>
+
         <!-- Equipment catalog: Types/Brands/Models cascade -->
         <HBox fx:id="rowEquipmentCatalog" spacing="15" VBox.vgrow="ALWAYS">
 
