@@ -11,7 +11,8 @@
             fx:controller="com.bunshock.note_app_for_it_frontend.controllers.MainController"
             stylesheets="/com/bunshock/note_app_for_it_frontend/css/styles.css">
    <fx:define>
-      <ToggleGroup fx:id="navigationGroup" />
+      <ToggleGroup fx:id="flyoutMovimientosGroup" />
+      <ToggleGroup fx:id="flyoutPrestamosGroup" />
    </fx:define>
 
    <top>
@@ -103,42 +104,65 @@
 
             <Region VBox.vgrow="ALWAYS" />
 
-            <!-- Main navigation buttons -->
-            <ToggleButton text="Generar Nota" fx:id="btnGenerator" toggleGroup="$navigationGroup"
-                  maxWidth="Infinity" styleClass="nav-button" selected="true" onAction="#handleShowGenerator"/>
-            <StackPane maxWidth="Infinity">
+            <!-- Sidebar nav: "Movimientos" (Generar Nota/Historial) and "Préstamos" (Cargar
+                 Préstamo Interno/Historial de Préstamos) each open a flyout to the right on
+                 click. The flyoutMovimientos/flyoutPrestamos VBoxes below start visible/
+                 managed=false so they don't render inline; MainController.setupNavFlyouts()
+                 moves each into its own Popup and flips both flags back to true. -->
+            <Button text="Movimientos" fx:id="btnMovimientosGroup"
+                  maxWidth="Infinity" styleClass="nav-button"
+                  onAction="#handleToggleMovimientosFlyout"/>
+            <VBox fx:id="flyoutMovimientos" visible="false" managed="false" spacing="4" prefWidth="235" styleClass="nav-flyout">
                <children>
-                  <ToggleButton text="Historial" fx:id="btnHistory" toggleGroup="$navigationGroup"
-                        maxWidth="Infinity" styleClass="nav-button" onAction="#handleShowHistory"/>
-                  <HBox spacing="6" alignment="CENTER_RIGHT" mouseTransparent="true"
-                        StackPane.alignment="CENTER_RIGHT">
-                     <StackPane.margin><Insets right="15"/></StackPane.margin>
+                  <ToggleButton text="Generar Nota" fx:id="btnGenerator" toggleGroup="$flyoutMovimientosGroup"
+                        maxWidth="Infinity" styleClass="nav-button" selected="true" onAction="#handleShowGenerator"/>
+                  <StackPane maxWidth="Infinity">
                      <children>
-                        <Label fx:id="lblApprovalBadge" text="" styleClass="nav-badge, nav-badge-approval"
-                               visible="false" managed="false"/>
-                        <Label fx:id="lblHistoryBadge" text="" styleClass="nav-badge"
-                               visible="false" managed="false"/>
+                        <ToggleButton text="Historial" fx:id="btnHistory" toggleGroup="$flyoutMovimientosGroup"
+                              maxWidth="Infinity" styleClass="nav-button" onAction="#handleShowHistory"/>
+                        <HBox spacing="6" alignment="CENTER_RIGHT" mouseTransparent="true"
+                              StackPane.alignment="CENTER_RIGHT">
+                           <StackPane.margin><Insets right="15"/></StackPane.margin>
+                           <children>
+                              <Label fx:id="lblApprovalBadge" text="" styleClass="nav-badge, nav-badge-approval"
+                                     visible="false" managed="false"/>
+                              <Label fx:id="lblHistoryBadge" text="" styleClass="nav-badge"
+                                     visible="false" managed="false"/>
+                           </children>
+                        </HBox>
                      </children>
-                  </HBox>
+                  </StackPane>
                </children>
-            </StackPane>
-            <StackPane maxWidth="Infinity">
+            </VBox>
+
+            <Button text="Préstamos" fx:id="btnPrestamosGroup"
+                  maxWidth="Infinity" styleClass="nav-button" onAction="#handleTogglePrestamosFlyout"/>
+            <VBox fx:id="flyoutPrestamos" visible="false" managed="false" spacing="4" prefWidth="235" styleClass="nav-flyout">
                <children>
-                  <ToggleButton text="Préstamos" fx:id="btnPrestamos" toggleGroup="$navigationGroup"
-                        maxWidth="Infinity" styleClass="nav-button" onAction="#handleShowPrestamos"/>
-                  <HBox spacing="6" alignment="CENTER_RIGHT" mouseTransparent="true"
-                        StackPane.alignment="CENTER_RIGHT">
-                     <StackPane.margin><Insets right="15"/></StackPane.margin>
+                  <ToggleButton text="Cargar Préstamo Interno" fx:id="btnPrestamoCargar" toggleGroup="$flyoutPrestamosGroup"
+                        maxWidth="Infinity" styleClass="nav-button" onAction="#handleShowPrestamoCargar"/>
+                  <StackPane maxWidth="Infinity">
                      <children>
-                        <Label fx:id="lblPrestamosApprovalBadge" text="" styleClass="nav-badge, nav-badge-approval"
-                               visible="false" managed="false"/>
-                        <Label fx:id="lblPrestamosBadge" text="" styleClass="nav-badge"
-                               visible="false" managed="false"/>
+                        <!-- Not selected="true" — Generar Nota is the real startup section, not
+                             this one. -->
+                        <ToggleButton text="Historial de Préstamos" fx:id="btnPrestamoHistorial" toggleGroup="$flyoutPrestamosGroup"
+                              maxWidth="Infinity" styleClass="nav-button" onAction="#handleShowPrestamoHistorial"/>
+                        <HBox spacing="6" alignment="CENTER_RIGHT" mouseTransparent="true"
+                              StackPane.alignment="CENTER_RIGHT">
+                           <StackPane.margin><Insets right="15"/></StackPane.margin>
+                           <children>
+                              <Label fx:id="lblPrestamosApprovalBadge" text="" styleClass="nav-badge, nav-badge-approval"
+                                     visible="false" managed="false"/>
+                              <Label fx:id="lblPrestamosBadge" text="" styleClass="nav-badge"
+                                     visible="false" managed="false"/>
+                           </children>
+                        </HBox>
                      </children>
-                  </HBox>
+                  </StackPane>
                </children>
-            </StackPane>
-            <ToggleButton text="Base de Datos" fx:id="btnData" toggleGroup="$navigationGroup"
+            </VBox>
+
+            <Button text="Base de Datos" fx:id="btnData"
                   maxWidth="Infinity" styleClass="nav-button" onAction="#handleShowDatabase"/>
 
             <!-- Separator -->
@@ -148,11 +172,11 @@
             </Region>
 
             <!-- Secondary navigation buttons -->
-            <ToggleButton text="Mi Perfil" fx:id="btnProfile" toggleGroup="$navigationGroup"
+            <Button text="Mi Perfil" fx:id="btnProfile"
                   maxWidth="Infinity" styleClass="nav-button" onAction="#handleShowProfile"/>
-            <ToggleButton text="Configuración" fx:id="btnSettings" toggleGroup="$navigationGroup"
+            <Button text="Configuración" fx:id="btnSettings"
                   maxWidth="Infinity" styleClass="nav-button" onAction="#handleShowSettings"/>
-            <ToggleButton text="Acerca de" fx:id="btnAbout" toggleGroup="$navigationGroup"
+            <Button text="Acerca de" fx:id="btnAbout"
                   maxWidth="Infinity" styleClass="nav-button" onAction="#handleShowAbout"/>
 
             <!-- Server status -->

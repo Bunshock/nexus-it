@@ -3,38 +3,34 @@ package com.bunshock.note_app_for_it_frontend.controllers;
 import com.bunshock.note_app_for_it_frontend.utils.ViewFactory;
 
 import javafx.fxml.FXML;
-import javafx.scene.control.ToggleButton;
-import javafx.scene.control.ToggleGroup;
+import javafx.scene.control.Label;
 import javafx.scene.layout.StackPane;
 
-// Top-level "Préstamos" section controller — mirrors NoteGeneratorController's own
-// btnUserNote/btnProviderNote + dynamicContentArea toggle shape, one level up. See
-// CLAUDE.md's "Préstamos section" for the two child views this switches between.
+// Top-level "Préstamos" section controller. Switching between its two child views (Historial de
+// Préstamos / Cargar Préstamo Interno) is driven from MainController's sidebar flyout (see
+// showHistoryTab()/showNewLoanTab()); lblSectionTitle just names whichever view is showing.
 public class PrestamosController {
 
-    @FXML private ToggleButton btnNewLoan;
-    @FXML private ToggleButton btnHistory;
-    @FXML private ToggleGroup typeGroup;
+    @FXML private Label lblSectionTitle;
     @FXML private StackPane dynamicContentArea;
 
     private ViewFactory viewFactory;
 
-    public void initialize() {
-        btnNewLoan.setOnAction(e -> showNewLoanView());
-        btnHistory.setOnAction(e -> showHistoryView());
-
-        typeGroup.selectedToggleProperty().addListener((obs, old, next) -> {
-            if (next == null) old.setSelected(true);
-        });
-    }
-
     public void setViewFactory(ViewFactory viewFactory) {
         this.viewFactory = viewFactory;
-        if (btnHistory.isSelected()) {
-            showHistoryView();
-        } else {
-            showNewLoanView();
-        }
+        showHistoryView();
+    }
+
+    /** Called by MainController's "Historial de Préstamos" sidebar flyout item. */
+    public void showHistoryTab() {
+        lblSectionTitle.setText("HISTORIAL DE PRÉSTAMOS");
+        showHistoryView();
+    }
+
+    /** Called by MainController's "Cargar Préstamo Interno" sidebar flyout item. */
+    public void showNewLoanTab() {
+        lblSectionTitle.setText("CARGAR PRÉSTAMO INTERNO");
+        showNewLoanView();
     }
 
     private void showNewLoanView() {
@@ -48,12 +44,5 @@ public class PrestamosController {
         // same session wouldn't appear here until the app restarts (same staleness fix as
         // MainController.handleShowHistory()'s HistoryController.refresh() call).
         viewFactory.getPrestamoHistoryController().refresh();
-    }
-
-    /** Called by MainController every time the Préstamos section is navigated to. */
-    public void refreshHistory() {
-        if (viewFactory != null && viewFactory.getPrestamoHistoryController() != null) {
-            viewFactory.getPrestamoHistoryController().refresh();
-        }
     }
 }

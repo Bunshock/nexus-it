@@ -28,11 +28,13 @@ import javafx.fxml.FXML;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Cursor;
+import javafx.scene.Node;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.ProgressIndicator;
+import javafx.scene.control.ToggleGroup;
 import javafx.scene.control.Tooltip;
 import javafx.scene.effect.DropShadow;
 import javafx.scene.effect.GaussianBlur;
@@ -41,14 +43,17 @@ import javafx.scene.input.MouseButton;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.Pane;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Circle;
+import javafx.scene.shape.Polygon;
 import javafx.scene.shape.Rectangle;
 import javafx.stage.Modality;
+import javafx.stage.Popup;
 import javafx.stage.Stage;
 import javafx.stage.StageStyle;
 import javafx.util.Duration;
@@ -81,7 +86,29 @@ public class MainController {
     @FXML private Tooltip tooltipDB;
 
     @FXML private StackPane contentArea;
-    @FXML private javafx.scene.control.ToggleGroup navigationGroup;
+
+    // All six top-level sidebar entries — plain Button, not ToggleButton/ToggleGroup (see
+    // setActiveTopLevelButton()).
+    @FXML private Button btnMovimientosGroup;
+    @FXML private Button btnPrestamosGroup;
+    @FXML private Button btnData;
+    @FXML private Button btnProfile;
+    @FXML private Button btnSettings;
+    @FXML private Button btnAbout;
+    private Button activeTopLevelButton;
+    private static final javafx.css.PseudoClass ACTIVE_SECTION =
+        javafx.css.PseudoClass.getPseudoClass("active-section");
+    private static final javafx.css.PseudoClass FLYOUT_PREVIEW =
+        javafx.css.PseudoClass.getPseudoClass("flyout-preview");
+
+    // "Movimientos"/"Préstamos" flyout submenus — see MainView.fxml's own comment on these nodes
+    // for why they're declared there (visible/managed=false) instead of built in Java.
+    @FXML private VBox flyoutMovimientos;
+    @FXML private VBox flyoutPrestamos;
+    @FXML private ToggleGroup flyoutMovimientosGroup;
+    @FXML private ToggleGroup flyoutPrestamosGroup;
+    private final Popup movimientosPopup = new Popup();
+    private final Popup prestamosPopup = new Popup();
 
     @FXML private HBox titleBar;
     @FXML private Button btnMinimizeWindow;
@@ -104,9 +131,10 @@ public class MainController {
         Platform.runLater(this::runStartupChecks);
         Platform.runLater(this::setupWindowChrome);
 
-        navigationGroup.selectedToggleProperty().addListener((obs, old, newVal) -> {
-            if (newVal == null) old.setSelected(true);
-        });
+        // A flyout's leaf ToggleGroup is allowed to have nothing selected — the leaf handlers
+        // below clear the OTHER flyout's selection on navigation.
+        setupNavFlyouts();
+        setActiveTopLevelButton(btnMovimientosGroup);
 
         AdminSession.getInstance().addOnActivateListener(this::updateAdminIndicator);
         AdminSession.getInstance().addOnDeactivateListener(this::updateAdminIndicator);
@@ -652,7 +680,207 @@ public class MainController {
         contentArea.getChildren().setAll(view);
     }
 
-    @FXML private void handleShowGenerator() { showSection(viewFactory.getGeneratorView()); }
+    // Speech-bubble pointer nub size, roughly centered on a .nav-button's own height.
+    private static final double NAV_POINTER_WIDTH = 10;
+    private static final double NAV_POINTER_HEIGHT = 16;
+    private static final double NAV_POINTER_TOP_OFFSET = 13;
+    private static final String NAV_FLYOUT_FILL = "#0c8570"; // matches .sidebar/.nav-flyout
+
+    // Wires up both flyouts: reparents each card into its own Popup, adds the pointer/arrow, and
+    // sets up outside-click and window-focus handling.
+    private void setupNavFlyouts() {
+        setupFlyoutPopup(movimientosPopup, flyoutMovimientos);
+        setupFlyoutPopup(prestamosPopup, flyoutPrestamos);
+        setupGroupButtonArrow(btnMovimientosGroup);
+        setupGroupButtonArrow(btnPrestamosGroup);
+        setupNavFlyoutOutsideClickHandling();
+        setupNavFlyoutWindowFocusHandling();
+
+        // Clears the preview highlight whenever either popup closes, whatever the reason.
+        movimientosPopup.showingProperty().addListener((obs, was, isShowing) -> {
+            if (!isShowing) btnMovimientosGroup.pseudoClassStateChanged(FLYOUT_PREVIEW, false);
+        });
+        prestamosPopup.showingProperty().addListener((obs, was, isShowing) -> {
+            if (!isShowing) btnPrestamosGroup.pseudoClassStateChanged(FLYOUT_PREVIEW, false);
+        });
+    }
+
+    // Sets which of the six top-level buttons is shown as the active section. Not driven by
+    // ToggleGroup: opening Movimientos/Préstamos must not change the active section until a leaf
+    // inside it is actually picked.
+    private void setActiveTopLevelButton(Button active) {
+        for (Button b : List.of(btnMovimientosGroup, btnPrestamosGroup, btnData, btnProfile, btnSettings, btnAbout)) {
+            b.pseudoClassStateChanged(ACTIVE_SECTION, b == active);
+        }
+        activeTopLevelButton = active;
+        updateGroupButtonGraphicStyle(btnMovimientosGroup, active == btnMovimientosGroup);
+        updateGroupButtonGraphicStyle(btnPrestamosGroup, active == btnPrestamosGroup);
+    }
+
+    // Closes an open popup on any outside click without consuming the event, so the click still
+    // reaches its real target in the same gesture. Group buttons are excluded since their own
+    // toggle handler already manages opening/closing their popup.
+    private void setupNavFlyoutOutsideClickHandling() {
+        Platform.runLater(() -> {
+            Scene scene = rootPane.getScene();
+            if (scene == null) return;
+            scene.addEventFilter(MouseEvent.MOUSE_PRESSED, e -> {
+                hidePopupUnlessClickIsOnOwnGroupButton(movimientosPopup, btnMovimientosGroup, e);
+                hidePopupUnlessClickIsOnOwnGroupButton(prestamosPopup, btnPrestamosGroup, e);
+            });
+        });
+    }
+
+    private void hidePopupUnlessClickIsOnOwnGroupButton(Popup popup, Button groupButton, MouseEvent e) {
+        if (!popup.isShowing()) return;
+        if (e.getTarget() instanceof Node target && isSameOrDescendantOf(target, groupButton)) return;
+        popup.hide();
+    }
+
+    // Walks up from the click target so a click on the button's own graphic (Labels/Region, not
+    // the Button node itself) still counts as a match.
+    private boolean isSameOrDescendantOf(Node node, Node ancestor) {
+        for (Node n = node; n != null; n = n.getParent()) {
+            if (n == ancestor) return true;
+        }
+        return false;
+    }
+
+    // Hides an open popup when the main window loses focus, and reopens it at the same anchor
+    // button once focus returns.
+    private Button flyoutHiddenByFocusLossAnchor;
+
+    private void setupNavFlyoutWindowFocusHandling() {
+        Platform.runLater(() -> {
+            Scene scene = rootPane.getScene();
+            if (scene == null || !(scene.getWindow() instanceof Stage stage)) return;
+            stage.focusedProperty().addListener((obs, wasFocused, isFocused) -> {
+                if (!isFocused) {
+                    if (movimientosPopup.isShowing()) {
+                        flyoutHiddenByFocusLossAnchor = btnMovimientosGroup;
+                        movimientosPopup.hide();
+                    } else if (prestamosPopup.isShowing()) {
+                        flyoutHiddenByFocusLossAnchor = btnPrestamosGroup;
+                        prestamosPopup.hide();
+                    }
+                } else if (flyoutHiddenByFocusLossAnchor != null) {
+                    Popup popupToRestore = flyoutHiddenByFocusLossAnchor == btnMovimientosGroup
+                        ? movimientosPopup : prestamosPopup;
+                    openFlyout(popupToRestore, flyoutHiddenByFocusLossAnchor);
+                    flyoutHiddenByFocusLossAnchor = null;
+                }
+            });
+        });
+    }
+
+    private void setupFlyoutPopup(Popup popup, VBox card) {
+        // MainView.fxml declares this VBox managed="false"; must be flipped to true here too, or
+        // the wrapping HBox below treats it as zero-width.
+        card.setVisible(true);
+        card.setManaged(true);
+
+        // Wrapped in a fixed-size Pane since Polygon (a Shape, not a Region) isn't resizable and
+        // won't otherwise size correctly inside VBox/HBox. Stroke keeps it visible against the
+        // card's own drop shadow.
+        Polygon pointer = new Polygon(
+            0, NAV_POINTER_HEIGHT / 2.0,
+            NAV_POINTER_WIDTH, 0,
+            NAV_POINTER_WIDTH, NAV_POINTER_HEIGHT);
+        pointer.setFill(Color.web(NAV_FLYOUT_FILL));
+        pointer.setStroke(Color.web("rgba(255, 255, 255, 0.18)"));
+        pointer.setStrokeWidth(1);
+
+        Pane pointerPane = new Pane(pointer);
+        pointerPane.setMinSize(NAV_POINTER_WIDTH, NAV_POINTER_HEIGHT);
+        pointerPane.setPrefSize(NAV_POINTER_WIDTH, NAV_POINTER_HEIGHT);
+        pointerPane.setMaxSize(NAV_POINTER_WIDTH, NAV_POINTER_HEIGHT);
+
+        VBox pointerColumn = new VBox(pointerPane);
+        VBox.setMargin(pointerPane, new Insets(NAV_POINTER_TOP_OFFSET, 0, 0, 0));
+
+        HBox wrapper = new HBox(pointerColumn, card);
+        wrapper.setAlignment(Pos.TOP_LEFT);
+        wrapper.getStylesheets().add(getClass().getResource(
+            "/com/bunshock/note_app_for_it_frontend/css/styles.css").toExternalForm());
+
+        popup.getContent().add(wrapper);
+        // No setAutoHide(true) — see setupNavFlyoutOutsideClickHandling() instead.
+    }
+
+    // Custom graphic (label + growing spacer + arrow) so the arrow sits flush against the
+    // button's right edge instead of packed next to the text. Spacer width is bound to the
+    // button's own width since it won't grow to fill it otherwise (same gotcha as
+    // DatabaseSectionController.applyCatalogCellFactory()'s ListCell graphic).
+    private static final double NAV_BUTTON_HORIZONTAL_PADDING = 30; // .nav-button's own 15+15
+
+    private void setupGroupButtonArrow(Button button) {
+        Label lblText = new Label(button.getText());
+        Label lblArrow = new Label("▸");
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+        HBox graphic = new HBox(lblText, spacer, lblArrow);
+        graphic.setAlignment(Pos.CENTER_LEFT);
+        graphic.prefWidthProperty().bind(button.widthProperty().subtract(NAV_BUTTON_HORIZONTAL_PADDING));
+
+        button.setText("");
+        button.setGraphic(graphic);
+        updateGroupButtonGraphicStyle(button, false);
+    }
+
+    // CSS can't reach into a custom graphic's child Labels, so active-state text styling is
+    // synced here manually — called directly from setActiveTopLevelButton() since a manually
+    // toggled PseudoClass has no property to listen to.
+    private void updateGroupButtonGraphicStyle(Button button, boolean active) {
+        HBox graphic = (HBox) button.getGraphic();
+        Label lblText = (Label) graphic.getChildren().get(0);
+        Label lblArrow = (Label) graphic.getChildren().get(2);
+        String style = active
+            ? "-fx-text-fill: white; -fx-font-weight: bold;"
+            : "-fx-text-fill: #e0f2f1;";
+        lblText.setStyle(style);
+        lblArrow.setStyle(style);
+    }
+
+    @FXML
+    private void handleToggleMovimientosFlyout() {
+        if (movimientosPopup.isShowing()) {
+            movimientosPopup.hide();
+            return;
+        }
+        prestamosPopup.hide();
+        openFlyout(movimientosPopup, btnMovimientosGroup);
+    }
+
+    @FXML
+    private void handleTogglePrestamosFlyout() {
+        if (prestamosPopup.isShowing()) {
+            prestamosPopup.hide();
+            return;
+        }
+        movimientosPopup.hide();
+        openFlyout(prestamosPopup, btnPrestamosGroup);
+    }
+
+    // Applies the preview highlight only when opening a group that isn't already active.
+    private void openFlyout(Popup popup, Button groupButton) {
+        if (activeTopLevelButton != groupButton) {
+            groupButton.pseudoClassStateChanged(FLYOUT_PREVIEW, true);
+        }
+        showFlyout(popup, groupButton);
+    }
+
+    private void showFlyout(Popup popup, Button anchor) {
+        var bounds = anchor.localToScreen(anchor.getBoundsInLocal());
+        popup.show(anchor, bounds.getMaxX(), bounds.getMinY());
+    }
+
+    @FXML
+    private void handleShowGenerator() {
+        showSection(viewFactory.getGeneratorView());
+        setActiveTopLevelButton(btnMovimientosGroup);
+        flyoutPrestamosGroup.selectToggle(null);
+        movimientosPopup.hide();
+    }
 
     @FXML
     private void handleShowHistory() {
@@ -662,20 +890,63 @@ public class MainController {
         // technician manually clicked "Buscar" — refresh() re-runs the currently-set filters
         // rather than resetting them.
         viewFactory.getHistoryController().refresh();
-    }
-    @FXML
-    private void handleShowPrestamos() {
-        showSection(viewFactory.getPrestamosView());
-        viewFactory.getPrestamosController().refreshHistory();
+        setActiveTopLevelButton(btnMovimientosGroup);
+        flyoutPrestamosGroup.selectToggle(null);
+        movimientosPopup.hide();
     }
 
-    @FXML private void handleShowDatabase()  { showSection(viewFactory.getDatabaseView()); }
+    @FXML
+    private void handleShowPrestamoCargar() {
+        showSection(viewFactory.getPrestamosView());
+        viewFactory.getPrestamosController().showNewLoanTab();
+        setActiveTopLevelButton(btnPrestamosGroup);
+        flyoutMovimientosGroup.selectToggle(null);
+        prestamosPopup.hide();
+    }
+
+    @FXML
+    private void handleShowPrestamoHistorial() {
+        showSection(viewFactory.getPrestamosView());
+        viewFactory.getPrestamosController().showHistoryTab();
+        setActiveTopLevelButton(btnPrestamosGroup);
+        flyoutMovimientosGroup.selectToggle(null);
+        prestamosPopup.hide();
+    }
+
+    @FXML
+    private void handleShowDatabase() {
+        showSection(viewFactory.getDatabaseView());
+        setActiveTopLevelButton(btnData);
+        clearBothFlyoutLeafSelections();
+    }
+
     @FXML
     private void handleShowSettings() {
         showSection(viewFactory.getSettingsView());
+        setActiveTopLevelButton(btnSettings);
+        clearBothFlyoutLeafSelections();
     }
-    @FXML private void handleShowAbout()     { showSection(viewFactory.getAboutView()); }
-    @FXML private void handleShowProfile()   { showSection(viewFactory.getProfileView()); }
+
+    @FXML
+    private void handleShowAbout() {
+        showSection(viewFactory.getAboutView());
+        setActiveTopLevelButton(btnAbout);
+        clearBothFlyoutLeafSelections();
+    }
+
+    @FXML
+    private void handleShowProfile() {
+        showSection(viewFactory.getProfileView());
+        setActiveTopLevelButton(btnProfile);
+        clearBothFlyoutLeafSelections();
+    }
+
+    // Clears both flyouts' leaf selection — called when navigating to Base de Datos/Mi
+    // Perfil/Configuración/Acerca de, since neither flyout is the active section anymore.
+    private void clearBothFlyoutLeafSelections() {
+        flyoutMovimientosGroup.selectToggle(null);
+        flyoutPrestamosGroup.selectToggle(null);
+    }
 
     /**
      * Ends the current technician's session and returns to the login screen — deactivates

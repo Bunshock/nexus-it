@@ -8,20 +8,14 @@
 
     <children>
 
-        <!-- Section toggle: full width -->
-        <HBox prefHeight="50.0" spacing="0">
-            <children>
-                <ToggleButton fx:id="btnHistory" text="HISTORIAL DE PRÉSTAMOS"
-                              minWidth="0" prefWidth="0" maxWidth="Infinity" HBox.hgrow="ALWAYS"
-                              styleClass="type-button-left" selected="true" toggleGroup="$typeGroup">
-                    <toggleGroup>
-                        <ToggleGroup fx:id="typeGroup"/>
-                    </toggleGroup>
-                </ToggleButton>
-                <ToggleButton fx:id="btnNewLoan" text="CARGAR NUEVO PRÉSTAMO INTERNO (SIN NOTA)"
-                              minWidth="0" prefWidth="0" maxWidth="Infinity" HBox.hgrow="ALWAYS"
-                              styleClass="type-button-right" toggleGroup="$typeGroup"/>
-            </children>
+        <!-- Page title — text set programmatically by PrestamosController.showHistoryTab()/
+             showNewLoanTab(), called from MainController's sidebar "Préstamos" flyout, which is
+             now the only way to switch between these two views. Replaces the old in-page toggle
+             bar (redundant now that the sidebar flyout already offers the same choice), matching
+             the same page-title-card/page-title convention every other section uses (see
+             HistoryView.fxml). -->
+        <HBox styleClass="page-title-card" alignment="CENTER_LEFT">
+            <Label fx:id="lblSectionTitle" text="HISTORIAL DE PRÉSTAMOS" styleClass="page-title"/>
         </HBox>
 
         <StackPane fx:id="dynamicContentArea" VBox.vgrow="ALWAYS">
