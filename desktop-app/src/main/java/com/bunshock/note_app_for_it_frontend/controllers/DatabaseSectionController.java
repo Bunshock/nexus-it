@@ -5,10 +5,12 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import com.bunshock.note_app_for_it_frontend.models.AppConfig;
 import com.bunshock.note_app_for_it_frontend.models.EquipmentBrand;
@@ -90,6 +92,14 @@ public class DatabaseSectionController {
     // permissions (AdminSession.hasPermission(Permission, Integer)).
     private Integer currentStockSedeId;
 
+    // Guards listTypes'/listBrands' own selectedItemProperty listeners (below) while
+    // refreshStockRollupsOnly() re-selects a Type/Brand by id after resorting — that re-selection
+    // targets a freshly-queried object (a different instance than whatever was selected before,
+    // even for "the same" Type/Brand), which would otherwise register as a real selection change
+    // and cascade into refreshBrandsForType()/refreshModelsForBrandType(), wiping the very
+    // listModels state that method exists to preserve during a stock edit.
+    private boolean suppressSelectionListeners = false;
+
     public void initialize() {
         equipmentService = ServiceLocator.getInstance().getEquipmentService();
         loadConnectionDisplay();
@@ -109,11 +119,13 @@ public class DatabaseSectionController {
         refreshProviders();
 
         listTypes.getSelectionModel().selectedItemProperty().addListener((obs, old, sel) -> {
+            if (suppressSelectionListeners) return;
             if (sel != null) refreshBrandsForType(sel.getId());
             else { listBrands.setItems(FXCollections.observableArrayList()); listModels.setItems(FXCollections.observableArrayList()); }
         });
 
         listBrands.getSelectionModel().selectedItemProperty().addListener((obs, old, sel) -> {
+            if (suppressSelectionListeners) return;
             EquipmentType type = listTypes.getSelectionModel().getSelectedItem();
             if (sel != null && type != null) refreshModelsForBrandType(sel.getId(), type.getId());
             else listModels.setItems(FXCollections.observableArrayList());
@@ -320,7 +332,9 @@ public class DatabaseSectionController {
 
     private void refreshTypes() {
         Map<Integer, Integer> stockByType = equipmentService.getStockTotalsByType(currentStockSedeId);
-        listTypes.setItems(FXCollections.observableArrayList(equipmentService.getAllTypes()));
+        List<EquipmentType> types = sortStockFirstThenAlphabetical(
+            equipmentService.getAllTypes(), t -> stockByType.getOrDefault(t.getId(), 0), EquipmentType::getName);
+        listTypes.setItems(FXCollections.observableArrayList(types));
         applyCatalogCellFactory(listTypes, t -> stockByType.getOrDefault(t.getId(), 0));
         listBrands.setItems(FXCollections.observableArrayList());
         listModels.setItems(FXCollections.observableArrayList());
@@ -330,7 +344,9 @@ public class DatabaseSectionController {
     // SqliteEquipmentService.addBrandForType()), so it's synthesized into the list here exactly
     // like ItemDialogController.onTypeSelected() already does for the note-generation Item
     // dialog — otherwise it would only appear for whichever type(s) happen to have a real,
-    // now-vestigial BRAND_TYPE_LINK, and be missing everywhere else.
+    // now-vestigial BRAND_TYPE_LINK, and be missing everywhere else. Its own final position
+    // (last within its stock group) comes from sortStockFirstThenAlphabetical() below, not from
+    // where it's inserted here.
     private void refreshBrandsForType(int typeId) {
         List<EquipmentBrand> brands = new ArrayList<>(equipmentService.getBrandsForType(typeId));
         if (brands.stream().noneMatch(b -> genericLabel().equals(b.getName()))) {
@@ -340,7 +356,9 @@ public class DatabaseSectionController {
                 .ifPresent(brands::add);
         }
         Map<Integer, Integer> stockByBrand = equipmentService.getStockTotalsByBrandForType(typeId, currentStockSedeId);
-        listBrands.setItems(FXCollections.observableArrayList(brands));
+        List<EquipmentBrand> sorted = sortStockFirstThenAlphabetical(
+            brands, b -> stockByBrand.getOrDefault(b.getId(), 0), EquipmentBrand::getName);
+        listBrands.setItems(FXCollections.observableArrayList(sorted));
         applyCatalogCellFactory(listBrands, b -> stockByBrand.getOrDefault(b.getId(), 0));
         listModels.setItems(FXCollections.observableArrayList());
     }
@@ -361,37 +379,95 @@ public class DatabaseSectionController {
         return DEFAULT_GENERIC_LABEL;
     }
 
-    // The global generic model comes back from getModelsForBrandAndType() sorted alphabetically
-    // among the real models (its own SQL just orders everything by name) — move it to the end
-    // here to match the Brand list's own bottom placement above, and the same "generic sits last"
-    // convention ItemDialogController's combo boxes already use.
+    // The global generic model's own final position (last within its stock group) comes from
+    // sortStockFirstThenAlphabetical() below, same as the Brand list above.
     private void refreshModelsForBrandType(int brandId, int typeId) {
-        List<EquipmentModel> models = new ArrayList<>(
-            equipmentService.getModelsForBrandAndType(brandId, typeId));
-        EquipmentModel generic = models.stream()
-            .filter(m -> genericLabel().equals(m.getName()))
-            .findFirst().orElse(null);
-        if (generic != null) {
-            models.remove(generic);
-            models.add(generic);
-        }
+        List<EquipmentModel> models = equipmentService.getModelsForBrandAndType(brandId, typeId);
         Map<Integer, Integer> stockByModel =
             equipmentService.getStockTotalsByModelForBrandAndType(brandId, typeId, currentStockSedeId);
-        listModels.setItems(FXCollections.observableArrayList(models));
+        List<EquipmentModel> sorted = sortStockFirstThenAlphabetical(
+            models, m -> stockByModel.getOrDefault(m.getId(), 0), EquipmentModel::getName);
+        listModels.setItems(FXCollections.observableArrayList(sorted));
         applyCatalogCellFactory(listModels, m -> stockByModel.getOrDefault(m.getId(), 0));
     }
 
-    // A stock edit changes the Type- and Brand-level rollup totals too (they sum every Model
-    // under their scope), but refreshTypes()/refreshBrandsForType() both reset listBrands'/
-    // listModels' items and selection — wrong here, since the technician is mid-browse, not
-    // navigating. Re-applying the cell factory with a freshly-fetched stock Map forces the
-    // existing (unchanged) items to redraw with the new numbers, without touching items/selection.
-    private void refreshStockRollupsOnly(int typeId) {
-        Map<Integer, Integer> stockByType = equipmentService.getStockTotalsByType(currentStockSedeId);
-        applyCatalogCellFactory(listTypes, t -> stockByType.getOrDefault(t.getId(), 0));
+    // Direct user request: every cascading list shows every item with stock > 0 first, then
+    // every item with 0 stock, each group sorted alphabetically (case-insensitive) — not one
+    // flat alphabetical list. Within each of those two groups, the synthesized "Genérico / Otro"
+    // fallback (Brand/Model lists only — genericLabel() never matches a real Type name, so this
+    // is a no-op there) sorts last, per its own pre-existing "generic sits last" convention —
+    // scoped to its own stock group now, confirmed with the user, rather than globally last
+    // across both groups like before.
+    private <T> List<T> sortStockFirstThenAlphabetical(List<T> items, Function<T, Integer> stockLookup,
+            Function<T, String> nameLookup) {
+        Comparator<T> genericLast = Comparator.comparing(
+            item -> genericLabel().equalsIgnoreCase(nameLookup.apply(item)));
+        Comparator<T> alphabetical = Comparator.comparing(item -> nameLookup.apply(item).toLowerCase());
+        Comparator<T> withinGroup = genericLast.thenComparing(alphabetical);
 
-        Map<Integer, Integer> stockByBrand = equipmentService.getStockTotalsByBrandForType(typeId, currentStockSedeId);
-        applyCatalogCellFactory(listBrands, b -> stockByBrand.getOrDefault(b.getId(), 0));
+        List<T> hasStock = items.stream()
+            .filter(item -> stockLookup.apply(item) > 0)
+            .sorted(withinGroup)
+            .collect(Collectors.toList());
+        List<T> zeroStock = items.stream()
+            .filter(item -> stockLookup.apply(item) <= 0)
+            .sorted(withinGroup)
+            .collect(Collectors.toList());
+        hasStock.addAll(zeroStock);
+        return hasStock;
+    }
+
+    // A stock edit changes the Type- and Brand-level rollup totals too (they sum every Model
+    // under their scope), which can move a Type/Brand between the has-stock/zero-stock groups —
+    // direct user report that the lists weren't reordering after a stock edit. Re-sorts and
+    // rebuilds listTypes'/listModels' items (unlike a plain applyCatalogCellFactory() repaint),
+    // but explicitly does NOT touch listModels — that list was already just fully rebuilt by
+    // refreshModelsForBrandType(), called right before this in every caller, and this method has
+    // no reason to touch it a second time.
+    //
+    // Selection is preserved by id, not by object identity: equipmentService.getAllTypes()/
+    // getBrandsForType() return freshly-queried objects each call, so the Type/Brand the
+    // technician had selected before this runs is never the same instance as its post-sort
+    // replacement, even when nothing about it actually changed. Re-selecting it explicitly (by
+    // matching id in the newly-sorted list) is done under suppressSelectionListeners — selecting
+    // a different instance still fires listTypes'/listBrands' own selectedItemProperty listeners,
+    // which would otherwise cascade into refreshBrandsForType()/refreshModelsForBrandType() and
+    // wipe out listModels' state, defeating the whole point of doing this instead of just calling
+    // refreshTypes()/refreshBrandsForType() again.
+    private void refreshStockRollupsOnly(int typeId) {
+        EquipmentType selectedType = listTypes.getSelectionModel().getSelectedItem();
+        EquipmentBrand selectedBrand = listBrands.getSelectionModel().getSelectedItem();
+
+        suppressSelectionListeners = true;
+        try {
+            Map<Integer, Integer> stockByType = equipmentService.getStockTotalsByType(currentStockSedeId);
+            List<EquipmentType> sortedTypes = sortStockFirstThenAlphabetical(
+                equipmentService.getAllTypes(), t -> stockByType.getOrDefault(t.getId(), 0), EquipmentType::getName);
+            listTypes.setItems(FXCollections.observableArrayList(sortedTypes));
+            applyCatalogCellFactory(listTypes, t -> stockByType.getOrDefault(t.getId(), 0));
+            if (selectedType != null) {
+                sortedTypes.stream().filter(t -> t.getId() == selectedType.getId()).findFirst()
+                    .ifPresent(t -> listTypes.getSelectionModel().select(t));
+            }
+
+            List<EquipmentBrand> brands = new ArrayList<>(equipmentService.getBrandsForType(typeId));
+            if (brands.stream().noneMatch(b -> genericLabel().equals(b.getName()))) {
+                equipmentService.getAllBrands().stream()
+                    .filter(b -> genericLabel().equals(b.getName()))
+                    .findFirst().ifPresent(brands::add);
+            }
+            Map<Integer, Integer> stockByBrand = equipmentService.getStockTotalsByBrandForType(typeId, currentStockSedeId);
+            List<EquipmentBrand> sortedBrands = sortStockFirstThenAlphabetical(
+                brands, b -> stockByBrand.getOrDefault(b.getId(), 0), EquipmentBrand::getName);
+            listBrands.setItems(FXCollections.observableArrayList(sortedBrands));
+            applyCatalogCellFactory(listBrands, b -> stockByBrand.getOrDefault(b.getId(), 0));
+            if (selectedBrand != null) {
+                sortedBrands.stream().filter(b -> b.getId() == selectedBrand.getId()).findFirst()
+                    .ifPresent(b -> listBrands.getSelectionModel().select(b));
+            }
+        } finally {
+            suppressSelectionListeners = false;
+        }
     }
 
     private static final String GENERIC_STYLE = "-fx-font-style: italic; -fx-text-fill: #94a3b8;";
