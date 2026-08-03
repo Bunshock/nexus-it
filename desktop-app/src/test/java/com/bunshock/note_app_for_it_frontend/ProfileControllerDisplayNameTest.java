@@ -51,7 +51,6 @@ class ProfileControllerDisplayNameTest {
         setField("txtProfileDni", new TextField());
         setField("txtProfileEmail", new TextField());
         setField("lblProfileStatus", new Label());
-        setField("btnSave", new Button());
         setField("btnRefreshFromAd", new Button());
         setField("txtDisplayName", txtDisplayName);
         setField("lblDisplayNameStatus", new Label());

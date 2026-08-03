@@ -44,7 +44,6 @@
                     <Label fx:id="lblProfileStatus" text="" style="-fx-font-size: 11px;"/>
                     <Region HBox.hgrow="ALWAYS"/>
                     <Button fx:id="btnRefreshFromAd" text="Actualizar Perfil desde AD" onAction="#handleRefreshFromAd" styleClass="button-secondary"/>
-                    <Button fx:id="btnSave" text="Guardar" onAction="#handleSave" styleClass="button-primary" visible="false" managed="false"/>
                 </HBox>
             </children>
         </VBox>

@@ -2,7 +2,6 @@ package com.bunshock.note_app_for_it_frontend.controllers;
 
 import java.util.regex.Pattern;
 
-import com.bunshock.note_app_for_it_frontend.services.AdminSession;
 import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;
 import com.bunshock.note_app_for_it_frontend.services.TechnicianSessionService;
 
@@ -21,23 +20,20 @@ public class ProfileController {
 
     private static final Pattern NAME_PATTERN =
         Pattern.compile("^\\p{L}+( \\p{L}+)*$");
-    private static final Pattern DNI_PATTERN =
-        Pattern.compile("^\\d{7,8}$");
     private static final String ADMIN_HINT_SUFFIX =
-        " Un administrador puede completar estos datos manualmente en modo administrador.";
-
-    private static final Pattern EMAIL_PATTERN =
-        Pattern.compile("^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$");
+        " Contacte a un administrador si estos datos no son correctos en Active Directory.";
 
     @FXML private TextField txtProfileName;
     @FXML private TextField txtProfileUsername;
     @FXML private TextField txtProfileDni;
     @FXML private TextField txtProfileEmail;
     @FXML private Label lblProfileStatus;
-    @FXML private Button btnSave;
     @FXML private Button btnRefreshFromAd;
 
     private static final int DISPLAY_NAME_MAX_LENGTH = 20;
+    // Matches NOTE_REPORT.technician_name's NVARCHAR(255) bound on SQL Server —
+    // this field only restricted character set before, with no length limit.
+    private static final int PROFILE_NAME_MAX_LENGTH = 255;
 
     @FXML private TextField txtDisplayName;
     @FXML private Label lblDisplayNameStatus;
@@ -47,6 +43,7 @@ public class ProfileController {
     public void initialize() {
         txtProfileName.setTextFormatter(new TextFormatter<>(change -> {
             String newText = change.getControlNewText();
+            if (newText.length() > PROFILE_NAME_MAX_LENGTH) return null;
             return newText.isEmpty() || newText.matches("[\\p{L} ]*") ? change : null;
         }));
         txtProfileDni.setTextFormatter(new TextFormatter<>(change -> {
@@ -61,11 +58,8 @@ public class ProfileController {
 
         TechnicianSessionService.getInstance().addOnChangeListener(this::populateFieldsFromSession);
         TechnicianSessionService.getInstance().addOnDisplayNameChangeListener(this::populateDisplayNameField);
-        AdminSession.getInstance().addOnActivateListener(this::updateEditability);
-        AdminSession.getInstance().addOnDeactivateListener(this::updateEditability);
 
         populateFieldsFromSession();
-        updateEditability();
     }
 
     private void populateFieldsFromSession() {
@@ -94,16 +88,6 @@ public class ProfileController {
     // notification, which fired every time either changed.
     private void populateDisplayNameField() {
         txtDisplayName.setText(orEmpty(TechnicianSessionService.getInstance().getDisplayName()));
-    }
-
-    private void updateEditability() {
-        boolean adminActive = AdminSession.getInstance().isActive();
-        txtProfileName.setDisable(!adminActive);
-        txtProfileUsername.setDisable(!adminActive);
-        txtProfileDni.setDisable(!adminActive);
-        txtProfileEmail.setDisable(!adminActive);
-        btnSave.setVisible(adminActive);
-        btnSave.setManaged(adminActive);
     }
 
     // Refreshes name/dni/email from a fresh AD lookup by the already-known username — not a
@@ -141,35 +125,6 @@ public class ProfileController {
         }, "profile-ad-refresh");
         t.setDaemon(true);
         t.start();
-    }
-
-    @FXML
-    private void handleSave() {
-        String name = txtProfileName.getText().trim();
-        String username = txtProfileUsername.getText().trim();
-        String dni = txtProfileDni.getText().trim();
-        String email = txtProfileEmail.getText().trim();
-
-        if (name.isEmpty()) {
-            flashStatus(lblProfileStatus, "El nombre es obligatorio", "#ef4444");
-            return;
-        }
-        if (!NAME_PATTERN.matcher(name).matches()) {
-            flashStatus(lblProfileStatus, "El nombre solo puede contener letras y espacios simples", "#ef4444");
-            return;
-        }
-        if (!dni.isEmpty() && !DNI_PATTERN.matcher(dni).matches()) {
-            flashStatus(lblProfileStatus, "El DNI debe tener 7 u 8 dígitos, sin puntos", "#ef4444");
-            return;
-        }
-        if (!email.isEmpty() && !EMAIL_PATTERN.matcher(email).matches()) {
-            flashStatus(lblProfileStatus, "El email no es válido", "#ef4444");
-            return;
-        }
-
-        // populateFieldsFromSession() (triggered by this call, via the change listener) shows
-        // the "Perfil actualizado" confirmation — no separate status message needed here.
-        TechnicianSessionService.getInstance().applyManualOverride(name, username, email, dni);
     }
 
     @FXML
