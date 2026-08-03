@@ -83,15 +83,154 @@ class DatabaseServiceMigrationTest {
             invokeCreateHistoryTables(stmt);
             invokeMigrateSchema(c, stmt);
 
-            assertTrue(hasColumn(c, "NOTE_ENTREGA_DEVOLUCION", "area_evento"));
+            // area_evento/failure_cause/failure_details never land back on NOTE_ENTREGA_DEVOLUCION
+            // — they're split into
+            // NOTE_PRESTAMO_AREA_EVENTO/NOTE_DEVOLUCION_FALLA instead, same "stop re-adding a
+            // retired column" precedent as NOTE_REPORT.sede below.
+            assertFalse(hasColumn(c, "NOTE_ENTREGA_DEVOLUCION", "area_evento"));
+            assertFalse(hasColumn(c, "NOTE_ENTREGA_DEVOLUCION", "failure_cause"));
+            assertFalse(hasColumn(c, "NOTE_ENTREGA_DEVOLUCION", "failure_details"));
+            assertTrue(tableExists(c, "NOTE_PRESTAMO_AREA_EVENTO"));
+            assertTrue(tableExists(c, "NOTE_DEVOLUCION_FALLA"));
             assertTrue(hasColumn(c, "NOTE_REPORT", "observations"));
-            assertTrue(hasColumn(c, "NOTE_REPORT", "sede"));
+            // sede was dropped (dead column, superseded by sede_id) — never lands on
+            // an existing database anymore, see dropDeadNoteReportColumns() test below.
+            assertFalse(hasColumn(c, "NOTE_REPORT", "sede"));
+            assertTrue(hasColumn(c, "NOTE_REPORT", "approval_status"));
+            // rejection_reason never lands back on NOTE_REPORT either —
+            // split into NOTE_REPORT_REJECTION instead.
+            assertFalse(hasColumn(c, "NOTE_REPORT", "rejection_reason"));
+            assertTrue(tableExists(c, "NOTE_REPORT_REJECTION"));
             // return_status/etc. landed on NOTE_ITEM only transiently — this fixture's NOTE_ITEM
             // already had is_asset, so migrateNoteItemSchema() (called at the end of
             // migrateSchema()) immediately split it into the 5-table shape in the same run;
             // see migrateNoteItemSchemaSplitsWideTableIntoFiveTables() below for that behavior.
             assertFalse(hasColumn(c, "NOTE_ITEM", "return_status"));
             assertTrue(tableExists(c, "NOTE_ITEM_RETURN_TRACKING"));
+        }
+    }
+
+    // sede was confirmed dead (no reader/writer anywhere in the app — superseded by sede_id) and
+    // dropped. glpi_synced is a SQL-Server-only dead column (RemoteDatabaseService.java
+    // never had a SQLite counterpart to begin with — confirmed via grep, DatabaseService.java's
+    // NOTE_REPORT never declared it), so it has no SQLite migration to test here. This reproduces
+    // an installation that already has sede (from an earlier app version) to confirm
+    // migrateSchema() actually drops it, not just skips re-adding it on a fresh install.
+    @Test
+    void migrateSchemaDropsDeadSedeColumnFromAPreExistingDatabase() throws Exception {
+        String url = "jdbc:sqlite:" + tempDir.resolve("dead-columns.db").toAbsolutePath();
+
+        try (Connection c = DriverManager.getConnection(url); Statement stmt = c.createStatement()) {
+            stmt.executeUpdate("""
+                CREATE TABLE NOTE_REPORT (
+                    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                    created_at   TEXT NOT NULL,
+                    profile_type TEXT NOT NULL,
+                    sede         TEXT
+                )""");
+            stmt.executeUpdate("""
+                INSERT INTO NOTE_REPORT (id, created_at, profile_type, sede)
+                VALUES (1, '2026-01-01T10:00', 'ENTREGA', 'Campus Norte')""");
+
+            invokeCreateEquipmentTables(stmt);
+            invokeCreateHistoryTables(stmt);
+            invokeMigrateSchema(c, stmt);
+
+            assertFalse(hasColumn(c, "NOTE_REPORT", "sede"));
+            // dropping the column must not touch unrelated existing rows/columns
+            assertEquals("ENTREGA", singleString(c, "SELECT profile_type FROM NOTE_REPORT WHERE id = 1"));
+        }
+    }
+
+    // rejection_reason used to sit inline on NOTE_REPORT,
+    // nullable on every row and only ever populated once an admin actually rejects a note.
+    // Reproduces an installation that already has a rejected note (rejection_reason populated)
+    // to confirm migrateSchema() actually backfills it into NOTE_REPORT_REJECTION and drops the
+    // column, not just skips re-adding it on a fresh install.
+    @Test
+    void migrateSchemaBackfillsRejectionReasonIntoOwnTableAndDropsColumn() throws Exception {
+        String url = "jdbc:sqlite:" + tempDir.resolve("dead-rejection-reason.db").toAbsolutePath();
+
+        try (Connection c = DriverManager.getConnection(url); Statement stmt = c.createStatement()) {
+            stmt.executeUpdate("""
+                CREATE TABLE NOTE_REPORT (
+                    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                    created_at        TEXT NOT NULL,
+                    profile_type      TEXT NOT NULL,
+                    approval_status   TEXT NOT NULL DEFAULT 'PENDING',
+                    rejection_reason  TEXT
+                )""");
+            stmt.executeUpdate("""
+                INSERT INTO NOTE_REPORT (id, created_at, profile_type, approval_status, rejection_reason)
+                VALUES (1, '2026-01-01T10:00', 'ENTREGA', 'RECHAZADO', 'Tipo de nota incorrecto')""");
+            stmt.executeUpdate("""
+                INSERT INTO NOTE_REPORT (id, created_at, profile_type, approval_status, rejection_reason)
+                VALUES (2, '2026-01-02T10:00', 'ENTREGA', 'PENDING', NULL)""");
+
+            invokeCreateEquipmentTables(stmt);
+            invokeCreateHistoryTables(stmt);
+            invokeMigrateSchema(c, stmt);
+
+            assertFalse(hasColumn(c, "NOTE_REPORT", "rejection_reason"));
+            assertEquals("Tipo de nota incorrecto",
+                singleString(c, "SELECT rejection_reason FROM NOTE_REPORT_REJECTION WHERE note_report_id = 1"));
+            assertFalse(rowExists(c, "SELECT 1 FROM NOTE_REPORT_REJECTION WHERE note_report_id = 2"));
+        }
+    }
+
+    // failure_cause/failure_details/area_evento used to sit
+    // inline on NOTE_ENTREGA_DEVOLUCION, nullable on every row regardless of profile type/motivo.
+    // Reproduces an installation with one Devolución+Falla note and one Préstamo note with an
+    // Área/Evento to confirm migrateSchema() backfills both into their own tables and drops all 3
+    // columns, not just skips re-adding them on a fresh install.
+    @Test
+    void migrateSchemaBackfillsFailureAndAreaEventoIntoOwnTablesAndDropsColumns() throws Exception {
+        String url = "jdbc:sqlite:" + tempDir.resolve("dead-falla-area-evento.db").toAbsolutePath();
+
+        try (Connection c = DriverManager.getConnection(url); Statement stmt = c.createStatement()) {
+            stmt.executeUpdate("""
+                CREATE TABLE NOTE_REPORT (
+                    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                    created_at   TEXT NOT NULL,
+                    profile_type TEXT NOT NULL
+                )""");
+            stmt.executeUpdate("""
+                CREATE TABLE NOTE_ENTREGA_DEVOLUCION (
+                    note_report_id  INTEGER PRIMARY KEY REFERENCES NOTE_REPORT(id),
+                    user_name       TEXT,
+                    user_dni        TEXT,
+                    user_email      TEXT,
+                    motivo          TEXT,
+                    failure_cause   TEXT,
+                    failure_details TEXT,
+                    area_evento     TEXT
+                )""");
+            stmt.executeUpdate("INSERT INTO NOTE_REPORT (id, created_at, profile_type) VALUES (1, '2026-01-01T10:00', 'DEVOLUCIÓN')");
+            stmt.executeUpdate("""
+                INSERT INTO NOTE_ENTREGA_DEVOLUCION (note_report_id, user_name, motivo, failure_cause, failure_details)
+                VALUES (1, 'Ana Diaz', 'Falla', 'No enciende', 'Pantalla no responde')""");
+            stmt.executeUpdate("INSERT INTO NOTE_REPORT (id, created_at, profile_type) VALUES (2, '2026-01-02T10:00', 'PRÉSTAMO')");
+            stmt.executeUpdate("""
+                INSERT INTO NOTE_ENTREGA_DEVOLUCION (note_report_id, user_name, motivo, area_evento)
+                VALUES (2, 'Juan Perez', '01/02/2026', 'Feria de tecnología')""");
+
+            invokeCreateEquipmentTables(stmt);
+            invokeCreateHistoryTables(stmt);
+            invokeMigrateSchema(c, stmt);
+
+            assertFalse(hasColumn(c, "NOTE_ENTREGA_DEVOLUCION", "failure_cause"));
+            assertFalse(hasColumn(c, "NOTE_ENTREGA_DEVOLUCION", "failure_details"));
+            assertFalse(hasColumn(c, "NOTE_ENTREGA_DEVOLUCION", "area_evento"));
+            assertEquals("No enciende",
+                singleString(c, "SELECT failure_cause FROM NOTE_DEVOLUCION_FALLA WHERE note_report_id = 1"));
+            assertEquals("Pantalla no responde",
+                singleString(c, "SELECT failure_details FROM NOTE_DEVOLUCION_FALLA WHERE note_report_id = 1"));
+            assertFalse(rowExists(c, "SELECT 1 FROM NOTE_DEVOLUCION_FALLA WHERE note_report_id = 2"));
+            assertEquals("Feria de tecnología",
+                singleString(c, "SELECT area_evento FROM NOTE_PRESTAMO_AREA_EVENTO WHERE note_report_id = 2"));
+            assertFalse(rowExists(c, "SELECT 1 FROM NOTE_PRESTAMO_AREA_EVENTO WHERE note_report_id = 1"));
+            // dropping the columns must not touch unrelated existing rows/columns
+            assertEquals("Ana Diaz", singleString(c, "SELECT user_name FROM NOTE_ENTREGA_DEVOLUCION WHERE note_report_id = 1"));
         }
     }
 
@@ -185,7 +324,7 @@ class DatabaseServiceMigrationTest {
         }
     }
 
-    // Reproduces a pre-2026-07-23 database: MODEL.brand_type_id still NOT NULL, with a
+    // Reproduces a database from before MODEL.brand_type_id was made nullable, with a
     // duplicate "Genérico / Otro" row on each of two BRAND_TYPE_LINKs, and NOTE_ITEM (already
     // on the post-catalog-FK-redesign shape) pointing at each of them. Verifies
     // migrateGenericModelSchema() relaxes the column, collapses both per-link rows into one
@@ -276,8 +415,8 @@ class DatabaseServiceMigrationTest {
         }
     }
 
-    // A BRAND_TYPE_LINK for the generic brand left over from before 2026-07-23 (when it stopped
-    // needing one) makes getBrandsForType() return it via a real JOIN for that one type — sorted
+    // A BRAND_TYPE_LINK for the generic brand left over from before it stopped
+    // needing one makes getBrandsForType() return it via a real JOIN for that one type — sorted
     // alphabetically among real brands — while every other type only shows it via client-side
     // synthesis (always appended last). cleanupStrayGenericBrandLinks() removes such a link, but
     // only once it has no MODEL rows left under it (they were already consolidated onto the
@@ -310,6 +449,104 @@ class DatabaseServiceMigrationTest {
             invokeCleanupStrayGenericBrandLinks(c);
             assertEquals(1, singleInt(c, "SELECT COUNT(*) FROM BRAND_TYPE_LINK"));
         }
+    }
+
+    @Test
+    void createUserRoleTableCreatesAppUserAndRolePermissionOnABrandNewDatabase() throws Exception {
+        String url = "jdbc:sqlite:" + tempDir.resolve("app-user-new.db").toAbsolutePath();
+        try (Connection c = DriverManager.getConnection(url); Statement stmt = c.createStatement()) {
+            invokeCreateEquipmentTables(stmt);
+            invokeCreateUserRoleTable(stmt);
+
+            assertTrue(tableExists(c, "APP_USER"));
+            assertTrue(tableExists(c, "ROLE_PERMISSION"));
+            assertFalse(tableExists(c, "USER_ROLE"), "the old table name must not exist on a brand-new install");
+
+            // Seeded once, on first creation: ADMIN gets everything except EDIT_SMTP_CONFIG,
+            // SUPERADMIN gets everything.
+            assertTrue(rowExists(c, "SELECT 1 FROM ROLE_PERMISSION WHERE role = 'ADMIN' AND permission = 'MANAGE_TYPES'"));
+            assertFalse(rowExists(c, "SELECT 1 FROM ROLE_PERMISSION WHERE role = 'ADMIN' AND permission = 'EDIT_SMTP_CONFIG'"),
+                "ADMIN must not be seeded with the SUPERADMIN-only SMTP permission");
+            assertTrue(rowExists(c, "SELECT 1 FROM ROLE_PERMISSION WHERE role = 'SUPERADMIN' AND permission = 'EDIT_SMTP_CONFIG'"));
+        }
+    }
+
+    @Test
+    void createUserRoleTableMigratesExistingUserRoleDataAndDropsOldTable() throws Exception {
+        String url = "jdbc:sqlite:" + tempDir.resolve("app-user-migrate.db").toAbsolutePath();
+        try (Connection c = DriverManager.getConnection(url); Statement stmt = c.createStatement()) {
+            invokeCreateEquipmentTables(stmt);
+            // Reproduce a pre-existing installation's old USER_ROLE table, seeded the way a real
+            // admin would via direct SQL.
+            stmt.executeUpdate("""
+                CREATE TABLE USER_ROLE (
+                    username TEXT PRIMARY KEY,
+                    role     TEXT NOT NULL
+                )""");
+            stmt.executeUpdate("INSERT INTO USER_ROLE (username, role) VALUES ('jperez', 'ADMIN')");
+
+            invokeCreateUserRoleTable(stmt);
+
+            assertFalse(tableExists(c, "USER_ROLE"), "the old table must be dropped after migrating");
+            assertEquals("ADMIN", singleString(c, "SELECT role FROM APP_USER WHERE username = 'jperez'"));
+            assertTrue(rowExists(c, "SELECT 1 FROM APP_USER WHERE username = 'jperez' AND sede_id IS NULL"),
+                "a migrated row starts with no Sede assigned — that's a new, separate concept a superadmin must set by hand");
+        }
+    }
+
+    @Test
+    void createUserRoleTableIsIdempotentAndNeverResetsPermissionsAfterFirstCreation() throws Exception {
+        String url = "jdbc:sqlite:" + tempDir.resolve("app-user-idempotent.db").toAbsolutePath();
+        try (Connection c = DriverManager.getConnection(url); Statement stmt = c.createStatement()) {
+            invokeCreateEquipmentTables(stmt);
+            invokeCreateUserRoleTable(stmt);
+
+            // Simulate a superadmin revoking a permission by hand, then simulate the next app
+            // startup re-running this same method — the revocation must survive.
+            stmt.executeUpdate("DELETE FROM ROLE_PERMISSION WHERE role = 'ADMIN' AND permission = 'MANAGE_TYPES'");
+            invokeCreateUserRoleTable(stmt);
+
+            assertFalse(rowExists(c, "SELECT 1 FROM ROLE_PERMISSION WHERE role = 'ADMIN' AND permission = 'MANAGE_TYPES'"),
+                "re-running createUserRoleTable() must not silently re-seed a revoked permission");
+        }
+    }
+
+    @Test
+    void createEquipmentTablesCreatesModelStockTable() throws Exception {
+        String url = "jdbc:sqlite:" + tempDir.resolve("model-stock-table.db").toAbsolutePath();
+        try (Connection c = DriverManager.getConnection(url); Statement stmt = c.createStatement()) {
+            invokeCreateEquipmentTables(stmt);
+            assertTrue(tableExists(c, "MODEL_STOCK"));
+        }
+    }
+
+    // A link with zero MODEL rows can still carry a legitimate MODEL_STOCK row for the global
+    // generic model (stock is tracked per (Type,Brand) usage of it, independent of whether that
+    // usage has any of its own MODEL rows) — cleanupStrayGenericBrandLinks() must not delete it.
+    @Test
+    void cleanupStrayGenericBrandLinksSkipsLinkWithOnlyStockNoModels() throws Exception {
+        String url = "jdbc:sqlite:" + tempDir.resolve("stray-generic-link-with-stock.db").toAbsolutePath();
+
+        try (Connection c = DriverManager.getConnection(url); Statement stmt = c.createStatement()) {
+            invokeCreateEquipmentTables(stmt);
+
+            stmt.executeUpdate("INSERT INTO TYPE (id, name) VALUES (1, 'NOTEBOOK')");
+            stmt.executeUpdate("INSERT INTO BRAND (id, name) VALUES (1, 'Genérico / Otro')");
+            // No MODEL rows under this link at all, but it does carry a stock number — must survive.
+            stmt.executeUpdate("INSERT INTO BRAND_TYPE_LINK (id, type_id, brand_id) VALUES (1, 1, 1)");
+            stmt.executeUpdate("INSERT INTO MODEL_STOCK (brand_type_id, model_id, stock) VALUES (1, 999, 14)");
+
+            invokeCleanupStrayGenericBrandLinks(c);
+
+            assertEquals(1, singleInt(c, "SELECT COUNT(*) FROM BRAND_TYPE_LINK WHERE id = 1"),
+                "a link with a MODEL_STOCK row (even with zero MODEL rows) must survive");
+        }
+    }
+
+    private void invokeCreateUserRoleTable(Statement stmt) throws Exception {
+        Method m = DatabaseService.class.getDeclaredMethod("createUserRoleTable", Statement.class);
+        m.setAccessible(true);
+        m.invoke(DatabaseService.getInstance(), stmt);
     }
 
     private void invokeCleanupStrayGenericBrandLinks(Connection c) throws Exception {
@@ -372,6 +609,12 @@ class DatabaseServiceMigrationTest {
         try (Statement stmt = c.createStatement();
              ResultSet rs = stmt.executeQuery(
                  "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '" + table + "'")) {
+            return rs.next();
+        }
+    }
+
+    private boolean rowExists(Connection c, String sql) throws SQLException {
+        try (Statement stmt = c.createStatement(); ResultSet rs = stmt.executeQuery(sql)) {
             return rs.next();
         }
     }

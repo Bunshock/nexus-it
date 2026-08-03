@@ -21,8 +21,12 @@
 
 BEGIN TRANSACTION;
 
-IF NOT EXISTS (SELECT 1 FROM BRAND WHERE name = 'Generic')
-    INSERT INTO BRAND (name) VALUES ('Generic');
+-- Unlike the local SQLite database, RemoteDatabaseService.ensureSchema() never auto-seeds the
+-- "Genérico / Otro" fallback brand for a fresh remote database (it's only ever populated via
+-- CatalogMigrationTool or manual entry) — this is the one place that does it for a database
+-- provisioned by hand via these scripts instead.
+IF NOT EXISTS (SELECT 1 FROM BRAND WHERE name = N'Genérico / Otro')
+    INSERT INTO BRAND (name) VALUES (N'Genérico / Otro');
 
 CREATE TABLE #_seed_rows (
     type_name       NVARCHAR(255) NOT NULL,

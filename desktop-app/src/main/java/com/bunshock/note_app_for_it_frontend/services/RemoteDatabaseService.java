@@ -152,32 +152,71 @@ public class RemoteDatabaseService {
                     name       NVARCHAR(255) NOT NULL UNIQUE,
                     deprecated INT NOT NULL DEFAULT 0
                 )""");
-            // Login-time role lookup (ADMIN starts admin mode already active) — not the same
-            // thing as AD group membership, which gates app access at all and is checked
-            // against the AD API at login time, not stored here.
-            createTableIfMissing(stmt, "USER_ROLE", """
-                CREATE TABLE USER_ROLE (
-                    username NVARCHAR(100) PRIMARY KEY,
-                    role     NVARCHAR(20) NOT NULL
+            // Mirrors DatabaseService's identical SQLite MODEL_STOCK table — brand_type_id is
+            // stored explicitly (not inferred from model_id) so the single global "Genérico /
+            // Otro" model can carry an independent stock number per (Type,Brand) it's used under.
+            createTableIfMissing(stmt, "MODEL_STOCK", """
+                CREATE TABLE MODEL_STOCK (
+                    brand_type_id INT NOT NULL REFERENCES BRAND_TYPE_LINK(id),
+                    model_id      INT NOT NULL REFERENCES MODEL(id),
+                    stock         INT NOT NULL DEFAULT 0,
+                    CONSTRAINT pk_model_stock PRIMARY KEY (brand_type_id, model_id)
                 )""");
-            // created_at/glpi_status_updated_at/return_status_updated_at are deliberately left as
-            // NVARCHAR(MAX), not bounded — TODO: revisit these as a real DATETIME2 (or Postgres
-            // TIMESTAMP) column once the remote engine choice is confirmed (see 2026-07-20 report
-            // discussion in CLAUDE.md's "Free-text field DB-side length bounds" section). They're
-            // plain ISO-8601 strings today (SqliteHistoryService.java), not yet real date/time
-            // values, and SqliteHistoryService is reused unchanged for both the local SQLite and
-            // remote connections, so this needs a coordinated read/write code change, not just DDL.
+            // Login-time role/sede/permission lookup — not the same thing as AD group
+            // membership, which gates app access at all and is checked against the AD API at
+            // login time, not stored here. Named APP_USER, not USER — USER is a reserved
+            // keyword (a niladic function) in T-SQL.
+            boolean appUserExisted = tableExists(c, "APP_USER");
+            createTableIfMissing(stmt, "APP_USER", """
+                CREATE TABLE APP_USER (
+                    id       INT IDENTITY(1,1) PRIMARY KEY,
+                    username NVARCHAR(100) NOT NULL UNIQUE,
+                    role     NVARCHAR(20) NOT NULL CHECK (role IN ('USER', 'ADMIN', 'SUPERADMIN')),
+                    sede_id  INT REFERENCES SEDE(id)
+                )""");
+            if (!appUserExisted) migrateUserRoleIntoAppUser(stmt, c);
+
+            // A permission not present here is denied — there is no separate "explicitly
+            // denied" state (see models.Permission). Seeded only the first time this table is
+            // created, not on every startup, so a superadmin's later revocation (a DELETE
+            // against this table) isn't silently undone on next launch.
+            boolean rolePermissionExisted = tableExists(c, "ROLE_PERMISSION");
+            createTableIfMissing(stmt, "ROLE_PERMISSION", """
+                CREATE TABLE ROLE_PERMISSION (
+                    role       NVARCHAR(20) NOT NULL CHECK (role IN ('USER', 'ADMIN', 'SUPERADMIN')),
+                    permission NVARCHAR(50) NOT NULL,
+                    CONSTRAINT pk_role_permission PRIMARY KEY (role, permission)
+                )""");
+            if (!rolePermissionExisted) seedDefaultRolePermissions(stmt);
+            // created_at is a real DATETIME2 — see dropDeadNoteReportColumns()/
+            // migrateTimestampColumnsToDatetime2() below for the migration path on an
+            // already-running installation). SqliteHistoryService writes it via plain
+            // setString(LocalDateTime.toString()) on both engines (SQL Server implicitly
+            // converts an ISO-8601 'T'-separated string to DATETIME2 on INSERT/UPDATE — a
+            // documented, locale-independent conversion) and reads it back tolerant of either
+            // engine's getString() rendering (parseStoredTimestamp()), so no write-path change
+            // was needed, only the column type plus a tolerant read.
+            // glpi_synced/sede were both dead (no reader/writer anywhere in the app — sede was
+            // superseded by sede_id, glpi_synced was never wired to anything) — dropped,
+            // see dropDeadNoteReportColumns().
             createTableIfMissing(stmt, "NOTE_REPORT", """
                 CREATE TABLE NOTE_REPORT (
                     id              INT IDENTITY(1,1) PRIMARY KEY,
-                    created_at      NVARCHAR(MAX) NOT NULL,
+                    created_at      DATETIME2 NOT NULL,
                     profile_type    NVARCHAR(255) NOT NULL,
-                    glpi_synced     INT NOT NULL DEFAULT 0,
                     technician_name NVARCHAR(255),
                     technician_dni  NVARCHAR(255),
-                    observations    NVARCHAR(300),
-                    sede            NVARCHAR(255),
-                    sede_id         INT REFERENCES SEDE(id)
+                    observations      NVARCHAR(300),
+                    sede_id           INT REFERENCES SEDE(id),
+                    approval_status   NVARCHAR(20) NOT NULL DEFAULT 'PENDING'
+                )""");
+            // Row exists only for a note an admin has actually rejected — not a NULL sentinel on
+            // every NOTE_REPORT row that's PENDING/APPROVED, see DatabaseService's identical
+            // SQLite table for the full rationale.
+            createTableIfMissing(stmt, "NOTE_REPORT_REJECTION", """
+                CREATE TABLE NOTE_REPORT_REJECTION (
+                    note_report_id   INT PRIMARY KEY REFERENCES NOTE_REPORT(id),
+                    rejection_reason NVARCHAR(300) NOT NULL
                 )""");
             createTableIfMissing(stmt, "NOTE_ENTREGA_DEVOLUCION", """
                 CREATE TABLE NOTE_ENTREGA_DEVOLUCION (
@@ -185,10 +224,24 @@ public class RemoteDatabaseService {
                     user_name       NVARCHAR(255),
                     user_dni        NVARCHAR(255),
                     user_email      NVARCHAR(255),
-                    motivo          NVARCHAR(100),
-                    failure_cause   NVARCHAR(100),
-                    failure_details NVARCHAR(200),
-                    area_evento     NVARCHAR(200)
+                    motivo          NVARCHAR(100)
+                )""");
+            // Row exists only for a Devolución note whose Motivo triggered the Falla popup — not
+            // a NULL sentinel on every ENTREGA_DEVOLUCION row, see DatabaseService's identical
+            // SQLite table for the full rationale.
+            createTableIfMissing(stmt, "NOTE_DEVOLUCION_FALLA", """
+                CREATE TABLE NOTE_DEVOLUCION_FALLA (
+                    note_report_id  INT PRIMARY KEY REFERENCES NOTE_ENTREGA_DEVOLUCION(note_report_id),
+                    failure_cause   NVARCHAR(100) NOT NULL,
+                    failure_details NVARCHAR(200)
+                )""");
+            // Row exists only when a Préstamo note actually captured an Área/Evento (itself
+            // optional even within Préstamo) — not a NULL sentinel on every ENTREGA_DEVOLUCION
+            // row regardless of profile type (same reasoning as above).
+            createTableIfMissing(stmt, "NOTE_PRESTAMO_AREA_EVENTO", """
+                CREATE TABLE NOTE_PRESTAMO_AREA_EVENTO (
+                    note_report_id INT PRIMARY KEY REFERENCES NOTE_ENTREGA_DEVOLUCION(note_report_id),
+                    area_evento    NVARCHAR(200) NOT NULL
                 )""");
             createTableIfMissing(stmt, "NOTE_PROVEEDOR", """
                 CREATE TABLE NOTE_PROVEEDOR (
@@ -231,14 +284,44 @@ public class RemoteDatabaseService {
                     item_id           INT PRIMARY KEY REFERENCES NOTE_ITEM(id),
                     status            NVARCHAR(50) NOT NULL,
                     rejection_reason  NVARCHAR(300),
-                    status_updated_at NVARCHAR(MAX)
+                    status_updated_at DATETIME2
                 )""");
             createTableIfMissing(stmt, "NOTE_ITEM_RETURN_TRACKING", """
                 CREATE TABLE NOTE_ITEM_RETURN_TRACKING (
                     item_id           INT PRIMARY KEY REFERENCES NOTE_ITEM(id),
                     status            NVARCHAR(50) NOT NULL,
                     rejection_reason  NVARCHAR(300),
-                    status_updated_at NVARCHAR(MAX)
+                    status_updated_at DATETIME2
+                )""");
+            // A second, independent GLPI dimension for a returnable Provider note's asset items
+            // only (Provider assets, unlike Préstamo's, get real GLPI tracking). GLPI sync is
+            // one-way/no-revert, so the original sync-out (NOTE_ITEM_GLPI_TRACKING) can never be
+            // "undone" to reflect an item coming back — this table tracks the separate "synced
+            // back into GLPI" event instead. Row absence means not applicable yet; a row is only
+            // created once the item's return is actually validated (RETURNED), seeded PENDING.
+            createTableIfMissing(stmt, "NOTE_ITEM_GLPI_RETURN_TRACKING", """
+                CREATE TABLE NOTE_ITEM_GLPI_RETURN_TRACKING (
+                    item_id           INT PRIMARY KEY REFERENCES NOTE_ITEM(id),
+                    status            NVARCHAR(50) NOT NULL,
+                    rejection_reason  NVARCHAR(300),
+                    status_updated_at DATETIME2
+                )""");
+            // Countable items can be resolved in partial batches over time (e.g. 5 loaned
+            // headsets: 3 returned now, 1 lost later, 1 still pending) — a single status column
+            // can't express that, so each partial action gets its own append-only row here
+            // instead. PENDING is never stored — remaining pending quantity is always
+            // NOTE_ITEM_COUNTABLE.quantity minus the sum of allocations for that item, same "row
+            // absence is the state" convention as every other tracking table in this schema.
+            // Asset items never get a row here (a physical unit isn't divisible) — they stay on
+            // NOTE_ITEM_RETURN_TRACKING.status exactly as before.
+            createTableIfMissing(stmt, "NOTE_ITEM_RETURN_ALLOCATION", """
+                CREATE TABLE NOTE_ITEM_RETURN_ALLOCATION (
+                    id         INT IDENTITY(1,1) PRIMARY KEY,
+                    item_id    INT NOT NULL REFERENCES NOTE_ITEM(id),
+                    status     NVARCHAR(50) NOT NULL,
+                    quantity   INT NOT NULL,
+                    reason     NVARCHAR(300),
+                    updated_at DATETIME2 NOT NULL
                 )""");
 
             // CREATE TABLE ... only-if-missing (above) silently no-ops on a database that already
@@ -253,8 +336,11 @@ public class RemoteDatabaseService {
                 // databases keep today's behavior instead of silently losing the rule.
                 stmt.executeUpdate("UPDATE TYPE SET requires_serial = 1 WHERE LOWER(name) = 'notebook'");
             }
-            addColumnIfMissing(stmt, c, "NOTE_ENTREGA_DEVOLUCION", "failure_cause", "NVARCHAR(100)");
-            addColumnIfMissing(stmt, c, "NOTE_ENTREGA_DEVOLUCION", "failure_details", "NVARCHAR(200)");
+            // failure_cause/failure_details (the old, already-released columns) are deliberately
+            // NOT re-added here — they're dead going forward, split into
+            // NOTE_DEVOLUCION_FALLA/NOTE_PRESTAMO_AREA_EVENTO instead (see
+            // migrateEntregaDevolucionSplitSchema() below), same "stop re-adding a retired
+            // column" precedent as NOTE_REPORT.sede.
             addColumnIfMissing(stmt, c, "NOTE_PROVEEDOR", "responsible_name", "NVARCHAR(255)");
             addColumnIfMissing(stmt, c, "NOTE_PROVEEDOR", "responsible_dni", "NVARCHAR(255)");
             addColumnIfMissing(stmt, c, "NOTE_REPORT", "technician_name", "NVARCHAR(255)");
@@ -275,11 +361,19 @@ public class RemoteDatabaseService {
                 addColumnIfMissing(stmt, c, "NOTE_ITEM", "return_rejection_reason", "NVARCHAR(300)");
                 addColumnIfMissing(stmt, c, "NOTE_ITEM", "return_status_updated_at", "NVARCHAR(MAX)");
             }
-            addColumnIfMissing(stmt, c, "NOTE_ENTREGA_DEVOLUCION", "area_evento", "NVARCHAR(200)");
+            // area_evento (the old, already-released column) is deliberately NOT re-added here —
+            // see the failure_cause/failure_details comment above; same reasoning.
             addColumnIfMissing(stmt, c, "NOTE_REPORT", "observations", "NVARCHAR(300)");
-            addColumnIfMissing(stmt, c, "NOTE_REPORT", "sede", "NVARCHAR(255)");
             addColumnIfMissing(stmt, c, "NOTE_REPORT", "sede_id", "INT REFERENCES SEDE(id)");
             migrateSedeIdSchema(stmt, c);
+            addColumnIfMissing(stmt, c, "NOTE_REPORT", "approval_status", "NVARCHAR(20) NOT NULL DEFAULT 'PENDING'");
+            // rejection_reason is deliberately NOT re-added here — see
+            // migrateRejectionReasonSchema() below, same "stop re-adding a retired column"
+            // precedent as NOTE_REPORT.sede.
+            dropDeadNoteReportColumns(stmt, c);
+            migrateRejectionReasonSchema(stmt, c);
+            migrateEntregaDevolucionSplitSchema(stmt, c);
+            migrateTimestampColumnsToDatetime2(stmt, c);
 
             if (noteItemStillWide) {
                 migrateNoteItemSchema(stmt, c);
@@ -300,22 +394,23 @@ public class RemoteDatabaseService {
 
             // Narrow any of the above columns that a pre-existing installation already created as
             // NVARCHAR(MAX) (either via an older CREATE TABLE or an older ADD COLUMN call above,
-            // before these bounds existed) down to the new, real length limit — added 2026-07-20.
+            // before these bounds existed) down to the new, real length limit.
             // Both createTableIfMissing and addColumnIfMissing above already declare the bounded
             // type directly for a brand-new install/column, so this only ever does real work on an
             // already-running remote database.
             narrowNvarcharIfNeeded(stmt, c, "SN_VALIDATION", "regex_pattern", 500);
             narrowNvarcharIfNeeded(stmt, c, "NOTE_REPORT", "observations", 300);
             narrowNvarcharIfNeeded(stmt, c, "NOTE_ENTREGA_DEVOLUCION", "motivo", 100);
-            narrowNvarcharIfNeeded(stmt, c, "NOTE_ENTREGA_DEVOLUCION", "failure_cause", 100);
-            narrowNvarcharIfNeeded(stmt, c, "NOTE_ENTREGA_DEVOLUCION", "failure_details", 200);
-            narrowNvarcharIfNeeded(stmt, c, "NOTE_ENTREGA_DEVOLUCION", "area_evento", 200);
             narrowNvarcharIfNeeded(stmt, c, "NOTE_PROVEEDOR", "motivo", 100);
             narrowNvarcharIfNeeded(stmt, c, "NOTE_ITEM", "observations", 200);
             // glpi_rejection_reason/return_rejection_reason used to live on NOTE_ITEM itself and
             // were narrowed here; they now live on NOTE_ITEM_GLPI_TRACKING/NOTE_ITEM_RETURN_TRACKING
             // (see migrateNoteItemSchema()), created with the NVARCHAR(300) bound from the start —
-            // nothing left to narrow on this table for either column.
+            // nothing left to narrow on this table for either column. Same reasoning for
+            // failure_cause/failure_details/area_evento/rejection_reason (split into
+            // NOTE_DEVOLUCION_FALLA/NOTE_PRESTAMO_AREA_EVENTO/NOTE_REPORT_REJECTION) — each new
+            // table is only ever created with its bounded NVARCHAR(n) type from the start, so
+            // there's nothing pre-existing on it to narrow.
         }
     }
 
@@ -497,6 +592,17 @@ public class RemoteDatabaseService {
                     if (rs.getInt(1) > 0) continue;
                 }
             }
+            // A link with zero MODEL rows can still carry a legitimate MODEL_STOCK row for the
+            // global generic model — deleting the link here would silently drop that stock
+            // number on next startup. See DatabaseService's identical check for the full reasoning.
+            try (PreparedStatement count = c.prepareStatement(
+                    "SELECT COUNT(*) FROM MODEL_STOCK WHERE brand_type_id = ?")) {
+                count.setInt(1, linkId);
+                try (ResultSet rs = count.executeQuery()) {
+                    rs.next();
+                    if (rs.getInt(1) > 0) continue;
+                }
+            }
             try (PreparedStatement del = c.prepareStatement("DELETE FROM BRAND_TYPE_LINK WHERE id = ?")) {
                 del.setInt(1, linkId);
                 del.executeUpdate();
@@ -626,6 +732,7 @@ public class RemoteDatabaseService {
     // the full rationale (why backfilled rows are left active, not deprecated, unlike the
     // NOTE_ITEM/NOTE_PROVEEDOR catalog-FK backfill).
     private void migrateSedeIdSchema(Statement stmt, Connection c) throws SQLException {
+        if (!columnExists(c, "NOTE_REPORT", "sede")) return;
         Map<String, Integer> sedeCache = new HashMap<>();
         List<Integer> reportIds = new ArrayList<>();
         List<String> sedeTexts = new ArrayList<>();
@@ -644,6 +751,32 @@ public class RemoteDatabaseService {
                 up.setInt(2, reportIds.get(i));
                 up.executeUpdate();
             }
+        }
+    }
+
+    // Carries existing role assignments forward onto the new surrogate-keyed table; sede_id
+    // starts NULL for every migrated row (Sede assignment is a new, separate concept — a
+    // superadmin must assign it by hand afterward, same as for a brand-new user).
+    private void migrateUserRoleIntoAppUser(Statement stmt, Connection c) throws SQLException {
+        if (!tableExists(c, "USER_ROLE")) return;
+        stmt.executeUpdate("""
+            INSERT INTO APP_USER (username, role, sede_id)
+            SELECT username, role, NULL FROM USER_ROLE u
+            WHERE NOT EXISTS (SELECT 1 FROM APP_USER a WHERE a.username = u.username)
+            """);
+        stmt.executeUpdate("DROP TABLE USER_ROLE");
+    }
+
+    // Matches today's status quo: ADMIN could already do everything except the newly-introduced
+    // EDIT_SMTP_CONFIG; SUPERADMIN gets everything including that. Enumerated from the
+    // Permission enum itself (not hand-typed strings) so this can't drift out of sync with it.
+    private void seedDefaultRolePermissions(Statement stmt) throws SQLException {
+        for (com.bunshock.note_app_for_it_frontend.models.Permission p
+                : com.bunshock.note_app_for_it_frontend.models.Permission.values()) {
+            if (p != com.bunshock.note_app_for_it_frontend.models.Permission.EDIT_SMTP_CONFIG) {
+                stmt.executeUpdate("INSERT INTO ROLE_PERMISSION (role, permission) VALUES ('ADMIN', '" + p.name() + "')");
+            }
+            stmt.executeUpdate("INSERT INTO ROLE_PERMISSION (role, permission) VALUES ('SUPERADMIN', '" + p.name() + "')");
         }
     }
 
@@ -841,6 +974,129 @@ public class RemoteDatabaseService {
             ps.setString(2, column.toLowerCase());
             try (ResultSet rs = ps.executeQuery()) {
                 return rs.next() ? rs.getInt(1) : null;
+            }
+        }
+    }
+
+    // glpi_synced/sede on NOTE_REPORT were both confirmed dead (no reader/writer anywhere in the
+    // app — sede was superseded by sede_id, glpi_synced was never wired to anything). A brand-new
+    // install never creates either column (see the CREATE TABLE above); this only fires on an
+    // already-running installation that still has one or both. Wrapped in try/catch per the
+    // existing "fail safely, don't block startup" convention used by narrowNvarcharIfNeeded()
+    // above — an installation with unexpected constraints on either column just keeps them until
+    // an admin investigates, rather than failing ensureSchema() outright.
+    private void dropDeadNoteReportColumns(Statement stmt, Connection c) throws SQLException {
+        if (columnExists(c, "NOTE_REPORT", "glpi_synced")) {
+            try {
+                dropDefaultConstraintIfAny(stmt, c, "NOTE_REPORT", "glpi_synced");
+                stmt.executeUpdate("ALTER TABLE NOTE_REPORT DROP COLUMN glpi_synced");
+            } catch (SQLException ignored) {
+                // leave it for next startup to retry
+            }
+        }
+        if (columnExists(c, "NOTE_REPORT", "sede")) {
+            try {
+                stmt.executeUpdate("ALTER TABLE NOTE_REPORT DROP COLUMN sede");
+            } catch (SQLException ignored) {
+                // leave it for next startup to retry
+            }
+        }
+    }
+
+    // SQL Server mirror of DatabaseService.migrateRejectionReasonSchema() — see that method's
+    // Javadoc for the full rationale. T-SQL has no INSERT OR IGNORE, so a NOT EXISTS guard makes
+    // the backfill safely re-runnable if the DROP COLUMN below fails partway and this method
+    // retries on next startup with the column still present.
+    private void migrateRejectionReasonSchema(Statement stmt, Connection c) throws SQLException {
+        if (!columnExists(c, "NOTE_REPORT", "rejection_reason")) return;
+        stmt.executeUpdate("""
+            INSERT INTO NOTE_REPORT_REJECTION (note_report_id, rejection_reason)
+            SELECT r.id, r.rejection_reason FROM NOTE_REPORT r
+            WHERE r.rejection_reason IS NOT NULL AND LTRIM(RTRIM(r.rejection_reason)) <> ''
+            AND NOT EXISTS (SELECT 1 FROM NOTE_REPORT_REJECTION WHERE note_report_id = r.id)
+            """);
+        try {
+            stmt.executeUpdate("ALTER TABLE NOTE_REPORT DROP COLUMN rejection_reason");
+        } catch (SQLException ignored) {
+            // leave it for next startup to retry
+        }
+    }
+
+    // SQL Server mirror of DatabaseService.migrateEntregaDevolucionSplitSchema() — see that
+    // method's Javadoc for the full rationale.
+    private void migrateEntregaDevolucionSplitSchema(Statement stmt, Connection c) throws SQLException {
+        boolean hasFailureCause = columnExists(c, "NOTE_ENTREGA_DEVOLUCION", "failure_cause");
+        boolean hasAreaEvento = columnExists(c, "NOTE_ENTREGA_DEVOLUCION", "area_evento");
+
+        if (hasFailureCause) {
+            stmt.executeUpdate("""
+                INSERT INTO NOTE_DEVOLUCION_FALLA (note_report_id, failure_cause, failure_details)
+                SELECT e.note_report_id, e.failure_cause, e.failure_details FROM NOTE_ENTREGA_DEVOLUCION e
+                WHERE e.failure_cause IS NOT NULL AND LTRIM(RTRIM(e.failure_cause)) <> ''
+                AND NOT EXISTS (SELECT 1 FROM NOTE_DEVOLUCION_FALLA WHERE note_report_id = e.note_report_id)
+                """);
+            try {
+                stmt.executeUpdate("ALTER TABLE NOTE_ENTREGA_DEVOLUCION DROP COLUMN failure_cause");
+            } catch (SQLException ignored) {
+                // leave it for next startup to retry
+            }
+        }
+        if (columnExists(c, "NOTE_ENTREGA_DEVOLUCION", "failure_details")) {
+            try {
+                stmt.executeUpdate("ALTER TABLE NOTE_ENTREGA_DEVOLUCION DROP COLUMN failure_details");
+            } catch (SQLException ignored) {
+                // leave it for next startup to retry
+            }
+        }
+        if (hasAreaEvento) {
+            stmt.executeUpdate("""
+                INSERT INTO NOTE_PRESTAMO_AREA_EVENTO (note_report_id, area_evento)
+                SELECT e.note_report_id, e.area_evento FROM NOTE_ENTREGA_DEVOLUCION e
+                WHERE e.area_evento IS NOT NULL AND LTRIM(RTRIM(e.area_evento)) <> ''
+                AND NOT EXISTS (SELECT 1 FROM NOTE_PRESTAMO_AREA_EVENTO WHERE note_report_id = e.note_report_id)
+                """);
+            try {
+                stmt.executeUpdate("ALTER TABLE NOTE_ENTREGA_DEVOLUCION DROP COLUMN area_evento");
+            } catch (SQLException ignored) {
+                // leave it for next startup to retry
+            }
+        }
+    }
+
+    // Promotes created_at/status_updated_at from the old NVARCHAR(MAX) ISO-8601-text shape to a
+    // real DATETIME2 column. A brand-new install never needs this — the CREATE TABLE
+    // blocks above already declare DATETIME2 directly. SQL Server implicitly converts an
+    // ISO-8601 'T'-separated string (exactly what SqliteHistoryService has always written via
+    // setString(LocalDateTime.toString())) to DATETIME2 on ALTER COLUMN, so no data
+    // transformation is needed first — only guarded by a swallowed try/catch in case an
+    // installation somehow has a non-ISO value already stored, matching the same "fail safely"
+    // precedent as narrowNvarcharIfNeeded() above.
+    private void migrateTimestampColumnsToDatetime2(Statement stmt, Connection c) throws SQLException {
+        alterToDatetime2IfNeeded(stmt, c, "NOTE_REPORT", "created_at");
+        alterToDatetime2IfNeeded(stmt, c, "NOTE_ITEM_GLPI_TRACKING", "status_updated_at");
+        alterToDatetime2IfNeeded(stmt, c, "NOTE_ITEM_RETURN_TRACKING", "status_updated_at");
+    }
+
+    private void alterToDatetime2IfNeeded(Statement stmt, Connection c, String table, String column)
+            throws SQLException {
+        if (!columnExists(c, table, column) || isAlreadyDatetime2(c, table, column)) return;
+        try {
+            stmt.executeUpdate("ALTER TABLE " + table + " ALTER COLUMN " + column + " DATETIME2");
+        } catch (SQLException nonConvertibleExistingData) {
+            // leave it as-is for an admin to investigate — SqliteHistoryService's tolerant
+            // parseStoredTimestamp()/normalizeTimestampString() still work against the old
+            // NVARCHAR(MAX) shape in the meantime.
+        }
+    }
+
+    private boolean isAlreadyDatetime2(Connection c, String table, String column) throws SQLException {
+        try (PreparedStatement ps = c.prepareStatement(
+                "SELECT DATA_TYPE FROM information_schema.columns " +
+                "WHERE lower(table_name) = ? AND lower(column_name) = ?")) {
+            ps.setString(1, table.toLowerCase());
+            ps.setString(2, column.toLowerCase());
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() && "datetime2".equalsIgnoreCase(rs.getString(1));
             }
         }
     }

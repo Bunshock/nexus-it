@@ -87,6 +87,7 @@ public class CatalogMigrationTool {
                 Map<Integer, Integer> brandIds = migrateBrands(sqlite, remoteConn);
                 Map<Integer, Integer> linkIds = migrateBrandTypeLinks(sqlite, remoteConn, typeIds, brandIds);
                 Map<Integer, Integer> modelIds = migrateModels(sqlite, remoteConn, linkIds);
+                migrateModelStock(sqlite, remoteConn, linkIds, modelIds);
                 migrateSnValidations(sqlite, remoteConn, modelIds);
                 migrateProviders(sqlite, remoteConn);
                 remoteConn.commit();
@@ -296,6 +297,56 @@ public class CatalogMigrationTool {
             System.out.println("Models: " + count + " migrated.");
         }
         return idMap;
+    }
+
+    // Same check-then-insert-or-update shape as every other migrate*() method — matched on the
+    // remapped (brand_type_id, model_id) pair itself, since that's MODEL_STOCK's own PK.
+    static void migrateModelStock(Connection sqlite, Connection remote,
+            Map<Integer, Integer> linkIds, Map<Integer, Integer> modelIds) throws SQLException {
+        try (Statement s = sqlite.createStatement();
+             ResultSet rs = s.executeQuery("SELECT brand_type_id, model_id, stock FROM MODEL_STOCK")) {
+            int count = 0;
+            while (rs.next()) {
+                int oldLinkId = rs.getInt("brand_type_id");
+                int oldModelId = rs.getInt("model_id");
+                Integer newLinkId = linkIds.get(oldLinkId);
+                Integer newModelId = modelIds.get(oldModelId);
+                if (newLinkId == null || newModelId == null) {
+                    System.err.println("Skipping MODEL_STOCK (brand_type_id=" + oldLinkId
+                        + ", model_id=" + oldModelId + ") — its link or model wasn't migrated.");
+                    continue;
+                }
+                int stock = rs.getInt("stock");
+                Integer existing;
+                try (PreparedStatement sel = remote.prepareStatement(
+                        "SELECT stock FROM MODEL_STOCK WHERE brand_type_id = ? AND model_id = ?")) {
+                    sel.setInt(1, newLinkId);
+                    sel.setInt(2, newModelId);
+                    try (ResultSet found = sel.executeQuery()) {
+                        existing = found.next() ? found.getInt(1) : null;
+                    }
+                }
+                if (existing != null) {
+                    try (PreparedStatement up = remote.prepareStatement(
+                            "UPDATE MODEL_STOCK SET stock = ? WHERE brand_type_id = ? AND model_id = ?")) {
+                        up.setInt(1, stock);
+                        up.setInt(2, newLinkId);
+                        up.setInt(3, newModelId);
+                        up.executeUpdate();
+                    }
+                } else {
+                    try (PreparedStatement ins = remote.prepareStatement(
+                            "INSERT INTO MODEL_STOCK (brand_type_id, model_id, stock) VALUES (?, ?, ?)")) {
+                        ins.setInt(1, newLinkId);
+                        ins.setInt(2, newModelId);
+                        ins.setInt(3, stock);
+                        ins.executeUpdate();
+                    }
+                }
+                count++;
+            }
+            System.out.println("Model stock rows: " + count + " migrated.");
+        }
     }
 
     static void migrateSnValidations(Connection sqlite, Connection remote,

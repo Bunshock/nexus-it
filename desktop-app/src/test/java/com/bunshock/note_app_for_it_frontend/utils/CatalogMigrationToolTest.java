@@ -101,6 +101,13 @@ class CatalogMigrationToolTest {
                     name TEXT NOT NULL UNIQUE,
                     deprecated INTEGER NOT NULL DEFAULT 0
                 )""");
+            s.executeUpdate("""
+                CREATE TABLE MODEL_STOCK (
+                    brand_type_id INTEGER NOT NULL REFERENCES BRAND_TYPE_LINK(id),
+                    model_id      INTEGER NOT NULL REFERENCES MODEL(id),
+                    stock         INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY (brand_type_id, model_id)
+                )""");
         }
     }
 
@@ -244,6 +251,58 @@ class CatalogMigrationToolTest {
         Map<Integer, Integer> linkIds = CatalogMigrationTool.migrateBrandTypeLinks(source, target, typeIds, brandIds);
 
         assertTrue(linkIds.isEmpty(), "The orphaned link should be skipped, not fail the whole migration");
+    }
+
+    @Test
+    void migratesModelStockWithRemappedIds() throws SQLException {
+        seedSourceCatalog();
+        try (Statement s = source.createStatement()) {
+            s.executeUpdate("INSERT INTO MODEL_STOCK (brand_type_id, model_id, stock) VALUES (1, 1, 14)");
+        }
+
+        Map<Integer, Integer> typeIds = CatalogMigrationTool.migrateTypes(source, target);
+        Map<Integer, Integer> brandIds = CatalogMigrationTool.migrateBrands(source, target);
+        Map<Integer, Integer> linkIds = CatalogMigrationTool.migrateBrandTypeLinks(source, target, typeIds, brandIds);
+        Map<Integer, Integer> modelIds = CatalogMigrationTool.migrateModels(source, target, linkIds);
+        CatalogMigrationTool.migrateModelStock(source, target, linkIds, modelIds);
+
+        try (Statement s = target.createStatement();
+             ResultSet rs = s.executeQuery(
+                 "SELECT stock FROM MODEL_STOCK WHERE brand_type_id = " + linkIds.get(1)
+                     + " AND model_id = " + modelIds.get(1))) {
+            assertTrue(rs.next(), "stock row must land on the remapped (link, model) id pair");
+            assertEquals(14, rs.getInt("stock"));
+        }
+
+        // Re-run: same source, no new data — stock should update in place, not duplicate.
+        CatalogMigrationTool.migrateModelStock(source, target, linkIds, modelIds);
+        try (Statement s = target.createStatement();
+             ResultSet rs = s.executeQuery("SELECT COUNT(*) FROM MODEL_STOCK")) {
+            rs.next();
+            assertEquals(1, rs.getInt(1));
+        }
+    }
+
+    @Test
+    void migrateModelStockSkipsRowsWhoseLinkOrModelWasNotMigrated() throws SQLException {
+        seedSourceCatalog();
+        try (Statement s = source.createStatement()) {
+            // References model_id=99, which was never migrated — a data-integrity gap, same
+            // convention as skipsOrphanedLinkWhenParentWasNotMigrated above.
+            s.executeUpdate("INSERT INTO MODEL_STOCK (brand_type_id, model_id, stock) VALUES (1, 99, 5)");
+        }
+
+        Map<Integer, Integer> typeIds = CatalogMigrationTool.migrateTypes(source, target);
+        Map<Integer, Integer> brandIds = CatalogMigrationTool.migrateBrands(source, target);
+        Map<Integer, Integer> linkIds = CatalogMigrationTool.migrateBrandTypeLinks(source, target, typeIds, brandIds);
+        Map<Integer, Integer> modelIds = CatalogMigrationTool.migrateModels(source, target, linkIds);
+        CatalogMigrationTool.migrateModelStock(source, target, linkIds, modelIds);
+
+        try (Statement s = target.createStatement();
+             ResultSet rs = s.executeQuery("SELECT COUNT(*) FROM MODEL_STOCK")) {
+            rs.next();
+            assertEquals(0, rs.getInt(1), "the orphaned stock row should be skipped, not fail the migration");
+        }
     }
 
     private String nameOf(Connection c, String table, int id) throws SQLException {

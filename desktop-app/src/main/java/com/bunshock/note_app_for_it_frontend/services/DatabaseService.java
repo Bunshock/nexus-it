@@ -48,13 +48,15 @@ public class DatabaseService {
     // table from an older schema version, so newly added columns never land on disk —
     // each column added after the initial release must be migrated in here too.
     private void migrateSchema(Connection conn, Statement stmt) throws SQLException {
-        addColumnIfMissing(stmt, "NOTE_ENTREGA_DEVOLUCION", "failure_cause", "TEXT");
-        addColumnIfMissing(stmt, "NOTE_ENTREGA_DEVOLUCION", "failure_details", "TEXT");
+        // failure_cause/failure_details/area_evento (the old, already-released columns) are
+        // deliberately NOT re-added here — they're dead going forward, split into
+        // NOTE_DEVOLUCION_FALLA/NOTE_PRESTAMO_AREA_EVENTO instead (see
+        // migrateEntregaDevolucionSplitSchema() below), same "stop re-adding a retired column"
+        // precedent as NOTE_REPORT.sede elsewhere in this method.
         addColumnIfMissing(stmt, "NOTE_PROVEEDOR", "responsible_name", "TEXT");
         addColumnIfMissing(stmt, "NOTE_PROVEEDOR", "responsible_dni", "TEXT");
         addColumnIfMissing(stmt, "NOTE_REPORT", "technician_name", "TEXT");
         addColumnIfMissing(stmt, "NOTE_REPORT", "technician_dni", "TEXT");
-        addColumnIfMissing(stmt, "NOTE_ENTREGA_DEVOLUCION", "area_evento", "TEXT");
         // Only relevant to a database still on the old wide NOTE_ITEM shape (is_asset present) —
         // on a brand-new install NOTE_ITEM is already the slim shape from createHistoryTables(),
         // and these columns must NOT be re-added there just because they're "missing"; walking a
@@ -66,9 +68,18 @@ public class DatabaseService {
             addColumnIfMissing(stmt, "NOTE_ITEM", "return_status_updated_at", "TEXT");
         }
         addColumnIfMissing(stmt, "NOTE_REPORT", "observations", "TEXT");
-        addColumnIfMissing(stmt, "NOTE_REPORT", "sede", "TEXT");
+        // "sede" (the old free-text column) is deliberately NOT re-added here — it's dead going
+        // forward (see dropDeadNoteReportColumns() below); addColumnIfMissing(..., "sede", ...)
+        // used to run unconditionally, which would have silently reintroduced the column on a
+        // brand-new install even after it was removed from createHistoryTables()'s CREATE TABLE.
         addColumnIfMissing(stmt, "NOTE_REPORT", "sede_id", "INTEGER REFERENCES SEDE(id)");
         migrateSedeIdSchema(conn, stmt);
+        addColumnIfMissing(stmt, "NOTE_REPORT", "approval_status", "TEXT NOT NULL DEFAULT 'PENDING'");
+        // rejection_reason is deliberately NOT re-added here — see migrateRejectionReasonSchema()
+        // below, same "stop re-adding a retired column" precedent as NOTE_REPORT.sede.
+        dropDeadNoteReportColumns(conn, stmt);
+        migrateRejectionReasonSchema(conn, stmt);
+        migrateEntregaDevolucionSplitSchema(conn, stmt);
 
         // Column just introduced — backfill the type that used to be hardcoded as
         // "always requires S/N" (ItemDialogController's old "Notebook".equals(...) check)
@@ -103,9 +114,9 @@ public class DatabaseService {
         cleanupStrayGenericBrandLinks(conn);
     }
 
-    // Before 2026-07-23, ItemDialogController lazily created a real BRAND_TYPE_LINK the first
-    // time a technician picked the global generic brand for a given type — vestigial now that
-    // the generic brand is offered for every type via client-side synthesis instead
+    // ItemDialogController used to lazily create a real BRAND_TYPE_LINK the first time a
+    // technician picked the global generic brand for a given type — vestigial now that the
+    // generic brand is offered for every type via client-side synthesis instead
     // (ItemDialogController.onTypeSelected(), DatabaseSectionController.refreshBrandsForType()).
     // A surviving link isn't just clutter: it makes getBrandsForType() return the generic brand
     // via its real JOIN for *that one type* (sorted alphabetically among real brands), while
@@ -140,6 +151,18 @@ public class DatabaseService {
         for (int linkId : linkIds) {
             try (PreparedStatement count = conn.prepareStatement(
                     "SELECT COUNT(*) FROM MODEL WHERE brand_type_id = ?")) {
+                count.setInt(1, linkId);
+                try (ResultSet rs = count.executeQuery()) {
+                    rs.next();
+                    if (rs.getInt(1) > 0) continue;
+                }
+            }
+            // A link with zero MODEL rows can still carry a legitimate MODEL_STOCK row for the
+            // global generic model (stock is tracked per (Type,Brand) usage, independent of
+            // whether that usage has any of its own MODEL rows) — deleting the link here would
+            // silently drop that stock number on next startup.
+            try (PreparedStatement count = conn.prepareStatement(
+                    "SELECT COUNT(*) FROM MODEL_STOCK WHERE brand_type_id = ?")) {
                 count.setInt(1, linkId);
                 try (ResultSet rs = count.executeQuery()) {
                     rs.next();
@@ -300,6 +323,14 @@ public class DatabaseService {
                 if (column.equalsIgnoreCase(rs.getString("name"))) return true;
             }
             return false;
+        }
+    }
+
+    private boolean tableExists(Connection conn, String table) throws SQLException {
+        try (Statement s = conn.createStatement();
+             java.sql.ResultSet rs = s.executeQuery(
+                 "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '" + table + "'")) {
+            return rs.next();
         }
     }
 
@@ -556,8 +587,8 @@ public class DatabaseService {
     }
 
     /**
-     * NOTE_REPORT.sede used to be a plain free-text snapshot; sede_id (added 2026-07-24) is a
-     * real FK into the new SEDE catalog table, mirroring the earlier TYPE/BRAND/MODEL/PROVIDER
+     * NOTE_REPORT.sede used to be a plain free-text snapshot; sede_id is a
+     * real FK into the SEDE catalog table, mirroring the earlier TYPE/BRAND/MODEL/PROVIDER
      * catalog-FK redesign, so Sede can be renamed via the same deprecate/reactivate mechanism
      * without corrupting how old notes render. Backfills every existing row's free-text sede
      * into a matching (or newly created) SEDE row, resolved case-insensitively via the same
@@ -566,12 +597,19 @@ public class DatabaseService {
      * SEDE has no pre-existing admin-curated catalog to fall back on (it's a brand-new table),
      * so marking every backfilled row deprecated would leave the Settings combobox with zero
      * selectable options, blocking every technician from generating a note until an admin
-     * manually reactivated each one. The old sede TEXT column is deliberately left in place,
-     * unused — same "leave the old column, migrate forward" precedent already used for
-     * TECHNICIAN_PROFILE/NOTE_REPORT.technician_id (no DROP COLUMN here either). Naturally
-     * idempotent (only ever selects rows still missing sede_id) — safe to run every startup.
+     * manually reactivated each one. Unlike the TECHNICIAN_PROFILE/NOTE_REPORT.technician_id
+     * precedent (left in place, unused), the old sede TEXT column is actively dropped once
+     * backfilled, by dropDeadNoteReportColumns() below — a DB-admin schema review flagged it as
+     * dead weight on brand-new installs too (unlike TECHNICIAN_PROFILE, which was already absent
+     * from CREATE TABLE by that point).
+     * Naturally idempotent (only ever selects rows still missing sede_id) — safe to run every
+     * startup. Guarded against a database that never had (or no longer has) the sede column at
+     * all — a brand-new install's NOTE_REPORT never gets one, so the backfill SELECT below must
+     * not assume it exists.
      */
     private void migrateSedeIdSchema(Connection conn, Statement stmt) throws SQLException {
+        if (!columnExists(conn, "NOTE_REPORT", "sede")) return;
+
         Map<String, Integer> sedeCache = new HashMap<>();
         List<Integer> reportIds = new ArrayList<>();
         List<String> sedeTexts = new ArrayList<>();
@@ -589,6 +627,93 @@ public class DatabaseService {
                 up.setInt(1, sedeId);
                 up.setInt(2, reportIds.get(i));
                 up.executeUpdate();
+            }
+        }
+    }
+
+    // Drops NOTE_REPORT.sede once migrateSedeIdSchema() has already backfilled sede_id from it
+    // (must run after that call, never before) — confirmed dead going forward via grep: no
+    // INSERT/UPDATE writes to it anymore (insertReport() only ever sets sede_id). SQLite has
+    // supported ALTER TABLE ... DROP COLUMN natively since 3.35.0 (this project bundles 3.45.3
+    // via sqlite-jdbc), so no table-rebuild dance is needed here, unlike the NOT NULL-relaxation
+    // migration elsewhere in this file. Wrapped in try/catch, same "fail safely, don't block
+    // startup" precedent as every other best-effort migration step in this class — an unexpected
+    // failure just leaves the dead column in place for next startup to retry, rather than
+    // crashing initialize().
+    private void dropDeadNoteReportColumns(Connection conn, Statement stmt) throws SQLException {
+        if (columnExists(conn, "NOTE_REPORT", "sede")) {
+            try {
+                stmt.executeUpdate("ALTER TABLE NOTE_REPORT DROP COLUMN sede");
+            } catch (SQLException ignored) {
+                // leave it for next startup to retry — not worth blocking initialize() over
+            }
+        }
+    }
+
+    // NOTE_REPORT.rejection_reason used to sit inline, nullable on every row and only ever
+    // populated once an admin actually rejects a note — the same "doesn't apply to this row"
+    // pattern the NOTE_ITEM 5-table split fixed. Split into NOTE_REPORT_REJECTION (see
+    // createHistoryTables()): a row exists only for
+    // a note that's actually been rejected. No table rebuild needed — nothing references
+    // NOTE_REPORT.rejection_reason by FK, so a plain backfill + native DROP COLUMN (SQLite 3.35+)
+    // is safe, same as dropDeadNoteReportColumns() above. INSERT OR IGNORE makes the backfill
+    // safely re-runnable if the DROP COLUMN below fails partway and this method retries next
+    // startup with the column still present. No-ops once already migrated (column gone) —
+    // including on a brand-new install, which never gets the column at all.
+    private void migrateRejectionReasonSchema(Connection conn, Statement stmt) throws SQLException {
+        if (!columnExists(conn, "NOTE_REPORT", "rejection_reason")) return;
+        stmt.executeUpdate("""
+            INSERT OR IGNORE INTO NOTE_REPORT_REJECTION (note_report_id, rejection_reason)
+            SELECT id, rejection_reason FROM NOTE_REPORT
+            WHERE rejection_reason IS NOT NULL AND TRIM(rejection_reason) <> ''
+            """);
+        try {
+            stmt.executeUpdate("ALTER TABLE NOTE_REPORT DROP COLUMN rejection_reason");
+        } catch (SQLException ignored) {
+            // leave it for next startup to retry — not worth blocking initialize() over
+        }
+    }
+
+    // NOTE_ENTREGA_DEVOLUCION mixed 4 profile types' fields on one table — failure_cause/
+    // failure_details only ever populated for Devolución+Falla, area_evento only for Préstamo.
+    // Same "doesn't apply to this row" pattern as above (this table predates the normalization
+    // rule entirely). Split into NOTE_DEVOLUCION_FALLA/NOTE_PRESTAMO_AREA_EVENTO (see
+    // createHistoryTables()) — a row exists
+    // only when that dimension actually applies. No table rebuild needed, same reasoning as
+    // migrateRejectionReasonSchema() above — nothing references these 3 columns by FK.
+    private void migrateEntregaDevolucionSplitSchema(Connection conn, Statement stmt) throws SQLException {
+        boolean hasFailureCause = columnExists(conn, "NOTE_ENTREGA_DEVOLUCION", "failure_cause");
+        boolean hasAreaEvento = columnExists(conn, "NOTE_ENTREGA_DEVOLUCION", "area_evento");
+
+        if (hasFailureCause) {
+            stmt.executeUpdate("""
+                INSERT OR IGNORE INTO NOTE_DEVOLUCION_FALLA (note_report_id, failure_cause, failure_details)
+                SELECT note_report_id, failure_cause, failure_details FROM NOTE_ENTREGA_DEVOLUCION
+                WHERE failure_cause IS NOT NULL AND TRIM(failure_cause) <> ''
+                """);
+            try {
+                stmt.executeUpdate("ALTER TABLE NOTE_ENTREGA_DEVOLUCION DROP COLUMN failure_cause");
+            } catch (SQLException ignored) {
+                // leave it for next startup to retry
+            }
+        }
+        if (columnExists(conn, "NOTE_ENTREGA_DEVOLUCION", "failure_details")) {
+            try {
+                stmt.executeUpdate("ALTER TABLE NOTE_ENTREGA_DEVOLUCION DROP COLUMN failure_details");
+            } catch (SQLException ignored) {
+                // leave it for next startup to retry
+            }
+        }
+        if (hasAreaEvento) {
+            stmt.executeUpdate("""
+                INSERT OR IGNORE INTO NOTE_PRESTAMO_AREA_EVENTO (note_report_id, area_evento)
+                SELECT note_report_id, area_evento FROM NOTE_ENTREGA_DEVOLUCION
+                WHERE area_evento IS NOT NULL AND TRIM(area_evento) <> ''
+                """);
+            try {
+                stmt.executeUpdate("ALTER TABLE NOTE_ENTREGA_DEVOLUCION DROP COLUMN area_evento");
+            } catch (SQLException ignored) {
+                // leave it for next startup to retry
             }
         }
     }
@@ -794,19 +919,41 @@ public class DatabaseService {
                 name TEXT NOT NULL UNIQUE,
                 deprecated INTEGER NOT NULL DEFAULT 0
             )""");
+
+        // brand_type_id is stored explicitly rather than inferred from model_id — required
+        // because the single global "Genérico / Otro" MODEL row (brand_type_id IS NULL) needs
+        // an independent, non-shared stock number per (Type,Brand) it's used under. For every
+        // other (non-generic) model, brand_type_id here is redundantly the same value MODEL's
+        // own row already carries — one natural row, functionally identical to a plain column.
+        stmt.executeUpdate("""
+            CREATE TABLE IF NOT EXISTS MODEL_STOCK (
+                brand_type_id INTEGER NOT NULL REFERENCES BRAND_TYPE_LINK(id),
+                model_id      INTEGER NOT NULL REFERENCES MODEL(id),
+                stock         INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (brand_type_id, model_id)
+            )""");
     }
 
     private void createHistoryTables(Statement stmt) throws SQLException {
         stmt.executeUpdate("""
             CREATE TABLE IF NOT EXISTS NOTE_REPORT (
-                id              INTEGER PRIMARY KEY AUTOINCREMENT,
-                created_at      TEXT NOT NULL,
-                profile_type    TEXT NOT NULL,
-                technician_name TEXT,
-                technician_dni  TEXT,
-                observations    TEXT,
-                sede            TEXT,
-                sede_id         INTEGER REFERENCES SEDE(id)
+                id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at        TEXT NOT NULL,
+                profile_type      TEXT NOT NULL,
+                technician_name   TEXT,
+                technician_dni    TEXT,
+                observations      TEXT,
+                sede_id           INTEGER REFERENCES SEDE(id),
+                approval_status   TEXT NOT NULL DEFAULT 'PENDING'
+            )""");
+
+        // Row exists only for a note an admin has actually rejected — not a NULL sentinel on
+        // every NOTE_REPORT row that's PENDING/APPROVED, same "doesn't apply to this row"
+        // anti-pattern the NOTE_ITEM 5-table split fixed.
+        stmt.executeUpdate("""
+            CREATE TABLE IF NOT EXISTS NOTE_REPORT_REJECTION (
+                note_report_id   INTEGER PRIMARY KEY REFERENCES NOTE_REPORT(id),
+                rejection_reason TEXT NOT NULL
             )""");
 
         stmt.executeUpdate("""
@@ -815,10 +962,26 @@ public class DatabaseService {
                 user_name       TEXT,
                 user_dni        TEXT,
                 user_email      TEXT,
-                motivo          TEXT,
-                failure_cause   TEXT,
-                failure_details TEXT,
-                area_evento     TEXT
+                motivo          TEXT
+            )""");
+
+        // Row exists only for a Devolución note whose Motivo triggered the Falla popup — not a
+        // NULL sentinel on every ENTREGA_DEVOLUCION row regardless of profile type/motivo,
+        // same reasoning as NOTE_REPORT_REJECTION above.
+        stmt.executeUpdate("""
+            CREATE TABLE IF NOT EXISTS NOTE_DEVOLUCION_FALLA (
+                note_report_id  INTEGER PRIMARY KEY REFERENCES NOTE_ENTREGA_DEVOLUCION(note_report_id),
+                failure_cause   TEXT NOT NULL,
+                failure_details TEXT
+            )""");
+
+        // Row exists only when a Préstamo note actually captured an Área/Evento (itself optional
+        // even within Préstamo) — not a NULL sentinel on every ENTREGA_DEVOLUCION row regardless
+        // of profile type, same reasoning as above.
+        stmt.executeUpdate("""
+            CREATE TABLE IF NOT EXISTS NOTE_PRESTAMO_AREA_EVENTO (
+                note_report_id INTEGER PRIMARY KEY REFERENCES NOTE_ENTREGA_DEVOLUCION(note_report_id),
+                area_evento    TEXT NOT NULL
             )""");
 
         stmt.executeUpdate("""
@@ -876,6 +1039,41 @@ public class DatabaseService {
                 rejection_reason  TEXT,
                 status_updated_at TEXT
             )""");
+
+        // A second, independent GLPI dimension for a returnable Provider note's asset items only
+        // (Provider assets, unlike Préstamo's, get real GLPI tracking — see
+        // "Préstamo assets are deliberately excluded from GLPI sync" in CLAUDE.md for why Préstamo
+        // can't do this at all). GLPI sync is one-way/no-revert, so the original sync-out
+        // (NOTE_ITEM_GLPI_TRACKING) can never be "undone" to reflect an item coming back — this
+        // table tracks the separate "synced back into GLPI" event instead. Row absence means this
+        // dimension isn't applicable yet; a row is only ever created once the item's return is
+        // actually validated (RETURNED), seeded PENDING at that moment.
+        stmt.executeUpdate("""
+            CREATE TABLE IF NOT EXISTS NOTE_ITEM_GLPI_RETURN_TRACKING (
+                item_id           INTEGER PRIMARY KEY REFERENCES NOTE_ITEM(id),
+                status            TEXT NOT NULL,
+                rejection_reason  TEXT,
+                status_updated_at TEXT
+            )""");
+
+        // Countable items (quantity > 1) can be resolved in partial batches over time — e.g. 5
+        // loaned headsets coming back as 3 returned now, 1 lost later, 1 still pending. A single
+        // status column on NOTE_ITEM_RETURN_TRACKING can't express that, so each partial action
+        // gets its own append-only row here instead; PENDING is never stored — the remaining
+        // pending quantity is always NOTE_ITEM_COUNTABLE.quantity minus the sum of allocations
+        // for that item, same "row absence is the state" convention as every other tracking table
+        // in this schema. Asset items never get a row here at all (they stay on the existing
+        // whole-item NOTE_ITEM_RETURN_TRACKING.status, since a physical asset unit isn't
+        // divisible) — this table exists purely for the countable partial-quantity case.
+        stmt.executeUpdate("""
+            CREATE TABLE IF NOT EXISTS NOTE_ITEM_RETURN_ALLOCATION (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                item_id    INTEGER NOT NULL REFERENCES NOTE_ITEM(id),
+                status     TEXT NOT NULL,
+                quantity   INTEGER NOT NULL,
+                reason     TEXT,
+                updated_at TEXT NOT NULL
+            )""");
     }
 
     private void createSettingsTable(Statement stmt) throws SQLException {
@@ -886,16 +1084,63 @@ public class DatabaseService {
             )""");
     }
 
-    // Login-time role lookup (ADMIN starts admin mode already active, USER doesn't) — see
-    // IUserRoleService. Not the same thing as AD group membership (which gates app access at
-    // all, checked at login against the AD API) — this only distinguishes admin vs. normal
-    // among users who already got past that gate.
+    // Login-time role/sede/permission lookup — see IUserRoleService. Not the same thing as AD
+    // group membership (which gates app access at all, checked at login against the AD API) —
+    // this only distinguishes admin tiers among users who already got past that gate. Named
+    // APP_USER, not USER — USER is a reserved keyword (a niladic function) in T-SQL.
     private void createUserRoleTable(Statement stmt) throws SQLException {
+        boolean appUserExisted = tableExists(stmt.getConnection(), "APP_USER");
         stmt.executeUpdate("""
-            CREATE TABLE IF NOT EXISTS USER_ROLE (
-                username TEXT PRIMARY KEY,
-                role     TEXT NOT NULL
+            CREATE TABLE IF NOT EXISTS APP_USER (
+                id       INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT NOT NULL UNIQUE,
+                role     TEXT NOT NULL CHECK (role IN ('USER', 'ADMIN', 'SUPERADMIN')),
+                sede_id  INTEGER REFERENCES SEDE(id)
             )""");
+        if (!appUserExisted) {
+            migrateUserRoleIntoAppUser(stmt);
+        }
+
+        // A permission not present here is denied — there is no separate "explicitly denied"
+        // state (see models.Permission). Seeded only the first time this table is created, not
+        // on every startup, so a superadmin's later revocation (a DELETE against this table)
+        // isn't silently undone on next launch.
+        boolean rolePermissionExisted = tableExists(stmt.getConnection(), "ROLE_PERMISSION");
+        stmt.executeUpdate("""
+            CREATE TABLE IF NOT EXISTS ROLE_PERMISSION (
+                role       TEXT NOT NULL CHECK (role IN ('USER', 'ADMIN', 'SUPERADMIN')),
+                permission TEXT NOT NULL,
+                PRIMARY KEY (role, permission)
+            )""");
+        if (!rolePermissionExisted) {
+            seedDefaultRolePermissions(stmt);
+        }
+    }
+
+    // Carries existing role assignments forward onto the new surrogate-keyed table; sede_id
+    // starts NULL for every migrated row (Sede assignment is a new, separate concept — a
+    // superadmin must assign it by hand afterward, same as for a brand-new user).
+    private void migrateUserRoleIntoAppUser(Statement stmt) throws SQLException {
+        if (!tableExists(stmt.getConnection(), "USER_ROLE")) return;
+        stmt.executeUpdate("""
+            INSERT INTO APP_USER (username, role, sede_id)
+            SELECT username, role, NULL FROM USER_ROLE
+            WHERE NOT EXISTS (SELECT 1 FROM APP_USER WHERE APP_USER.username = USER_ROLE.username)
+            """);
+        stmt.executeUpdate("DROP TABLE USER_ROLE");
+    }
+
+    // Matches today's status quo: ADMIN could already do everything except the newly-introduced
+    // EDIT_SMTP_CONFIG; SUPERADMIN gets everything including that. Enumerated from the Permission
+    // enum itself (not hand-typed strings) so this can't drift out of sync with it.
+    private void seedDefaultRolePermissions(Statement stmt) throws SQLException {
+        for (com.bunshock.note_app_for_it_frontend.models.Permission p
+                : com.bunshock.note_app_for_it_frontend.models.Permission.values()) {
+            if (p != com.bunshock.note_app_for_it_frontend.models.Permission.EDIT_SMTP_CONFIG) {
+                stmt.executeUpdate("INSERT INTO ROLE_PERMISSION (role, permission) VALUES ('ADMIN', '" + p.name() + "')");
+            }
+            stmt.executeUpdate("INSERT INTO ROLE_PERMISSION (role, permission) VALUES ('SUPERADMIN', '" + p.name() + "')");
+        }
     }
 
     private void insertDefaultData(Statement stmt) throws SQLException {

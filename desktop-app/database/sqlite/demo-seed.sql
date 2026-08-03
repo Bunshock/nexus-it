@@ -1,7 +1,7 @@
 -- Demo/starter data for the local SQLite database (data/noteapp.db).
 --
 -- This used to run automatically on every fresh database via
--- DatabaseService.seedEquipmentData()/seedHistoryData() — removed 2026-07-14 per explicit user
+-- DatabaseService.seedEquipmentData()/seedHistoryData() — removed per explicit user
 -- direction so a freshly created (or deleted-and-recreated) local database starts genuinely
 -- empty, with just the schema, ready to load real organizational data without any pre-existing
 -- rows mixed in. This script preserves that same data (unchanged) for optional, on-demand use —

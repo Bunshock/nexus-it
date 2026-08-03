@@ -15,8 +15,8 @@ import org.junit.jupiter.api.io.TempDir;
 import static org.junit.jupiter.api.Assertions.*;
 
 // database/sqlite/demo-seed.sql is hand-written SQL, preserved outside the app's own Java code
-// after seedEquipmentData()/seedHistoryData() were removed from DatabaseService (2026-07-14, so
-// a fresh/deleted-and-recreated local database starts genuinely empty). Nothing else in this
+// after seedEquipmentData()/seedHistoryData() were removed from DatabaseService, so
+// a fresh/deleted-and-recreated local database starts genuinely empty. Nothing else in this
 // build compiles or type-checks that file, so a typo or schema drift would only surface the
 // first time someone actually loads it — this test catches that ahead of time by running it for
 // real against a database with the exact same schema DatabaseService creates (duplicated here,
