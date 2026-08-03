@@ -81,9 +81,12 @@
                     <TableView fx:constant="CONSTRAINED_RESIZE_POLICY"/>
                 </columnResizePolicy>
                 <columns>
+                    <TableColumn fx:id="colPApproval"  text="" prefWidth="8" minWidth="8" maxWidth="8" resizable="false" sortable="false"/>
                     <TableColumn fx:id="colPDate"      text="FECHA"                 prefWidth="155" maxWidth="155"/>
                     <TableColumn fx:id="colPAuthor"    text="AUTOR"                 prefWidth="190" maxWidth="220"/>
+                    <TableColumn fx:id="colPSede"      text="SEDE"                  prefWidth="140" maxWidth="170"/>
                     <TableColumn fx:id="colPRecipient" text="DESTINATARIO"/>
+                    <TableColumn fx:id="colPFechaTentativa" text="FECHA TENTATIVA"  prefWidth="130" maxWidth="150"/>
                     <TableColumn fx:id="colPItems"     text="EQUIPOS"               prefWidth="90"  maxWidth="90"/>
                     <TableColumn fx:id="colPStatus"    text="ESTADO DE DEVOLUCIÓN"  prefWidth="170" maxWidth="200"/>
                 </columns>

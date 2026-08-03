@@ -102,6 +102,7 @@
                 <HBox spacing="10" alignment="CENTER_LEFT">
                     <Button text="Buscar" onAction="#handleSearch" styleClass="button-primary" prefHeight="32"/>
                     <Button text="Limpiar filtros" onAction="#handleClearFilters" styleClass="button-secondary" prefHeight="32"/>
+                    <CheckBox fx:id="chkShowRechazado" text="Mostrar rechazadas" onAction="#handleShowRechazadoToggle"/>
                     <Region HBox.hgrow="ALWAYS"/>
                     <MenuButton text="Exportar" prefHeight="32" styleClass="button-primary">
                         <items>
@@ -125,9 +126,12 @@
                     <TableView fx:constant="CONSTRAINED_RESIZE_POLICY"/>
                 </columnResizePolicy>
                 <columns>
+                    <TableColumn fx:id="colGApproval"  text="" prefWidth="8" minWidth="8" maxWidth="8" resizable="false" sortable="false"/>
                     <TableColumn fx:id="colGDate"      text="FECHA"        prefWidth="155" maxWidth="155"/>
                     <TableColumn fx:id="colGAuthor"    text="AUTOR"        prefWidth="190" maxWidth="220"/>
+                    <TableColumn fx:id="colGSede"      text="SEDE"         prefWidth="140" maxWidth="170"/>
                     <TableColumn fx:id="colGProfile"   text="TIPO"         prefWidth="160" maxWidth="160"/>
+                    <TableColumn fx:id="colGMotivo"    text="MOTIVO"       prefWidth="140" maxWidth="180"/>
                     <TableColumn fx:id="colGRecipient" text="DESTINATARIO"/>
                     <TableColumn fx:id="colGItems"     text="EQUIPOS"      prefWidth="90"  maxWidth="90"/>
                     <TableColumn fx:id="colGStatus"    text="ESTADO GLPI"  prefWidth="115" maxWidth="115"/>

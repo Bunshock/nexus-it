@@ -1,17 +1,34 @@
 package com.bunshock.note_app_for_it_frontend;
 
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
 import com.bunshock.note_app_for_it_frontend.controllers.HistoryController;
+import com.bunshock.note_app_for_it_frontend.models.HistoryFilter;
 import com.bunshock.note_app_for_it_frontend.models.NoteReport;
 
+import javafx.application.Platform;
+import javafx.scene.control.CheckBox;
+import javafx.scene.control.DatePicker;
+import javafx.scene.control.TextField;
+
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class HistoryControllerTest {
+
+    @BeforeAll
+    static void initFxToolkit() {
+        try {
+            Platform.startup(() -> {});
+        } catch (IllegalStateException alreadyStarted) {
+            // toolkit already running from a previous test class in this JVM
+        }
+    }
 
     private final HistoryController controller = new HistoryController();
 
@@ -33,6 +50,18 @@ class HistoryControllerTest {
         return (String) m.invoke(controller, r);
     }
 
+    private String approvalStatusColor(NoteReport r) throws Exception {
+        Method m = HistoryController.class.getDeclaredMethod("approvalStatusColor", NoteReport.class);
+        m.setAccessible(true);
+        return (String) m.invoke(controller, r);
+    }
+
+    private String approvalStatusDisplay(String approvalStatus) throws Exception {
+        Method m = HistoryController.class.getDeclaredMethod("approvalStatusDisplay", String.class);
+        m.setAccessible(true);
+        return (String) m.invoke(controller, approvalStatus);
+    }
+
     private String toDisplayName(String profileType) throws Exception {
         Method m = HistoryController.class.getDeclaredMethod("toDisplayName", String.class);
         m.setAccessible(true);
@@ -52,6 +81,11 @@ class HistoryControllerTest {
         r.setPendingItemCount(pending);
         r.setSyncedItemCount(synced);
         r.setRejectedItemCount(rejected);
+        // APPROVED so these GLPI-focused tests aren't coupled to approval status — NoteReport
+        // defaults to PENDING otherwise. Approval status no longer affects computeRowStyle()'s
+        // return value at all (moved to its own dedicated column, see approvalStatusColor() below)
+        // but keeping this explicit avoids these tests silently depending on that default.
+        r.setApprovalStatus("APPROVED");
         return r;
     }
 
@@ -121,24 +155,29 @@ class HistoryControllerTest {
 
     // ── computeRowStyle ───────────────────────────────────────────────────────
 
+    // These five assert only the background prefix (startsWith), not full-string equality — kept
+    // as startsWith from when computeRowStyle() also appended an approval-status border suffix;
+    // no longer strictly necessary now that the border was moved out to its own column (see
+    // approvalStatusColor() below), but left as-is since it's still a correct, harmless assertion.
+
     @Test
     void computeRowStyleNoAssetsReturnsNeutralColor() throws Exception {
-        assertEquals("-fx-background-color: #f1f5f9;", computeRowStyle(reportWith(0, 0, 0, 0)));
+        assertTrue(computeRowStyle(reportWith(0, 0, 0, 0)).startsWith("-fx-background-color: #f1f5f9;"));
     }
 
     @Test
     void computeRowStyleAllPendingReturnsSolidOrange() throws Exception {
-        assertEquals("-fx-background-color: rgba(251,146,60,0.18);", computeRowStyle(reportWith(3, 3, 0, 0)));
+        assertTrue(computeRowStyle(reportWith(3, 3, 0, 0)).startsWith("-fx-background-color: rgba(251,146,60,0.18);"));
     }
 
     @Test
     void computeRowStyleAllSyncedReturnsSolidGreen() throws Exception {
-        assertEquals("-fx-background-color: rgba(34,197,94,0.18);", computeRowStyle(reportWith(3, 0, 3, 0)));
+        assertTrue(computeRowStyle(reportWith(3, 0, 3, 0)).startsWith("-fx-background-color: rgba(34,197,94,0.18);"));
     }
 
     @Test
     void computeRowStyleAllRejectedReturnsSolidRed() throws Exception {
-        assertEquals("-fx-background-color: rgba(239,68,68,0.18);", computeRowStyle(reportWith(3, 0, 0, 3)));
+        assertTrue(computeRowStyle(reportWith(3, 0, 0, 3)).startsWith("-fx-background-color: rgba(239,68,68,0.18);"));
     }
 
     // Same bug as glpiStatusLabelAllNaAssetsReturnsDash — the old code fell through to a
@@ -146,7 +185,7 @@ class HistoryControllerTest {
     // color used for "nothing GLPI-tracked" everywhere else.
     @Test
     void computeRowStyleAllNaAssetsReturnsNeutralColor() throws Exception {
-        assertEquals("-fx-background-color: #f1f5f9;", computeRowStyle(reportWith(1, 0, 0, 0)));
+        assertTrue(computeRowStyle(reportWith(1, 0, 0, 0)).startsWith("-fx-background-color: #f1f5f9;"));
     }
 
     @Test
@@ -156,8 +195,49 @@ class HistoryControllerTest {
         assertTrue(style.contains("rgba(251,146,60,0.25) 0.00%"));
         assertTrue(style.contains("rgba(251,146,60,0.25) 50.00%"));
         assertTrue(style.contains("rgba(34,197,94,0.25) 50.00%"));
-        assertTrue(style.contains("rgba(34,197,94,0.25) 100.00%"));
-        assertTrue(style.endsWith(");"));
+        assertTrue(style.contains("rgba(34,197,94,0.25) 100.00%);"));
+    }
+
+    // ── computeRowStyle for Préstamo notes (return-status-based, not GLPI-based) ──────────────
+    // A Préstamo note's GLPI counts (pending/synced/rejected) are always 0 — see reportWith()'s
+    // own comment on why — so without this branch every Préstamo row would fall into the plain
+    // "nothing to track" gray above regardless of actual return progress. Same coloring math as
+    // PrestamoHistoryControllerTest's own computeRowStyle tests, just reached through
+    // HistoryController's profile-type branch instead.
+
+    private NoteReport prestamoReportWith(int pending, int returned, int lost) {
+        NoteReport r = new NoteReport();
+        r.setProfileType("PRÉSTAMO");
+        r.setReturnPendingItemCount(pending);
+        r.setReturnedItemCount(returned);
+        r.setLostItemCount(lost);
+        r.setApprovalStatus("APPROVED");
+        return r;
+    }
+
+    @Test
+    void computeRowStyleForPrestamoNoReturnDataReturnsNeutralColor() throws Exception {
+        assertTrue(computeRowStyle(prestamoReportWith(0, 0, 0)).startsWith("-fx-background-color: #f1f5f9;"));
+    }
+
+    @Test
+    void computeRowStyleForPrestamoAllPendingReturnsSolidOrange() throws Exception {
+        assertTrue(computeRowStyle(prestamoReportWith(3, 0, 0)).startsWith("-fx-background-color: rgba(251,146,60,0.18);"));
+    }
+
+    @Test
+    void computeRowStyleForPrestamoAllReturnedReturnsSolidGreen() throws Exception {
+        assertTrue(computeRowStyle(prestamoReportWith(0, 3, 0)).startsWith("-fx-background-color: rgba(34,197,94,0.18);"));
+    }
+
+    @Test
+    void computeRowStyleForPrestamoAllLostReturnsSolidRed() throws Exception {
+        assertTrue(computeRowStyle(prestamoReportWith(0, 0, 3)).startsWith("-fx-background-color: rgba(239,68,68,0.18);"));
+    }
+
+    @Test
+    void computeRowStyleForPrestamoMixedReturnsGradient() throws Exception {
+        assertTrue(computeRowStyle(prestamoReportWith(1, 1, 1)).startsWith("-fx-background-color: linear-gradient(to right"));
     }
 
     // ── toDisplayName ─────────────────────────────────────────────────────────
@@ -211,5 +291,155 @@ class HistoryControllerTest {
         List<String> expanded = expandProfileTypeLabels(new LinkedHashSet<>(Set.of("Entrega", "Préstamo")));
         assertTrue(expanded.containsAll(List.of("ENTREGA", "Entrega", "PRÉSTAMO", "Préstamo")));
         assertEquals(4, expanded.size());
+    }
+
+    // ── buildFilter (approval-status default) ───────────────────────────────
+
+    private void setField(HistoryController c, String name, Object value) throws Exception {
+        Field f = HistoryController.class.getDeclaredField(name);
+        f.setAccessible(true);
+        f.set(c, value);
+    }
+
+    private HistoryFilter buildFilter(HistoryController c) throws Exception {
+        Method m = HistoryController.class.getDeclaredMethod("buildFilter");
+        m.setAccessible(true);
+        return (HistoryFilter) m.invoke(c);
+    }
+
+    // Seeds every field buildFilter() reads — a bare `new HistoryController()` never runs
+    // initialize(), so these @FXML fields are otherwise null.
+    private HistoryController controllerWithFilterFieldsSeeded(boolean showRechazado) throws Exception {
+        HistoryController c = new HistoryController();
+        setField(c, "dpFrom", new DatePicker());
+        setField(c, "dpTo", new DatePicker());
+        setField(c, "txtRecipientSearch", new TextField());
+        setField(c, "txtAuthorSearch", new TextField());
+        CheckBox chk = new CheckBox();
+        chk.setSelected(showRechazado);
+        setField(c, "chkShowRechazado", chk);
+        return c;
+    }
+
+    @Test
+    void buildFilterDefaultsToPendingAndApprovedWhenRechazadoCheckboxUnchecked() throws Exception {
+        HistoryFilter f = buildFilter(controllerWithFilterFieldsSeeded(false));
+        assertEquals(List.of("PENDING", "APPROVED"), f.getApprovalStatuses());
+    }
+
+    @Test
+    void buildFilterAppliesNoApprovalFilterWhenRechazadoCheckboxChecked() throws Exception {
+        HistoryFilter f = buildFilter(controllerWithFilterFieldsSeeded(true));
+        assertNull(f.getApprovalStatuses());
+    }
+
+    // ── approvalStatusColor (dedicated status column, colGApproval) ──────────
+    //
+    // Used to be an always-on left border layered onto computeRowStyle()'s return value —
+    // replaced because any left/right border consumes layout space, shifting every
+    // row's cell content relative to the column headers (which have no matching border/inset of
+    // their own). Moved to a real, narrow TableColumn instead, whose header reserves the exact
+    // same width as its cells automatically — see setupTable()'s colGApproval wiring.
+
+    @Test
+    void approvalStatusColorPendingIsOrange() throws Exception {
+        NoteReport r = reportWith(0, 0, 0, 0);
+        r.setApprovalStatus("PENDING");
+        assertEquals("#f97316", approvalStatusColor(r));
+    }
+
+    @Test
+    void approvalStatusColorRechazadoIsRed() throws Exception {
+        NoteReport r = reportWith(0, 0, 0, 0);
+        r.setApprovalStatus("RECHAZADO");
+        assertEquals("#ef4444", approvalStatusColor(r));
+    }
+
+    @Test
+    void approvalStatusColorApprovedIsGreen() throws Exception {
+        assertEquals("#22c55e", approvalStatusColor(reportWith(0, 0, 0, 0)));
+    }
+
+    @Test
+    void computeRowStyleNoLongerAppendsAnyBorder() throws Exception {
+        NoteReport r = reportWith(0, 0, 0, 0);
+        r.setApprovalStatus("PENDING");
+        assertFalse(computeRowStyle(r).contains("-fx-border"));
+    }
+
+    // ── approvalStatusDisplay (export "Estado" column) ────────────────────────
+
+    @Test
+    void approvalStatusDisplayMapsKnownValues() throws Exception {
+        assertEquals("Pendiente", approvalStatusDisplay("PENDING"));
+        assertEquals("Aprobada", approvalStatusDisplay("APPROVED"));
+        assertEquals("Rechazada", approvalStatusDisplay("RECHAZADO"));
+    }
+
+    @Test
+    void approvalStatusDisplayFallsBackToRawValueForUnknownStatus() throws Exception {
+        assertEquals("SOMETHING_ELSE", approvalStatusDisplay("SOMETHING_ELSE"));
+    }
+
+    // ── Sede filter defaults to the technician's own assigned Sede ───────────────
+
+    @SuppressWarnings("unchecked")
+    private Set<String> selSedesField(HistoryController c) throws Exception {
+        Field f = HistoryController.class.getDeclaredField("selSedes");
+        f.setAccessible(true);
+        return (Set<String>) f.get(c);
+    }
+
+    private void invokeResetSedeFilterToDefault(HistoryController c) throws Exception {
+        Method m = HistoryController.class.getDeclaredMethod("resetSedeFilterToDefault");
+        m.setAccessible(true);
+        m.invoke(c);
+    }
+
+    // Sets the singleton's resolved Sede name directly via reflection, bypassing the real
+    // login/APP_USER round trip — resetSedeFilterToDefault() only ever reads the public getSede()
+    // getter, so this is enough to exercise it without a live database or MockUserRoleService.
+    private void setTechnicianSede(String sedeName) throws Exception {
+        Field f = com.bunshock.note_app_for_it_frontend.services.TechnicianSessionService.class
+            .getDeclaredField("sedeName");
+        f.setAccessible(true);
+        f.set(com.bunshock.note_app_for_it_frontend.services.TechnicianSessionService.getInstance(), sedeName);
+    }
+
+    @Test
+    void resetSedeFilterToDefaultAddsTechniciansOwnSedeWhenAssigned() throws Exception {
+        setTechnicianSede("Campus Norte");
+        try {
+            HistoryController c = new HistoryController();
+            invokeResetSedeFilterToDefault(c);
+            assertEquals(Set.of("Campus Norte"), selSedesField(c));
+        } finally {
+            setTechnicianSede(null);
+        }
+    }
+
+    @Test
+    void resetSedeFilterToDefaultLeavesEmptyWhenNoSedeAssigned() throws Exception {
+        setTechnicianSede(null);
+        HistoryController c = new HistoryController();
+        invokeResetSedeFilterToDefault(c);
+        assertTrue(selSedesField(c).isEmpty());
+    }
+
+    @Test
+    void sedeCatalogNamesReturnsActiveSedesFromEquipmentService() throws Exception {
+        var mockEquipment = new com.bunshock.note_app_for_it_frontend.services.MockEquipmentService();
+        mockEquipment.addSede("Campus Norte");
+        mockEquipment.addSede("Campus Sur");
+        com.bunshock.note_app_for_it_frontend.services.ServiceLocator.getInstance()
+            .setEquipmentService(mockEquipment);
+
+        Method m = HistoryController.class.getDeclaredMethod("sedeCatalogNames");
+        m.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        List<String> names = (List<String>) m.invoke(controller);
+
+        assertTrue(names.contains("Campus Norte"));
+        assertTrue(names.contains("Campus Sur"));
     }
 }

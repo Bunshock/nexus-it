@@ -14,6 +14,7 @@ import com.bunshock.note_app_for_it_frontend.models.HistoryFilter;
 import com.bunshock.note_app_for_it_frontend.models.NoteReport;
 import com.bunshock.note_app_for_it_frontend.services.AdminSession;
 import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;
+import com.bunshock.note_app_for_it_frontend.services.TechnicianSessionService;
 
 import javafx.beans.property.SimpleStringProperty;
 import javafx.collections.FXCollections;
@@ -23,6 +24,7 @@ import javafx.scene.control.CustomMenuItem;
 import javafx.scene.control.DatePicker;
 import javafx.scene.control.MenuButton;
 import javafx.scene.control.SeparatorMenuItem;
+import javafx.scene.control.TableCell;
 import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableRow;
 import javafx.scene.control.TableView;
@@ -42,9 +44,12 @@ public class PrestamoHistoryController {
     @FXML private TextField  txtAuthorSearch;
 
     @FXML private TableView<NoteReport>           tblPrestamos;
+    @FXML private TableColumn<NoteReport, String> colPApproval;
     @FXML private TableColumn<NoteReport, String> colPDate;
     @FXML private TableColumn<NoteReport, String> colPAuthor;
+    @FXML private TableColumn<NoteReport, String> colPSede;
     @FXML private TableColumn<NoteReport, String> colPRecipient;
+    @FXML private TableColumn<NoteReport, String> colPFechaTentativa;
     @FXML private TableColumn<NoteReport, String> colPItems;
     @FXML private TableColumn<NoteReport, String> colPStatus;
 
@@ -64,13 +69,29 @@ public class PrestamoHistoryController {
     public void initialize() {
         setupTable();
         populateMenu(mnuReturnStatus, RETURN_STATUS_OPTIONS, selReturnStatuses, this::autoSearch);
+        resetSedeFilterToDefault();
         initSedeMenu();
         loadPrestamos(buildFilter());
     }
 
+    // Sede options come from the live SEDE catalog (same source Configuración/Base de Datos use),
+    // not "distinct values actually seen in history" — a technician's own Sede (the default
+    // filter, see resetSedeFilterToDefault()) may not have any Préstamo history yet at all.
     private void initSedeMenu() {
-        var svc = ServiceLocator.getInstance().getHistoryService();
-        populateMenu(mnuSede, svc.getDistinctSedes(), selSedes, this::autoSearch);
+        var svc = ServiceLocator.getInstance().getEquipmentService();
+        List<String> sedeNames = svc.getAllSedes().stream()
+            .map(com.bunshock.note_app_for_it_frontend.models.Sede::getName)
+            .toList();
+        populateMenu(mnuSede, sedeNames, selSedes, this::autoSearch);
+    }
+
+    // The Sede filter defaults to the technician's own assigned Sede (if any) rather than "Todas"
+    // — same default-view precedent as HistoryController's own resetSedeFilterToDefault(). Still
+    // just a starting point: the technician can clear or change it like any other filter.
+    private void resetSedeFilterToDefault() {
+        selSedes.clear();
+        String mySede = TechnicianSessionService.getInstance().getSede();
+        if (mySede != null && !mySede.isBlank()) selSedes.add(mySede);
     }
 
     /** Reloads with whatever filters are currently set — called by PrestamosController every time
@@ -92,7 +113,7 @@ public class PrestamoHistoryController {
         txtRecipientSearch.clear();
         txtAuthorSearch.clear();
         selReturnStatuses.clear();
-        selSedes.clear();
+        resetSedeFilterToDefault();
         suppressCallbacks = false;
         populateMenu(mnuReturnStatus, RETURN_STATUS_OPTIONS, selReturnStatuses, this::autoSearch);
         initSedeMenu();
@@ -183,16 +204,39 @@ public class PrestamoHistoryController {
     private void setupTable() {
         colPDate.setSortable(false);
         colPAuthor.setSortable(false);
+        colPSede.setSortable(false);
         colPRecipient.setSortable(false);
+        colPFechaTentativa.setSortable(false);
         colPItems.setSortable(false);
         colPStatus.setSortable(false);
+
+        // A dedicated narrow column, not a row border — see HistoryController's identical
+        // colGApproval setup (duplicated per this codebase's no-shared-abstraction convention)
+        // for why: a border always consumes layout space, shifting cell content relative to the
+        // column headers, which a real TableColumn's own header never has to worry about.
+        colPApproval.setCellValueFactory(d -> new SimpleStringProperty(""));
+        colPApproval.setCellFactory(col -> new TableCell<>() {
+            @Override
+            protected void updateItem(String value, boolean empty) {
+                super.updateItem(value, empty);
+                NoteReport r = empty || getTableRow() == null ? null : getTableRow().getItem();
+                setStyle(r == null ? "" : "-fx-background-color: " + approvalStatusColor(r) + "; -fx-padding: 0;");
+            }
+        });
 
         colPDate.setCellValueFactory(d ->
             new SimpleStringProperty(d.getValue().getCreatedAt().format(FMT)));
         colPAuthor.setCellValueFactory(d ->
             new SimpleStringProperty(orEmpty(d.getValue().getAuthorName())));
+        colPSede.setCellValueFactory(d ->
+            new SimpleStringProperty(orEmpty(d.getValue().getSede())));
         colPRecipient.setCellValueFactory(d ->
             new SimpleStringProperty(orEmpty(d.getValue().getRecipientDisplay())));
+        // NOTE_REPORT.motivo is overloaded for Préstamo notes to store the tentative return date
+        // (see CLAUDE.md's "Note types and profiles" table) rather than a real Motivo — every row
+        // in this table is a Préstamo, so the column is labeled for what it actually holds here.
+        colPFechaTentativa.setCellValueFactory(d ->
+            new SimpleStringProperty(orEmpty(d.getValue().getMotivo())));
         colPItems.setCellValueFactory(d -> {
             NoteReport r = d.getValue();
             int assets = r.getAssetItemCount();
@@ -258,10 +302,23 @@ public class PrestamoHistoryController {
             }
         }
 
+        // Approval status used to also contribute a left-border layer here (composed alongside
+        // this bottom border via the same multi-layer -fx-border-color/-fx-border-width trick,
+        // since those are single, non-additive CSS properties) — moved to the dedicated
+        // colPApproval column instead, so only the overdue bottom-border remains.
         if (isOverdue(r)) {
             background += " -fx-border-color: #ef4444; -fx-border-width: 0 0 2 0;";
         }
         return background;
+    }
+
+    // Color for the dedicated colPApproval status column — same logic as HistoryController's
+    // approvalStatusColor() (duplicated per this codebase's no-shared-abstraction convention).
+    private String approvalStatusColor(NoteReport r) {
+        String status = r.getApprovalStatus();
+        if (status == null || "PENDING".equals(status)) return "#f97316";
+        if ("RECHAZADO".equals(status)) return "#ef4444";
+        return "#22c55e";
     }
 
     private double appendSlice(StringBuilder g, int count, int total, double pos, String rgb) {
