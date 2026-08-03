@@ -101,4 +101,45 @@ class PrestamoNewLoanViewFxmlTest {
         assertNotNull(controllerRef.get());
         assertNotNull(fieldRef.get());
     }
+
+    // Regression test for the 255-char cap added to txtUserName —
+    // matches NOTE_ENTREGA_DEVOLUCION.user_name's NVARCHAR(255) bound on SQL Server. Same
+    // real-FXML-load rationale as the Observaciones test above.
+    @Test
+    void userNameFieldRejectsInputBeyond255Characters() throws Exception {
+        AtomicReference<TextField> fieldRef = new AtomicReference<>();
+        AtomicReference<Throwable> errorRef = new AtomicReference<>();
+        CountDownLatch latch = new CountDownLatch(1);
+
+        Platform.runLater(() -> {
+            try {
+                FXMLLoader loader = new FXMLLoader(getClass().getResource(
+                    "/com/bunshock/note_app_for_it_frontend/views/PrestamoNewLoanView.fxml"));
+                loader.load();
+                PrestamoNewLoanController controller = loader.getController();
+                Field f = PrestamoNewLoanController.class.getDeclaredField("txtUserName");
+                f.setAccessible(true);
+                TextField txt = (TextField) f.get(controller);
+                fieldRef.set(txt);
+
+                txt.setText("a".repeat(255));
+                assertEquals(255, txt.getText().length());
+
+                txt.clear();
+                txt.setText("a".repeat(256));
+                assertNotEquals(256, txt.getText().length(),
+                    "TextFormatter should reject text longer than 255 characters");
+            } catch (Throwable t) {
+                errorRef.set(t);
+            } finally {
+                latch.countDown();
+            }
+        });
+
+        assertTrue(latch.await(5, TimeUnit.SECONDS), "FXML load did not complete in time");
+        if (errorRef.get() != null) {
+            fail("Assertion failed on FX thread: " + errorRef.get(), errorRef.get());
+        }
+        assertNotNull(fieldRef.get());
+    }
 }

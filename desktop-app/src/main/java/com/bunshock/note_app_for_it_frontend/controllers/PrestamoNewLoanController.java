@@ -100,6 +100,11 @@ public class PrestamoNewLoanController implements ItemDialogHost, AdSearchHost {
 
     private static final int OBSERVATIONS_MAX_LENGTH = 300;
     private static final int AREA_EVENTO_MAX_LENGTH = 200;
+    // Matches NOTE_ENTREGA_DEVOLUCION.user_name's NVARCHAR(255) bound on SQL Server — this
+    // field had no cap of any kind before (it doubles as an AD
+    // search-by-name box, so only the length is restricted here, not the character set, unlike
+    // UserNoteController's own copy of this field).
+    private static final int USER_NAME_MAX_LENGTH = 255;
 
     public void initialize() {
         setupAssetTable();
@@ -107,6 +112,8 @@ public class PrestamoNewLoanController implements ItemDialogHost, AdSearchHost {
 
         txtObservations.setTextFormatter(new TextFormatter<>(change ->
             change.getControlNewText().length() <= OBSERVATIONS_MAX_LENGTH ? change : null));
+        txtUserName.setTextFormatter(new TextFormatter<>(change ->
+            change.getControlNewText().length() <= USER_NAME_MAX_LENGTH ? change : null));
         txtAreaEvento.setTextFormatter(new TextFormatter<>(change ->
             change.getControlNewText().length() <= AREA_EVENTO_MAX_LENGTH ? change : null));
 

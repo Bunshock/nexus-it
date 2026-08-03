@@ -46,6 +46,9 @@ public class UserNoteController implements AdSearchHost {
     private static final Pattern DNI_PATTERN =
         Pattern.compile("^\\d{7,8}$");
     private static final int AREA_EVENTO_MAX_LENGTH = 200;
+    // Matches NOTE_ENTREGA_DEVOLUCION.user_name's NVARCHAR(255) bound on SQL Server —
+    // this field only restricted character set before, with no length limit.
+    private static final int USER_NAME_MAX_LENGTH = 255;
 
     @FXML private ToggleGroup userNoteTypeGroup;
     @FXML private ToggleButton btnTypeEntrega;
@@ -171,6 +174,7 @@ public class UserNoteController implements AdSearchHost {
 
         txtUserName.setTextFormatter(new TextFormatter<>(change -> {
             String newText = change.getControlNewText();
+            if (newText.length() > USER_NAME_MAX_LENGTH) return null;
             return newText.isEmpty() || newText.matches("[\\p{L} ]*") ? change : null;
         }));
         txtUserDni.setTextFormatter(new TextFormatter<>(change -> {
