@@ -186,10 +186,10 @@ class CachingServiceTest {
     @Test
     void getPermissionsForRoleFallsBackToLocalWhenPrimaryThrows() {
         MockUserRoleService localU = new MockUserRoleService();
-        localU.setPermissionsForRole(IUserRoleService.ROLE_ADMIN, java.util.Set.of(Permission.MANAGE_SEDES));
+        localU.setPermissionsForRole(IUserRoleService.ROLE_ADMIN, java.util.Set.of(Permission.MANAGE_STOCK));
         CachingUserRoleService cachingU = new CachingUserRoleService(new FailingUserRoleService(), localU);
 
-        assertEquals(java.util.Set.of(Permission.MANAGE_SEDES), cachingU.getPermissionsForRole(IUserRoleService.ROLE_ADMIN));
+        assertEquals(java.util.Set.of(Permission.MANAGE_STOCK), cachingU.getPermissionsForRole(IUserRoleService.ROLE_ADMIN));
     }
 
     // ── Minimal failing stubs ────────────────────────────────────────

@@ -40,19 +40,11 @@ public interface IEquipmentService {
 
     void addModel(String name, int brandId, int typeId);
 
-    void addProvider(String name);
-
-    void addSede(String name);
-
     void removeType(int typeId);
 
     void removeBrand(int brandId);
 
     void removeModel(int modelId);
-
-    void removeProvider(int providerId);
-
-    void removeSede(int sedeId);
 
     void renameType(int typeId, String newName);
 
@@ -61,10 +53,6 @@ public interface IEquipmentService {
     void renameBrand(int brandId, String newName);
 
     void renameModel(int modelId, String newName);
-
-    void renameProvider(int providerId, String newName);
-
-    void renameSede(int sedeId, String newName);
 
     // Stock (Base de Datos: Type/Brand/Model rollups). Keyed by (modelId, brandId, typeId) rather
     // than just modelId — the single global "Genérico / Otro" model carries an independent stock

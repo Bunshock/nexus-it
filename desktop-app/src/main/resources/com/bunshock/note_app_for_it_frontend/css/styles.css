@@ -192,6 +192,22 @@
     -fx-text-fill: #1e293b;
 }
 
+/* Smaller card/text pair for a subtitle-style header below the main .page-title-card */
+.page-subtitle-card {
+    -fx-background-color: white;
+    -fx-background-radius: 10;
+    -fx-border-color: transparent transparent transparent #0c8570;
+    -fx-border-width: 0 0 0 4;
+    -fx-border-radius: 10;
+    -fx-padding: 8 20;
+}
+
+.page-subtitle {
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #475569;
+}
+
 /* Primary action button */
 .button-primary {
     -fx-background-color: #0c8570;
@@ -353,15 +369,6 @@
 }
 .combo-box.sede-combo > .arrow-button {
     -fx-padding: 0 8;
-}
-/* Disabled state (a plain ADMIN/USER's locked-to-their-own-Sede case, see
-   DatabaseSectionController.initStockSedeSelector()) — JavaFX's default disabled opacity (0.4,
-   inherited from .control:disabled) made the Sede name nearly unreadable, direct user report.
-   Bumped up, same "less faded than the default" precedent as .text-field:disabled (0.5) above,
-   just a bit higher again since this text is informational (which Sede's numbers are showing),
-   not a blocked-input hint the user needs to visually deprioritize. */
-.combo-box.sede-combo:disabled {
-    -fx-opacity: 0.75;
 }
 
 /* Compact input for filter bars (date pickers + combo boxes) */

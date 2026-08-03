@@ -45,6 +45,12 @@ public class App extends Application {
     // away, regardless of what any particular monitor's headroom happens to be.
     private static final double WINDOW_SHADOW_MARGIN = 12;
 
+    // Bumping the height factor toward 1.0 had no visible effect for the user — the height was
+    // already at the visualBounds (screen minus taskbar) clamp, which was fully saturated. This
+    // lets the window extend a small, bounded amount past that boundary instead, per explicit
+    // user request after being told the trade-off (a taller window vs. a small taskbar overlap).
+    private static final double HEIGHT_OVERFLOW_ALLOWANCE = 16;
+
     private static App instance;
     private Stage primaryStage;
 
@@ -142,8 +148,8 @@ public class App extends Application {
         // matters and why the chrome overhead above was shrunk instead of just adding more
         // height on top of it).
         double height = Math.min(
-            visualBounds.getHeight() * 0.95 + TITLE_BAR_HEIGHT + 2 * WINDOW_SHADOW_MARGIN,
-            visualBounds.getHeight());
+            visualBounds.getHeight() + TITLE_BAR_HEIGHT + 2 * WINDOW_SHADOW_MARGIN,
+            visualBounds.getHeight() + HEIGHT_OVERFLOW_ALLOWANCE);
 
         // rootPane (MainView.fxml's BorderPane) is wrapped in a transparent, padded StackPane —
         // same "shadow needs room outside the visible content" technique every dialog in this

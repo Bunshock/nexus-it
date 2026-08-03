@@ -49,35 +49,22 @@
             </children>
         </VBox>
 
-        <!-- Catalog group toggle: Types/Brands/Models cascade vs. flat/independent catalogs -->
-        <HBox prefHeight="46.0" spacing="0">
+        <!-- Title + Stock Sede context, inline in one header row (Providers/Sedes were removed
+             from Base de Datos — edited via direct SQL now, see CLAUDE.md). The combo is hidden
+             (visible=false only, still managed — see DatabaseSectionController.initStockSedeSelector())
+             for a plain ADMIN/USER, so its layout space stays reserved and the row's height
+             always matches the SUPERADMIN case, which shows every Sede plus a leading "Todas"
+             (combined/summed) entry, selectable. -->
+        <HBox styleClass="page-subtitle-card" alignment="CENTER_LEFT">
             <children>
-                <ToggleButton fx:id="btnEquipmentCatalog" text="CATÁLOGO DE EQUIPOS"
-                              minWidth="0" prefWidth="0" maxWidth="Infinity" HBox.hgrow="ALWAYS"
-                              styleClass="type-button-left" selected="true" toggleGroup="$catalogGroup">
-                    <toggleGroup>
-                        <ToggleGroup fx:id="catalogGroup"/>
-                    </toggleGroup>
-                </ToggleButton>
-                <ToggleButton fx:id="btnOtherCatalogs" text="OTROS CATÁLOGOS"
-                              minWidth="0" prefWidth="0" maxWidth="Infinity" HBox.hgrow="ALWAYS"
-                              styleClass="type-button-right" toggleGroup="$catalogGroup"/>
-            </children>
-        </HBox>
-
-        <!-- Stock Sede context: locked to the technician's own Sede for a plain ADMIN/USER
-             (combo shows just that one Sede, disabled); a SUPERADMIN gets every Sede plus a
-             leading "Todas" (combined/summed) entry, selectable. Only relevant to the equipment
-             catalog row (Providers/Sedes have no stock), so shown/hidden alongside it. -->
-        <HBox fx:id="rowStockSede" alignment="CENTER_LEFT" spacing="10">
-            <children>
-                <Label text="STOCK — SEDE:" styleClass="input-label-small"/>
+                <Label fx:id="lblEquipmentCatalogTitle" styleClass="page-subtitle"/>
+                <Region HBox.hgrow="ALWAYS"/>
                 <ComboBox fx:id="cmbStockSede" prefWidth="220" styleClass="form-input-main, sede-combo"/>
             </children>
         </HBox>
 
         <!-- Equipment catalog: Types/Brands/Models cascade -->
-        <HBox fx:id="rowEquipmentCatalog" spacing="15" VBox.vgrow="ALWAYS">
+        <HBox spacing="15" VBox.vgrow="ALWAYS">
 
             <!-- Types -->
             <VBox spacing="10" HBox.hgrow="ALWAYS"
@@ -133,49 +120,6 @@
                         <Button text="Stock" onAction="#handleModifyStock" styleClass="button-secondary"
                                 maxWidth="Infinity" HBox.hgrow="ALWAYS"/>
                         <Button text="Eliminar" onAction="#handleRemoveModel" styleClass="button-secondary"
-                                maxWidth="Infinity" HBox.hgrow="ALWAYS"/>
-                    </HBox>
-                </children>
-            </VBox>
-
-        </HBox>
-
-        <!-- Other catalogs: flat, independent lists (no cascade between them) -->
-        <HBox fx:id="rowOtherCatalogs" spacing="15" VBox.vgrow="ALWAYS" visible="false" managed="false">
-
-            <!-- Providers -->
-            <VBox spacing="10" HBox.hgrow="ALWAYS"
-                  style="-fx-background-color: white; -fx-background-radius: 10; -fx-padding: 15 20 20 20;">
-                <children>
-                    <HBox alignment="CENTER_LEFT">
-                        <Label text="PROVEEDORES" styleClass="section-label"/>
-                        <Region HBox.hgrow="ALWAYS"/>
-                        <Button text="+ Agregar" onAction="#handleAddProvider" styleClass="button-primary"/>
-                    </HBox>
-                    <ListView fx:id="listProviders" VBox.vgrow="ALWAYS" styleClass="modern-list"/>
-                    <HBox spacing="8">
-                        <Button text="Editar" onAction="#handleEditProvider" styleClass="button-secondary"
-                                maxWidth="Infinity" HBox.hgrow="ALWAYS"/>
-                        <Button text="Eliminar" onAction="#handleRemoveProvider" styleClass="button-secondary"
-                                maxWidth="Infinity" HBox.hgrow="ALWAYS"/>
-                    </HBox>
-                </children>
-            </VBox>
-
-            <!-- Sedes -->
-            <VBox spacing="10" HBox.hgrow="ALWAYS"
-                  style="-fx-background-color: white; -fx-background-radius: 10; -fx-padding: 15 20 20 20;">
-                <children>
-                    <HBox alignment="CENTER_LEFT">
-                        <Label text="SEDES" styleClass="section-label"/>
-                        <Region HBox.hgrow="ALWAYS"/>
-                        <Button text="+ Agregar" onAction="#handleAddSede" styleClass="button-primary"/>
-                    </HBox>
-                    <ListView fx:id="listSedes" VBox.vgrow="ALWAYS" styleClass="modern-list"/>
-                    <HBox spacing="8">
-                        <Button text="Editar" onAction="#handleEditSede" styleClass="button-secondary"
-                                maxWidth="Infinity" HBox.hgrow="ALWAYS"/>
-                        <Button text="Eliminar" onAction="#handleRemoveSede" styleClass="button-secondary"
                                 maxWidth="Infinity" HBox.hgrow="ALWAYS"/>
                     </HBox>
                 </children>

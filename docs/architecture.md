@@ -213,11 +213,12 @@ classDiagram
         +getBrandsForType(typeId) List~EquipmentBrand~
         +getModelsForBrandAndType(brandId, typeId) List~EquipmentModel~
         +getAllProviders() List~EquipmentProvider~
+        +getAllSedes() List~Sede~
         +getSnValidation(modelId) Optional~SnValidation~
         +addType(name, isAsset)
-        +addBrand(name) addModel(name, brandId, typeId) addProvider(name)
-        +removeType(id) removeBrand(id) removeModel(id) removeProvider(id)
-        +renameType(id, name) renameBrand(id, name) renameModel(id, name) renameProvider(id, name)
+        +addBrand(name) addModel(name, brandId, typeId)
+        +removeType(id) removeBrand(id) removeModel(id)
+        +renameType(id, name) renameBrand(id, name) renameModel(id, name)
         +setRequiresSerial(typeId, requiresSerial)
         +getModelStock(modelId, brandId, typeId) int
         +setModelStock(modelId, brandId, typeId, stock)
@@ -289,8 +290,8 @@ Added 2026-07-24. `App.java` shows a small login `Scene` (`LoginController` + `v
 
 Added 2026-07-30. A "prohibit-all, allow per role" redesign, on top of the plain `ADMIN`/`USER`
 split above: `models/Permission.java` is a compile-time enum of every admin-tier action
-(`MANAGE_TYPES`, `MANAGE_BRANDS`, `MANAGE_MODELS`, `MANAGE_STOCK`, `MANAGE_PROVIDERS`,
-`MANAGE_SEDES`, `EDIT_SN_VALIDATION`, `EDIT_SMTP_CONFIG`, `EDIT_GLPI_CONFIG`, `EDIT_AD_CONFIG`,
+(`MANAGE_TYPES`, `MANAGE_BRANDS`, `MANAGE_MODELS`, `MANAGE_STOCK`,
+`EDIT_SN_VALIDATION`, `EDIT_SMTP_CONFIG`, `EDIT_GLPI_CONFIG`, `EDIT_AD_CONFIG`,
 `EDIT_AF_FORMAT_CONFIG`, `APPROVE_NOTES`, `SYNC_GLPI`, `VALIDATE_RETURNS`,
 `OVERRIDE_PROFILE_FIELDS`); a new `ROLE_PERMISSION(role, permission)` table is the DB-backed grant
 list a superadmin edits directly via SQL — the absence of a row is the only "denied" state.
@@ -397,6 +398,8 @@ Templates live in `src/main/resources/.../templates/`. `NoteGenerationService` s
 
 ### Provider Catalog (EquipmentProvider)
 `PROVIDER` (flat: `id`, `name UNIQUE`, `deprecated` — no type/brand/model structure, unlike the equipment catalog) backs `ProviderNoteController`'s "PROVEEDOR" `ComboBox`. **Fixed 2026-07-10**: this field used to be entirely non-functional — a `ComboBox<String>` never populated with items and never made editable anywhere in the code, so `getProviderName()` always returned `""` and every provider note generated through the live UI silently saved with a blank provider name. `IEquipmentService` gained `getAllProviders()`/`addProvider()`/`renameProvider()`/`removeProvider()`, implemented in `SqliteEquipmentService`, `CachingEquipmentService` (remote-first, local-fallback, same as the rest of the interface), and `MockEquipmentService` (in-memory, test-only). Providers are managed like Types/Brands/Models — a fourth "PROVEEDORES" list in `DatabaseSectionController`/`DatabaseSectionView.fxml`, admin-gated via the same `requireAdmin()` used by the other three lists — but deliberately excluded from the equipment tables' cascade, since a provider isn't tied to a type or brand. `cmbProviderSearch` is intentionally left non-editable (strict selection from the admin-curated list, not free text) — chosen over free text specifically to avoid typos/inconsistent naming across notes, an explicit user decision. `ProviderNoteController.validateAndShowErrors()` now rejects note generation with no provider selected (`lblProviderStatus`), a check that was previously moot since the field could never hold a real value anyway. **Catalog-FK redesign (2026-07-22)**: `addProvider`/`renameProvider`/`removeProvider` now follow the same deprecate-and-reactivate pattern as Type/Brand/Model (see `docs/database.md`'s "Catalog-FK redesign" note) instead of a straight insert/update/delete, and `NOTE_PROVEEDOR.provider_id` is a real FK into this table rather than a `provider_name` text snapshot.
+
+**Superseded 2026-07-31**: the "PROVEEDORES" and "SEDES" lists (Add/Editar/Eliminar, `MANAGE_PROVIDERS`/`MANAGE_SEDES`) were removed from `DatabaseSectionController`/`DatabaseSectionView.fxml` entirely — explicit user decision, since both catalogs change infrequently and Sede is already visible via History's filters. `addProvider`/`renameProvider`/`removeProvider`/`addSede`/`renameSede`/`removeSede` were deleted from `IEquipmentService` and every implementation (not left as dead code), along with the `MANAGE_PROVIDERS`/`MANAGE_SEDES` `Permission` values — a superadmin now edits `PROVIDER`/`SEDE` rows directly via SQL, the same "no in-app CRUD" convention already established for `APP_USER`/`ROLE_PERMISSION`. `getAllProviders()`/`getAllSedes()` (read-only) are unaffected — `ProviderNoteController`'s dropdown and the Base de Datos Stock — Sede selector still read from them. The "CATÁLOGO DE EQUIPOS"/"OTROS CATÁLOGOS" toggle is gone too; Base de Datos now shows a single, always-visible Types/Brands/Models cascade under one title row (`CATÁLOGO DE EQUIPOS : <Sede>`, uppercased) with the Stock — Sede combo box right-aligned inline in the same row.
 
 ### Préstamos Section (internal equipment loan tracking)
 Added 2026-07-17. Closes the gap left by the existing Préstamo note type (see `docs/use-cases.md` UC-01/UC-16): generating one captured a tentative return date but gave no way to track the loan afterward. Reuses the GLPI-sync pattern (`GlpiStatus`, `NoteDetailController.buildGlpiStatusRow()`, `HistoryController`'s row-gradient coloring) for a new, orthogonal per-item dimension — `ReturnStatus` (`N_A`/`PENDING`/`RETURNED`/`LOST`) — tracked on both asset **and** countable items (unlike GLPI, which is asset-only), via 3 new `NOTE_ITEM` columns (`return_status`, `return_rejection_reason`, `return_status_updated_at`).

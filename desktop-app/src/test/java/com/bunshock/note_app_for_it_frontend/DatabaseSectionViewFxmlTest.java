@@ -16,11 +16,9 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
-// Mirrors SettingsViewFxmlTest — no prior test loaded DatabaseSectionView.fxml, so a typo in the
-// new catalog-group ToggleButtons/rows or the Sedes list/buttons would otherwise only surface at
-// runtime. initialize() dereferences equipmentService synchronously (refreshTypes()/
-// refreshSedes()/refreshProviders()), so ServiceLocator needs a real service before load, same
-// as SettingsController's own Sede combobox needed.
+// Mirrors SettingsViewFxmlTest — catches fx:id/onAction typos that would otherwise only surface
+// at runtime. initialize() dereferences equipmentService synchronously (refreshTypes(), the
+// Sede combobox), so ServiceLocator needs a real service before load.
 class DatabaseSectionViewFxmlTest {
 
     @BeforeAll

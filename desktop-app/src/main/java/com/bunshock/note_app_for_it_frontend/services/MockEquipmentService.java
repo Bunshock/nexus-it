@@ -213,12 +213,12 @@ public class MockEquipmentService implements IEquipmentService {
         models.add(new EquipmentModel(nextModelId++, brandTypeId, name));
     }
 
-    @Override
+    // Not part of IEquipmentService anymore (Provider/Sede management moved to direct SQL, see
+    // Base de Datos) — kept test-only so callers can still seed data without a real database.
     public void addProvider(String name) {
         providers.add(new EquipmentProvider(nextProviderId++, name.trim()));
     }
 
-    @Override
     public void addSede(String name) {
         sedes.add(new Sede(nextSedeId++, name.trim()));
     }
@@ -236,16 +236,6 @@ public class MockEquipmentService implements IEquipmentService {
     @Override
     public void removeModel(int modelId) {
         models.removeIf(m -> m.getId() == modelId);
-    }
-
-    @Override
-    public void removeProvider(int providerId) {
-        providers.removeIf(p -> p.getId() == providerId);
-    }
-
-    @Override
-    public void removeSede(int sedeId) {
-        sedes.removeIf(s -> s.getId() == sedeId);
     }
 
     @Override
@@ -286,26 +276,6 @@ public class MockEquipmentService implements IEquipmentService {
             if (models.get(i).getId() == modelId) {
                 EquipmentModel old = models.get(i);
                 models.set(i, new EquipmentModel(old.getId(), old.getBrandTypeId(), newName.trim()));
-                return;
-            }
-        }
-    }
-
-    @Override
-    public void renameProvider(int providerId, String newName) {
-        for (int i = 0; i < providers.size(); i++) {
-            if (providers.get(i).getId() == providerId) {
-                providers.set(i, new EquipmentProvider(providerId, newName.trim()));
-                return;
-            }
-        }
-    }
-
-    @Override
-    public void renameSede(int sedeId, String newName) {
-        for (int i = 0; i < sedes.size(); i++) {
-            if (sedes.get(i).getId() == sedeId) {
-                sedes.set(i, new Sede(sedeId, newName.trim()));
                 return;
             }
         }

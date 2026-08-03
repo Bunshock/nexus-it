@@ -15,7 +15,6 @@ import java.util.stream.Collectors;
 import com.bunshock.note_app_for_it_frontend.models.AppConfig;
 import com.bunshock.note_app_for_it_frontend.models.EquipmentBrand;
 import com.bunshock.note_app_for_it_frontend.models.EquipmentModel;
-import com.bunshock.note_app_for_it_frontend.models.EquipmentProvider;
 import com.bunshock.note_app_for_it_frontend.models.EquipmentType;
 import com.bunshock.note_app_for_it_frontend.models.Permission;
 import com.bunshock.note_app_for_it_frontend.models.Sede;
@@ -46,8 +45,6 @@ import javafx.scene.control.PasswordField;
 import javafx.scene.control.Separator;
 import javafx.scene.control.TextField;
 import javafx.scene.control.TextFormatter;
-import javafx.scene.control.ToggleButton;
-import javafx.scene.control.ToggleGroup;
 import javafx.scene.input.KeyCode;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
@@ -70,18 +67,8 @@ public class DatabaseSectionController {
     @FXML private ListView<EquipmentType>  listTypes;
     @FXML private ListView<EquipmentBrand> listBrands;
     @FXML private ListView<EquipmentModel> listModels;
-    @FXML private ListView<EquipmentProvider> listProviders;
-    @FXML private ListView<Sede> listSedes;
     @FXML private ComboBox<Sede> cmbStockSede;
-
-    // Toggle between the cascading Types/Brands/Models row and the flat/independent
-    // Providers/Sedes row — a 5th catalog list (Sedes) made a single shared row too cramped.
-    @FXML private ToggleGroup catalogGroup;
-    @FXML private ToggleButton btnEquipmentCatalog;
-    @FXML private ToggleButton btnOtherCatalogs;
-    @FXML private HBox rowEquipmentCatalog;
-    @FXML private HBox rowOtherCatalogs;
-    @FXML private HBox rowStockSede;
+    @FXML private Label lblEquipmentCatalogTitle;
 
     private IEquipmentService equipmentService;
 
@@ -105,18 +92,6 @@ public class DatabaseSectionController {
         loadConnectionDisplay();
         initStockSedeSelector();
         refreshTypes();
-        refreshSedes();
-
-        catalogGroup.selectedToggleProperty().addListener((obs, old, next) -> {
-            boolean showEquipment = next == btnEquipmentCatalog;
-            rowEquipmentCatalog.setVisible(showEquipment);
-            rowEquipmentCatalog.setManaged(showEquipment);
-            rowStockSede.setVisible(showEquipment);
-            rowStockSede.setManaged(showEquipment);
-            rowOtherCatalogs.setVisible(!showEquipment);
-            rowOtherCatalogs.setManaged(!showEquipment);
-        });
-        refreshProviders();
 
         listTypes.getSelectionModel().selectedItemProperty().addListener((obs, old, sel) -> {
             if (suppressSelectionListeners) return;
@@ -548,9 +523,9 @@ public class DatabaseSectionController {
     }
 
     // A plain ADMIN/USER is locked to their own superadmin-assigned Sede (no way to view or edit
-    // another Sede's stock from here) — the combo box is populated with just that one Sede and
-    // disabled, so it reads as an indicator, not a control. A SUPERADMIN gets the full list plus
-    // a leading null entry meaning "Todas" (every Sede combined/summed), defaulting to it —
+    // another Sede's stock from here) — the title row already names that Sede, so the combo box
+    // is hidden entirely rather than shown disabled. A SUPERADMIN gets the full list plus a
+    // leading null entry meaning "Todas" (every Sede combined/summed), defaulting to it —
     // confirmed with the user rather than assumed, since "Todas" isn't itself an editable target
     // (see requireConcreteStockSede()).
     private void initStockSedeSelector() {
@@ -567,35 +542,35 @@ public class DatabaseSectionController {
             cmbStockSede.setItems(FXCollections.observableArrayList(items));
             cmbStockSede.getSelectionModel().selectFirst();
             currentStockSedeId = null;
-            cmbStockSede.setDisable(false);
+            cmbStockSede.setVisible(true);
         } else {
             Integer mySedeId = TechnicianSessionService.getInstance().getSedeId();
             currentStockSedeId = mySedeId;
-            List<Sede> items = new ArrayList<>();
             if (mySedeId != null) {
                 equipmentService.getAllSedes().stream()
                     .filter(s -> s.getId() == mySedeId)
                     .findFirst()
-                    .ifPresent(items::add);
+                    .ifPresent(s -> cmbStockSede.setItems(FXCollections.observableArrayList(s)));
+                cmbStockSede.getSelectionModel().selectFirst();
             }
-            cmbStockSede.setItems(FXCollections.observableArrayList(items));
-            if (!items.isEmpty()) cmbStockSede.getSelectionModel().selectFirst();
-            cmbStockSede.setDisable(true);
+            // visible=false only (not managed=false) — keeps the combo's layout space reserved
+            // so the title row's height matches the SUPERADMIN case exactly, instead of
+            // collapsing down to just the Label.
+            cmbStockSede.setVisible(false);
         }
         cmbStockSede.valueProperty().addListener((obs, old, sel) -> {
             currentStockSedeId = sel == null ? null : sel.getId();
             refreshTypes();
-            updateEquipmentCatalogButtonLabel();
+            updateEquipmentCatalogTitle();
         });
-        updateEquipmentCatalogButtonLabel();
+        updateEquipmentCatalogTitle();
     }
 
     private static final String EQUIPMENT_CATALOG_BASE_LABEL = "CATÁLOGO DE EQUIPOS";
 
-    // Direct user request: the toggle button itself must name the Sede its stock numbers belong
-    // to, so a technician can't mistake one Sede's counts for another's just by not noticing the
-    // (disabled, easy-to-miss) selector next to it.
-    private void updateEquipmentCatalogButtonLabel() {
+    // Names the Sede the shown stock numbers belong to, so a technician can't mistake one Sede's
+    // counts for another's. All caps, matching every other section title in this app.
+    private void updateEquipmentCatalogTitle() {
         Sede sel = cmbStockSede.getValue();
         String sedeLabel;
         if (sel != null) {
@@ -603,11 +578,9 @@ public class DatabaseSectionController {
         } else if (IUserRoleService.ROLE_SUPERADMIN.equals(TechnicianSessionService.getInstance().getRole())) {
             sedeLabel = "Todas las sedes";
         } else {
-            // A non-superadmin technician with no APP_USER.sede_id assigned at all — same
-            // "Sede no asignada" wording MainController's own sidebar warning label uses.
             sedeLabel = "Sede no asignada";
         }
-        btnEquipmentCatalog.setText(EQUIPMENT_CATALOG_BASE_LABEL + " : " + sedeLabel);
+        lblEquipmentCatalogTitle.setText((EQUIPMENT_CATALOG_BASE_LABEL + " : " + sedeLabel).toUpperCase());
     }
 
     // Editing a stock number always requires one concrete Sede — a combined "Todas" number has
@@ -621,19 +594,9 @@ public class DatabaseSectionController {
         return false;
     }
 
-    private void refreshProviders() {
-        listProviders.setItems(FXCollections.observableArrayList(equipmentService.getAllProviders()));
-    }
-
-    private void refreshSedes() {
-        listSedes.setItems(FXCollections.observableArrayList(equipmentService.getAllSedes()));
-    }
-
     @FXML private void handleAddType()    { requirePermission(Permission.MANAGE_TYPES, this::openAddTypeDialog); }
     @FXML private void handleAddBrand()   { requirePermission(Permission.MANAGE_BRANDS, this::openAddBrandDialog); }
     @FXML private void handleAddModel()   { requirePermission(Permission.MANAGE_MODELS, this::openAddModelDialog); }
-    @FXML private void handleAddProvider(){ requirePermission(Permission.MANAGE_PROVIDERS, this::openAddProviderDialog); }
-    @FXML private void handleAddSede()    { requirePermission(Permission.MANAGE_SEDES, this::openAddSedeDialog); }
 
     @FXML
     private void handleEditType() {
@@ -682,26 +645,6 @@ public class DatabaseSectionController {
     }
 
     @FXML
-    private void handleEditProvider() {
-        EquipmentProvider sel = listProviders.getSelectionModel().getSelectedItem();
-        if (sel == null) return;
-        requirePermission(Permission.MANAGE_PROVIDERS, () -> openRenameDialog(sel.getName(), newName -> {
-            equipmentService.renameProvider(sel.getId(), newName);
-            refreshProviders();
-        }));
-    }
-
-    @FXML
-    private void handleEditSede() {
-        Sede sel = listSedes.getSelectionModel().getSelectedItem();
-        if (sel == null) return;
-        requirePermission(Permission.MANAGE_SEDES, () -> openRenameDialog(sel.getName(), newName -> {
-            equipmentService.renameSede(sel.getId(), newName);
-            refreshSedes();
-        }));
-    }
-
-    @FXML
     private void handleRemoveType() {
         EquipmentType sel = listTypes.getSelectionModel().getSelectedItem();
         if (sel == null) return;
@@ -738,28 +681,6 @@ public class DatabaseSectionController {
                 EquipmentBrand brand = listBrands.getSelectionModel().getSelectedItem();
                 if (type != null && brand != null) refreshModelsForBrandType(brand.getId(), type.getId());
             } catch (Exception e) { showErrorDialog("Error al eliminar", e.getMessage()); }
-        });
-    }
-
-    @FXML
-    private void handleRemoveProvider() {
-        EquipmentProvider sel = listProviders.getSelectionModel().getSelectedItem();
-        if (sel == null) return;
-        requirePermission(Permission.MANAGE_PROVIDERS, () -> {
-            if (!confirmDelete(sel.getName())) return;
-            try { equipmentService.removeProvider(sel.getId()); refreshProviders(); }
-            catch (Exception e) { showErrorDialog("Error al eliminar", e.getMessage()); }
-        });
-    }
-
-    @FXML
-    private void handleRemoveSede() {
-        Sede sel = listSedes.getSelectionModel().getSelectedItem();
-        if (sel == null) return;
-        requirePermission(Permission.MANAGE_SEDES, () -> {
-            if (!confirmDelete(sel.getName())) return;
-            try { equipmentService.removeSede(sel.getId()); refreshSedes(); }
-            catch (Exception e) { showErrorDialog("Error al eliminar", e.getMessage()); }
         });
     }
 
@@ -1236,94 +1157,6 @@ public class DatabaseSectionController {
         root.getChildren().addAll(lblTitle, lblPath, new VBox(2, lblS, tfStock), buttons);
 
         buildAndShow(stage, root, tfStock);
-    }
-
-    private void openAddProviderDialog() {
-        Stage stage = buildDialogStage();
-        centerOnContent(stage);
-
-        Label lblTitle = new Label("Nuevo proveedor");
-        lblTitle.getStyleClass().add("section-label");
-
-        Label lblN = new Label("NOMBRE"); lblN.getStyleClass().add("input-label-small");
-        Label lblError = buildErrorLabel();
-        TextField tfName = new TextField();
-        tfName.setTextFormatter(catalogNameFormatter());
-        tfName.setPromptText("Ej: TechCorp S.A."); tfName.getStyleClass().add("form-input-main");
-
-        Button btnCancel = new Button("Cancelar");
-        btnCancel.getStyleClass().add("button-secondary");
-        btnCancel.setOnAction(e -> stage.close());
-
-        Button btnSave = new Button("Agregar");
-        btnSave.getStyleClass().add("button-primary");
-        btnSave.setOnAction(e -> {
-            String name = tfName.getText().trim();
-            if (name.isEmpty()) {
-                triggerFieldError(lblError, "El nombre no puede estar vacío");
-                return;
-            }
-            try {
-                equipmentService.addProvider(name);
-            } catch (Exception ex) {
-                triggerFieldError(lblError, ex.getMessage());
-                return;
-            }
-            refreshProviders();
-            stage.close();
-        });
-
-        HBox buttons = new HBox(8, btnCancel, btnSave);
-        buttons.setAlignment(Pos.CENTER_RIGHT);
-
-        VBox root = buildDialogRoot(380);
-        root.getChildren().addAll(lblTitle, new VBox(2, buildFieldHeaderRow(lblN, lblError), tfName), buttons);
-
-        buildAndShow(stage, root, tfName);
-    }
-
-    private void openAddSedeDialog() {
-        Stage stage = buildDialogStage();
-        centerOnContent(stage);
-
-        Label lblTitle = new Label("Nueva sede");
-        lblTitle.getStyleClass().add("section-label");
-
-        Label lblN = new Label("NOMBRE"); lblN.getStyleClass().add("input-label-small");
-        Label lblError = buildErrorLabel();
-        TextField tfName = new TextField();
-        tfName.setTextFormatter(catalogNameFormatter());
-        tfName.setPromptText("Ej: Campus Córdoba"); tfName.getStyleClass().add("form-input-main");
-
-        Button btnCancel = new Button("Cancelar");
-        btnCancel.getStyleClass().add("button-secondary");
-        btnCancel.setOnAction(e -> stage.close());
-
-        Button btnSave = new Button("Agregar");
-        btnSave.getStyleClass().add("button-primary");
-        btnSave.setOnAction(e -> {
-            String name = tfName.getText().trim();
-            if (name.isEmpty()) {
-                triggerFieldError(lblError, "El nombre no puede estar vacío");
-                return;
-            }
-            try {
-                equipmentService.addSede(name);
-            } catch (Exception ex) {
-                triggerFieldError(lblError, ex.getMessage());
-                return;
-            }
-            refreshSedes();
-            stage.close();
-        });
-
-        HBox buttons = new HBox(8, btnCancel, btnSave);
-        buttons.setAlignment(Pos.CENTER_RIGHT);
-
-        VBox root = buildDialogRoot(380);
-        root.getChildren().addAll(lblTitle, new VBox(2, buildFieldHeaderRow(lblN, lblError), tfName), buttons);
-
-        buildAndShow(stage, root, tfName);
     }
 
     private void openRenameDialog(String currentName, java.util.function.Consumer<String> onSave) {

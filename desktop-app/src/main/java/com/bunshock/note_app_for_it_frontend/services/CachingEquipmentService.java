@@ -98,18 +98,6 @@ public class CachingEquipmentService implements IEquipmentService {
     }
 
     @Override
-    public void addProvider(String name) {
-        primary.addProvider(name);
-        try { local.addProvider(name); } catch (Exception ignored) {}
-    }
-
-    @Override
-    public void addSede(String name) {
-        primary.addSede(name);
-        try { local.addSede(name); } catch (Exception ignored) {}
-    }
-
-    @Override
     public void removeType(int typeId) {
         primary.removeType(typeId);
         try { local.removeType(typeId); } catch (Exception ignored) {}
@@ -125,18 +113,6 @@ public class CachingEquipmentService implements IEquipmentService {
     public void removeModel(int modelId) {
         primary.removeModel(modelId);
         try { local.removeModel(modelId); } catch (Exception ignored) {}
-    }
-
-    @Override
-    public void removeProvider(int providerId) {
-        primary.removeProvider(providerId);
-        try { local.removeProvider(providerId); } catch (Exception ignored) {}
-    }
-
-    @Override
-    public void removeSede(int sedeId) {
-        primary.removeSede(sedeId);
-        try { local.removeSede(sedeId); } catch (Exception ignored) {}
     }
 
     @Override
@@ -161,18 +137,6 @@ public class CachingEquipmentService implements IEquipmentService {
     public void renameModel(int modelId, String newName) {
         primary.renameModel(modelId, newName);
         try { local.renameModel(modelId, newName); } catch (Exception ignored) {}
-    }
-
-    @Override
-    public void renameProvider(int providerId, String newName) {
-        primary.renameProvider(providerId, newName);
-        try { local.renameProvider(providerId, newName); } catch (Exception ignored) {}
-    }
-
-    @Override
-    public void renameSede(int sedeId, String newName) {
-        primary.renameSede(sedeId, newName);
-        try { local.renameSede(sedeId, newName); } catch (Exception ignored) {}
     }
 
     @Override

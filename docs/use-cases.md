@@ -123,20 +123,21 @@ Same as UC-01 but with profile "FIN DE CONTRATO". Used for employees leaving the
 
 ---
 
-## UC-09 — Manage Equipment Catalog and Provider List (Database Section)
+## UC-09 — Manage Equipment Catalog (Database Section)
 
 **Actor:** IT Administrator (add/rename/remove); IT Technician (view only)  
 **Trigger:** Clicks "Base de Datos" in the sidebar
 
 **Main Flow:**
-1. A toggle switches between two rows: "Catálogo de Equipos" (Types, Brands, Models — cascading) and "Otros Catálogos" (Proveedores, Sedes — flat, independent lists, no cascade)
-2. Selecting a Type filters the Brands list; selecting a Brand filters the Models list
-3. Each Type/Brand/Model row shows a "· Stock: N" suffix — a summed rollup (Model = its own stock; Brand = sum across its models for the selected Type; Type = sum across every brand linked to it)
-4. Add/Editar/Eliminar on any list prompts for the admin password if admin mode isn't already active (same `requireAdmin` gate as Configuración's fields). Editing a Model opens a dialog with both its name and its stock number (scoped to the currently-selected Type+Brand)
+1. A single title row reads "CATÁLOGO DE EQUIPOS : {Sede}" (all caps), with a Stock — Sede selector right-aligned inline in the same row — locked to the technician's own assigned Sede for a plain ADMIN/USER, or a full Sede picker (plus a combined "Todas") for a SUPERADMIN
+2. Below it, the Types/Brands/Models cascade: selecting a Type filters the Brands list; selecting a Brand filters the Models list
+3. Each Type/Brand/Model row shows a stock number for the selected Sede — a summed rollup (Model = its own stock; Brand = sum across its models for the selected Type; Type = sum across every brand linked to it)
+4. Add/Editar/Eliminar on any list prompts for the admin password if the acting technician doesn't already have the matching permission. Editing a Model opens a dialog with both its name and its stock number (scoped to the currently-selected Type+Brand+Sede)
 5. "Genérico / Otro" brand and model are protected from deletion
-6. A provider added here immediately becomes selectable in Nota de Proveedor's "PROVEEDOR" dropdown (UC-04) — including for that tab if it was already open earlier in the session, which re-fetches the provider list every time it's shown
 
 **Alternate Flow — Remote DB:** Technician enters DB URL; app verifies connectivity before accepting
+
+**Note:** Proveedores and Sedes were managed from their own lists in this section until 2026-07-31, when they were removed — both catalogs change infrequently, and a superadmin now edits `PROVIDER`/`SEDE` rows directly via SQL instead. `ProviderNoteController`'s "PROVEEDOR" dropdown (UC-04) and History's Sede filter are unaffected — they still read the catalogs, just no longer offer an in-app way to change them.
 
 ---
 
