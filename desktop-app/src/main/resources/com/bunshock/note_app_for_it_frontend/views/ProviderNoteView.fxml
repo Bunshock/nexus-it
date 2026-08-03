@@ -25,9 +25,10 @@
                     </children>
                 </VBox>
 
-                <VBox spacing="2">
+                <VBox spacing="6">
                     <children>
-                        <Label text="CUIT" styleClass="input-label-small"/>
+                        <CheckBox fx:id="chkEnableCuit" text="CUIT" selected="true"
+                                  styleClass="custom-checkbox-inline"/>
                         <TextField fx:id="txtCuit" promptText="XX-XXXXXXXX-X" styleClass="form-input-main"/>
                     </children>
                 </VBox>

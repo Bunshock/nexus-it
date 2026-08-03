@@ -24,6 +24,11 @@ public class ProviderNoteController {
         Pattern.compile("^\\p{L}+( \\p{L}+)*$");
     private static final Pattern DNI_PATTERN =
         Pattern.compile("^\\d{7,8}$");
+    // Match NOTE_PROVEEDOR.responsible_name/cuit's NVARCHAR(255) bounds on SQL Server —
+    // txtProviderResponsibleName only restricted character set before, with no
+    // length limit; txtCuit had no TextFormatter of any kind.
+    private static final int RESPONSIBLE_NAME_MAX_LENGTH = 255;
+    private static final int CUIT_MAX_LENGTH = 255;
 
     // Matches UserNoteController's FEEDBACK_HOLD/FEEDBACK_FADE so every validation error shown
     // when Generar Nota is clicked fades away at the same speed, across all three note forms.
@@ -32,6 +37,7 @@ public class ProviderNoteController {
 
     @FXML private ComboBox<EquipmentProvider> cmbProviderSearch;
     @FXML private TextField txtCuit;
+    @FXML private CheckBox chkEnableCuit;
     @FXML private ComboBox<String> cmbMotivo;
 
     @FXML private CheckBox chkEnableResponsible;
@@ -50,15 +56,19 @@ public class ProviderNoteController {
 
         chkEnableResponsible.selectedProperty().addListener((obs, was, now) ->
             gridResponsibleDetails.setDisable(!now));
+        chkEnableCuit.selectedProperty().addListener((obs, was, now) -> txtCuit.setDisable(!now));
 
         txtProviderResponsibleName.setTextFormatter(new TextFormatter<>(change -> {
             String newText = change.getControlNewText();
+            if (newText.length() > RESPONSIBLE_NAME_MAX_LENGTH) return null;
             return newText.isEmpty() || newText.matches("[\\p{L} ]*") ? change : null;
         }));
         txtProviderResponsibleDni.setTextFormatter(new TextFormatter<>(change -> {
             String newText = change.getControlNewText();
             return newText.length() <= 8 && newText.matches("\\d*") ? change : null;
         }));
+        txtCuit.setTextFormatter(new TextFormatter<>(change ->
+            change.getControlNewText().length() <= CUIT_MAX_LENGTH ? change : null));
     }
 
     /** Reloads the provider list from the catalog (Configuración → Base de Datos), keeping the
@@ -134,7 +144,9 @@ public class ProviderNoteController {
         return selected != null ? selected.getId() : -1;
     }
 
-    public String getCuit() { return txtCuit.getText().trim(); }
+    public String getCuit() {
+        return chkEnableCuit.isSelected() ? txtCuit.getText().trim() : "";
+    }
 
     public String getMotivo() { return cmbMotivo.getValue(); }
 
@@ -152,6 +164,7 @@ public class ProviderNoteController {
         cmbProviderSearch.getSelectionModel().clearSelection();
         cmbProviderSearch.setValue(null);
         txtCuit.clear();
+        chkEnableCuit.setSelected(true);
         cmbMotivo.getSelectionModel().clearSelection();
         chkEnableResponsible.setSelected(false);
         txtProviderResponsibleName.clear();
