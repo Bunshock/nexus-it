@@ -654,9 +654,13 @@
 }
 
 /* Sidebar Sede line — its own (smaller) class rather than reusing .user-username, so shrinking
-   its footprint to offset the welcome block's added height never affects lblUsername's size. */
+   its footprint to offset the welcome block's added height never affects lblUsername's size.
+   Color was #8fb3af (a muted teal-gray, low contrast against .sidebar's own #0c8570 teal
+   background — direct user report it read as "a little invisible"); switched to #b2dfdb, the
+   same light cyan .user-username/.sidebar-title-sub already use for readable secondary text on
+   this exact background. */
 .user-sede {
-    -fx-text-fill: #8fb3af;
+    -fx-text-fill: #b2dfdb;
     -fx-font-size: 10px;
     -fx-font-family: "Segoe UI", sans-serif;
 }
