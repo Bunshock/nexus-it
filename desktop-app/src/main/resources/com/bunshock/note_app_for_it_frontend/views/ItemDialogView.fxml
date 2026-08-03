@@ -76,11 +76,10 @@
                 <!-- A/F -->
                 <VBox spacing="5">
                     <VBox.margin><Insets top="8"/></VBox.margin>
-                    <CheckBox fx:id="chkEnableAF" text="N° ACTIVO FIJO (A/F)"
+                    <CheckBox fx:id="chkEnableAF" text="N° ACTIVO FIJO (A/F)" selected="true"
                               styleClass="input-label-small" onAction="#handleAfToggle"/>
                     <TextField fx:id="txtAF" styleClass="form-input-main"
-                               promptText="Deshabilitado" disable="true"/>
-                    <TextFlow fx:id="flowAfPattern"/>
+                               promptText="Ingrese S/N para calcular A/F..." editable="false"/>
                 </VBox>
             </VBox>
 

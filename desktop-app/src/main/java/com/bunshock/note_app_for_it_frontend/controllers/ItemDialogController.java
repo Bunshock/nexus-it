@@ -7,7 +7,6 @@ import java.util.OptionalInt;
 import java.util.function.Function;
 import java.util.function.IntConsumer;
 import java.util.function.IntSupplier;
-import java.util.regex.Pattern;
 
 import com.bunshock.note_app_for_it_frontend.models.AppConfig;
 import com.bunshock.note_app_for_it_frontend.models.AssetItem;
@@ -57,7 +56,6 @@ public class ItemDialogController {
     @FXML private javafx.scene.text.TextFlow flowSnPattern;
     @FXML private CheckBox chkEnableAF;
     @FXML private TextField txtAF;
-    @FXML private javafx.scene.text.TextFlow flowAfPattern;
 
     @FXML private VBox containerCountableFields;
     @FXML private TextField txtQty;
@@ -111,12 +109,23 @@ public class ItemDialogController {
     private int pinnedModelCount;
 
     private static final int OBSERVATIONS_MAX_LENGTH = 200;
+    // Matches NOTE_ITEM_ASSET.serial_number's NVARCHAR(255) bound on SQL Server — SQLite itself
+    // never enforces this, so the app-layer cap is the only thing stopping a pasted value from
+    // saving fine locally and then failing with a truncation error against a configured remote
+    // database — this field had no cap of any kind before, unlike every other
+    // free-text field in this app. A/F is derived from S/N (prefix + separator + serial) and not
+    // separately capped here — it's a read-only display field, nothing is ever typed into it
+    // directly, and prefix/separator are short config values, so this bound already keeps A/F
+    // well within its own NVARCHAR(255) bound in every realistic case.
+    private static final int SERIAL_MAX_LENGTH = 255;
 
     public void initialize() {
         equipmentService = ServiceLocator.getInstance().getEquipmentService();
         historyService = ServiceLocator.getInstance().getHistoryService();
         txtObs.setTextFormatter(new TextFormatter<>(change ->
             change.getControlNewText().length() <= OBSERVATIONS_MAX_LENGTH ? change : null));
+        txtSerial.setTextFormatter(new TextFormatter<>(change ->
+            change.getControlNewText().length() <= SERIAL_MAX_LENGTH ? change : null));
         txtQty.setTextFormatter(new TextFormatter<>(change -> {
             String newText = change.getControlNewText();
             if (newText.isEmpty()) return change;
@@ -141,26 +150,10 @@ public class ItemDialogController {
             if (!focused) applySnFormatting();
         });
 
-        txtSerial.textProperty().addListener((obs, old, val) -> validateSnLength());
-
-        txtAF.focusedProperty().addListener((obs, was, focused) -> {
-            if (!focused) applyAfFormatting();
+        txtSerial.textProperty().addListener((obs, old, val) -> {
+            validateSnLength();
+            recomputeAf();
         });
-
-        txtAF.textProperty().addListener((obs, old, val) -> refreshAfFlow(val));
-
-        AppConfig.AfFormat fmt = ConfigService.getInstance().getConfig().afFormat;
-        Pattern afCharPattern = Pattern.compile(fmt.inputPattern != null ? fmt.inputPattern : "\\d");
-        txtAF.setTextFormatter(new TextFormatter<>(change -> {
-            String newText = change.getControlNewText();
-            if (newText.length() <= fmt.length &&
-                    newText.chars().allMatch(c -> afCharPattern.matcher(String.valueOf((char) c)).matches())) {
-                return change;
-            }
-            return null;
-        }));
-
-
     }
 
     private static final String DIVIDER_STYLE =
@@ -344,21 +337,23 @@ public class ItemDialogController {
             txtSerial.setPromptText("Ingrese S/N...");
             validateSnLength();
         }
+        // Nothing to derive A/F from with no serial number.
+        chkEnableAF.setDisable(sinSN);
+        if (sinSN) {
+            chkEnableAF.setSelected(false);
+            handleAfToggle();
+        } else {
+            recomputeAf();
+        }
     }
 
     @FXML
     private void handleAfToggle() {
         boolean enabled = chkEnableAF.isSelected();
         txtAF.setDisable(!enabled);
-        if (!enabled) {
-            txtAF.clear();
-            txtAF.setStyle("");
-            txtAF.setPromptText("Deshabilitado");
-            flowAfPattern.getChildren().clear();
-        } else {
-            txtAF.setPromptText("Ingrese A/F...");
-            refreshAfFlow(null);
-        }
+        txtAF.setStyle("");
+        txtAF.setPromptText(enabled ? "Ingrese S/N para calcular A/F..." : "Deshabilitado");
+        recomputeAf();
     }
 
     private void applySnFormatting() {
@@ -398,7 +393,17 @@ public class ItemDialogController {
         }
 
         if (regex != null) {
-            patternOk = sn.matches(regex);
+            // A syntactically invalid admin-authored regex (SettingsController's own save now
+            // validates this too, but an already-saved bad pattern from before that check existed
+            // — or any other write path — must not crash S/N entry for every technician typing
+            // against this model). Fail safe: skip the pattern check rather than block saving
+            // over an admin's own config mistake, same "fail safely" precedent this project
+            // already applies to AD/GLPI/SMTP unreachability.
+            try {
+                patternOk = sn.matches(regex);
+            } catch (java.util.regex.PatternSyntaxException invalidRegex) {
+                patternOk = true;
+            }
             if (!patternOk) {
                 setPatternFlow("Formato inválido. Patrón: ", "#ef4444", rule);
             } else {
@@ -442,69 +447,16 @@ public class ItemDialogController {
         flowSnPattern.getChildren().clear();
     }
 
-    private void applyAfFormatting() {
-        if (!chkEnableAF.isSelected()) return;
-        String raw = txtAF.getText().trim();
-        if (raw.isEmpty()) return;
-        txtAF.setText(formatAF(raw));
-    }
-
-    private void refreshAfFlow(String rawInput) {
-        AppConfig.AfFormat fmt = ConfigService.getInstance().getConfig().afFormat;
-        flowAfPattern.getChildren().clear();
-        String desc = afTypeDescription(fmt.inputPattern, fmt.length);
-        String placeholder = afPlaceholder(fmt.inputPattern).repeat(fmt.length);
-        javafx.scene.text.Text descNode = new javafx.scene.text.Text(desc + ". Ej: ");
-        descNode.setStyle("-fx-fill: #64748b; -fx-font-size: 10;");
-        javafx.scene.text.Text fixedNode = new javafx.scene.text.Text(fmt.prefix + fmt.separator);
-        fixedNode.setStyle("-fx-fill: #334155; -fx-font-size: 10; -fx-font-weight: bold;");
-        javafx.scene.text.Text varNode = new javafx.scene.text.Text(placeholder);
-        varNode.setStyle("-fx-fill: #94a3b8; -fx-font-size: 10; -fx-font-style: italic;");
-        flowAfPattern.getChildren().addAll(descNode, fixedNode, varNode);
-        if (rawInput != null && !rawInput.isBlank()) {
-            javafx.scene.text.Text resultNode = new javafx.scene.text.Text("  →  " + formatAF(rawInput.trim()));
-            resultNode.setStyle("-fx-fill: #64748b; -fx-font-size: 10;");
-            flowAfPattern.getChildren().add(resultNode);
+    // A/F is fully derived from S/N — prefix + separator + serial, recomputed live on every
+    // S/N keystroke (txtSerial's textProperty listener) and whenever "Incluir A/F" is toggled.
+    private void recomputeAf() {
+        if (!chkEnableAF.isSelected()) {
+            txtAF.setText("");
+            return;
         }
-    }
-
-    private String formatAF(String raw) {
         AppConfig.AfFormat fmt = ConfigService.getInstance().getConfig().afFormat;
-        String padded = fmt.filler.repeat(Math.max(0, fmt.length - raw.length())) + raw;
-        if (padded.length() > fmt.length) padded = padded.substring(padded.length() - fmt.length);
-        return fmt.prefix + fmt.separator + padded;
-    }
-
-    private String extractAfRaw(String formattedAF) {
-        AppConfig.AfFormat fmt = ConfigService.getInstance().getConfig().afFormat;
-        String head = fmt.prefix + fmt.separator;
-        return formattedAF.startsWith(head) ? formattedAF.substring(head.length()) : formattedAF;
-    }
-
-    private String afTypeDescription(String inputPattern, int length) {
-        String p = inputPattern != null ? inputPattern.trim() : "\\d";
-        boolean hasDigits  = p.equals("\\d") || p.contains("0-9");
-        boolean hasUpper   = p.contains("A-Z");
-        boolean hasLower   = p.contains("a-z");
-        boolean hasLetters = hasUpper || hasLower;
-        String unit = hasDigits && !hasLetters ? "dígitos" : "caracteres";
-        String type;
-        if (hasDigits && hasLetters) type = "Letras y números";
-        else if (hasUpper)           type = "Solo letras mayúsculas";
-        else if (hasLower)           type = "Solo letras minúsculas";
-        else                         type = "Solo números";
-        return type + ", hasta " + length + " " + unit;
-    }
-
-    private String afPlaceholder(String inputPattern) {
-        if (inputPattern == null) return "0";
-        String p = inputPattern.trim();
-        if (p.equals("\\d") || p.equals("[0-9]")) return "0";
-        if (p.equals("[A-Z]") || p.equals("[a-z]")) return "A";
-        if (p.contains("A-Z") && p.contains("0-9")) return "X";
-        if (p.contains("A-Z")) return "A";
-        if (p.contains("0-9")) return "0";
-        return "X";
+        String sn = chkSinSN.isSelected() ? "" : txtSerial.getText().trim();
+        txtAF.setText(sn.isEmpty() ? "" : fmt.prefix + fmt.separator + sn);
     }
 
     public void setParentController(ItemDialogHost parent) {
@@ -536,12 +488,11 @@ public class ItemDialogController {
             txtSerial.setText(sn);
         }
 
+        // A/F is fully derived from S/N (already set above by this point) — no raw value to
+        // extract, just reflect whether this asset had it enabled and let recomputeAf() rebuild it.
         String af = asset.getAf().get();
-        if (af != null && !af.isEmpty()) {
-            chkEnableAF.setSelected(true);
-            handleAfToggle();
-            txtAF.setText(extractAfRaw(af));
-        }
+        chkEnableAF.setSelected(af != null && !af.isEmpty());
+        handleAfToggle();
 
         txtObs.setText(asset.getObservations().get());
     }
@@ -704,8 +655,7 @@ public class ItemDialogController {
         if (type.isAsset()) {
             String sn = chkSinSN.isSelected() ? "" : txtSerial.getText().trim();
             if (!chkSinSN.isSelected() && chkUppercase.isSelected()) sn = sn.toUpperCase();
-            String afRaw = txtAF.getText().trim();
-        String af = chkEnableAF.isSelected() && !afRaw.isEmpty() ? formatAF(afRaw) : "";
+            String af = chkEnableAF.isSelected() ? txtAF.getText().trim() : "";
 
             if (editingAsset != null) {
                 editingAsset.getType().set(typeName);

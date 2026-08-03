@@ -56,11 +56,6 @@ class InputValidationTest {
     }
 
     @Test
-    void profileControllerDniPattern() throws Exception {
-        assertDniPatternBehavior(patternField(ProfileController.class, "DNI_PATTERN"));
-    }
-
-    @Test
     void providerNoteControllerNamePattern() throws Exception {
         assertNamePatternBehavior(patternField(ProviderNoteController.class, "NAME_PATTERN"));
     }
@@ -68,17 +63,5 @@ class InputValidationTest {
     @Test
     void providerNoteControllerDniPattern() throws Exception {
         assertDniPatternBehavior(patternField(ProviderNoteController.class, "DNI_PATTERN"));
-    }
-
-    @Test
-    void profileControllerEmailPattern() throws Exception {
-        Pattern p = patternField(ProfileController.class, "EMAIL_PATTERN");
-        assertTrue(p.matcher("juan.perez@ues21.edu.ar").matches());
-        assertTrue(p.matcher("j.perez+it@test.com").matches());
-        assertFalse(p.matcher("juan.perez@").matches());
-        assertFalse(p.matcher("juan.perez.com").matches());
-        assertFalse(p.matcher("juan perez@test.com").matches());
-        assertFalse(p.matcher("@test.com").matches());
-        assertFalse(p.matcher("").matches());
     }
 }

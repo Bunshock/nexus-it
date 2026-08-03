@@ -12,6 +12,11 @@ public class AppConfig {
     public Map<String, List<String>> motivoOptions;
     public List<String> fallaOptions;
     public String failureTriggerMotivo = "Falla";
+    // Names which motivoOptions.proveedor values expect the equipment to come back (e.g.
+    // Garantía, Reparación) vs. permanent departures (e.g. Otro) — gates the Provider
+    // return-tracking row in NoteDetailController, same "config-driven, not hardcoded" pattern
+    // as failureTriggerMotivo above.
+    public List<String> returnableMotivosProveedor = List.of();
     public SmtpConfig smtp;
     public ApiEndpoint adApi;
     public ApiEndpoint glpiApi;
@@ -25,9 +30,6 @@ public class AppConfig {
     public static class AfFormat {
         public String prefix;
         public String separator;
-        public int length;
-        public String filler;
-        public String inputPattern = "\\d";
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
@@ -54,7 +56,7 @@ public class AppConfig {
         public String allowedGroupName;
 
         /**
-         * TEMPORARY bypass (added 2026-07-24) — the real AD API can't be extended with a
+         * TEMPORARY bypass — the real AD API can't be extended with a
          * validate-credentials endpoint yet. When true, AdApiService.validateCredentials()
          * skips the (nonexistent) HTTP call entirely and instead does a real search() lookup
          * to confirm the typed username exists in AD, accepting ANY password for it. Remove
