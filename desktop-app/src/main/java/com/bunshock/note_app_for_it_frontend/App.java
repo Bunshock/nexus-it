@@ -107,8 +107,16 @@ public class App extends Application {
         // aren't reliably finalized until its peer is created at show time, so calling it earlier
         // uses a stale/estimated size and skews the result (visibly, on a small fixed-size window
         // like this one — it read as sitting above true center).
-        stage.setOnShown(e -> stage.centerOnScreen());
+        //
+        // Platform.runLater(), not setOnShown(): onShown only fires on the hidden->shown
+        // transition, so it worked for the very first login but silently never fired again on
+        // showLoginAgain() after logout, since the Stage is already showing at that point and
+        // show() is then a no-op — the window kept whatever position it happened to have from
+        // MainView instead of re-centering to its own (smaller) login size. runLater() defers
+        // until after the current pulse either way, so it centers correctly on both the initial
+        // show and a same-Stage scene swap.
         stage.show();
+        javafx.application.Platform.runLater(stage::centerOnScreen);
 
         controller.setOnLoginSuccess(() -> {
             try {
