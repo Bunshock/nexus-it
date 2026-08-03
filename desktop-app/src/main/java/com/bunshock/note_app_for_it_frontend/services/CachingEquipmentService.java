@@ -1,6 +1,7 @@
 package com.bunshock.note_app_for_it_frontend.services;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import com.bunshock.note_app_for_it_frontend.models.EquipmentBrand;
@@ -172,5 +173,34 @@ public class CachingEquipmentService implements IEquipmentService {
     public void renameSede(int sedeId, String newName) {
         primary.renameSede(sedeId, newName);
         try { local.renameSede(sedeId, newName); } catch (Exception ignored) {}
+    }
+
+    @Override
+    public int getModelStock(int modelId, int brandId, int typeId) {
+        try { return primary.getModelStock(modelId, brandId, typeId); }
+        catch (Exception e) { return local.getModelStock(modelId, brandId, typeId); }
+    }
+
+    @Override
+    public void setModelStock(int modelId, int brandId, int typeId, int stock) {
+        primary.setModelStock(modelId, brandId, typeId, stock);
+        try { local.setModelStock(modelId, brandId, typeId, stock); } catch (Exception ignored) {}
+    }
+
+    @Override
+    public Map<Integer, Integer> getStockTotalsByType() {
+        try { return primary.getStockTotalsByType(); } catch (Exception e) { return local.getStockTotalsByType(); }
+    }
+
+    @Override
+    public Map<Integer, Integer> getStockTotalsByBrandForType(int typeId) {
+        try { return primary.getStockTotalsByBrandForType(typeId); }
+        catch (Exception e) { return local.getStockTotalsByBrandForType(typeId); }
+    }
+
+    @Override
+    public Map<Integer, Integer> getStockTotalsByModelForBrandAndType(int brandId, int typeId) {
+        try { return primary.getStockTotalsByModelForBrandAndType(brandId, typeId); }
+        catch (Exception e) { return local.getStockTotalsByModelForBrandAndType(brandId, typeId); }
     }
 }

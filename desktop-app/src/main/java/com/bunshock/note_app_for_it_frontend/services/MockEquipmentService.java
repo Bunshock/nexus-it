@@ -3,7 +3,9 @@ package com.bunshock.note_app_for_it_frontend.services;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import com.bunshock.note_app_for_it_frontend.models.EquipmentBrand;
@@ -27,6 +29,7 @@ public class MockEquipmentService implements IEquipmentService {
     private final List<SnValidation> snValidations = new ArrayList<>();
     private final List<EquipmentProvider> providers = new ArrayList<>();
     private final List<Sede> sedes = new ArrayList<>();
+    private final List<int[]> modelStocks = new ArrayList<>(); // [brandTypeId, modelId, stock]
 
     private int nextTypeId = 1000;
     private int nextBrandId = 1000;
@@ -306,5 +309,77 @@ public class MockEquipmentService implements IEquipmentService {
                 return;
             }
         }
+    }
+
+    // ── Stock — deliberately follows this class's existing (narrower) scoping model, which,
+    // unlike SqliteEquipmentService, doesn't union in a global brand_type_id-null generic model
+    // for getModelsForBrandAndType() — a pre-existing gap, not something this feature fixes.
+
+    @Override
+    public int getModelStock(int modelId, int brandId, int typeId) {
+        int linkId = findTypeBrandLinkId(brandId, typeId);
+        if (linkId == -1) return 0;
+        return modelStocks.stream()
+            .filter(s -> s[0] == linkId && s[1] == modelId)
+            .mapToInt(s -> s[2])
+            .findFirst().orElse(0);
+    }
+
+    @Override
+    public void setModelStock(int modelId, int brandId, int typeId, int stock) {
+        int linkId = ensureTypeBrandLink(brandId, typeId);
+        for (int[] s : modelStocks) {
+            if (s[0] == linkId && s[1] == modelId) {
+                s[2] = stock;
+                return;
+            }
+        }
+        modelStocks.add(new int[]{linkId, modelId, stock});
+    }
+
+    @Override
+    public Map<Integer, Integer> getStockTotalsByType() {
+        Map<Integer, Integer> result = new HashMap<>();
+        for (int[] s : modelStocks) {
+            typeBrands.stream().filter(tb -> tb[0] == s[0]).findFirst()
+                .ifPresent(tb -> result.merge(tb[1], s[2], Integer::sum));
+        }
+        return result;
+    }
+
+    @Override
+    public Map<Integer, Integer> getStockTotalsByBrandForType(int typeId) {
+        Map<Integer, Integer> result = new HashMap<>();
+        for (int[] s : modelStocks) {
+            typeBrands.stream().filter(tb -> tb[0] == s[0] && tb[1] == typeId).findFirst()
+                .ifPresent(tb -> result.merge(tb[2], s[2], Integer::sum));
+        }
+        return result;
+    }
+
+    @Override
+    public Map<Integer, Integer> getStockTotalsByModelForBrandAndType(int brandId, int typeId) {
+        Map<Integer, Integer> result = new HashMap<>();
+        int linkId = findTypeBrandLinkId(brandId, typeId);
+        if (linkId == -1) return result;
+        for (int[] s : modelStocks) {
+            if (s[0] == linkId) result.merge(s[1], s[2], Integer::sum);
+        }
+        return result;
+    }
+
+    private int findTypeBrandLinkId(int brandId, int typeId) {
+        return typeBrands.stream()
+            .filter(tb -> tb[1] == typeId && tb[2] == brandId)
+            .mapToInt(tb -> tb[0])
+            .findFirst().orElse(-1);
+    }
+
+    private int ensureTypeBrandLink(int brandId, int typeId) {
+        int existing = findTypeBrandLinkId(brandId, typeId);
+        if (existing != -1) return existing;
+        int id = nextTypeBrandId++;
+        typeBrands.add(new int[]{id, typeId, brandId});
+        return id;
     }
 }

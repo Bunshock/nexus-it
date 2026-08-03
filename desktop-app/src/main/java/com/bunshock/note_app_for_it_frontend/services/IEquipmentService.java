@@ -1,6 +1,7 @@
 package com.bunshock.note_app_for_it_frontend.services;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import com.bunshock.note_app_for_it_frontend.models.EquipmentBrand;
@@ -64,4 +65,19 @@ public interface IEquipmentService {
     void renameProvider(int providerId, String newName);
 
     void renameSede(int sedeId, String newName);
+
+    // Stock (Base de Datos: Type/Brand/Model rollups). Keyed by (modelId, brandId, typeId) rather
+    // than just modelId — the single global "Genérico / Otro" model carries an independent stock
+    // number per (Type,Brand) it's used under, not one shared number across all of them.
+    int getModelStock(int modelId, int brandId, int typeId);
+
+    void setModelStock(int modelId, int brandId, int typeId, int stock);
+
+    // Batched rollup reads — one query per list-refresh, not one per row. Map key is the
+    // Type/Brand/Model id respectively; a missing key means 0 (no MODEL_STOCK rows for it).
+    Map<Integer, Integer> getStockTotalsByType();
+
+    Map<Integer, Integer> getStockTotalsByBrandForType(int typeId);
+
+    Map<Integer, Integer> getStockTotalsByModelForBrandAndType(int brandId, int typeId);
 }

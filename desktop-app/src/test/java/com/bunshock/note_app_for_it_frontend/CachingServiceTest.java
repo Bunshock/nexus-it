@@ -8,9 +8,13 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import com.bunshock.note_app_for_it_frontend.models.NoteReport;
+import com.bunshock.note_app_for_it_frontend.models.Permission;
 import com.bunshock.note_app_for_it_frontend.services.CachingEquipmentService;
 import com.bunshock.note_app_for_it_frontend.services.CachingHistoryService;
+import com.bunshock.note_app_for_it_frontend.services.CachingUserRoleService;
+import com.bunshock.note_app_for_it_frontend.services.IUserRoleService;
 import com.bunshock.note_app_for_it_frontend.services.MockEquipmentService;
+import com.bunshock.note_app_for_it_frontend.services.MockUserRoleService;
 
 class CachingServiceTest {
 
@@ -85,11 +89,121 @@ class CachingServiceTest {
         assertEquals("LOCAL_REPORT", all.get(0).getProfileType());
     }
 
+    // ── Stock ────────────────────────────────────────────────────────
+
+    @Test
+    void stockReadsReturnLocalWhenPrimaryThrows() {
+        var notebook = local.getAllTypes().stream()
+            .filter(t -> t.getName().equalsIgnoreCase("Notebook")).findFirst().orElseThrow();
+        var brand = local.getBrandsForType(notebook.getId()).get(0);
+        var model = local.getModelsForBrandAndType(brand.getId(), notebook.getId()).get(0);
+        local.setModelStock(model.getId(), brand.getId(), notebook.getId(), 9);
+
+        CachingEquipmentService failingPrimary = new CachingEquipmentService(
+            new FailingEquipmentService(), local);
+        assertEquals(9, failingPrimary.getModelStock(model.getId(), brand.getId(), notebook.getId()));
+    }
+
+    @Test
+    void stockWritesGoToBothPrimaryAndLocal() {
+        var notebook = primary.getAllTypes().stream()
+            .filter(t -> t.getName().equalsIgnoreCase("Notebook")).findFirst().orElseThrow();
+        var brand = primary.getBrandsForType(notebook.getId()).get(0);
+        var model = primary.getModelsForBrandAndType(brand.getId(), notebook.getId()).get(0);
+
+        caching.setModelStock(model.getId(), brand.getId(), notebook.getId(), 6);
+
+        assertEquals(6, primary.getModelStock(model.getId(), brand.getId(), notebook.getId()));
+        assertEquals(6, local.getModelStock(model.getId(), brand.getId(), notebook.getId()));
+    }
+
+    @Test
+    void stockLocalWriteFailureDoesNotPropagate() {
+        var notebook = primary.getAllTypes().stream()
+            .filter(t -> t.getName().equalsIgnoreCase("Notebook")).findFirst().orElseThrow();
+        var brand = primary.getBrandsForType(notebook.getId()).get(0);
+        var model = primary.getModelsForBrandAndType(brand.getId(), notebook.getId()).get(0);
+
+        CachingEquipmentService failingLocal = new CachingEquipmentService(
+            primary, new FailingEquipmentService());
+        assertDoesNotThrow(() ->
+            failingLocal.setModelStock(model.getId(), brand.getId(), notebook.getId(), 4));
+        assertEquals(4, primary.getModelStock(model.getId(), brand.getId(), notebook.getId()));
+    }
+
+    // ── User role / permissions ─────────────────────────────────────
+
+    @Test
+    void userRoleReadsReturnPrimaryData() {
+        MockUserRoleService primaryU = new MockUserRoleService();
+        MockUserRoleService localU   = new MockUserRoleService();
+        primaryU.setRole("jperez", IUserRoleService.ROLE_ADMIN);
+        CachingUserRoleService cachingU = new CachingUserRoleService(primaryU, localU);
+
+        assertEquals(IUserRoleService.ROLE_ADMIN, cachingU.getRole("jperez"));
+    }
+
+    @Test
+    void userRoleReadsFallBackToLocalWhenPrimaryThrows() {
+        MockUserRoleService localU = new MockUserRoleService();
+        localU.setRole("jperez", IUserRoleService.ROLE_SUPERADMIN);
+        CachingUserRoleService cachingU = new CachingUserRoleService(new FailingUserRoleService(), localU);
+
+        assertEquals(IUserRoleService.ROLE_SUPERADMIN, cachingU.getRole("jperez"));
+    }
+
+    @Test
+    void getSedeIdReadsReturnPrimaryData() {
+        MockUserRoleService primaryU = new MockUserRoleService();
+        MockUserRoleService localU   = new MockUserRoleService();
+        primaryU.setSedeId("jperez", 5);
+        CachingUserRoleService cachingU = new CachingUserRoleService(primaryU, localU);
+
+        assertEquals(5, cachingU.getSedeId("jperez"));
+    }
+
+    @Test
+    void getSedeIdFallsBackToLocalWhenPrimaryThrows() {
+        MockUserRoleService localU = new MockUserRoleService();
+        localU.setSedeId("jperez", 3);
+        CachingUserRoleService cachingU = new CachingUserRoleService(new FailingUserRoleService(), localU);
+
+        assertEquals(3, cachingU.getSedeId("jperez"));
+    }
+
+    @Test
+    void getPermissionsForRoleReadsReturnPrimaryData() {
+        MockUserRoleService primaryU = new MockUserRoleService();
+        MockUserRoleService localU   = new MockUserRoleService();
+        primaryU.setPermissionsForRole(IUserRoleService.ROLE_ADMIN, java.util.Set.of(Permission.MANAGE_TYPES));
+        CachingUserRoleService cachingU = new CachingUserRoleService(primaryU, localU);
+
+        assertEquals(java.util.Set.of(Permission.MANAGE_TYPES), cachingU.getPermissionsForRole(IUserRoleService.ROLE_ADMIN));
+    }
+
+    @Test
+    void getPermissionsForRoleFallsBackToLocalWhenPrimaryThrows() {
+        MockUserRoleService localU = new MockUserRoleService();
+        localU.setPermissionsForRole(IUserRoleService.ROLE_ADMIN, java.util.Set.of(Permission.MANAGE_SEDES));
+        CachingUserRoleService cachingU = new CachingUserRoleService(new FailingUserRoleService(), localU);
+
+        assertEquals(java.util.Set.of(Permission.MANAGE_SEDES), cachingU.getPermissionsForRole(IUserRoleService.ROLE_ADMIN));
+    }
+
     // ── Minimal failing stubs ────────────────────────────────────────
+
+    private static class FailingUserRoleService implements IUserRoleService {
+        @Override public String getRole(String username) { throw new RuntimeException("primary down"); }
+        @Override public boolean isRegistered(String username) { throw new RuntimeException("primary down"); }
+        @Override public Integer getSedeId(String username) { throw new RuntimeException("primary down"); }
+        @Override public java.util.Set<Permission> getPermissionsForRole(String role) { throw new RuntimeException("primary down"); }
+    }
 
     private static class FailingEquipmentService extends MockEquipmentService {
         @Override public java.util.List<com.bunshock.note_app_for_it_frontend.models.EquipmentType> getAllTypes() { throw new RuntimeException("primary down"); }
         @Override public void addType(String n, boolean a) { throw new RuntimeException("primary down"); }
+        @Override public int getModelStock(int modelId, int brandId, int typeId) { throw new RuntimeException("primary down"); }
+        @Override public void setModelStock(int modelId, int brandId, int typeId, int stock) { throw new RuntimeException("primary down"); }
     }
 
     private static class MockHistoryService implements com.bunshock.note_app_for_it_frontend.services.IHistoryService {

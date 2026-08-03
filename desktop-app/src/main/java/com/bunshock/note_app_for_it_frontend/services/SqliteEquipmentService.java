@@ -7,7 +7,9 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Types;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.function.Supplier;
 
@@ -250,7 +252,7 @@ public class SqliteEquipmentService implements IEquipmentService {
             // already offered for every type via client-side synthesis
             // (ItemDialogController.onTypeSelected(), DatabaseSectionController.
             // refreshBrandsForType()). Creating a real link here would reproduce the exact
-            // per-type inconsistency the 2026-07-23 cleanup migration removes: that one type
+            // per-type inconsistency the cleanup migration removes: that one type
             // would show it via getBrandsForType()'s real JOIN (sorted alphabetically among
             // real brands) while every other type shows it via synthesis (always appended last).
             if (genericLabel().equalsIgnoreCase(trimmed)) return;
@@ -432,25 +434,35 @@ public class SqliteEquipmentService implements IEquipmentService {
             // since idx_model_brand_type_name keys on name and the two rows never share one.
             setDeprecated(c, "MODEL", modelId, true);
 
+            int newModelId;
             Integer deprecatedId = findDeprecatedModelId(c, brandTypeId, trimmed);
             if (deprecatedId != null) {
                 setDeprecated(c, "MODEL", deprecatedId, false);
+                newModelId = deprecatedId;
             } else {
-                insertModel(c, brandTypeId, trimmed, false);
+                newModelId = insertModel(c, brandTypeId, trimmed, false);
             }
+            // A rename swaps to a different MODEL row id — MODEL_STOCK's PK includes model_id,
+            // so without this the old row's stock would silently vanish from every rollup.
+            carryForwardModelStock(c, modelId, newModelId);
         } catch (SQLException e) {
             throw new RuntimeException("Failed to rename model", e);
         }
     }
 
-    private void insertModel(Connection c, Integer brandTypeId, String name, boolean deprecated) throws SQLException {
+    private int insertModel(Connection c, Integer brandTypeId, String name, boolean deprecated) throws SQLException {
         try (PreparedStatement ins = c.prepareStatement(
-                "INSERT INTO MODEL (brand_type_id, name, deprecated) VALUES (?, ?, ?)")) {
+                "INSERT INTO MODEL (brand_type_id, name, deprecated) VALUES (?, ?, ?)",
+                Statement.RETURN_GENERATED_KEYS)) {
             if (brandTypeId == null) ins.setNull(1, Types.INTEGER);
             else ins.setInt(1, brandTypeId);
             ins.setString(2, name);
             ins.setInt(3, deprecated ? 1 : 0);
             ins.executeUpdate();
+            try (ResultSet keys = ins.getGeneratedKeys()) {
+                keys.next();
+                return keys.getInt(1);
+            }
         }
     }
 
@@ -779,24 +791,214 @@ public class SqliteEquipmentService implements IEquipmentService {
 
     private void cloneActiveModelsForward(Connection c, int oldLinkId, int newLinkId) throws SQLException {
         if (oldLinkId == newLinkId) return;
-        List<String> modelNames = new ArrayList<>();
+        List<Object[]> models = new ArrayList<>(); // [id, name]
         try (PreparedStatement sel = c.prepareStatement(
-                "SELECT name FROM MODEL WHERE brand_type_id = ? AND deprecated = 0")) {
+                "SELECT id, name FROM MODEL WHERE brand_type_id = ? AND deprecated = 0")) {
             sel.setInt(1, oldLinkId);
             try (ResultSet rs = sel.executeQuery()) {
-                while (rs.next()) modelNames.add(rs.getString("name"));
+                while (rs.next()) models.add(new Object[] {rs.getInt("id"), rs.getString("name")});
             }
         }
-        for (String name : modelNames) {
-            if (activeModelIdExcluding(c, newLinkId, name, -1) == null) {
+        for (Object[] model : models) {
+            int oldModelId = (Integer) model[0];
+            String name = (String) model[1];
+            Integer existingId = activeModelIdExcluding(c, newLinkId, name, -1);
+            int newModelId = existingId != null ? existingId : insertModel(c, newLinkId, name, false);
+            // Unlike a plain renameModel() (where the model's own brand_type_id never changes),
+            // the whole point of this cascade is that the scope itself moved from oldLinkId to
+            // newLinkId — carryForwardModelStock() alone would incorrectly leave the stock keyed
+            // to the now-stale oldLinkId, so the link id must be remapped here too, not just the
+            // model id.
+            carryForwardModelStockAcrossLink(c, oldLinkId, oldModelId, newLinkId, newModelId);
+        }
+    }
+
+    // Moves a single MODEL_STOCK row from (oldLinkId, oldModelId) to (newLinkId, newModelId),
+    // merging into an existing row at the destination rather than overwriting it — used by the
+    // Type/Brand rename cascade above, where both the link and the model row change together.
+    private void carryForwardModelStockAcrossLink(Connection c, int oldLinkId, int oldModelId,
+            int newLinkId, int newModelId) throws SQLException {
+        if (oldLinkId == newLinkId && oldModelId == newModelId) return;
+        Integer stock = null;
+        try (PreparedStatement sel = c.prepareStatement(
+                "SELECT stock FROM MODEL_STOCK WHERE brand_type_id = ? AND model_id = ?")) {
+            sel.setInt(1, oldLinkId);
+            sel.setInt(2, oldModelId);
+            try (ResultSet rs = sel.executeQuery()) {
+                if (rs.next()) stock = rs.getInt(1);
+            }
+        }
+        if (stock == null) return;
+        try (PreparedStatement up = c.prepareStatement(
+                "UPDATE MODEL_STOCK SET stock = stock + ? WHERE brand_type_id = ? AND model_id = ?")) {
+            up.setInt(1, stock);
+            up.setInt(2, newLinkId);
+            up.setInt(3, newModelId);
+            if (up.executeUpdate() == 0) {
                 try (PreparedStatement ins = c.prepareStatement(
-                        "INSERT INTO MODEL (brand_type_id, name, deprecated) VALUES (?, ?, 0)")) {
+                        "INSERT INTO MODEL_STOCK (brand_type_id, model_id, stock) VALUES (?, ?, ?)")) {
                     ins.setInt(1, newLinkId);
-                    ins.setString(2, name);
+                    ins.setInt(2, newModelId);
+                    ins.setInt(3, stock);
                     ins.executeUpdate();
                 }
             }
         }
+        try (PreparedStatement del = c.prepareStatement(
+                "DELETE FROM MODEL_STOCK WHERE brand_type_id = ? AND model_id = ?")) {
+            del.setInt(1, oldLinkId);
+            del.setInt(2, oldModelId);
+            del.executeUpdate();
+        }
+    }
+
+    // Moves (merging, not overwriting) every MODEL_STOCK row from oldModelId to newModelId,
+    // preserving each row's existing brand_type_id — correct for a plain renameModel() call,
+    // where the model's own scope never changes (only its row id does). NOT used by the
+    // Type/Brand cascade above, since that changes the scope (link) too — see
+    // carryForwardModelStockAcrossLink() for that case.
+    private void carryForwardModelStock(Connection c, int oldModelId, int newModelId) throws SQLException {
+        if (oldModelId == newModelId) return;
+        List<int[]> rows = new ArrayList<>(); // [brand_type_id, stock]
+        try (PreparedStatement sel = c.prepareStatement(
+                "SELECT brand_type_id, stock FROM MODEL_STOCK WHERE model_id = ?")) {
+            sel.setInt(1, oldModelId);
+            try (ResultSet rs = sel.executeQuery()) {
+                while (rs.next()) rows.add(new int[] {rs.getInt(1), rs.getInt(2)});
+            }
+        }
+        for (int[] row : rows) {
+            int brandTypeId = row[0];
+            int stock = row[1];
+            try (PreparedStatement up = c.prepareStatement(
+                    "UPDATE MODEL_STOCK SET stock = stock + ? WHERE brand_type_id = ? AND model_id = ?")) {
+                up.setInt(1, stock);
+                up.setInt(2, brandTypeId);
+                up.setInt(3, newModelId);
+                if (up.executeUpdate() == 0) {
+                    try (PreparedStatement ins = c.prepareStatement(
+                            "INSERT INTO MODEL_STOCK (brand_type_id, model_id, stock) VALUES (?, ?, ?)")) {
+                        ins.setInt(1, brandTypeId);
+                        ins.setInt(2, newModelId);
+                        ins.setInt(3, stock);
+                        ins.executeUpdate();
+                    }
+                }
+            }
+        }
+        try (PreparedStatement del = c.prepareStatement("DELETE FROM MODEL_STOCK WHERE model_id = ?")) {
+            del.setInt(1, oldModelId);
+            del.executeUpdate();
+        }
+    }
+
+    // ── Stock (Base de Datos: Type/Brand/Model rollups) ─────────────────
+
+    @Override
+    public int getModelStock(int modelId, int brandId, int typeId) {
+        try (Connection c = connector.get()) {
+            Integer linkId = findBrandTypeLinkId(c, brandId, typeId);
+            if (linkId == null) return 0;
+            try (PreparedStatement ps = c.prepareStatement(
+                    "SELECT stock FROM MODEL_STOCK WHERE brand_type_id = ? AND model_id = ?")) {
+                ps.setInt(1, linkId);
+                ps.setInt(2, modelId);
+                try (ResultSet rs = ps.executeQuery()) {
+                    return rs.next() ? rs.getInt(1) : 0;
+                }
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to load model stock", e);
+        }
+    }
+
+    @Override
+    public void setModelStock(int modelId, int brandId, int typeId, int stock) {
+        // Boundary validation — the UI's own tfStock TextFormatter
+        // already blocks typing a minus sign, but this is the actual persistence boundary every
+        // caller goes through (including any future direct caller), so it's checked here too,
+        // same "validate at every system boundary" precedent as this project's other input
+        // validation. CachingEquipmentService.setModelStock() calls primary.setModelStock(...)
+        // with no surrounding try/catch, so this propagates as a "fail loudly" write failure,
+        // exactly like every other primary-write error in that class.
+        if (stock < 0) {
+            throw new IllegalArgumentException("El stock no puede ser negativo");
+        }
+        try (Connection c = connector.get()) {
+            int linkId = ensureBrandTypeLink(c, brandId, typeId);
+            try (PreparedStatement up = c.prepareStatement(
+                    "UPDATE MODEL_STOCK SET stock = ? WHERE brand_type_id = ? AND model_id = ?")) {
+                up.setInt(1, stock);
+                up.setInt(2, linkId);
+                up.setInt(3, modelId);
+                if (up.executeUpdate() == 0) {
+                    try (PreparedStatement ins = c.prepareStatement(
+                            "INSERT INTO MODEL_STOCK (brand_type_id, model_id, stock) VALUES (?, ?, ?)")) {
+                        ins.setInt(1, linkId);
+                        ins.setInt(2, modelId);
+                        ins.setInt(3, stock);
+                        ins.executeUpdate();
+                    }
+                }
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to set model stock", e);
+        }
+    }
+
+    @Override
+    public Map<Integer, Integer> getStockTotalsByType() {
+        return queryStockMap(
+            "SELECT btl.type_id, SUM(ms.stock) FROM MODEL_STOCK ms " +
+            "JOIN BRAND_TYPE_LINK btl ON btl.id = ms.brand_type_id GROUP BY btl.type_id");
+    }
+
+    @Override
+    public Map<Integer, Integer> getStockTotalsByBrandForType(int typeId) {
+        return queryStockMap(
+            "SELECT btl.brand_id, SUM(ms.stock) FROM MODEL_STOCK ms " +
+            "JOIN BRAND_TYPE_LINK btl ON btl.id = ms.brand_type_id WHERE btl.type_id = ? " +
+            "GROUP BY btl.brand_id", typeId);
+    }
+
+    // Mirrors getModelsForBrandAndType()'s UNION-with-global-row shape — the global generic
+    // model's stock must be summed too, since it's offered for every brand+type combination.
+    @Override
+    public Map<Integer, Integer> getStockTotalsByModelForBrandAndType(int brandId, int typeId) {
+        String sql = """
+            SELECT ms.model_id, SUM(ms.stock) FROM MODEL_STOCK ms
+            WHERE ms.model_id IN (
+                SELECT m.id FROM MODEL m JOIN BRAND_TYPE_LINK btl ON btl.id = m.brand_type_id
+                WHERE btl.type_id = ? AND btl.brand_id = ? AND m.deprecated = 0
+                UNION
+                SELECT m.id FROM MODEL m WHERE m.brand_type_id IS NULL AND m.deprecated = 0
+            ) GROUP BY ms.model_id
+            """;
+        return queryStockMap(sql, typeId, brandId);
+    }
+
+    private Integer findBrandTypeLinkId(Connection c, int brandId, int typeId) throws SQLException {
+        try (PreparedStatement ps = c.prepareStatement(
+                "SELECT id FROM BRAND_TYPE_LINK WHERE type_id = ? AND brand_id = ?")) {
+            ps.setInt(1, typeId);
+            ps.setInt(2, brandId);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? rs.getInt(1) : null;
+            }
+        }
+    }
+
+    private Map<Integer, Integer> queryStockMap(String sql, Object... params) {
+        Map<Integer, Integer> result = new HashMap<>();
+        try (Connection c = connector.get(); PreparedStatement ps = c.prepareStatement(sql)) {
+            for (int i = 0; i < params.length; i++) ps.setObject(i + 1, params[i]);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) result.put(rs.getInt(1), rs.getInt(2));
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to load stock totals", e);
+        }
+        return result;
     }
 
     // Shared helpers — uniqueness on `name` holds across TYPE/BRAND/PROVIDER regardless of a
