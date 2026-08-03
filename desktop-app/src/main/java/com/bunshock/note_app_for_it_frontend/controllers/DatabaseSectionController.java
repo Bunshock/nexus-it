@@ -6,13 +6,16 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.function.Function;
 
 import com.bunshock.note_app_for_it_frontend.models.AppConfig;
 import com.bunshock.note_app_for_it_frontend.models.EquipmentBrand;
 import com.bunshock.note_app_for_it_frontend.models.EquipmentModel;
 import com.bunshock.note_app_for_it_frontend.models.EquipmentProvider;
 import com.bunshock.note_app_for_it_frontend.models.EquipmentType;
+import com.bunshock.note_app_for_it_frontend.models.Permission;
 import com.bunshock.note_app_for_it_frontend.models.Sede;
 import com.bunshock.note_app_for_it_frontend.services.AdminAuthService;
 import com.bunshock.note_app_for_it_frontend.services.AdminSession;
@@ -20,6 +23,7 @@ import com.bunshock.note_app_for_it_frontend.services.AppKeyEncryptionService;
 import com.bunshock.note_app_for_it_frontend.services.ConfigService;
 import com.bunshock.note_app_for_it_frontend.services.DatabaseService;
 import com.bunshock.note_app_for_it_frontend.services.IEquipmentService;
+import com.bunshock.note_app_for_it_frontend.services.IUserRoleService;
 import com.bunshock.note_app_for_it_frontend.services.RemoteDatabaseService;
 import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;
 
@@ -38,6 +42,7 @@ import javafx.scene.control.ListView;
 import javafx.scene.control.PasswordField;
 import javafx.scene.control.Separator;
 import javafx.scene.control.TextField;
+import javafx.scene.control.TextFormatter;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.ToggleGroup;
 import javafx.scene.input.KeyCode;
@@ -66,8 +71,7 @@ public class DatabaseSectionController {
     @FXML private ListView<Sede> listSedes;
 
     // Toggle between the cascading Types/Brands/Models row and the flat/independent
-    // Providers/Sedes row — added 2026-07-24 once a 5th catalog list (Sedes) made a single
-    // shared row too cramped.
+    // Providers/Sedes row — a 5th catalog list (Sedes) made a single shared row too cramped.
     @FXML private ToggleGroup catalogGroup;
     @FXML private ToggleButton btnEquipmentCatalog;
     @FXML private ToggleButton btnOtherCatalogs;
@@ -90,8 +94,6 @@ public class DatabaseSectionController {
             rowOtherCatalogs.setManaged(!showEquipment);
         });
         refreshProviders();
-        applyGenericCellStyle(listBrands);
-        applyGenericCellStyle(listModels);
 
         listTypes.getSelectionModel().selectedItemProperty().addListener((obs, old, sel) -> {
             if (sel != null) refreshBrandsForType(sel.getId());
@@ -129,7 +131,7 @@ public class DatabaseSectionController {
     }
 
     @FXML
-    // Not admin-gated (removed 2026-07-24, explicit user decision) — any technician can point
+    // Not admin-gated (explicit user decision) — any technician can point
     // their own local install at a different remote database. db_host/port/name/username/
     // password all live in local APP_SETTINGS only (never synced), so this only ever affects
     // the machine it's changed on, and the existing test-connection-before-accepting flow below
@@ -304,7 +306,9 @@ public class DatabaseSectionController {
     // ── Equipment catalog ────────────────────────────────────────────
 
     private void refreshTypes() {
+        Map<Integer, Integer> stockByType = equipmentService.getStockTotalsByType();
         listTypes.setItems(FXCollections.observableArrayList(equipmentService.getAllTypes()));
+        applyCatalogCellFactory(listTypes, t -> stockByType.getOrDefault(t.getId(), 0));
         listBrands.setItems(FXCollections.observableArrayList());
         listModels.setItems(FXCollections.observableArrayList());
     }
@@ -322,7 +326,9 @@ public class DatabaseSectionController {
                 .findFirst()
                 .ifPresent(brands::add);
         }
+        Map<Integer, Integer> stockByBrand = equipmentService.getStockTotalsByBrandForType(typeId);
         listBrands.setItems(FXCollections.observableArrayList(brands));
+        applyCatalogCellFactory(listBrands, b -> stockByBrand.getOrDefault(b.getId(), 0));
         listModels.setItems(FXCollections.observableArrayList());
     }
 
@@ -356,25 +362,96 @@ public class DatabaseSectionController {
             models.remove(generic);
             models.add(generic);
         }
+        Map<Integer, Integer> stockByModel = equipmentService.getStockTotalsByModelForBrandAndType(brandId, typeId);
         listModels.setItems(FXCollections.observableArrayList(models));
+        applyCatalogCellFactory(listModels, m -> stockByModel.getOrDefault(m.getId(), 0));
+    }
+
+    // A stock edit changes the Type- and Brand-level rollup totals too (they sum every Model
+    // under their scope), but refreshTypes()/refreshBrandsForType() both reset listBrands'/
+    // listModels' items and selection — wrong here, since the technician is mid-browse, not
+    // navigating. Re-applying the cell factory with a freshly-fetched stock Map forces the
+    // existing (unchanged) items to redraw with the new numbers, without touching items/selection.
+    private void refreshStockRollupsOnly(int typeId) {
+        Map<Integer, Integer> stockByType = equipmentService.getStockTotalsByType();
+        applyCatalogCellFactory(listTypes, t -> stockByType.getOrDefault(t.getId(), 0));
+
+        Map<Integer, Integer> stockByBrand = equipmentService.getStockTotalsByBrandForType(typeId);
+        applyCatalogCellFactory(listBrands, b -> stockByBrand.getOrDefault(b.getId(), 0));
     }
 
     private static final String GENERIC_STYLE = "-fx-font-style: italic; -fx-text-fill: #94a3b8;";
 
-    // Same italic/grey treatment ItemDialogController's combo boxes already give the generic
-    // fallback — applied here to listBrands/listModels so it reads consistently as "not a real
-    // catalog entry" in Base de Datos too.
-    private <T> void applyGenericCellStyle(ListView<T> listView) {
+    // Two-column row (name left, stock right-aligned) instead of a single text string — lines up
+    // under the "NOMBRE"/"STOCK" header row each list gets in FXML, which (being a plain sibling
+    // above the ListView, not inside its scrollable viewport) stays fixed while the list scrolls.
+    // Stock comes from the already-fetched rollup Map (one query per list refresh, not one per
+    // row) — applied to all three cascading lists (Types/Brands/Models), each with its own
+    // id-to-stock lookup. Same italic/grey treatment ItemDialogController's combo boxes give the
+    // generic fallback; selected-row text color is handled manually (matching
+    // .modern-list .list-cell:filled:selected) since CSS text-fill on the cell itself doesn't
+    // reach into a custom graphic's child Labels.
+    private static final double STOCK_COLUMN_WIDTH = 50;
+    private static final String STOCK_ALIGN_STYLE = "-fx-alignment: CENTER_RIGHT;";
+
+    private <T> void applyCatalogCellFactory(ListView<T> listView, Function<T, Integer> stockLookup) {
         listView.setCellFactory(lv -> new ListCell<>() {
+            private final Label lblName = new Label();
+            private final Label lblStock = new Label();
+            private final Region spacer = new Region();
+            private final HBox row = new HBox(8, lblName, spacer, lblStock);
+            {
+                HBox.setHgrow(spacer, Priority.ALWAYS);
+                row.setAlignment(Pos.CENTER_LEFT);
+                lblStock.setMinWidth(STOCK_COLUMN_WIDTH);
+                lblStock.setPrefWidth(STOCK_COLUMN_WIDTH);
+                lblStock.setMaxWidth(STOCK_COLUMN_WIDTH);
+                lblStock.setStyle(STOCK_ALIGN_STYLE);
+                // A ListCell's graphic isn't stretched to the cell's own width by default (unlike
+                // a plain HBox living directly in a VBox, which IS stretched via VBox's own
+                // fillWidth=true default — that's why the FXML header row lines up on its own).
+                // Without this, the spacer has no extra space to grow into, and lblStock ends up
+                // sitting immediately after lblName instead of pinned to the row's right edge —
+                // matching HistoryView's ".modern-list .list-cell" padding (7 12, i.e. 24px total
+                // horizontal) so the bound width matches the cell's actual content area.
+                row.prefWidthProperty().bind(widthProperty().subtract(24));
+                selectedProperty().addListener((obs, was, sel) -> refreshTextStyle());
+            }
+
+            private void refreshTextStyle() {
+                if (getItem() == null) return;
+                boolean generic = genericLabel().equals(getItem().toString());
+                String base = "-fx-font-size: 12px;";
+                if (generic) {
+                    lblName.setStyle(base + GENERIC_STYLE);
+                } else {
+                    String color = isSelected() ? "-fx-text-fill: #f4f8f7;" : "-fx-text-fill: #334155;";
+                    String weight = isSelected() ? "-fx-font-weight: bold;" : "";
+                    lblName.setStyle(base + color + weight);
+                }
+                // Stock's color is driven by its own value (black = in stock, red = none),
+                // independent of selection/generic state, and always bold so it reads as a number
+                // at a glance rather than plain label text. Was green (#22c55e) for in-stock, but
+                // that blended into the selected-row background (.modern-list's #6ebdb0 teal) —
+                // low contrast, hard to read — direct user report with a screenshot. Black reads
+                // clearly against both the white unselected background and the teal selected one;
+                // red (out of stock) already had enough contrast against both and was left as-is.
+                Integer stock = stockLookup.apply(getItem());
+                String stockColor = stock != null && stock > 0 ? "#000000" : "#ef4444";
+                lblStock.setStyle(base + "-fx-font-weight: bold; -fx-text-fill: " + stockColor + ";" + STOCK_ALIGN_STYLE);
+            }
+
             @Override
             protected void updateItem(T item, boolean empty) {
                 super.updateItem(item, empty);
                 if (empty || item == null) {
-                    setText(null);
-                    setStyle("");
+                    setGraphic(null);
                 } else {
-                    setText(item.toString());
-                    setStyle(genericLabel().equals(item.toString()) ? GENERIC_STYLE : "");
+                    lblName.setText(item.toString());
+                    Integer stock = stockLookup.apply(item);
+                    lblStock.setText(stock != null ? String.valueOf(stock) : "0");
+                    setGraphic(row);
+                    refreshTextStyle();
                 }
             }
         });
@@ -388,24 +465,24 @@ public class DatabaseSectionController {
         listSedes.setItems(FXCollections.observableArrayList(equipmentService.getAllSedes()));
     }
 
-    @FXML private void handleAddType()    { requireAdmin(this::openAddTypeDialog); }
-    @FXML private void handleAddBrand()   { requireAdmin(this::openAddBrandDialog); }
-    @FXML private void handleAddModel()   { requireAdmin(this::openAddModelDialog); }
-    @FXML private void handleAddProvider(){ requireAdmin(this::openAddProviderDialog); }
-    @FXML private void handleAddSede()    { requireAdmin(this::openAddSedeDialog); }
+    @FXML private void handleAddType()    { requirePermission(Permission.MANAGE_TYPES, this::openAddTypeDialog); }
+    @FXML private void handleAddBrand()   { requirePermission(Permission.MANAGE_BRANDS, this::openAddBrandDialog); }
+    @FXML private void handleAddModel()   { requirePermission(Permission.MANAGE_MODELS, this::openAddModelDialog); }
+    @FXML private void handleAddProvider(){ requirePermission(Permission.MANAGE_PROVIDERS, this::openAddProviderDialog); }
+    @FXML private void handleAddSede()    { requirePermission(Permission.MANAGE_SEDES, this::openAddSedeDialog); }
 
     @FXML
     private void handleEditType() {
         EquipmentType sel = listTypes.getSelectionModel().getSelectedItem();
         if (sel == null) return;
-        requireAdmin(() -> openEditTypeDialog(sel));
+        requirePermission(Permission.MANAGE_TYPES, () -> openEditTypeDialog(sel));
     }
 
     @FXML
     private void handleEditBrand() {
         EquipmentBrand sel = listBrands.getSelectionModel().getSelectedItem();
         if (sel == null) return;
-        requireAdmin(() -> openRenameDialog(sel.getName(), newName -> {
+        requirePermission(Permission.MANAGE_BRANDS, () -> openRenameDialog(sel.getName(), newName -> {
             equipmentService.renameBrand(sel.getId(), newName);
             EquipmentType type = listTypes.getSelectionModel().getSelectedItem();
             if (type != null) refreshBrandsForType(type.getId());
@@ -416,19 +493,30 @@ public class DatabaseSectionController {
     private void handleEditModel() {
         EquipmentModel sel = listModels.getSelectionModel().getSelectedItem();
         if (sel == null) return;
-        requireAdmin(() -> openRenameDialog(sel.getName(), newName -> {
-            equipmentService.renameModel(sel.getId(), newName);
-            EquipmentType  type  = listTypes.getSelectionModel().getSelectedItem();
-            EquipmentBrand brand = listBrands.getSelectionModel().getSelectedItem();
-            if (type != null && brand != null) refreshModelsForBrandType(brand.getId(), type.getId());
-        }));
+        EquipmentType  type  = listTypes.getSelectionModel().getSelectedItem();
+        EquipmentBrand brand = listBrands.getSelectionModel().getSelectedItem();
+        if (type == null || brand == null) return;
+        requirePermission(Permission.MANAGE_MODELS, () -> openEditModelDialog(sel, brand.getId(), type.getId()));
+    }
+
+    // Quick, stock-only alternative to "Editar" (which also lets you rename) — added per direct
+    // user request for a faster path when only the quantity needs to change. Its own permission
+    // since a future role might adjust stock without full model-management rights.
+    @FXML
+    private void handleModifyStock() {
+        EquipmentModel sel = listModels.getSelectionModel().getSelectedItem();
+        if (sel == null) return;
+        EquipmentType  type  = listTypes.getSelectionModel().getSelectedItem();
+        EquipmentBrand brand = listBrands.getSelectionModel().getSelectedItem();
+        if (type == null || brand == null) return;
+        requirePermission(Permission.MANAGE_STOCK, () -> openModifyStockDialog(sel, brand.getId(), type.getId()));
     }
 
     @FXML
     private void handleEditProvider() {
         EquipmentProvider sel = listProviders.getSelectionModel().getSelectedItem();
         if (sel == null) return;
-        requireAdmin(() -> openRenameDialog(sel.getName(), newName -> {
+        requirePermission(Permission.MANAGE_PROVIDERS, () -> openRenameDialog(sel.getName(), newName -> {
             equipmentService.renameProvider(sel.getId(), newName);
             refreshProviders();
         }));
@@ -438,7 +526,7 @@ public class DatabaseSectionController {
     private void handleEditSede() {
         Sede sel = listSedes.getSelectionModel().getSelectedItem();
         if (sel == null) return;
-        requireAdmin(() -> openRenameDialog(sel.getName(), newName -> {
+        requirePermission(Permission.MANAGE_SEDES, () -> openRenameDialog(sel.getName(), newName -> {
             equipmentService.renameSede(sel.getId(), newName);
             refreshSedes();
         }));
@@ -448,7 +536,7 @@ public class DatabaseSectionController {
     private void handleRemoveType() {
         EquipmentType sel = listTypes.getSelectionModel().getSelectedItem();
         if (sel == null) return;
-        requireAdmin(() -> {
+        requirePermission(Permission.MANAGE_TYPES, () -> {
             if (!confirmDelete(sel.getName())) return;
             try { equipmentService.removeType(sel.getId()); refreshTypes(); }
             catch (Exception e) { showErrorDialog("Error al eliminar", e.getMessage()); }
@@ -459,7 +547,7 @@ public class DatabaseSectionController {
     private void handleRemoveBrand() {
         EquipmentBrand sel = listBrands.getSelectionModel().getSelectedItem();
         if (sel == null) return;
-        requireAdmin(() -> {
+        requirePermission(Permission.MANAGE_BRANDS, () -> {
             if (!confirmDelete(sel.getName())) return;
             try {
                 equipmentService.removeBrand(sel.getId());
@@ -473,7 +561,7 @@ public class DatabaseSectionController {
     private void handleRemoveModel() {
         EquipmentModel sel = listModels.getSelectionModel().getSelectedItem();
         if (sel == null) return;
-        requireAdmin(() -> {
+        requirePermission(Permission.MANAGE_MODELS, () -> {
             if (!confirmDelete(sel.getName())) return;
             try {
                 equipmentService.removeModel(sel.getId());
@@ -488,7 +576,7 @@ public class DatabaseSectionController {
     private void handleRemoveProvider() {
         EquipmentProvider sel = listProviders.getSelectionModel().getSelectedItem();
         if (sel == null) return;
-        requireAdmin(() -> {
+        requirePermission(Permission.MANAGE_PROVIDERS, () -> {
             if (!confirmDelete(sel.getName())) return;
             try { equipmentService.removeProvider(sel.getId()); refreshProviders(); }
             catch (Exception e) { showErrorDialog("Error al eliminar", e.getMessage()); }
@@ -499,7 +587,7 @@ public class DatabaseSectionController {
     private void handleRemoveSede() {
         Sede sel = listSedes.getSelectionModel().getSelectedItem();
         if (sel == null) return;
-        requireAdmin(() -> {
+        requirePermission(Permission.MANAGE_SEDES, () -> {
             if (!confirmDelete(sel.getName())) return;
             try { equipmentService.removeSede(sel.getId()); refreshSedes(); }
             catch (Exception e) { showErrorDialog("Error al eliminar", e.getMessage()); }
@@ -526,6 +614,17 @@ public class DatabaseSectionController {
     // inline validation error in the app holds then fades at the same speed.
     private static final Duration FIELD_ERROR_HOLD = Duration.millis(2000);
     private static final Duration FIELD_ERROR_FADE = Duration.millis(650);
+
+    // Matches TYPE/BRAND/MODEL/PROVIDER/SEDE.name's NVARCHAR(255) bound on SQL Server —
+    // every catalog name dialog's tfName field had no length cap of any kind
+    // before this. One shared constant since every use is within this same class (unlike the
+    // per-controller duplication convention used for fields shared *across* controllers).
+    private static final int CATALOG_NAME_MAX_LENGTH = 255;
+
+    private TextFormatter<String> catalogNameFormatter() {
+        return new TextFormatter<>(change ->
+            change.getControlNewText().length() <= CATALOG_NAME_MAX_LENGTH ? change : null);
+    }
 
     private Label buildErrorLabel() {
         Label lbl = new Label();
@@ -575,6 +674,7 @@ public class DatabaseSectionController {
         Label lblN = new Label("NOMBRE"); lblN.getStyleClass().add("input-label-small");
         Label lblError = buildErrorLabel();
         TextField tfName = new TextField();
+        tfName.setTextFormatter(catalogNameFormatter());
         tfName.setPromptText("Ej: LAPTOP"); tfName.getStyleClass().add("form-input-main");
 
         CheckBox chkAsset = new CheckBox("Es un activo (tiene número de serie)");
@@ -635,6 +735,7 @@ public class DatabaseSectionController {
         Label lblN = new Label("NOMBRE"); lblN.getStyleClass().add("input-label-small");
         Label lblError = buildErrorLabel();
         TextField tfName = new TextField(type.getName());
+        tfName.setTextFormatter(catalogNameFormatter());
         tfName.getStyleClass().add("form-input-main");
 
         CheckBox chkRequiresSerial = buildRequiresSerialCheckbox(type.isRequiresSerial());
@@ -697,6 +798,7 @@ public class DatabaseSectionController {
         Label lblN = new Label("NOMBRE"); lblN.getStyleClass().add("input-label-small");
         Label lblErrorName = buildErrorLabel();
         TextField tfName = new TextField();
+        tfName.setTextFormatter(catalogNameFormatter());
         tfName.setPromptText("Ej: LENOVO"); tfName.getStyleClass().add("form-input-main");
 
         Button btnCancel = new Button("Cancelar");
@@ -782,7 +884,14 @@ public class DatabaseSectionController {
         Label lblN = new Label("NOMBRE"); lblN.getStyleClass().add("input-label-small");
         Label lblErrorName = buildErrorLabel();
         TextField tfName = new TextField();
+        tfName.setTextFormatter(catalogNameFormatter());
         tfName.setPromptText("Ej: ThinkBook 16 G8"); tfName.getStyleClass().add("form-input-main");
+
+        Label lblS = new Label("STOCK INICIAL"); lblS.getStyleClass().add("input-label-small");
+        TextField tfStock = new TextField("0");
+        tfStock.getStyleClass().add("form-input-main");
+        tfStock.setTextFormatter(new TextFormatter<>(change ->
+            change.getControlNewText().matches("\\d{0,9}") ? change : null));
 
         Button btnCancel = new Button("Cancelar");
         btnCancel.getStyleClass().add("button-secondary");
@@ -812,6 +921,17 @@ public class DatabaseSectionController {
                 triggerFieldError(lblErrorName, ex.getMessage());
                 return;
             }
+            // addModel() doesn't return the new/reactivated row's id — resolve it the same way
+            // the catalog itself would (name match within this brand+type scope) rather than
+            // guessing at what id it landed on.
+            equipmentService.getModelsForBrandAndType(brand.getId(), type.getId()).stream()
+                .filter(m -> m.getName().equalsIgnoreCase(name))
+                .mapToInt(EquipmentModel::getId)
+                .findFirst()
+                .ifPresent(newModelId -> {
+                    int stock = tfStock.getText().isBlank() ? 0 : Integer.parseInt(tfStock.getText().trim());
+                    equipmentService.setModelStock(newModelId, brand.getId(), type.getId(), stock);
+                });
             EquipmentType  selT = listTypes.getSelectionModel().getSelectedItem();
             EquipmentBrand selB = listBrands.getSelectionModel().getSelectedItem();
             if (selT != null && selB != null
@@ -827,9 +947,123 @@ public class DatabaseSectionController {
         root.getChildren().addAll(lblTitle,
             new VBox(2, buildFieldHeaderRow(lblT, lblErrorType), cmbType),
             new VBox(2, buildFieldHeaderRow(lblB, lblErrorBrand), cmbBrand),
-            new VBox(2, buildFieldHeaderRow(lblN, lblErrorName), tfName), buttons);
+            new VBox(2, buildFieldHeaderRow(lblN, lblErrorName), tfName),
+            new VBox(2, lblS, tfStock), buttons);
 
         buildAndShow(stage, root, tfName);
+    }
+
+    // Model is the one catalog entity whose Base de Datos edit dialog needs more than a plain
+    // rename — Stock (see IEquipmentService.setModelStock()) is scoped to this specific
+    // (Type,Brand) usage, not the model row alone, so it's edited alongside the name here rather
+    // than through the shared openRenameDialog() every other entity still uses. Same precedent as
+    // openEditTypeDialog() getting its own dedicated dialog for the requires_serial flag.
+    private void openEditModelDialog(EquipmentModel model, int brandId, int typeId) {
+        Stage stage = buildDialogStage();
+        centerOnContent(stage);
+
+        Label lblTitle = new Label("Editar modelo");
+        lblTitle.getStyleClass().add("section-label");
+
+        Label lblN = new Label("NOMBRE"); lblN.getStyleClass().add("input-label-small");
+        Label lblErrorName = buildErrorLabel();
+        TextField tfName = new TextField(model.getName());
+        tfName.setTextFormatter(catalogNameFormatter());
+        tfName.getStyleClass().add("form-input-main");
+
+        Label lblS = new Label("STOCK"); lblS.getStyleClass().add("input-label-small");
+        TextField tfStock = new TextField(
+            String.valueOf(equipmentService.getModelStock(model.getId(), brandId, typeId)));
+        tfStock.getStyleClass().add("form-input-main");
+        tfStock.setTextFormatter(new TextFormatter<>(change ->
+            change.getControlNewText().matches("\\d{0,9}") ? change : null));
+
+        Button btnCancel = new Button("Cancelar");
+        btnCancel.getStyleClass().add("button-secondary");
+        btnCancel.setOnAction(e -> stage.close());
+
+        Button btnSave = new Button("Guardar");
+        btnSave.getStyleClass().add("button-primary");
+        btnSave.setOnAction(e -> {
+            String newName = tfName.getText().trim();
+            if (newName.isEmpty()) {
+                triggerFieldError(lblErrorName, "El nombre no puede estar vacío");
+                return;
+            }
+            if (!newName.equals(model.getName())) {
+                try {
+                    equipmentService.renameModel(model.getId(), newName);
+                } catch (Exception ex) {
+                    triggerFieldError(lblErrorName, ex.getMessage());
+                    return;
+                }
+            }
+            // A rename swaps to a different MODEL row id (renameModel() deprecates the old one
+            // and creates/reactivates a replacement) — resolve the current id fresh rather than
+            // reusing model.getId(), or the stock below would land on the now-deprecated row.
+            int targetModelId = equipmentService.getModelsForBrandAndType(brandId, typeId).stream()
+                .filter(m -> m.getName().equalsIgnoreCase(newName))
+                .mapToInt(EquipmentModel::getId)
+                .findFirst()
+                .orElse(model.getId());
+            int stock = tfStock.getText().isBlank() ? 0 : Integer.parseInt(tfStock.getText().trim());
+            equipmentService.setModelStock(targetModelId, brandId, typeId, stock);
+            refreshModelsForBrandType(brandId, typeId);
+            refreshStockRollupsOnly(typeId);
+            stage.close();
+        });
+
+        HBox buttons = new HBox(8, btnCancel, btnSave);
+        buttons.setAlignment(Pos.CENTER_RIGHT);
+
+        VBox root = buildDialogRoot(380);
+        root.getChildren().addAll(lblTitle,
+            new VBox(2, buildFieldHeaderRow(lblN, lblErrorName), tfName),
+            new VBox(2, lblS, tfStock), buttons);
+
+        buildAndShow(stage, root, tfName);
+    }
+
+    // Stock-only dialog — a faster path than openEditModelDialog() above when the name isn't
+    // changing, reached via the Models list's own "Stock" button.
+    private void openModifyStockDialog(EquipmentModel model, int brandId, int typeId) {
+        Stage stage = buildDialogStage();
+        centerOnContent(stage);
+
+        Label lblTitle = new Label("Modificar stock");
+        lblTitle.getStyleClass().add("section-label");
+
+        Label lblPath = new Label(model.getName());
+        lblPath.setStyle("-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #334155;");
+
+        Label lblS = new Label("STOCK"); lblS.getStyleClass().add("input-label-small");
+        TextField tfStock = new TextField(
+            String.valueOf(equipmentService.getModelStock(model.getId(), brandId, typeId)));
+        tfStock.getStyleClass().add("form-input-main");
+        tfStock.setTextFormatter(new TextFormatter<>(change ->
+            change.getControlNewText().matches("\\d{0,9}") ? change : null));
+
+        Button btnCancel = new Button("Cancelar");
+        btnCancel.getStyleClass().add("button-secondary");
+        btnCancel.setOnAction(e -> stage.close());
+
+        Button btnSave = new Button("Guardar");
+        btnSave.getStyleClass().add("button-primary");
+        btnSave.setOnAction(e -> {
+            int stock = tfStock.getText().isBlank() ? 0 : Integer.parseInt(tfStock.getText().trim());
+            equipmentService.setModelStock(model.getId(), brandId, typeId, stock);
+            refreshModelsForBrandType(brandId, typeId);
+            refreshStockRollupsOnly(typeId);
+            stage.close();
+        });
+
+        HBox buttons = new HBox(8, btnCancel, btnSave);
+        buttons.setAlignment(Pos.CENTER_RIGHT);
+
+        VBox root = buildDialogRoot(340);
+        root.getChildren().addAll(lblTitle, lblPath, new VBox(2, lblS, tfStock), buttons);
+
+        buildAndShow(stage, root, tfStock);
     }
 
     private void openAddProviderDialog() {
@@ -842,6 +1076,7 @@ public class DatabaseSectionController {
         Label lblN = new Label("NOMBRE"); lblN.getStyleClass().add("input-label-small");
         Label lblError = buildErrorLabel();
         TextField tfName = new TextField();
+        tfName.setTextFormatter(catalogNameFormatter());
         tfName.setPromptText("Ej: TechCorp S.A."); tfName.getStyleClass().add("form-input-main");
 
         Button btnCancel = new Button("Cancelar");
@@ -885,6 +1120,7 @@ public class DatabaseSectionController {
         Label lblN = new Label("NOMBRE"); lblN.getStyleClass().add("input-label-small");
         Label lblError = buildErrorLabel();
         TextField tfName = new TextField();
+        tfName.setTextFormatter(catalogNameFormatter());
         tfName.setPromptText("Ej: Campus Córdoba"); tfName.getStyleClass().add("form-input-main");
 
         Button btnCancel = new Button("Cancelar");
@@ -928,6 +1164,7 @@ public class DatabaseSectionController {
         Label lblN = new Label("NUEVO NOMBRE"); lblN.getStyleClass().add("input-label-small");
         Label lblError = buildErrorLabel();
         TextField tfName = new TextField(currentName);
+        tfName.setTextFormatter(catalogNameFormatter());
         tfName.getStyleClass().add("form-input-main");
 
         Button btnCancel = new Button("Cancelar");
@@ -1047,8 +1284,12 @@ public class DatabaseSectionController {
 
     // ── Admin auth ────────────────────────────────────────────────────
 
-    private void requireAdmin(Runnable action) {
-        if (AdminSession.getInstance().isActive()) {
+    // The shared-password fallback below always resolves to ADMIN-level permissions, never
+    // SUPERADMIN, regardless of who's holding the password — so a permission granted only to
+    // SUPERADMIN (none of this controller's today, but a future one might be) stays unreachable
+    // through this path even with the correct password.
+    private void requirePermission(Permission permission, Runnable action) {
+        if (AdminSession.getInstance().hasPermission(permission)) {
             AdminSession.getInstance().refreshActivity();
             action.run();
             return;
@@ -1062,6 +1303,11 @@ public class DatabaseSectionController {
         if (pwd.isEmpty()) return;
         if (!AdminAuthService.verify(pwd.get())) {
             showErrorDialog("Acceso denegado", "Contraseña incorrecta.");
+            return;
+        }
+        if (!ServiceLocator.getInstance().getUserRoleService()
+                .getPermissionsForRole(IUserRoleService.ROLE_ADMIN).contains(permission)) {
+            showErrorDialog("Acceso denegado", "Esta acción requiere permisos de superadministrador.");
             return;
         }
         action.run();

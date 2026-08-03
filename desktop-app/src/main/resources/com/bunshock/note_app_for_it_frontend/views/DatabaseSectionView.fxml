@@ -119,6 +119,8 @@
                     <HBox spacing="8">
                         <Button text="Editar" onAction="#handleEditModel" styleClass="button-secondary"
                                 maxWidth="Infinity" HBox.hgrow="ALWAYS"/>
+                        <Button text="Stock" onAction="#handleModifyStock" styleClass="button-secondary"
+                                maxWidth="Infinity" HBox.hgrow="ALWAYS"/>
                         <Button text="Eliminar" onAction="#handleRemoveModel" styleClass="button-secondary"
                                 maxWidth="Infinity" HBox.hgrow="ALWAYS"/>
                     </HBox>
