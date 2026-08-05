@@ -8,7 +8,6 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -18,7 +17,6 @@ import com.bunshock.note_app_for_it_frontend.models.EquipmentModel;
 import com.bunshock.note_app_for_it_frontend.models.EquipmentType;
 import com.bunshock.note_app_for_it_frontend.models.Permission;
 import com.bunshock.note_app_for_it_frontend.models.Sede;
-import com.bunshock.note_app_for_it_frontend.services.AdminAuthService;
 import com.bunshock.note_app_for_it_frontend.services.AdminSession;
 import com.bunshock.note_app_for_it_frontend.services.AppKeyEncryptionService;
 import com.bunshock.note_app_for_it_frontend.services.ConfigService;
@@ -116,10 +114,11 @@ public class DatabaseSectionController {
     }
 
     // A plain technician (no ADMIN/SUPERADMIN role) can never actually complete any of these
-    // actions — requirePermission()'s own password-prompt fallback still exists below for someone
-    // who knows the shared admin password, but leaving the buttons visible to everyone else was
-    // pure clutter with no real affordance behind it (explicit user report/request). Hidden, not
-    // just disabled, same "no point leaving a dead control visible" reasoning as every other
+    // actions — requirePermission() is a hard permission check with no fallback of any kind
+    // (the old shared-password bypass was removed entirely, see CLAUDE.md). Leaving the buttons
+    // visible to everyone else was pure clutter with no real affordance behind it (explicit user
+    // report/request). Hidden, not just disabled, same "no point leaving a dead control visible"
+    // reasoning as every other
     // permission-gated control in this app. Not Sede-scoped for MANAGE_STOCK — unlike a fixed
     // note's own Sede elsewhere in this app, cmbStockSede's selection changes live as the
     // technician browses the catalog, so the Stock button's mere visibility is governed by the
@@ -223,10 +222,13 @@ public class DatabaseSectionController {
         Label lblH = new Label("SERVIDOR (HOST)"); lblH.getStyleClass().add("input-label-small");
         TextField tfHost = new TextField(curHost != null ? curHost : "");
         tfHost.setPromptText("Ej: 192.168.1.100"); tfHost.getStyleClass().add("form-input-main");
+        tfHost.setTextFormatter(connectionFieldFormatter());
 
         Label lblP = new Label("PUERTO"); lblP.getStyleClass().add("input-label-small");
         TextField tfPort = new TextField(curPort != null && !curPort.isBlank() ? curPort : "1433");
         tfPort.setPrefWidth(80); tfPort.getStyleClass().add("form-input-main");
+        tfPort.setTextFormatter(new TextFormatter<>(change ->
+            change.getControlNewText().matches("\\d{0,5}") ? change : null));
 
         VBox hostBox = new VBox(2, lblH, tfHost); HBox.setHgrow(hostBox, Priority.ALWAYS);
         VBox portBox = new VBox(2, lblP, tfPort);
@@ -235,10 +237,12 @@ public class DatabaseSectionController {
         Label lblN = new Label("BASE DE DATOS"); lblN.getStyleClass().add("input-label-small");
         TextField tfName = new TextField(curName != null ? curName : "");
         tfName.setPromptText("Ej: noteapp_db"); tfName.getStyleClass().add("form-input-main");
+        tfName.setTextFormatter(connectionFieldFormatter());
 
         Label lblU = new Label("USUARIO"); lblU.getStyleClass().add("input-label-small");
         TextField tfUser = new TextField(curUser != null ? curUser : "");
         tfUser.setPromptText("Ej: admin"); tfUser.getStyleClass().add("form-input-main");
+        tfUser.setTextFormatter(connectionFieldFormatter());
 
         // Write-only, like every other secret field in this app (SMTP/GLPI/AD) — never
         // pre-filled with the decrypted current value. Removing the admin gate on this dialog
@@ -251,6 +255,7 @@ public class DatabaseSectionController {
         PasswordField pfPass = new PasswordField();
         pfPass.setPromptText("Dejar en blanco para no cambiarla");
         pfPass.getStyleClass().add("form-input-main");
+        pfPass.setTextFormatter(connectionFieldFormatter());
 
         Button btnCancel = new Button("Cancelar");
         btnCancel.getStyleClass().add("button-secondary");
@@ -790,6 +795,17 @@ public class DatabaseSectionController {
     private TextFormatter<String> catalogNameFormatter() {
         return new TextFormatter<>(change ->
             change.getControlNewText().length() <= CATALOG_NAME_MAX_LENGTH ? change : null);
+    }
+
+    // db_host/db_port/db_name/db_username/db_password are local-only APP_SETTINGS values (see
+    // CLAUDE.md — remote connection config is never mirrored to the remote database itself), so
+    // there's no SQL Server column bound to match; capped purely as a sanity guard against an
+    // accidental huge paste, same reasoning as catalogNameFormatter() above.
+    private static final int CONNECTION_FIELD_MAX_LENGTH = 255;
+
+    private TextFormatter<String> connectionFieldFormatter() {
+        return new TextFormatter<>(change ->
+            change.getControlNewText().length() <= CONNECTION_FIELD_MAX_LENGTH ? change : null);
     }
 
     private Label buildErrorLabel() {
@@ -1365,107 +1381,30 @@ public class DatabaseSectionController {
 
     // ── Admin auth ────────────────────────────────────────────────────
 
-    // The shared-password fallback below always resolves to ADMIN-level permissions, never
-    // SUPERADMIN, regardless of who's holding the password — so a permission granted only to
-    // SUPERADMIN (none of this controller's today, but a future one might be) stays unreachable
-    // through this path even with the correct password.
+    // No shared-password fallback anymore (removed — see CLAUDE.md) — a hard permission check,
+    // matching SettingsController.handleEditRow()'s own pattern. The corresponding buttons are
+    // already hidden entirely when this would fail (see updateCrudButtonVisibility()); this
+    // check is what actually enforces it, not the button's visibility, which is cosmetic only.
     private void requirePermission(Permission permission, Runnable action) {
-        if (AdminSession.getInstance().hasPermission(permission)) {
-            AdminSession.getInstance().refreshActivity();
-            action.run();
+        if (!AdminSession.getInstance().hasPermission(permission)) {
+            showErrorDialog("Acceso restringido", "No tiene permisos para realizar esta acción.");
             return;
         }
-        if (!AdminAuthService.isConfigured()) {
-            showErrorDialog("Administrador no configurado",
-                "Contacte al desarrollador para configurar el acceso de administrador.");
-            return;
-        }
-        Optional<String> pwd = promptPassword();
-        if (pwd.isEmpty()) return;
-        if (!AdminAuthService.verify(pwd.get())) {
-            showErrorDialog("Acceso denegado", "Contraseña incorrecta.");
-            return;
-        }
-        if (!ServiceLocator.getInstance().getUserRoleService()
-                .getPermissionsForRole(IUserRoleService.ROLE_ADMIN).contains(permission)) {
-            showErrorDialog("Acceso denegado", "Esta acción requiere permisos de superadministrador.");
-            return;
-        }
+        AdminSession.getInstance().refreshActivity();
         action.run();
     }
 
-    // Sede-scoped variant, for MANAGE_STOCK — mirrors AdminSession.hasPermission(Permission,
-    // Integer)'s own scoping rule (SUPERADMIN bypasses it; a real ADMIN login must have their own
-    // assigned Sede match sedeId) for an already-active session. The shared-password fallback
-    // below always resolves to ADMIN-level (never SUPERADMIN, see AdminSession.activate()), so it
-    // must enforce the same Sede match explicitly here too — activate() itself has no sedeId to
-    // check against, so this is the one place that rule is actually applied for that path.
+    // Sede-scoped variant, for MANAGE_STOCK — AdminSession.hasPermission(Permission, Integer)
+    // already encodes the full rule (SUPERADMIN bypasses Sede scoping; a real ADMIN login must
+    // have their own assigned Sede match sedeId), so there's nothing left to check here beyond
+    // the permission itself.
     private void requirePermission(Permission permission, Integer sedeId, Runnable action) {
-        if (AdminSession.getInstance().hasPermission(permission, sedeId)) {
-            AdminSession.getInstance().refreshActivity();
-            action.run();
+        if (!AdminSession.getInstance().hasPermission(permission, sedeId)) {
+            showErrorDialog("Acceso restringido", "No tiene permisos para realizar esta acción.");
             return;
         }
-        if (!AdminAuthService.isConfigured()) {
-            showErrorDialog("Administrador no configurado",
-                "Contacte al desarrollador para configurar el acceso de administrador.");
-            return;
-        }
-        Optional<String> pwd = promptPassword();
-        if (pwd.isEmpty()) return;
-        if (!AdminAuthService.verify(pwd.get())) {
-            showErrorDialog("Acceso denegado", "Contraseña incorrecta.");
-            return;
-        }
-        if (!ServiceLocator.getInstance().getUserRoleService()
-                .getPermissionsForRole(IUserRoleService.ROLE_ADMIN).contains(permission)) {
-            showErrorDialog("Acceso denegado", "Esta acción requiere permisos de superadministrador.");
-            return;
-        }
-        Integer mySedeId = TechnicianSessionService.getInstance().getSedeId();
-        if (sedeId == null || mySedeId == null || !mySedeId.equals(sedeId)) {
-            showErrorDialog("Acceso denegado", "Esta acción requiere permisos sobre la sede seleccionada.");
-            return;
-        }
+        AdminSession.getInstance().refreshActivity();
         action.run();
-    }
-
-    private Optional<String> promptPassword() {
-        Stage stage = buildDialogStage();
-        centerOnContent(stage);
-        String[] result = {null};
-
-        Label title = new Label("Acceso de administrador");
-        title.getStyleClass().add("section-label");
-
-        Label subtitle = new Label("Ingrese la contraseña para continuar.");
-        subtitle.setStyle("-fx-text-fill: #475569; -fx-font-size: 12px;");
-
-        PasswordField pf = new PasswordField();
-        pf.setPromptText("Contraseña"); pf.getStyleClass().add("form-input-main");
-
-        Button btnCancel = new Button("Cancelar");
-        btnCancel.getStyleClass().add("button-secondary");
-        btnCancel.setOnAction(e -> stage.close());
-
-        Button btnOk = new Button("Confirmar");
-        btnOk.getStyleClass().add("button-primary");
-        btnOk.setOnAction(e -> { result[0] = pf.getText(); stage.close(); });
-        pf.setOnAction(e -> btnOk.fire());
-
-        HBox buttons = new HBox(8, btnCancel, btnOk);
-        buttons.setAlignment(Pos.CENTER_RIGHT);
-
-        VBox root = buildDialogRoot(380);
-        root.getChildren().addAll(title, subtitle, pf, buttons);
-
-        Scene scene = buildDialogScene(root);
-        scene.setOnKeyPressed(ev -> { if (ev.getCode() == KeyCode.ESCAPE) stage.close(); });
-        stage.setScene(scene);
-        Platform.runLater(pf::requestFocus);
-        stage.showAndWait();
-
-        return Optional.ofNullable(result[0]);
     }
 
     // ── APP_SETTINGS helpers ─────────────────────────────────────────

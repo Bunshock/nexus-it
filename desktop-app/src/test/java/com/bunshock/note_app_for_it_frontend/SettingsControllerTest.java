@@ -140,17 +140,6 @@ class SettingsControllerTest {
         }
     }
 
-    @Test
-    void smtpFieldsStayDisabledUnderTheSharedPasswordFallback() throws Exception {
-        // session.activate() is the shared-password fallback (DatabaseSectionController's
-        // requirePermission()/promptPassword() path) — it always resolves to ROLE_ADMIN, never
-        // SUPERADMIN, so SMTP must stay locked even when the fallback succeeds.
-        session.activate();
-        updateFieldEditability();
-        for (String name : SMTP_FIELD_NAMES) {
-            assertTrue(getField(name).isDisabled(), name + " should stay disabled under the shared-password fallback");
-        }
-    }
 
     @Test
     void fieldsRevertToDisabledAfterAdminModeDeactivates() throws Exception {

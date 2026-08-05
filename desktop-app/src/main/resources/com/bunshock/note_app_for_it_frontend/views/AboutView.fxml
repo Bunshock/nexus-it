@@ -416,11 +416,8 @@
                        text="El modo administrador desbloquea, mientras está activo: la edición de todos los campos de Ajustes (sección 10), la sección Base de Datos completa (sección 9), la edición de reglas de validación de S/N (sección 10.4), y los botones de sincronización/rechazo GLPI en el detalle de una nota del Historial (sección 8)."
                        style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
                 <Label wrapText="true"
-                       text="Se activa automáticamente al iniciar sesión si la cuenta tiene rol de administrador asignado — no hay un botón para activarlo manualmente. Mientras está activo, se muestra una etiqueta &quot;MODO ADMINISTRADOR&quot; en la barra de título de la aplicación, y permanece activo durante toda la sesión (no expira por inactividad)."
+                       text="Se activa automáticamente al iniciar sesión si la cuenta tiene rol de administrador asignado — no hay un botón para activarlo manualmente, ni ninguna otra forma de habilitarlo. Mientras está activo, se muestra una etiqueta &quot;MODO ADMINISTRADOR&quot; en la barra de título de la aplicación, y permanece activo durante toda la sesión (no expira por inactividad). Una cuenta sin rol de administrador asignado no puede realizar ninguna de estas acciones."
                        style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
-                <Label wrapText="true"
-                       text="Una cuenta sin rol de administrador puede igualmente editar reglas de validación de S/N y el catálogo de Base de Datos ingresando la contraseña compartida al hacer clic en la acción correspondiente — esa contraseña habilita solo esa acción puntual, no el modo administrador completo."
-                       style="-fx-font-size: 12px; -fx-text-fill: #94a3b8; -fx-font-style: italic;"/>
 
                 <!-- Espacio final -->
                 <Label text="" style="-fx-padding: 4 0;"/>

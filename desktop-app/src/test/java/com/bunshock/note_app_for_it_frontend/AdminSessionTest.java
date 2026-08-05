@@ -1,7 +1,5 @@
 package com.bunshock.note_app_for_it_frontend;
 
-import java.lang.reflect.Field;
-import java.time.LocalDateTime;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -20,6 +18,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
+// The old shared-password activate() (a separate, timed activation mode with a 15-minute
+// inactivity expiry) was removed entirely — see CLAUDE.md. activatePermanently(role) is now the
+// only way to activate a session (real ADMIN/SUPERADMIN logins only), and never expires on
+// inactivity.
 class AdminSessionTest {
 
     private final AdminSession session = AdminSession.getInstance();
@@ -46,12 +48,6 @@ class AdminSessionTest {
         waitForFxEvents();
     }
 
-    private void setLastActivity(LocalDateTime value) throws Exception {
-        Field f = AdminSession.class.getDeclaredField("lastActivity");
-        f.setAccessible(true);
-        f.set(session, value);
-    }
-
     private void waitForFxEvents() throws Exception {
         CountDownLatch latch = new CountDownLatch(1);
         Platform.runLater(latch::countDown);
@@ -64,44 +60,23 @@ class AdminSessionTest {
     }
 
     @Test
-    void activateMakesSessionActive() {
-        session.activate();
+    void activatePermanentlyMakesSessionActive() {
+        session.activatePermanently(IUserRoleService.ROLE_ADMIN);
         assertTrue(session.isActive());
     }
 
     @Test
     void deactivateMakesSessionInactive() {
-        session.activate();
+        session.activatePermanently(IUserRoleService.ROLE_ADMIN);
         session.deactivate();
         assertFalse(session.isActive());
     }
 
     @Test
-    void refreshActivityKeepsSessionAliveWithinTimeout() throws Exception {
-        session.activate();
-        setLastActivity(LocalDateTime.now().minusMinutes(14));
+    void refreshActivityIsANoOpAndDoesNotThrow() {
+        session.activatePermanently(IUserRoleService.ROLE_ADMIN);
         session.refreshActivity();
         assertTrue(session.isActive());
-        assertTrue(session.getRemainingSeconds() > 14 * 60);
-    }
-
-    @Test
-    void isActiveExpiresSessionAfterTimeout() throws Exception {
-        session.activate();
-        setLastActivity(LocalDateTime.now().minusMinutes(16));
-        assertFalse(session.isActive());
-    }
-
-    @Test
-    void getRemainingSecondsIsZeroWhenInactive() {
-        assertEquals(0, session.getRemainingSeconds());
-    }
-
-    @Test
-    void getRemainingSecondsIsPositiveWhenJustActivated() {
-        session.activate();
-        long remaining = session.getRemainingSeconds();
-        assertTrue(remaining > 0 && remaining <= 15 * 60);
     }
 
     @Test
@@ -110,7 +85,7 @@ class AdminSessionTest {
         Runnable listener = () -> fired.set(true);
         session.addOnActivateListener(listener);
         try {
-            session.activate();
+            session.activatePermanently(IUserRoleService.ROLE_ADMIN);
             waitForFxEvents();
             assertTrue(fired.get());
         } finally {
@@ -124,7 +99,7 @@ class AdminSessionTest {
         Runnable listener = () -> fired.set(true);
         session.addOnDeactivateListener(listener);
         try {
-            session.activate();
+            session.activatePermanently(IUserRoleService.ROLE_ADMIN);
             waitForFxEvents();
             session.deactivate();
             waitForFxEvents();
@@ -135,32 +110,11 @@ class AdminSessionTest {
     }
 
     @Test
-    void activatePermanentlyNeverExpiresEvenAfterLongInactivity() throws Exception {
+    void activatePermanentlyNeverExpiresEvenAfterCheckingRepeatedly() {
         session.activatePermanently(IUserRoleService.ROLE_ADMIN);
-        setLastActivity(LocalDateTime.now().minusMinutes(9999));
-        assertTrue(session.isActive());
-        assertEquals(0, session.getRemainingSeconds());
-    }
-
-    @Test
-    void activatePermanentlyStillDeactivatesNormally() {
-        session.activatePermanently(IUserRoleService.ROLE_ADMIN);
-        session.deactivate();
-        assertFalse(session.isActive());
-    }
-
-    @Test
-    void plainActivateAfterPermanentlyResumesNormalExpiry() throws Exception {
-        session.activatePermanently(IUserRoleService.ROLE_ADMIN);
-        session.activate();
-        setLastActivity(LocalDateTime.now().minusMinutes(16));
-        assertFalse(session.isActive());
-    }
-
-    @Test
-    void plainActivateEffectiveRoleIsAlwaysAdminNeverSuperadmin() {
-        session.activate();
-        assertEquals(IUserRoleService.ROLE_ADMIN, session.getEffectiveRole());
+        for (int i = 0; i < 5; i++) {
+            assertTrue(session.isActive());
+        }
     }
 
     @Test
@@ -194,14 +148,6 @@ class AdminSessionTest {
     }
 
     @Test
-    void plainActivateNeverGrantsSuperadminOnlyPermission() {
-        // The shared-password fallback (plain activate()) must never unlock a
-        // SUPERADMIN-only permission, regardless of what's configured for ADMIN.
-        session.activate();
-        assertFalse(session.hasPermission(Permission.EDIT_SMTP_CONFIG));
-    }
-
-    @Test
     void sedeScopedHasPermissionAllowsSuperadminRegardlessOfSede() {
         session.activatePermanently(IUserRoleService.ROLE_SUPERADMIN);
         assertTrue(session.hasPermission(Permission.APPROVE_NOTES, 999));
@@ -215,46 +161,20 @@ class AdminSessionTest {
     }
 
     @Test
-    void clearListenersForLogoutRemovesEveryActivateDeactivateAndExpireListener() throws Exception {
+    void clearListenersForLogoutRemovesEveryActivateAndDeactivateListener() throws Exception {
         AtomicBoolean activateFired = new AtomicBoolean(false);
         AtomicBoolean deactivateFired = new AtomicBoolean(false);
-        AtomicBoolean expireFired = new AtomicBoolean(false);
         session.addOnActivateListener(() -> activateFired.set(true));
         session.addOnDeactivateListener(() -> deactivateFired.set(true));
-        session.addOnExpireListener(() -> expireFired.set(true));
 
         session.clearListenersForLogout();
 
-        session.activate();
+        session.activatePermanently(IUserRoleService.ROLE_ADMIN);
         waitForFxEvents();
-        setLastActivity(LocalDateTime.now().minusMinutes(16));
-        assertFalse(session.isActive());
+        session.deactivate();
         waitForFxEvents();
 
         assertFalse(activateFired.get(), "clearListenersForLogout() must remove activate listeners");
         assertFalse(deactivateFired.get(), "clearListenersForLogout() must remove deactivate listeners");
-        assertFalse(expireFired.get(), "clearListenersForLogout() must remove expire listeners");
-    }
-
-    @Test
-    void expiryFiresBothDeactivateAndExpireListeners() throws Exception {
-        AtomicBoolean deactivateFired = new AtomicBoolean(false);
-        AtomicBoolean expireFired = new AtomicBoolean(false);
-        Runnable onDeactivate = () -> deactivateFired.set(true);
-        Runnable onExpire = () -> expireFired.set(true);
-        session.addOnDeactivateListener(onDeactivate);
-        session.addOnExpireListener(onExpire);
-        try {
-            session.activate();
-            waitForFxEvents();
-            setLastActivity(LocalDateTime.now().minusMinutes(16));
-            assertFalse(session.isActive());
-            waitForFxEvents();
-            assertTrue(deactivateFired.get());
-            assertTrue(expireFired.get());
-        } finally {
-            session.removeOnDeactivateListener(onDeactivate);
-            session.removeOnExpireListener(onExpire);
-        }
     }
 }
