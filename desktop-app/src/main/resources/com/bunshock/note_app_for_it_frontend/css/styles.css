@@ -1386,18 +1386,15 @@
     -fx-background-radius: 4;
     -fx-text-fill: white !important;
 }
-/* Inset, not flush with the cell's own edge — a border drawn right at the cell boundary reads
-   as touching/cramped against the neighboring cells, since day cells sit edge-to-edge with no
-   grid gap. -fx-border-insets pulls the ring inward so it reads as a distinct outline. */
+/* Background tint, not a border — a Region's -fx-border-width contributes to its layout insets
+   (Region.getInsets() = padding + border insets), so the earlier bordered-ring version made only
+   the "today" cell taller than its row siblings, throwing off that entire week row's height in
+   the GridPane (rows size to their tallest cell). A background color never affects layout size,
+   so this reads as the same "today" highlight with no row-height side effect. Direct user report.
+   .today.selected needs no rule of its own — .selected's own !important background already wins. */
 .date-picker-popup > * > .today {
-    -fx-border-color: #0c8570;
-    -fx-border-width: 1;
-    -fx-border-insets: 2;
-    -fx-border-radius: 4;
+    -fx-background-color: rgba(12,133,112,0.18);
     -fx-background-radius: 4;
-}
-.date-picker-popup > * > .today.selected {
-    -fx-border-color: white;
 }
 .date-picker-popup > * > .previous-month,
 .date-picker-popup > * > .next-month {
