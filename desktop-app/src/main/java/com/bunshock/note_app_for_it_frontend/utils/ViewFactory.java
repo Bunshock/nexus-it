@@ -2,11 +2,15 @@ package com.bunshock.note_app_for_it_frontend.utils;
 
 import java.io.IOException;
 
+import com.bunshock.note_app_for_it_frontend.controllers.DatabaseSectionController;
+import com.bunshock.note_app_for_it_frontend.controllers.EnviosController;
 import com.bunshock.note_app_for_it_frontend.controllers.HistoryController;
 import com.bunshock.note_app_for_it_frontend.controllers.NoteGeneratorController;
 import com.bunshock.note_app_for_it_frontend.controllers.PrestamoHistoryController;
 import com.bunshock.note_app_for_it_frontend.controllers.PrestamosController;
 import com.bunshock.note_app_for_it_frontend.controllers.ProviderNoteController;
+import com.bunshock.note_app_for_it_frontend.controllers.RemitoHistoryController;
+import com.bunshock.note_app_for_it_frontend.controllers.RemitoNoteController;
 import com.bunshock.note_app_for_it_frontend.controllers.SettingsController;
 import com.bunshock.note_app_for_it_frontend.controllers.UserNoteController;
 
@@ -24,9 +28,16 @@ public class ViewFactory {
     private ProviderNoteController providerNoteController;
 
     private Parent generatorView;
+    private Parent remitoNoteView;
+    private RemitoNoteController remitoNoteController;
+    private Parent remitoHistoryView;
+    private RemitoHistoryController remitoHistoryController;
+    private Parent enviosView;
+    private EnviosController enviosController;
     private Parent historyView;
     private HistoryController historyController;
     private Parent databaseView;
+    private DatabaseSectionController databaseController;
     private Parent settingsView;
     private SettingsController settingsController;
     private Parent aboutView;
@@ -66,6 +77,40 @@ public class ViewFactory {
         return generatorView;
     }
 
+    public Parent getRemitoNoteView() {
+        if (remitoNoteView == null) {
+            FXMLLoader loader = loader("RemitoNoteView.fxml");
+            remitoNoteView = load(loader);
+            remitoNoteController = loader.getController();
+        }
+        return remitoNoteView;
+    }
+
+    public RemitoNoteController getRemitoNoteController() { return remitoNoteController; }
+
+    public Parent getRemitoHistoryView() {
+        if (remitoHistoryView == null) {
+            FXMLLoader loader = loader("RemitoHistoryView.fxml");
+            remitoHistoryView = load(loader);
+            remitoHistoryController = loader.getController();
+        }
+        return remitoHistoryView;
+    }
+
+    public RemitoHistoryController getRemitoHistoryController() { return remitoHistoryController; }
+
+    public Parent getEnviosView() {
+        if (enviosView == null) {
+            FXMLLoader loader = loader("EnviosView.fxml");
+            enviosView = load(loader);
+            enviosController = loader.getController();
+            enviosController.setViewFactory(this);
+        }
+        return enviosView;
+    }
+
+    public EnviosController getEnviosController() { return enviosController; }
+
     public Parent getHistoryView() {
         if (historyView == null) {
             FXMLLoader loader = loader("HistoryView.fxml");
@@ -78,9 +123,15 @@ public class ViewFactory {
     public HistoryController getHistoryController() { return historyController; }
 
     public Parent getDatabaseView() {
-        if (databaseView == null) databaseView = load(loader("DatabaseSectionView.fxml"));
+        if (databaseView == null) {
+            FXMLLoader loader = loader("DatabaseSectionView.fxml");
+            databaseView = load(loader);
+            databaseController = loader.getController();
+        }
         return databaseView;
     }
+
+    public DatabaseSectionController getDatabaseSectionController() { return databaseController; }
 
     public Parent getSettingsView() {
         if (settingsView == null) {

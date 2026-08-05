@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <?import javafx.scene.layout.*?>
 <?import javafx.scene.control.*?>
+<?import javafx.geometry.Insets?>
 
 <VBox fx:id="rootContainer" spacing="20" style="-fx-padding: 30; -fx-background-color: #f4f4f4;"
       xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1"
@@ -57,8 +58,17 @@
              (combined/summed) entry, selectable. -->
         <HBox styleClass="page-subtitle-card" alignment="CENTER_LEFT">
             <children>
-                <Label fx:id="lblEquipmentCatalogTitle" styleClass="page-subtitle"/>
+                <HBox spacing="6" alignment="CENTER_LEFT">
+                    <children>
+                        <Label text="CATÁLOGO DE EQUIPOS :" styleClass="page-subtitle"/>
+                        <Label fx:id="lblEquipmentCatalogSede" styleClass="page-subtitle-sede"/>
+                    </children>
+                </HBox>
                 <Region HBox.hgrow="ALWAYS"/>
+                <Button fx:id="btnRefreshCatalog" text="↻ Actualizar datos" onAction="#handleRefreshCatalog"
+                        styleClass="button-refresh-catalog">
+                    <HBox.margin><Insets right="10"/></HBox.margin>
+                </Button>
                 <ComboBox fx:id="cmbStockSede" prefWidth="220" styleClass="form-input-main, sede-combo"/>
             </children>
         </HBox>
@@ -73,13 +83,13 @@
                     <HBox alignment="CENTER_LEFT">
                         <Label text="TIPOS" styleClass="section-label"/>
                         <Region HBox.hgrow="ALWAYS"/>
-                        <Button text="+ Agregar" onAction="#handleAddType" styleClass="button-primary"/>
+                        <Button fx:id="btnAddType" text="+ Agregar" onAction="#handleAddType" styleClass="button-primary"/>
                     </HBox>
                     <ListView fx:id="listTypes" VBox.vgrow="ALWAYS" styleClass="modern-list"/>
                     <HBox spacing="8">
-                        <Button text="Editar" onAction="#handleEditType" styleClass="button-secondary"
+                        <Button fx:id="btnEditType" text="Editar" onAction="#handleEditType" styleClass="button-secondary"
                                 maxWidth="Infinity" HBox.hgrow="ALWAYS"/>
-                        <Button text="Eliminar" onAction="#handleRemoveType" styleClass="button-secondary"
+                        <Button fx:id="btnRemoveType" text="Eliminar" onAction="#handleRemoveType" styleClass="button-secondary"
                                 maxWidth="Infinity" HBox.hgrow="ALWAYS"/>
                     </HBox>
                 </children>
@@ -92,13 +102,13 @@
                     <HBox alignment="CENTER_LEFT">
                         <Label text="MARCAS" styleClass="section-label"/>
                         <Region HBox.hgrow="ALWAYS"/>
-                        <Button text="+ Agregar" onAction="#handleAddBrand" styleClass="button-primary"/>
+                        <Button fx:id="btnAddBrand" text="+ Agregar" onAction="#handleAddBrand" styleClass="button-primary"/>
                     </HBox>
                     <ListView fx:id="listBrands" VBox.vgrow="ALWAYS" styleClass="modern-list"/>
                     <HBox spacing="8">
-                        <Button text="Editar" onAction="#handleEditBrand" styleClass="button-secondary"
+                        <Button fx:id="btnEditBrand" text="Editar" onAction="#handleEditBrand" styleClass="button-secondary"
                                 maxWidth="Infinity" HBox.hgrow="ALWAYS"/>
-                        <Button text="Eliminar" onAction="#handleRemoveBrand" styleClass="button-secondary"
+                        <Button fx:id="btnRemoveBrand" text="Eliminar" onAction="#handleRemoveBrand" styleClass="button-secondary"
                                 maxWidth="Infinity" HBox.hgrow="ALWAYS"/>
                     </HBox>
                 </children>
@@ -111,15 +121,15 @@
                     <HBox alignment="CENTER_LEFT">
                         <Label text="MODELOS" styleClass="section-label"/>
                         <Region HBox.hgrow="ALWAYS"/>
-                        <Button text="+ Agregar" onAction="#handleAddModel" styleClass="button-primary"/>
+                        <Button fx:id="btnAddModel" text="+ Agregar" onAction="#handleAddModel" styleClass="button-primary"/>
                     </HBox>
                     <ListView fx:id="listModels" VBox.vgrow="ALWAYS" styleClass="modern-list"/>
                     <HBox spacing="8">
-                        <Button text="Editar" onAction="#handleEditModel" styleClass="button-secondary"
+                        <Button fx:id="btnEditModel" text="Editar" onAction="#handleEditModel" styleClass="button-secondary"
                                 maxWidth="Infinity" HBox.hgrow="ALWAYS"/>
-                        <Button text="Stock" onAction="#handleModifyStock" styleClass="button-secondary"
+                        <Button fx:id="btnModifyStock" text="Stock" onAction="#handleModifyStock" styleClass="button-secondary"
                                 maxWidth="Infinity" HBox.hgrow="ALWAYS"/>
-                        <Button text="Eliminar" onAction="#handleRemoveModel" styleClass="button-secondary"
+                        <Button fx:id="btnRemoveModel" text="Eliminar" onAction="#handleRemoveModel" styleClass="button-secondary"
                                 maxWidth="Infinity" HBox.hgrow="ALWAYS"/>
                     </HBox>
                 </children>

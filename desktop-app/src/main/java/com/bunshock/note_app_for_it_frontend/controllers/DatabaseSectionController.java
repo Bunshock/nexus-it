@@ -68,7 +68,11 @@ public class DatabaseSectionController {
     @FXML private ListView<EquipmentBrand> listBrands;
     @FXML private ListView<EquipmentModel> listModels;
     @FXML private ComboBox<Sede> cmbStockSede;
-    @FXML private Label lblEquipmentCatalogTitle;
+    @FXML private Label lblEquipmentCatalogSede;
+
+    @FXML private Button btnAddType, btnEditType, btnRemoveType;
+    @FXML private Button btnAddBrand, btnEditBrand, btnRemoveBrand;
+    @FXML private Button btnAddModel, btnEditModel, btnModifyStock, btnRemoveModel;
 
     private IEquipmentService equipmentService;
 
@@ -105,6 +109,40 @@ public class DatabaseSectionController {
             if (sel != null && type != null) refreshModelsForBrandType(sel.getId(), type.getId());
             else listModels.setItems(FXCollections.observableArrayList());
         });
+
+        AdminSession.getInstance().addOnActivateListener(this::updateCrudButtonVisibility);
+        AdminSession.getInstance().addOnDeactivateListener(this::updateCrudButtonVisibility);
+        updateCrudButtonVisibility();
+    }
+
+    // A plain technician (no ADMIN/SUPERADMIN role) can never actually complete any of these
+    // actions — requirePermission()'s own password-prompt fallback still exists below for someone
+    // who knows the shared admin password, but leaving the buttons visible to everyone else was
+    // pure clutter with no real affordance behind it (explicit user report/request). Hidden, not
+    // just disabled, same "no point leaving a dead control visible" reasoning as every other
+    // permission-gated control in this app. Not Sede-scoped for MANAGE_STOCK — unlike a fixed
+    // note's own Sede elsewhere in this app, cmbStockSede's selection changes live as the
+    // technician browses the catalog, so the Stock button's mere visibility is governed by the
+    // role permission alone; the actual Sede match is still enforced at click time via
+    // requirePermission(Permission, Integer, Runnable).
+    private void updateCrudButtonVisibility() {
+        setButtonVisible(btnAddType,    AdminSession.getInstance().hasPermission(Permission.MANAGE_TYPES));
+        setButtonVisible(btnEditType,   AdminSession.getInstance().hasPermission(Permission.MANAGE_TYPES));
+        setButtonVisible(btnRemoveType, AdminSession.getInstance().hasPermission(Permission.MANAGE_TYPES));
+
+        setButtonVisible(btnAddBrand,    AdminSession.getInstance().hasPermission(Permission.MANAGE_BRANDS));
+        setButtonVisible(btnEditBrand,   AdminSession.getInstance().hasPermission(Permission.MANAGE_BRANDS));
+        setButtonVisible(btnRemoveBrand, AdminSession.getInstance().hasPermission(Permission.MANAGE_BRANDS));
+
+        setButtonVisible(btnAddModel,    AdminSession.getInstance().hasPermission(Permission.MANAGE_MODELS));
+        setButtonVisible(btnEditModel,   AdminSession.getInstance().hasPermission(Permission.MANAGE_MODELS));
+        setButtonVisible(btnRemoveModel, AdminSession.getInstance().hasPermission(Permission.MANAGE_MODELS));
+        setButtonVisible(btnModifyStock, AdminSession.getInstance().hasPermission(Permission.MANAGE_STOCK));
+    }
+
+    private void setButtonVisible(Button button, boolean visible) {
+        button.setVisible(visible);
+        button.setManaged(visible);
     }
 
     // ── Connection display ───────────────────────────────────────────
@@ -304,6 +342,44 @@ public class DatabaseSectionController {
     }
 
     // ── Equipment catalog ────────────────────────────────────────────
+
+    // Called by MainController.handleShowDatabase() on every navigation into this section — same
+    // "ViewFactory caches the section for the whole session, so a stale initialize()-time snapshot
+    // never re-runs on later visits" gap already fixed once for HistoryController.refresh(). Stock
+    // here can change from well outside this controller's own reach entirely — approving any note,
+    // or crediting a Préstamo/Provider return, both move MODEL_STOCK from inside
+    // SqliteHistoryService, with no event/listener back to whichever DatabaseSectionController
+    // instance happens to be showing a given Model at the time. Direct user report: after
+    // approving a note, Marcas' number only updated once a Type was reselected (its own
+    // selection-listener already re-queries fresh on every reselect — see refreshBrandsForType()),
+    // but Tipos' number never updated at all, since nothing had ever re-run refreshTypes() since
+    // initialize().
+    public void refresh() {
+        EquipmentType selectedType = listTypes.getSelectionModel().getSelectedItem();
+        if (selectedType == null) {
+            refreshTypes();
+            return;
+        }
+        // Refreshes Tipos + Marcas' rollups in place, preserving both selections — but, by design
+        // (see its own comment below), never touches listModels itself.
+        refreshStockRollupsOnly(selectedType.getId());
+        EquipmentBrand reselectedBrand = listBrands.getSelectionModel().getSelectedItem();
+        if (reselectedBrand != null) {
+            refreshModelsForBrandType(reselectedBrand.getId(), selectedType.getId());
+        }
+    }
+
+    // Manual escape hatch for the same staleness refresh() above already fixes on navigation —
+    // a technician working a long stretch inside Base de Datos without ever leaving the section
+    // (so MainController.handleShowDatabase() never re-fires) had no way to pick up a stock/catalog
+    // change made elsewhere (another technician's note approval on a shared remote database, a
+    // return credited from a different screen) without restarting the app. Not permission-gated —
+    // a plain re-read of already-visible data, same "read-only action, available to everyone"
+    // precedent as e.g. NoteDetailController's "Reimprimir Nota".
+    @FXML
+    private void handleRefreshCatalog() {
+        refresh();
+    }
 
     private void refreshTypes() {
         Map<Integer, Integer> stockByType = equipmentService.getStockTotalsByType(currentStockSedeId);
@@ -566,10 +642,10 @@ public class DatabaseSectionController {
         updateEquipmentCatalogTitle();
     }
 
-    private static final String EQUIPMENT_CATALOG_BASE_LABEL = "CATÁLOGO DE EQUIPOS";
-
     // Names the Sede the shown stock numbers belong to, so a technician can't mistake one Sede's
-    // counts for another's. All caps, matching every other section title in this app.
+    // counts for another's. All caps, matching every other section title in this app; its own
+    // soft-teal style (see .page-subtitle-sede) sets it apart from the "CATÁLOGO DE EQUIPOS :"
+    // prefix, which is static FXML text.
     private void updateEquipmentCatalogTitle() {
         Sede sel = cmbStockSede.getValue();
         String sedeLabel;
@@ -580,7 +656,7 @@ public class DatabaseSectionController {
         } else {
             sedeLabel = "Sede no asignada";
         }
-        lblEquipmentCatalogTitle.setText((EQUIPMENT_CATALOG_BASE_LABEL + " : " + sedeLabel).toUpperCase());
+        lblEquipmentCatalogSede.setText(sedeLabel.toUpperCase());
     }
 
     // Editing a stock number always requires one concrete Sede — a combined "Todas" number has
