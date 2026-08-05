@@ -181,8 +181,23 @@
                <children>
                   <ToggleButton text="Remito de Envío" fx:id="btnRemito" toggleGroup="$flyoutEnviosGroup"
                         maxWidth="Infinity" styleClass="nav-button" onAction="#handleShowRemito"/>
-                  <ToggleButton text="Historial de Envíos" fx:id="btnHistorialEnvios" toggleGroup="$flyoutEnviosGroup"
-                        maxWidth="Infinity" styleClass="nav-button" onAction="#handleShowHistorialEnvios"/>
+                  <StackPane maxWidth="Infinity">
+                     <children>
+                        <ToggleButton text="Historial de Envíos" fx:id="btnHistorialEnvios" toggleGroup="$flyoutEnviosGroup"
+                              maxWidth="Infinity" styleClass="nav-button" onAction="#handleShowHistorialEnvios"/>
+                        <!-- Approval-only, unlike Historial/Préstamos above — Envío has no other
+                             pending dimension (no GLPI, no return status), same reasoning already
+                             applied to its single in-page pill. -->
+                        <HBox spacing="6" alignment="CENTER_RIGHT" mouseTransparent="true"
+                              StackPane.alignment="CENTER_RIGHT">
+                           <StackPane.margin><Insets right="15"/></StackPane.margin>
+                           <children>
+                              <Label fx:id="lblEnviosApprovalBadge" text="" styleClass="nav-badge, nav-badge-approval"
+                                     visible="false" managed="false"/>
+                           </children>
+                        </HBox>
+                     </children>
+                  </StackPane>
                </children>
             </VBox>
 

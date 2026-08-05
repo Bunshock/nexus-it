@@ -77,6 +77,7 @@ public class MainController {
     @FXML private Label lblApprovalBadge;
     @FXML private Label lblPrestamosBadge;
     @FXML private Label lblPrestamosApprovalBadge;
+    @FXML private Label lblEnviosApprovalBadge;
 
     @FXML private Circle circleAD;
     @FXML private Circle circleGLPI;
@@ -155,10 +156,25 @@ public class MainController {
 
         AdminSession.getInstance().addOnActivateListener(this::updateAdminIndicator);
         AdminSession.getInstance().addOnDeactivateListener(this::updateAdminIndicator);
-        AdminSession.getInstance().addOnExpireListener(this::handleAdminExpiry);
 
         PendingCountsService.getInstance().addOnChangeListener(this::refreshPendingCounts);
         refreshPendingCounts();
+        startPendingCountsPolling();
+    }
+
+    // First step of live-update polling — scoped deliberately to just the badges, not the
+    // in-page tables/pills: a badge has no selection/scroll/in-progress-edit state a background
+    // reload could clobber, unlike a TableView, so this is safe to run unconditionally for the
+    // whole session regardless of which section is currently shown. refreshPendingCounts() itself
+    // already does its DB work on a background Thread (see its own doc comment), so this Timeline
+    // tick on the FX thread is just "kick off that background work again," never a query itself.
+    private static final Duration PENDING_COUNTS_POLL_INTERVAL = Duration.seconds(30);
+
+    private void startPendingCountsPolling() {
+        Timeline poll = new Timeline(
+            new KeyFrame(PENDING_COUNTS_POLL_INTERVAL, e -> refreshPendingCounts()));
+        poll.setCycleCount(Timeline.INDEFINITE);
+        poll.play();
     }
 
     private void updateWelcomeLabels() {
@@ -515,17 +531,17 @@ public class MainController {
         lblAdminIndicator.getStyleClass().setAll(superadmin ? "title-bar-superadmin-badge" : "title-bar-admin-badge");
     }
 
-    private void handleAdminExpiry() {
-        showNotice("Sesión finalizada",
-            "El modo administrador expiró por inactividad (15 minutos).");
-    }
-
     // Same case/accent variants SqliteHistoryService.isPrestamo() tolerates — profile_type is
     // stored raw (see CLAUDE.md), so a filter for Préstamo has to match every form it's stored in.
     private static final List<String> PRESTAMO_PROFILE_TYPES = List.of("PRÉSTAMO", "PRESTAMO", "Préstamo");
+    private static final List<String> ENVIO_PROFILE_TYPES = List.of("REMITO DE ENVÍO");
 
     private static boolean isPrestamoProfileType(String profileType) {
         return profileType != null && PRESTAMO_PROFILE_TYPES.stream().anyMatch(profileType::equalsIgnoreCase);
+    }
+
+    private static boolean isEnvioProfileType(String profileType) {
+        return profileType != null && ENVIO_PROFILE_TYPES.stream().anyMatch(profileType::equalsIgnoreCase);
     }
 
     // A note with no resolved Sede (mySede blank/null, or the report's own Sede blank/null)
@@ -538,19 +554,27 @@ public class MainController {
     }
 
     /**
-     * Recomputes the Historial (GLPI-pending / approval-pending) and Préstamos (return-pending /
-     * approval-pending) sidebar badge counts on a background thread — called once at startup and
-     * again whenever PendingCountsService.notifyChanged() fires (a note was saved, a GLPI
-     * sync/reject action happened, a Préstamo return/lost action happened, or a note was
-     * approved/rejected). Visible to every technician, not admin-gated — the underlying
-     * pending/orange rows are already visible to anyone who opens Historial or Préstamos; only
-     * the actual sync/validate/approve actions are admin-gated.
+     * Recomputes the Historial (GLPI-pending / approval-pending), Préstamos (return-pending /
+     * approval-pending), and Envíos (approval-pending only — no other pending dimension exists
+     * for a Remito) sidebar badge counts on a background thread — called once at startup, on
+     * navigation into any of the three sections (see handleShowHistory()/
+     * handleShowPrestamoHistorial()/handleShowHistorialEnvios()), and again whenever
+     * PendingCountsService.notifyChanged() fires (a note was saved, a GLPI sync/reject action
+     * happened, a Préstamo return/lost action happened, or a note was approved/rejected).
+     * Visible to every technician, not admin-gated — the underlying pending/orange rows are
+     * already visible to anyone who opens Historial or Préstamos; only the actual
+     * sync/validate/approve actions are admin-gated.
      *
      * A plain ADMIN only ever acts on their own Sede's notes (see AdminSession.hasPermission's
      * Sede-scoping) — counting every other Sede's pending items here would just be noise they
      * can't act on. SUPERADMIN acts across every Sede, so its badge stays global. A regular
      * (non-admin) technician has no Sede-scoped permission at all, so the badge is global for
      * them too — the count is informational either way, not a claim they can act on it.
+     *
+     * GLPI-pending and Préstamo return-pending only ever count an APPROVED note — a note still
+     * awaiting approval isn't real yet (an admin might reject it outright), and a rejected note's
+     * pending items should never resurface here either. Approval-pending itself is unaffected by
+     * this rule (it counts PENDING notes directly, by definition). Direct user requirement.
      */
     private void refreshPendingCounts() {
         Thread t = new Thread(() -> {
@@ -558,6 +582,7 @@ public class MainController {
             int approvalPending;
             int prestamoPending;
             int prestamoApprovalPending;
+            int enviosApprovalPending;
             try {
                 IHistoryService historyService = ServiceLocator.getInstance().getHistoryService();
                 String effectiveRole = AdminSession.getInstance().getEffectiveRole();
@@ -575,15 +600,20 @@ public class MainController {
                     pendingApproval = pendingApproval.stream().filter(r -> sameSede(r, mySede)).toList();
                 }
                 approvalPending = pendingApproval.size();
-                // Approval applies to every profile type, Préstamo included — the Historial badge
-                // counts all of them, the Préstamos badge counts just the subset relevant there.
-                // No second query needed; both counts come from the one already-fetched list.
+                // Approval applies to every profile type, Préstamo and Envío included — the
+                // Historial badge counts all of them, the Préstamos/Envíos badges count just the
+                // subset relevant there. No second query needed; all three counts come from the
+                // one already-fetched list.
                 prestamoApprovalPending = (int) pendingApproval.stream()
                     .filter(r -> isPrestamoProfileType(r.getProfileType()))
+                    .count();
+                enviosApprovalPending = (int) pendingApproval.stream()
+                    .filter(r -> isEnvioProfileType(r.getProfileType()))
                     .count();
 
                 HistoryFilter prestamoFilter = new HistoryFilter();
                 prestamoFilter.setProfileTypes(PRESTAMO_PROFILE_TYPES);
+                prestamoFilter.setApprovalStatuses(List.of("APPROVED"));
                 if (scopeToOwnSede && mySede != null && !mySede.isBlank()) {
                     prestamoFilter.setSedes(List.of(mySede));
                 }
@@ -595,16 +625,19 @@ public class MainController {
                 approvalPending = 0;
                 prestamoPending = 0;
                 prestamoApprovalPending = 0;
+                enviosApprovalPending = 0;
             }
             int finalGlpiPending = glpiPending;
             int finalApprovalPending = approvalPending;
             int finalPrestamoPending = prestamoPending;
             int finalPrestamoApprovalPending = prestamoApprovalPending;
+            int finalEnviosApprovalPending = enviosApprovalPending;
             Platform.runLater(() -> {
                 updateBadge(lblHistoryBadge, finalGlpiPending);
                 updateBadge(lblApprovalBadge, finalApprovalPending);
                 updateBadge(lblPrestamosBadge, finalPrestamoPending);
                 updateBadge(lblPrestamosApprovalBadge, finalPrestamoApprovalPending);
+                updateBadge(lblEnviosApprovalBadge, finalEnviosApprovalPending);
             });
         }, "pending-counts-refresh");
         t.setDaemon(true);
@@ -616,10 +649,6 @@ public class MainController {
         badge.setText("(" + count + ")");
         badge.setVisible(show);
         badge.setManaged(show);
-    }
-
-    private void showNotice(String title, String message) {
-        showDialogNotice(title, message, "#1a1a1a", null);
     }
 
     private void showDialogNotice(String title, String message, String accentColor, String icon) {
@@ -994,6 +1023,10 @@ public class MainController {
     private void handleShowHistorialEnvios() {
         showSection(viewFactory.getEnviosView());
         viewFactory.getEnviosController().showHistorialTab();
+        // Envío notes count toward the Historial-wide approval-pending badge (every profile type,
+        // Envío included) even though Envíos has no nav badge of its own — same nav-triggered
+        // refresh as handleShowHistory()/handleShowPrestamoHistorial(), see that comment.
+        refreshPendingCounts();
         setActiveTopLevelButton(btnEnviosGroup);
         flyoutMovimientosGroup.selectToggle(null);
         flyoutPrestamosGroup.selectToggle(null);
@@ -1008,6 +1041,11 @@ public class MainController {
         // technician manually clicked "Buscar" — refresh() re-runs the currently-set filters
         // rather than resetting them.
         viewFactory.getHistoryController().refresh();
+        // Sidebar/title-bar badges otherwise only move on THIS session's own actions (see
+        // refreshPendingCounts()'s PendingCountsService wiring) — re-running it here closes the
+        // gap against another technician's changes at least as often as the table itself
+        // refreshes, without adding any polling/timer.
+        refreshPendingCounts();
         setActiveTopLevelButton(btnMovimientosGroup);
         flyoutPrestamosGroup.selectToggle(null);
         flyoutEnviosGroup.selectToggle(null);
@@ -1028,6 +1066,8 @@ public class MainController {
     private void handleShowPrestamoHistorial() {
         showSection(viewFactory.getPrestamosView());
         viewFactory.getPrestamosController().showHistoryTab();
+        // Same nav-triggered badge refresh as handleShowHistory() — see its comment.
+        refreshPendingCounts();
         setActiveTopLevelButton(btnPrestamosGroup);
         flyoutMovimientosGroup.selectToggle(null);
         flyoutEnviosGroup.selectToggle(null);
