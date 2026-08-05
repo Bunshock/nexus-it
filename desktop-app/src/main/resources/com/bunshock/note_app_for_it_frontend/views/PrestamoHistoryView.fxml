@@ -39,18 +39,9 @@
                                             prefWidth="178" prefHeight="32" styleClass="filter-menu-button"/>
                             </VBox>
                             <VBox spacing="3">
-                                <Label text="DESTINATARIO" styleClass="input-label-small"/>
-                                <TextField fx:id="txtRecipientSearch" prefWidth="178" prefHeight="32"
-                                           promptText="Buscar destinatario..."
-                                           onAction="#handleSearch"
-                                           styleClass="form-input-filter"/>
-                            </VBox>
-                            <VBox spacing="3">
-                                <Label text="AUTOR" styleClass="input-label-small"/>
-                                <TextField fx:id="txtAuthorSearch" prefWidth="178" prefHeight="32"
-                                           promptText="Buscar por autor..."
-                                           onAction="#handleSearch"
-                                           styleClass="form-input-filter"/>
+                                <Label text="APROBACIÓN" styleClass="input-label-small"/>
+                                <MenuButton fx:id="mnuApprovalStatus" text="Todas"
+                                            prefWidth="155" prefHeight="32" styleClass="filter-menu-button"/>
                             </VBox>
                             <VBox spacing="3">
                                 <Label text="SEDE" styleClass="input-label-small"/>
@@ -62,9 +53,37 @@
 
                 </HBox>
 
+                <!-- AUTOR Y DESTINATARIO section — pulled out of "Préstamo" into their own
+                     section, second (and last) row of this filter panel — kept short (140px)
+                     rather than widened. -->
+                <VBox spacing="6">
+                    <Label text="Autor / Destinatario" styleClass="filter-section-label"/>
+                    <HBox spacing="12">
+                        <VBox spacing="3">
+                            <Label text="AUTOR" styleClass="input-label-small"/>
+                            <TextField fx:id="txtAuthorSearch" prefWidth="280" prefHeight="32"
+                                       promptText="Buscar por autor..."
+                                       onAction="#handleSearch"
+                                       styleClass="form-input-filter"/>
+                        </VBox>
+                        <VBox spacing="3">
+                            <Label text="DESTINATARIO" styleClass="input-label-small"/>
+                            <TextField fx:id="txtRecipientSearch" prefWidth="280" prefHeight="32"
+                                       promptText="Buscar destinatario..."
+                                       onAction="#handleSearch"
+                                       styleClass="form-input-filter"/>
+                        </VBox>
+                    </HBox>
+                </VBox>
+
                 <HBox spacing="10" alignment="CENTER_LEFT">
                     <Button text="Buscar" onAction="#handleSearch" styleClass="button-primary" prefHeight="32"/>
                     <Button text="Limpiar filtros" onAction="#handleClearFilters" styleClass="button-secondary" prefHeight="32"/>
+                    <Region HBox.hgrow="ALWAYS"/>
+                    <Label fx:id="lblPendingApproval"
+                           style="-fx-background-color: rgba(239,68,68,0.18); -fx-background-radius: 12; -fx-padding: 5 12; -fx-text-fill: #ef4444; -fx-font-size: 12px; -fx-font-weight: bold;"/>
+                    <Label fx:id="lblPendingReturns"
+                           style="-fx-background-color: rgba(251,146,60,0.18); -fx-background-radius: 12; -fx-padding: 5 12; -fx-text-fill: #f97316; -fx-font-size: 12px; -fx-font-weight: bold;"/>
                 </HBox>
 
             </children>

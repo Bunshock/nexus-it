@@ -795,12 +795,24 @@ class SqliteHistoryServiceTest {
         assertEquals(0, summary.getSyncedItemCount());
     }
 
+    // A note still awaiting approval (or rejected) isn't a real GLPI-sync candidate yet — only an
+    // APPROVED note's pending items count. Direct user requirement, enforced via
+    // HistoryFilter.pendingGlpiSync()'s own approvalStatuses=APPROVED filter.
     @Test
-    void getPendingGlpiSyncReturnsOnlyReportsWithPendingItems() {
-        service.save(userReport("Entrega", LocalDateTime.now(), "Pending User",
-            List.of(assetItem("NOTEBOOK", "DELL", "LATITUDE", "SN1", "AF1", GlpiStatus.PENDING))));
-        service.save(userReport("Entrega", LocalDateTime.now(), "Synced User",
-            List.of(assetItem("NOTEBOOK", "DELL", "LATITUDE", "SN2", "AF2", GlpiStatus.SYNCED))));
+    void getPendingGlpiSyncReturnsOnlyApprovedReportsWithPendingItems() {
+        NoteReport approvedPending = userReport("Entrega", LocalDateTime.now(), "Pending User",
+            List.of(assetItem("NOTEBOOK", "DELL", "LATITUDE", "SN1", "AF1", GlpiStatus.PENDING)));
+        approvedPending.setApprovalStatus("APPROVED");
+        service.save(approvedPending);
+
+        // approvalStatus left at its default ("PENDING") — must NOT count as GLPI-pending yet.
+        service.save(userReport("Entrega", LocalDateTime.now(), "Still Awaiting Approval",
+            List.of(assetItem("NOTEBOOK", "DELL", "LATITUDE", "SN2", "AF2", GlpiStatus.PENDING))));
+
+        NoteReport synced = userReport("Entrega", LocalDateTime.now(), "Synced User",
+            List.of(assetItem("NOTEBOOK", "DELL", "LATITUDE", "SN3", "AF3", GlpiStatus.SYNCED)));
+        synced.setApprovalStatus("APPROVED");
+        service.save(synced);
 
         List<NoteReport> pending = service.getPendingGlpiSync();
         assertEquals(1, pending.size());

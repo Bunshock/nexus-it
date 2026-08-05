@@ -152,4 +152,54 @@ class RemitoHistoryControllerTest {
         assertEquals("APPROVED", m.invoke(controller, "Aprobada"));
         assertEquals("RECHAZADO", m.invoke(controller, "Rechazada"));
     }
+
+    // Unified with History/PrestamoHistoryController: APROBACIÓN now defaults to Pendiente+Aprobada
+    // selected (not "Todas"), so a RECHAZADO Remito is hidden from the default view here too.
+    @Test
+    void resetApprovalStatusFilterToDefaultSelectsPendingAndAprobada() throws Exception {
+        RemitoHistoryController c = new RemitoHistoryController();
+        Method m = RemitoHistoryController.class.getDeclaredMethod("resetApprovalStatusFilterToDefault");
+        m.setAccessible(true);
+        m.invoke(c);
+
+        Field f = RemitoHistoryController.class.getDeclaredField("selApprovalStatuses");
+        f.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        Set<String> selApprovalStatuses = (Set<String>) f.get(c);
+
+        assertEquals(Set.of("Pendiente", "Aprobada"), selApprovalStatuses);
+    }
+
+    // ── updatePendingApprovalLabel (filter-row pill — Envío has no other pending dimension) ────
+
+    private javafx.scene.control.Label invokeUpdatePendingApprovalLabel(List<NoteReport> reports) throws Exception {
+        RemitoHistoryController c = new RemitoHistoryController();
+        javafx.scene.control.Label lbl = new javafx.scene.control.Label();
+        Field f = RemitoHistoryController.class.getDeclaredField("lblPendingApproval");
+        f.setAccessible(true);
+        f.set(c, lbl);
+
+        Method m = RemitoHistoryController.class.getDeclaredMethod("updatePendingApprovalLabel", List.class);
+        m.setAccessible(true);
+        m.invoke(c, reports);
+        return lbl;
+    }
+
+    @Test
+    void updatePendingApprovalLabelHiddenWhenNothingIsPending() throws Exception {
+        javafx.scene.control.Label lbl =
+            invokeUpdatePendingApprovalLabel(List.of(reportWithStatus("APPROVED"), reportWithStatus("RECHAZADO")));
+        assertFalse(lbl.isVisible());
+        assertFalse(lbl.isManaged());
+    }
+
+    @Test
+    void updatePendingApprovalLabelShowsCountOfPendingNotes() throws Exception {
+        javafx.scene.control.Label lbl = invokeUpdatePendingApprovalLabel(
+            List.of(reportWithStatus("PENDING"), reportWithStatus("PENDING"), reportWithStatus("APPROVED")));
+        assertTrue(lbl.isVisible());
+        assertTrue(lbl.isManaged());
+        assertTrue(lbl.getText().contains("2"), "expected count of 2 in: " + lbl.getText());
+    }
+
 }

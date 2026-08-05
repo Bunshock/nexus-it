@@ -18,9 +18,14 @@ public class HistoryFilter {
 
     public HistoryFilter() {}
 
+    // A not-yet-approved note's GLPI sync isn't real yet (an admin might still reject the whole
+    // note), and a rejected note's sync never should be — so only an APPROVED note's pending GLPI
+    // items count as genuinely "pending sync." Direct user requirement: "it only counts for
+    // pending GLPI/return if the note is approved."
     public static HistoryFilter pendingGlpiSync() {
         HistoryFilter f = new HistoryFilter();
         f.glpiStatuses = List.of("PENDING");
+        f.approvalStatuses = List.of("APPROVED");
         return f;
     }
 

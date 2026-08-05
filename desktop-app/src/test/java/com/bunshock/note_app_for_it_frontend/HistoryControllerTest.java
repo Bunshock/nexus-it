@@ -361,30 +361,59 @@ class HistoryControllerTest {
         return (HistoryFilter) m.invoke(c);
     }
 
+    @SuppressWarnings("unchecked")
+    private Set<String> selApprovalStatusesField(HistoryController c) throws Exception {
+        Field f = HistoryController.class.getDeclaredField("selApprovalStatuses");
+        f.setAccessible(true);
+        return (Set<String>) f.get(c);
+    }
+
+    private void invokeResetApprovalStatusFilterToDefault(HistoryController c) throws Exception {
+        Method m = HistoryController.class.getDeclaredMethod("resetApprovalStatusFilterToDefault");
+        m.setAccessible(true);
+        m.invoke(c);
+    }
+
     // Seeds every field buildFilter() reads — a bare `new HistoryController()` never runs
     // initialize(), so these @FXML fields are otherwise null.
-    private HistoryController controllerWithFilterFieldsSeeded(boolean showRechazado) throws Exception {
+    private HistoryController controllerWithFilterFieldsSeeded() throws Exception {
         HistoryController c = new HistoryController();
         setField(c, "dpFrom", new DatePicker());
         setField(c, "dpTo", new DatePicker());
         setField(c, "txtRecipientSearch", new TextField());
         setField(c, "txtAuthorSearch", new TextField());
-        CheckBox chk = new CheckBox();
-        chk.setSelected(showRechazado);
-        setField(c, "chkShowRechazado", chk);
         return c;
     }
 
     @Test
-    void buildFilterDefaultsToPendingAndApprovedWhenRechazadoCheckboxUnchecked() throws Exception {
-        HistoryFilter f = buildFilter(controllerWithFilterFieldsSeeded(false));
-        assertEquals(List.of("PENDING", "APPROVED"), f.getApprovalStatuses());
+    void resetApprovalStatusFilterToDefaultSelectsPendingAndAprobada() throws Exception {
+        HistoryController c = controllerWithFilterFieldsSeeded();
+        invokeResetApprovalStatusFilterToDefault(c);
+        assertEquals(Set.of("Pendiente", "Aprobada"), selApprovalStatusesField(c));
     }
 
     @Test
-    void buildFilterAppliesNoApprovalFilterWhenRechazadoCheckboxChecked() throws Exception {
-        HistoryFilter f = buildFilter(controllerWithFilterFieldsSeeded(true));
+    void buildFilterDefaultsToPendingAndApprovedWhenApprovalMenuAtItsDefault() throws Exception {
+        HistoryController c = controllerWithFilterFieldsSeeded();
+        invokeResetApprovalStatusFilterToDefault(c);
+        HistoryFilter f = buildFilter(c);
+        assertEquals(List.of("PENDING", "APPROVED"), f.getApprovalStatuses());
+    }
+
+    // An empty selApprovalStatuses set is "Todas" (unchecked down from the default, same as any
+    // other multi-select menu in this app) — no filter at all, RECHAZADO included.
+    @Test
+    void buildFilterAppliesNoApprovalFilterWhenApprovalMenuIsTodas() throws Exception {
+        HistoryFilter f = buildFilter(controllerWithFilterFieldsSeeded());
         assertNull(f.getApprovalStatuses());
+    }
+
+    @Test
+    void buildFilterAppliesExplicitApprovalSelectionIncludingRechazada() throws Exception {
+        HistoryController c = controllerWithFilterFieldsSeeded();
+        selApprovalStatusesField(c).add("Rechazada");
+        HistoryFilter f = buildFilter(c);
+        assertEquals(List.of("RECHAZADO"), f.getApprovalStatuses());
     }
 
     // ── approvalStatusColor (dedicated status column, colGApproval) ──────────
@@ -495,5 +524,76 @@ class HistoryControllerTest {
 
         assertTrue(names.contains("Campus Norte"));
         assertTrue(names.contains("Campus Sur"));
+    }
+
+    // ── updatePendingApprovalLabel / updatePendingGlpiLabel (filter-row pills) ─────────────────
+
+    private javafx.scene.control.Label invokePendingLabelUpdater(
+            String methodName, String fieldName, List<NoteReport> reports) throws Exception {
+        HistoryController c = new HistoryController();
+        javafx.scene.control.Label lbl = new javafx.scene.control.Label();
+        Field f = HistoryController.class.getDeclaredField(fieldName);
+        f.setAccessible(true);
+        f.set(c, lbl);
+
+        Method m = HistoryController.class.getDeclaredMethod(methodName, List.class);
+        m.setAccessible(true);
+        m.invoke(c, reports);
+        return lbl;
+    }
+
+    @Test
+    void updatePendingApprovalLabelHiddenWhenNothingIsPending() throws Exception {
+        NoteReport approved = reportWith(1, 1, 0, 0);
+        NoteReport rejected = reportWith(1, 0, 0, 1);
+        rejected.setApprovalStatus("RECHAZADO");
+
+        javafx.scene.control.Label lbl = invokePendingLabelUpdater(
+            "updatePendingApprovalLabel", "lblPendingApproval", List.of(approved, rejected));
+
+        assertFalse(lbl.isVisible());
+        assertFalse(lbl.isManaged());
+    }
+
+    @Test
+    void updatePendingApprovalLabelShowsCountOfNotesAwaitingApproval() throws Exception {
+        NoteReport pending1 = reportWith(1, 1, 0, 0);
+        pending1.setApprovalStatus("PENDING");
+        NoteReport pending2 = reportWith(0, 0, 0, 0);
+        pending2.setApprovalStatus("PENDING");
+        NoteReport approved = reportWith(1, 0, 1, 0);
+
+        javafx.scene.control.Label lbl = invokePendingLabelUpdater(
+            "updatePendingApprovalLabel", "lblPendingApproval", List.of(pending1, pending2, approved));
+
+        assertTrue(lbl.isVisible());
+        assertTrue(lbl.isManaged());
+        assertTrue(lbl.getText().contains("2"), "expected count of 2 in: " + lbl.getText());
+    }
+
+    @Test
+    void updatePendingGlpiLabelHiddenWhenNothingIsPending() throws Exception {
+        NoteReport synced = reportWith(1, 0, 1, 0);
+        javafx.scene.control.Label lbl = invokePendingLabelUpdater(
+            "updatePendingGlpiLabel", "lblPendingGlpi", List.of(synced));
+        assertFalse(lbl.isVisible());
+        assertFalse(lbl.isManaged());
+    }
+
+    // A note still awaiting approval (or rejected) isn't a real GLPI-sync candidate yet — its
+    // pending items must not count until an admin approves it. Direct user requirement, mirrored
+    // from PrestamoHistoryController's own updatePendingReturnsLabel() exclusion.
+    @Test
+    void updatePendingGlpiLabelExcludesNotesNotYetApproved() throws Exception {
+        NoteReport approvedPending = reportWith(1, 1, 0, 0);
+        NoteReport stillAwaitingApproval = reportWith(1, 1, 0, 0);
+        stillAwaitingApproval.setApprovalStatus("PENDING");
+        NoteReport rejected = reportWith(1, 1, 0, 0);
+        rejected.setApprovalStatus("RECHAZADO");
+
+        javafx.scene.control.Label lbl = invokePendingLabelUpdater("updatePendingGlpiLabel",
+            "lblPendingGlpi", List.of(approvedPending, stillAwaitingApproval, rejected));
+
+        assertTrue(lbl.getText().contains("1"), "only the APPROVED note should count: " + lbl.getText());
     }
 }

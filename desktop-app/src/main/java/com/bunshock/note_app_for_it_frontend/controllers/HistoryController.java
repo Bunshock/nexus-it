@@ -35,6 +35,7 @@ import javafx.scene.control.Alert;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.CustomMenuItem;
 import javafx.scene.control.DatePicker;
+import javafx.scene.control.Label;
 import javafx.scene.control.MenuButton;
 import javafx.scene.control.SeparatorMenuItem;
 import javafx.scene.control.TableCell;
@@ -42,6 +43,7 @@ import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableRow;
 import javafx.scene.control.TableView;
 import javafx.scene.control.TextField;
+import javafx.scene.control.TextFormatter;
 import javafx.stage.FileChooser;
 
 public class HistoryController {
@@ -50,13 +52,15 @@ public class HistoryController {
     @FXML private DatePicker   dpTo;
     @FXML private MenuButton   mnuProfileType;
     @FXML private MenuButton   mnuGlpiStatus;
+    @FXML private MenuButton   mnuApprovalStatus;
     @FXML private TextField    txtRecipientSearch;
     @FXML private TextField    txtAuthorSearch;
     @FXML private MenuButton   mnuItemType;
     @FXML private MenuButton   mnuItemBrand;
     @FXML private MenuButton   mnuItemModel;
     @FXML private MenuButton   mnuSede;
-    @FXML private CheckBox     chkShowRechazado;
+    @FXML private Label        lblPendingApproval;
+    @FXML private Label        lblPendingGlpi;
 
     @FXML private TableView<NoteReport>           tblGlobal;
     @FXML private TableColumn<NoteReport, String> colGApproval;
@@ -83,6 +87,8 @@ public class HistoryController {
         "Rechazado",    "REJECTED",
         "Sin GLPI",     "N_A");
 
+    private static final List<String> APPROVAL_STATUS_OPTIONS = List.of("Pendiente", "Aprobada", "Rechazada");
+
     // NOTE_REPORT.profile_type is stored raw (see CLAUDE.md), and its raw form differs by how
     // the row was created: live "Generar Nota" stores the ALL-CAPS ToggleButton text, but
     // DatabaseService.seedHistoryData()'s demo rows use the nice-cased label directly — so each
@@ -95,20 +101,31 @@ public class HistoryController {
         "Entrega - Proveedor", List.of("ENTREGA - PROVEEDOR", "Entrega - Proveedor"),
         "Remito de Envío",     List.of("REMITO DE ENVÍO", "Remito de Envío"));
 
-    private final Set<String> selProfileTypes = new LinkedHashSet<>();
-    private final Set<String> selGlpiStatuses = new LinkedHashSet<>();
-    private final Set<String> selItemTypes    = new LinkedHashSet<>();
-    private final Set<String> selItemBrands   = new LinkedHashSet<>();
-    private final Set<String> selItemModels   = new LinkedHashSet<>();
-    private final Set<String> selSedes        = new LinkedHashSet<>();
+    private final Set<String> selProfileTypes     = new LinkedHashSet<>();
+    private final Set<String> selGlpiStatuses     = new LinkedHashSet<>();
+    private final Set<String> selApprovalStatuses = new LinkedHashSet<>();
+    private final Set<String> selItemTypes        = new LinkedHashSet<>();
+    private final Set<String> selItemBrands       = new LinkedHashSet<>();
+    private final Set<String> selItemModels       = new LinkedHashSet<>();
+    private final Set<String> selSedes            = new LinkedHashSet<>();
 
     private boolean suppressCallbacks = false;
 
+    // Neither field is ever persisted — both are query-only, feeding HistoryFilter's
+    // authorSearch/recipientSearch LIKE clauses (see buildFilter()) — so there's no DB column
+    // bound to match. Capped purely as a sanity guard against an accidental huge paste.
+    private static final int SEARCH_MAX_LENGTH = 255;
+
     public void initialize() {
         setupTable();
+        resetApprovalStatusFilterToDefault();
         initStaticMenus();
         resetSedeFilterToDefault();
         initEquipmentMenus();
+        txtAuthorSearch.setTextFormatter(new TextFormatter<>(change ->
+            change.getControlNewText().length() <= SEARCH_MAX_LENGTH ? change : null));
+        txtRecipientSearch.setTextFormatter(new TextFormatter<>(change ->
+            change.getControlNewText().length() <= SEARCH_MAX_LENGTH ? change : null));
         loadGlobal(new HistoryFilter());
     }
 
@@ -116,11 +133,30 @@ public class HistoryController {
     // — a technician mostly cares about their own site's history. Still just a starting point, not
     // a hard restriction: the technician can clear or change it like any other filter. "Limpiar
     // filtros" restores this same default rather than going to "Todas", same "Limpiar filtros
-    // restores the default view" precedent already established for chkShowRechazado below.
+    // restores the default view" precedent already established for resetApprovalStatusFilterToDefault().
     private void resetSedeFilterToDefault() {
         selSedes.clear();
         String mySede = TechnicianSessionService.getInstance().getSede();
         if (mySede != null && !mySede.isBlank()) selSedes.add(mySede);
+    }
+
+    // APROBACIÓN defaults to Pendiente+Aprobada selected, not "Todas" — a RECHAZADO note is void
+    // and stays hidden from the default view, same reasoning as the checkbox this menu replaced.
+    // Still just a starting point: unchecking down to "Todas" (or picking Rechazada explicitly)
+    // shows everything, same as any other multi-select filter here — same shape as
+    // resetSedeFilterToDefault() pre-seeding a non-empty default rather than leaving it empty.
+    private void resetApprovalStatusFilterToDefault() {
+        selApprovalStatuses.clear();
+        selApprovalStatuses.add("Pendiente");
+        selApprovalStatuses.add("Aprobada");
+    }
+
+    private String approvalStatusToRaw(String label) {
+        return switch (label) {
+            case "Aprobada" -> "APPROVED";
+            case "Rechazada" -> "RECHAZADO";
+            default -> "PENDING";
+        };
     }
 
     // ── Filter menus ──────────────────────────────────────────────────────────
@@ -128,6 +164,7 @@ public class HistoryController {
     private void initStaticMenus() {
         populateMenu(mnuProfileType, PROFILE_TYPE_OPTIONS, selProfileTypes, this::autoSearch);
         populateMenu(mnuGlpiStatus, GLPI_STATUS_LABELS, selGlpiStatuses, this::autoSearch);
+        populateMenu(mnuApprovalStatus, APPROVAL_STATUS_OPTIONS, selApprovalStatuses, this::autoSearch);
     }
 
     private void initEquipmentMenus() {
@@ -277,20 +314,16 @@ public class HistoryController {
         selItemBrands.clear();
         selItemModels.clear();
         resetSedeFilterToDefault();
-        chkShowRechazado.setSelected(false);
+        resetApprovalStatusFilterToDefault();
         suppressCallbacks = false;
         populateMenu(mnuProfileType, PROFILE_TYPE_OPTIONS, selProfileTypes, this::autoSearch);
         populateMenu(mnuGlpiStatus, GLPI_STATUS_LABELS, selGlpiStatuses, this::autoSearch);
+        populateMenu(mnuApprovalStatus, APPROVAL_STATUS_OPTIONS, selApprovalStatuses, this::autoSearch);
         initEquipmentMenus();
         // Goes through buildFilter() (not a bare `new HistoryFilter()`) so the PENDING+APPROVED
         // default still applies after clearing — "Limpiar filtros" resets to the default view,
         // it doesn't newly reveal RECHAZADO notes.
         loadGlobal(buildFilter());
-    }
-
-    @FXML
-    private void handleShowRechazadoToggle() {
-        autoSearch();
     }
 
     private void autoSearch() {
@@ -316,11 +349,11 @@ public class HistoryController {
         if (!selItemBrands.isEmpty()) f.setItemBrands(new ArrayList<>(selItemBrands));
         if (!selItemModels.isEmpty()) f.setItemModels(new ArrayList<>(selItemModels));
         if (!selSedes.isEmpty())      f.setSedes(new ArrayList<>(selSedes));
-        // Default view is PENDING + APPROVED — RECHAZADO notes are void and stay hidden unless
-        // the technician explicitly opts in via the checkbox, in which case no filter is applied
-        // at all (every status, RECHAZADO included).
-        if (!chkShowRechazado.isSelected()) {
-            f.setApprovalStatuses(List.of("PENDING", "APPROVED"));
+        // Default selection is Pendiente+Aprobada (see resetApprovalStatusFilterToDefault()) —
+        // RECHAZADO notes are void and stay hidden from the default view. Unchecking down to
+        // "Todas" (empty set) applies no filter at all; explicitly picking Rechazada shows it.
+        if (!selApprovalStatuses.isEmpty()) {
+            f.setApprovalStatuses(selApprovalStatuses.stream().map(this::approvalStatusToRaw).toList());
         }
         return f;
     }
@@ -406,6 +439,40 @@ public class HistoryController {
     private void loadGlobal(HistoryFilter filter) {
         List<NoteReport> reports = ServiceLocator.getInstance().getHistoryService().getFiltered(filter);
         tblGlobal.setItems(FXCollections.observableArrayList(reports));
+        updatePendingApprovalLabel(reports);
+        updatePendingGlpiLabel(reports);
+    }
+
+    // Counts notes among the currently-filtered rows still awaiting approval — red, distinct from
+    // the orange GLPI-pending pill below, same distinction MainController's own nav badges already
+    // make between .nav-badge/.nav-badge-approval. Hidden entirely at 0, same "a present badge
+    // always means something needs attention" convention as every other pending-count indicator
+    // in this app (see MainController.updateBadge()/PrestamoHistoryController's own pills).
+    private void updatePendingApprovalLabel(List<NoteReport> reports) {
+        long pending = reports.stream()
+            .filter(r -> r.getApprovalStatus() == null || "PENDING".equals(r.getApprovalStatus()))
+            .count();
+        boolean show = pending > 0;
+        lblPendingApproval.setText("⏳ " + pending + " pendientes de aprobación");
+        lblPendingApproval.setVisible(show);
+        lblPendingApproval.setManaged(show);
+    }
+
+    // Counts notes among the currently-filtered rows that still have at least one item pending
+    // GLPI sync AND are already APPROVED — a note still awaiting approval isn't a real sync
+    // candidate yet (an admin might reject it outright), and a rejected note's items should never
+    // count as pending either; only an approved note's pending sync is genuinely "needs
+    // attention." Mirrors PrestamoHistoryController's own return-pending pill and
+    // HistoryFilter.pendingGlpiSync()'s matching APPROVED-only rule (used by the sidebar badge).
+    private void updatePendingGlpiLabel(List<NoteReport> reports) {
+        long pending = reports.stream()
+            .filter(r -> "APPROVED".equals(r.getApprovalStatus()))
+            .filter(r -> r.getPendingItemCount() > 0)
+            .count();
+        boolean show = pending > 0;
+        lblPendingGlpi.setText("⏳ " + pending + " con sincronización GLPI pendiente");
+        lblPendingGlpi.setVisible(show);
+        lblPendingGlpi.setManaged(show);
     }
 
     // ── Row color ─────────────────────────────────────────────────────────────

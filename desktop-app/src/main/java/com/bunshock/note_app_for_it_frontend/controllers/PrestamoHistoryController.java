@@ -22,6 +22,7 @@ import javafx.fxml.FXML;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.CustomMenuItem;
 import javafx.scene.control.DatePicker;
+import javafx.scene.control.Label;
 import javafx.scene.control.MenuButton;
 import javafx.scene.control.SeparatorMenuItem;
 import javafx.scene.control.TableCell;
@@ -29,6 +30,7 @@ import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableRow;
 import javafx.scene.control.TableView;
 import javafx.scene.control.TextField;
+import javafx.scene.control.TextFormatter;
 
 // "Historial de Préstamos" — a Préstamo-scoped sibling of HistoryController, without any GLPI
 // sync affordance (Préstamos track return status instead — see PrestamoDetailController). Row
@@ -39,9 +41,12 @@ public class PrestamoHistoryController {
     @FXML private DatePicker dpFrom;
     @FXML private DatePicker dpTo;
     @FXML private MenuButton mnuReturnStatus;
+    @FXML private MenuButton mnuApprovalStatus;
     @FXML private MenuButton mnuSede;
     @FXML private TextField  txtRecipientSearch;
     @FXML private TextField  txtAuthorSearch;
+    @FXML private Label      lblPendingApproval;
+    @FXML private Label      lblPendingReturns;
 
     @FXML private TableView<NoteReport>           tblPrestamos;
     @FXML private TableColumn<NoteReport, String> colPApproval;
@@ -62,16 +67,47 @@ public class PrestamoHistoryController {
     private static final List<String> RETURN_STATUS_OPTIONS =
         List.of("Pendiente", "Devuelto", "Perdido", "Mixto", "Vencido");
 
-    private final Set<String> selReturnStatuses = new LinkedHashSet<>();
+    private static final List<String> APPROVAL_STATUS_OPTIONS = List.of("Pendiente", "Aprobada", "Rechazada");
+
+    private final Set<String> selReturnStatuses   = new LinkedHashSet<>();
+    private final Set<String> selApprovalStatuses = new LinkedHashSet<>();
     private final Set<String> selSedes = new LinkedHashSet<>();
     private boolean suppressCallbacks = false;
+
+    // Neither field is ever persisted — both are query-only, feeding HistoryFilter's
+    // authorSearch/recipientSearch LIKE clauses (see buildFilter()) — so there's no DB column
+    // bound to match. Capped purely as a sanity guard against an accidental huge paste.
+    private static final int SEARCH_MAX_LENGTH = 255;
 
     public void initialize() {
         setupTable();
         populateMenu(mnuReturnStatus, RETURN_STATUS_OPTIONS, selReturnStatuses, this::autoSearch);
+        resetApprovalStatusFilterToDefault();
+        populateMenu(mnuApprovalStatus, APPROVAL_STATUS_OPTIONS, selApprovalStatuses, this::autoSearch);
         resetSedeFilterToDefault();
         initSedeMenu();
+        txtAuthorSearch.setTextFormatter(new TextFormatter<>(change ->
+            change.getControlNewText().length() <= SEARCH_MAX_LENGTH ? change : null));
+        txtRecipientSearch.setTextFormatter(new TextFormatter<>(change ->
+            change.getControlNewText().length() <= SEARCH_MAX_LENGTH ? change : null));
         loadPrestamos(buildFilter());
+    }
+
+    // APROBACIÓN defaults to Pendiente+Aprobada selected, not "Todas" — a RECHAZADO note is void
+    // and stays hidden from the default view, same reasoning as HistoryController's own version
+    // of this method (this codebase's no-shared-abstraction convention).
+    private void resetApprovalStatusFilterToDefault() {
+        selApprovalStatuses.clear();
+        selApprovalStatuses.add("Pendiente");
+        selApprovalStatuses.add("Aprobada");
+    }
+
+    private String approvalStatusToRaw(String label) {
+        return switch (label) {
+            case "Aprobada" -> "APPROVED";
+            case "Rechazada" -> "RECHAZADO";
+            default -> "PENDING";
+        };
     }
 
     // Sede options come from the live SEDE catalog (same source Configuración/Base de Datos use),
@@ -114,9 +150,14 @@ public class PrestamoHistoryController {
         txtAuthorSearch.clear();
         selReturnStatuses.clear();
         resetSedeFilterToDefault();
+        resetApprovalStatusFilterToDefault();
         suppressCallbacks = false;
         populateMenu(mnuReturnStatus, RETURN_STATUS_OPTIONS, selReturnStatuses, this::autoSearch);
+        populateMenu(mnuApprovalStatus, APPROVAL_STATUS_OPTIONS, selApprovalStatuses, this::autoSearch);
         initSedeMenu();
+        // Goes through buildFilter() (not a bare new HistoryFilter()) so the PENDING+APPROVED
+        // default still applies after clearing — same "Limpiar filtros restores the default view,
+        // it doesn't newly reveal RECHAZADO notes" precedent as HistoryController's own version.
         loadPrestamos(buildFilter());
     }
 
@@ -134,6 +175,12 @@ public class PrestamoHistoryController {
         String author = txtAuthorSearch.getText();
         if (author != null && !author.isBlank()) f.setAuthorSearch(author);
         if (!selSedes.isEmpty()) f.setSedes(new ArrayList<>(selSedes));
+        // Default selection is Pendiente+Aprobada (see resetApprovalStatusFilterToDefault()) —
+        // RECHAZADO notes are void and stay hidden from the default view. Unchecking down to
+        // "Todas" (empty set) applies no filter at all; explicitly picking Rechazada shows it.
+        if (!selApprovalStatuses.isEmpty()) {
+            f.setApprovalStatuses(selApprovalStatuses.stream().map(this::approvalStatusToRaw).toList());
+        }
         return f;
     }
 
@@ -285,6 +332,42 @@ public class PrestamoHistoryController {
                 .toList();
         }
         tblPrestamos.setItems(FXCollections.observableArrayList(reports));
+        updatePendingApprovalLabel(reports);
+        updatePendingReturnsLabel(reports);
+    }
+
+    // Counts notes among the currently-filtered rows still awaiting approval — a separate
+    // concern from return-pending (below), red instead of orange so the two aren't mistaken for
+    // the same count, same distinction MainController's own nav badges already make between
+    // .nav-badge/.nav-badge-approval. Hidden entirely at 0, same "a present badge always means
+    // something needs attention" convention as every other pending-count indicator in this app.
+    private void updatePendingApprovalLabel(List<NoteReport> reports) {
+        long pending = reports.stream()
+            .filter(r -> r.getApprovalStatus() == null || "PENDING".equals(r.getApprovalStatus()))
+            .count();
+        boolean show = pending > 0;
+        lblPendingApproval.setText("⏳ " + pending + " pendientes de aprobación");
+        lblPendingApproval.setVisible(show);
+        lblPendingApproval.setManaged(show);
+    }
+
+    // Counts notes among the currently-filtered rows that still have at least one item pending
+    // return AND are already APPROVED — a note still awaiting approval isn't a real loan yet (an
+    // admin might reject it outright), and a rejected note's items should never count as pending
+    // either; only an approved note's pending return is genuinely "needs attention." Scoped to
+    // whatever Fecha/Sede/Estado/search filters are active, not a global total (that's what the
+    // sidebar's lblPrestamosBadge already shows). Hidden entirely at 0, same "a present badge
+    // always means something needs attention" convention as every other pending-count indicator
+    // in this app (see MainController.updateBadge()).
+    private void updatePendingReturnsLabel(List<NoteReport> reports) {
+        long pending = reports.stream()
+            .filter(r -> "APPROVED".equals(r.getApprovalStatus()))
+            .filter(r -> r.getReturnPendingItemCount() > 0)
+            .count();
+        boolean show = pending > 0;
+        lblPendingReturns.setText("⏳ " + pending + " con devolución pendiente");
+        lblPendingReturns.setVisible(show);
+        lblPendingReturns.setManaged(show);
     }
 
     // ── Row color + overdue ───────────────────────────────────────────────────

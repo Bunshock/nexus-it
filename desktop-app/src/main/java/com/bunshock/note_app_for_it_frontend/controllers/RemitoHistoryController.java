@@ -19,6 +19,7 @@ import javafx.fxml.FXML;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.CustomMenuItem;
 import javafx.scene.control.DatePicker;
+import javafx.scene.control.Label;
 import javafx.scene.control.MenuButton;
 import javafx.scene.control.SeparatorMenuItem;
 import javafx.scene.control.TableCell;
@@ -26,6 +27,7 @@ import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableRow;
 import javafx.scene.control.TableView;
 import javafx.scene.control.TextField;
+import javafx.scene.control.TextFormatter;
 
 // "Historial de Envíos" — a Remito-scoped sibling of HistoryController/PrestamoHistoryController,
 // same duplicated shape per this codebase's no-shared-abstraction convention. Unlike Préstamo,
@@ -40,6 +42,7 @@ public class RemitoHistoryController {
     @FXML private MenuButton mnuSede;
     @FXML private TextField  txtDestinationSearch;
     @FXML private TextField  txtAuthorSearch;
+    @FXML private Label      lblPendingApproval;
 
     @FXML private TableView<NoteReport>           tblEnvios;
     @FXML private TableColumn<NoteReport, String> colEApproval;
@@ -60,12 +63,33 @@ public class RemitoHistoryController {
     private final Set<String> selSedes = new LinkedHashSet<>();
     private boolean suppressCallbacks = false;
 
+    // Neither field is ever persisted — both are query-only, feeding HistoryFilter's
+    // authorSearch/recipientSearch LIKE clauses (see buildFilter()) — so there's no DB column
+    // bound to match. Capped purely as a sanity guard against an accidental huge paste.
+    private static final int SEARCH_MAX_LENGTH = 255;
+
     public void initialize() {
         setupTable();
+        resetApprovalStatusFilterToDefault();
         populateMenu(mnuApprovalStatus, APPROVAL_STATUS_OPTIONS, selApprovalStatuses, this::autoSearch);
         resetSedeFilterToDefault();
         initSedeMenu();
+        txtAuthorSearch.setTextFormatter(new TextFormatter<>(change ->
+            change.getControlNewText().length() <= SEARCH_MAX_LENGTH ? change : null));
+        txtDestinationSearch.setTextFormatter(new TextFormatter<>(change ->
+            change.getControlNewText().length() <= SEARCH_MAX_LENGTH ? change : null));
         loadEnvios(buildFilter());
+    }
+
+    // APROBACIÓN defaults to Pendiente+Aprobada selected, not "Todas" — a RECHAZADO note is void
+    // and stays hidden from the default view, same reasoning/shape as HistoryController's and
+    // PrestamoHistoryController's own versions of this method (this codebase's
+    // no-shared-abstraction convention). Unlike before this change, Envíos no longer starts at
+    // "Todas" (showing rechazadas by default) — unified across all three history screens.
+    private void resetApprovalStatusFilterToDefault() {
+        selApprovalStatuses.clear();
+        selApprovalStatuses.add("Pendiente");
+        selApprovalStatuses.add("Aprobada");
     }
 
     // Sede options come from the live SEDE catalog, not "distinct values actually seen" — same
@@ -102,11 +126,14 @@ public class RemitoHistoryController {
         dpTo.setValue(null);
         txtDestinationSearch.clear();
         txtAuthorSearch.clear();
-        selApprovalStatuses.clear();
+        resetApprovalStatusFilterToDefault();
         resetSedeFilterToDefault();
         suppressCallbacks = false;
         populateMenu(mnuApprovalStatus, APPROVAL_STATUS_OPTIONS, selApprovalStatuses, this::autoSearch);
         initSedeMenu();
+        // Goes through buildFilter() (not a bare new HistoryFilter()) so the Pendiente+Aprobada
+        // default still applies after clearing — "Limpiar filtros" restores the default view, it
+        // doesn't newly reveal RECHAZADO notes.
         loadEnvios(buildFilter());
     }
 
@@ -275,6 +302,22 @@ public class RemitoHistoryController {
     private void loadEnvios(HistoryFilter filter) {
         List<NoteReport> reports = ServiceLocator.getInstance().getHistoryService().getFiltered(filter);
         tblEnvios.setItems(FXCollections.observableArrayList(reports));
+        updatePendingApprovalLabel(reports);
+    }
+
+    // Envío has no per-item pending dimension of its own (no GLPI, no return status — see the
+    // class comment above), so approval is the only "needs attention" count this screen shows,
+    // unlike History/PrestamoHistoryController's two-pill pairs. Hidden entirely at 0, same
+    // "a present badge always means something needs attention" convention as every other
+    // pending-count indicator in this app.
+    private void updatePendingApprovalLabel(List<NoteReport> reports) {
+        long pending = reports.stream()
+            .filter(r -> r.getApprovalStatus() == null || "PENDING".equals(r.getApprovalStatus()))
+            .count();
+        boolean show = pending > 0;
+        lblPendingApproval.setText("⏳ " + pending + " pendientes de aprobación");
+        lblPendingApproval.setVisible(show);
+        lblPendingApproval.setManaged(show);
     }
 
     // Same PENDING/RECHAZADO/APPROVED → orange/red/green mapping as HistoryController/

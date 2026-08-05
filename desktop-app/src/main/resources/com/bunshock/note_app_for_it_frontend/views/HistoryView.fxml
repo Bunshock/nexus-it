@@ -9,8 +9,15 @@
     <children>
 
         <!-- Page title -->
-        <HBox styleClass="page-title-card" alignment="CENTER_LEFT">
+        <HBox styleClass="page-title-card" alignment="CENTER_LEFT" spacing="10">
             <Label text="HISTORIAL DE NOTAS" styleClass="page-title"/>
+            <Region HBox.hgrow="ALWAYS"/>
+            <MenuButton text="Exportar" prefHeight="32" styleClass="button-primary">
+                <items>
+                    <MenuItem text="Exportar como CSV (.csv)" onAction="#handleExportCsv"/>
+                    <MenuItem text="Exportar como Excel (.xlsx)" onAction="#handleExportXlsx"/>
+                </items>
+            </MenuButton>
         </HBox>
 
         <!-- Filter panel -->
@@ -53,11 +60,9 @@
                                             prefWidth="155" prefHeight="32" styleClass="filter-menu-button"/>
                             </VBox>
                             <VBox spacing="3">
-                                <Label text="AUTOR" styleClass="input-label-small"/>
-                                <TextField fx:id="txtAuthorSearch" prefWidth="178" prefHeight="32"
-                                           promptText="Buscar por autor..."
-                                           onAction="#handleSearch"
-                                           styleClass="form-input-filter"/>
+                                <Label text="APROBACIÓN" styleClass="input-label-small"/>
+                                <MenuButton fx:id="mnuApprovalStatus" text="Todas"
+                                            prefWidth="155" prefHeight="32" styleClass="filter-menu-button"/>
                             </VBox>
                             <VBox spacing="3">
                                 <Label text="SEDE" styleClass="input-label-small"/>
@@ -69,47 +74,66 @@
 
                 </HBox>
 
-                <!-- EQUIPOS section -->
-                <VBox spacing="6">
-                    <Label text="Equipos" styleClass="filter-section-label"/>
-                    <HBox spacing="12" alignment="BOTTOM_LEFT">
-                        <VBox spacing="3">
-                            <Label text="DESTINATARIO / PROVEEDOR" styleClass="input-label-small"/>
-                            <TextField fx:id="txtRecipientSearch" prefWidth="225" prefHeight="32"
-                                       promptText="Buscar destinatario o proveedor..."
-                                       onAction="#handleSearch"
-                                       styleClass="form-input-filter"/>
-                        </VBox>
-                        <VBox spacing="3">
-                            <Label text="TIPO" styleClass="input-label-small"/>
-                            <MenuButton fx:id="mnuItemType" text="Todos"
-                                        prefWidth="158" prefHeight="32" styleClass="filter-menu-button"/>
-                        </VBox>
-                        <VBox spacing="3">
-                            <Label text="MARCA" styleClass="input-label-small"/>
-                            <MenuButton fx:id="mnuItemBrand" text="Todas"
-                                        prefWidth="158" prefHeight="32" styleClass="filter-menu-button"/>
-                        </VBox>
-                        <VBox spacing="3">
-                            <Label text="MODELO" styleClass="input-label-small"/>
-                            <MenuButton fx:id="mnuItemModel" text="Todos"
-                                        prefWidth="158" prefHeight="32" styleClass="filter-menu-button"/>
-                        </VBox>
-                    </HBox>
-                </VBox>
+                <!-- AUTOR Y DESTINATARIO + EQUIPOS side by side — same row-2 layout pattern as
+                     FECHA+NOTA above. Autor/Destinatario fields kept short (140px) rather than
+                     widened, since this section now shares the row with Equipos instead of
+                     having the whole width to itself. -->
+                <HBox spacing="28">
+
+                    <!-- AUTOR Y DESTINATARIO -->
+                    <VBox spacing="6">
+                        <Label text="Autor / Destinatario" styleClass="filter-section-label"/>
+                        <HBox spacing="12">
+                            <VBox spacing="3">
+                                <Label text="AUTOR" styleClass="input-label-small"/>
+                                <TextField fx:id="txtAuthorSearch" prefWidth="280" prefHeight="32"
+                                           promptText="Buscar por autor..."
+                                           onAction="#handleSearch"
+                                           styleClass="form-input-filter"/>
+                            </VBox>
+                            <VBox spacing="3">
+                                <Label text="DESTINATARIO / PROVEEDOR" styleClass="input-label-small"/>
+                                <TextField fx:id="txtRecipientSearch" prefWidth="280" prefHeight="32"
+                                           promptText="Buscar destinatario o proveedor..."
+                                           onAction="#handleSearch"
+                                           styleClass="form-input-filter"/>
+                            </VBox>
+                        </HBox>
+                    </VBox>
+
+                    <!-- EQUIPOS -->
+                    <VBox spacing="6">
+                        <Label text="Equipos" styleClass="filter-section-label"/>
+                        <HBox spacing="12" alignment="BOTTOM_LEFT">
+                            <VBox spacing="3">
+                                <Label text="TIPO" styleClass="input-label-small"/>
+                                <MenuButton fx:id="mnuItemType" text="Todos"
+                                            prefWidth="158" prefHeight="32" styleClass="filter-menu-button"/>
+                            </VBox>
+                            <VBox spacing="3">
+                                <Label text="MARCA" styleClass="input-label-small"/>
+                                <MenuButton fx:id="mnuItemBrand" text="Todas"
+                                            prefWidth="158" prefHeight="32" styleClass="filter-menu-button"/>
+                            </VBox>
+                            <VBox spacing="3">
+                                <Label text="MODELO" styleClass="input-label-small"/>
+                                <MenuButton fx:id="mnuItemModel" text="Todos"
+                                            prefWidth="158" prefHeight="32" styleClass="filter-menu-button"/>
+                            </VBox>
+                        </HBox>
+                    </VBox>
+
+                </HBox>
 
                 <!-- Action buttons: Buscar + Limpiar left | Exportar right -->
                 <HBox spacing="10" alignment="CENTER_LEFT">
                     <Button text="Buscar" onAction="#handleSearch" styleClass="button-primary" prefHeight="32"/>
                     <Button text="Limpiar filtros" onAction="#handleClearFilters" styleClass="button-secondary" prefHeight="32"/>
-                    <CheckBox fx:id="chkShowRechazado" text="Mostrar rechazadas" onAction="#handleShowRechazadoToggle"/>
                     <Region HBox.hgrow="ALWAYS"/>
-                    <MenuButton text="Exportar" prefHeight="32" styleClass="button-primary">
-                        <items>
-                            <MenuItem text="Exportar como CSV (.csv)" onAction="#handleExportCsv"/>
-                            <MenuItem text="Exportar como Excel (.xlsx)" onAction="#handleExportXlsx"/>
-                        </items>
-                    </MenuButton>
+                    <Label fx:id="lblPendingApproval"
+                           style="-fx-background-color: rgba(239,68,68,0.18); -fx-background-radius: 12; -fx-padding: 5 12; -fx-text-fill: #ef4444; -fx-font-size: 12px; -fx-font-weight: bold;"/>
+                    <Label fx:id="lblPendingGlpi"
+                           style="-fx-background-color: rgba(251,146,60,0.18); -fx-background-radius: 12; -fx-padding: 5 12; -fx-text-fill: #f97316; -fx-font-size: 12px; -fx-font-weight: bold;"/>
                 </HBox>
 
             </children>
