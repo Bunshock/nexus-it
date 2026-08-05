@@ -29,9 +29,7 @@ import javafx.scene.control.ListCell;
 import javafx.scene.control.ProgressIndicator;
 import javafx.scene.control.TextField;
 import javafx.scene.control.TextFormatter;
-import javafx.scene.control.ToggleButton;
 import javafx.scene.control.Tooltip;
-import javafx.scene.control.ToggleGroup;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import javafx.stage.Modality;
@@ -50,11 +48,12 @@ public class UserNoteController implements AdSearchHost {
     // this field only restricted character set before, with no length limit.
     private static final int USER_NAME_MAX_LENGTH = 255;
 
-    @FXML private ToggleGroup userNoteTypeGroup;
-    @FXML private ToggleButton btnTypeEntrega;
-    @FXML private ToggleButton btnTypeDevolucion;
-    @FXML private ToggleButton btnTypeFinContrato;
-    @FXML private ToggleButton btnTypePrestamo;
+    // Note type is now pushed in externally via setNoteType() (called by NoteGeneratorController
+    // from its own cmbNoteType), rather than selected from a toggle stack that used to live here —
+    // see "TIPO DE MOVIMIENTO" removal from UserNoteView.fxml. Raw values match exactly what
+    // getSelectedNoteType() has always returned ("ENTREGA"/"DEVOLUCIÓN"/"ENTREGA PERMANENTE"/
+    // "PRÉSTAMO"), since that's stored directly in NOTE_REPORT.profile_type.
+    private String currentType = "ENTREGA";
 
     @FXML private VBox vboxMotivo;
     @FXML private ComboBox<String> cmbMotivo;
@@ -89,8 +88,8 @@ public class UserNoteController implements AdSearchHost {
 
     // "Full Motivo memory per type" — each note type remembers its own last-selected Motivo
     // across type switches, instead of resetting to unselected every time (the old behavior).
-    // Keyed by the type ToggleButton itself, not by the motivoOptions map key.
-    private final Map<ToggleButton, String> lastMotivoByType = new HashMap<>();
+    // Keyed by the raw type string (currentType), not by the motivoOptions map key.
+    private final Map<String, String> lastMotivoByType = new HashMap<>();
 
     // True only for the duration of loadMotivoOptions()'s programmatic cmbMotivo.setValue(...)
     // restore call. The cmbMotivo listener uses this — not just failureConfirmed — to recognize
@@ -134,14 +133,6 @@ public class UserNoteController implements AdSearchHost {
         motivoButtonCell = new MotivoCell(true);
         cmbMotivo.setButtonCell(motivoButtonCell);
 
-        userNoteTypeGroup.selectedToggleProperty().addListener((obs, oldToggle, newToggle) -> {
-            if (newToggle == null) {
-                oldToggle.setSelected(true);
-                return;
-            }
-            updateMotivoVisibility((ToggleButton) newToggle);
-        });
-
         cmbMotivo.valueProperty().addListener((obs, old, motivo) -> {
             // A programmatic reload (loadMotivoOptions(), which sets restoringMotivo for its
             // *entire* body — not just the final setValue()) must be completely invisible to
@@ -154,13 +145,12 @@ public class UserNoteController implements AdSearchHost {
             // back, silently losing the remembered selection.
             if (restoringMotivo) return;
 
-            ToggleButton currentType = (ToggleButton) userNoteTypeGroup.getSelectedToggle();
-            if (currentType != null) lastMotivoByType.put(currentType, motivo);
+            lastMotivoByType.put(currentType, motivo);
 
             // Falla-detail handling only ever applies to Devolución's own Motivo — restoring a
             // different type's remembered Motivo (e.g. switching to Entrega) must not touch
             // failureCause/failureDetails, since those now persist across type switches too.
-            if (!btnTypeDevolucion.isSelected()) return;
+            if (!"DEVOLUCIÓN".equals(currentType)) return;
 
             if (isFailureTriggerMotivo(motivo)) {
                 if (!failureConfirmed) {
@@ -184,8 +174,16 @@ public class UserNoteController implements AdSearchHost {
         txtAreaEvento.setTextFormatter(new TextFormatter<>(change ->
             change.getControlNewText().length() <= AREA_EVENTO_MAX_LENGTH ? change : null));
 
-        updateMotivoVisibility(btnTypeEntrega);
-        btnTypeEntrega.setSelected(true);
+        // Defensive default so the view renders sensibly even before setNoteType() is called
+        // externally by NoteGeneratorController.
+        updateMotivoVisibility(currentType);
+    }
+
+    // New external entry point — called by NoteGeneratorController when its own cmbNoteType
+    // selection changes, replacing what the removed internal toggle-group listener used to do.
+    public void setNoteType(String type) {
+        currentType = type;
+        updateMotivoVisibility(type);
     }
 
     private boolean isFailureTriggerMotivo(String motivo) {
@@ -193,17 +191,17 @@ public class UserNoteController implements AdSearchHost {
     }
 
     private String motivoDisplayText(String motivo) {
-        if (btnTypeDevolucion.isSelected() && isFailureTriggerMotivo(motivo) && failureConfirmed) {
+        if ("DEVOLUCIÓN".equals(currentType) && isFailureTriggerMotivo(motivo) && failureConfirmed) {
             return motivo + " - " + failureCause;
         }
         return motivo;
     }
 
-    private void updateMotivoVisibility(ToggleButton selected) {
-        boolean showMotivo = selected == btnTypeEntrega
-                          || selected == btnTypeDevolucion
-                          || selected == btnTypeFinContrato;
-        boolean showFechaTentativa = selected == btnTypePrestamo;
+    private void updateMotivoVisibility(String selected) {
+        boolean showMotivo = "ENTREGA".equals(selected)
+                          || "DEVOLUCIÓN".equals(selected)
+                          || "ENTREGA PERMANENTE".equals(selected);
+        boolean showFechaTentativa = "PRÉSTAMO".equals(selected);
 
         vboxMotivo.setVisible(showMotivo);
         vboxMotivo.setManaged(showMotivo);
@@ -213,8 +211,8 @@ public class UserNoteController implements AdSearchHost {
         vboxAreaEvento.setManaged(showFechaTentativa);
 
         if (showMotivo) {
-            String key = selected == btnTypeDevolucion ? "devolucion"
-                       : selected == btnTypeFinContrato ? "finDeContrato"
+            String key = "DEVOLUCIÓN".equals(selected) ? "devolucion"
+                       : "ENTREGA PERMANENTE".equals(selected) ? "finDeContrato"
                        : "entrega";
             loadMotivoOptions(key, selected);
         }
@@ -232,7 +230,7 @@ public class UserNoteController implements AdSearchHost {
         return next;
     }
 
-    private void loadMotivoOptions(String key, ToggleButton forType) {
+    private void loadMotivoOptions(String key, String forType) {
         List<String> options = ConfigService.getInstance().getConfig().motivoOptions.getOrDefault(key, List.of());
         // Captured before touching cmbMotivo at all, and restoringMotivo guards the whole
         // reload (setItems included) — see the long comment on the valueProperty listener for why.
@@ -254,7 +252,7 @@ public class UserNoteController implements AdSearchHost {
     // displayed text (button cell) — the ComboBox doesn't automatically refresh its button
     // cell just because failureCause/failureConfirmed changed externally, so this forces it.
     private void refreshFailureIndicators() {
-        boolean show = btnTypeDevolucion.isSelected()
+        boolean show = "DEVOLUCIÓN".equals(currentType)
             && failureConfirmed
             && isFailureTriggerMotivo(cmbMotivo.getValue());
         lblFailureSummary.setManaged(show);
@@ -268,8 +266,7 @@ public class UserNoteController implements AdSearchHost {
     }
 
     public String getSelectedNoteType() {
-        if (userNoteTypeGroup.getSelectedToggle() == null) return "ENTREGA";
-        return ((ToggleButton) userNoteTypeGroup.getSelectedToggle()).getText();
+        return currentType;
     }
 
     public String getMotivo() {
@@ -295,16 +292,16 @@ public class UserNoteController implements AdSearchHost {
             triggerFeedback("El DNI debe tener 7 u 8 dígitos, sin puntos", "#ef4444");
             valid = false;
         }
-        if (!btnTypePrestamo.isSelected() && (getMotivo() == null || getMotivo().isEmpty())) {
+        if (!"PRÉSTAMO".equals(currentType) && (getMotivo() == null || getMotivo().isEmpty())) {
             triggerLabelFeedback(lblMotivoStatus, "El motivo es obligatorio", "#ef4444");
             valid = false;
         }
-        if (btnTypeDevolucion.isSelected() && isFailureTriggerMotivo(getMotivo())
+        if ("DEVOLUCIÓN".equals(currentType) && isFailureTriggerMotivo(getMotivo())
                 && (failureCause == null || failureCause.isBlank())) {
             triggerLabelFeedback(lblMotivoStatus, "Debe completar los detalles de la falla", "#ef4444");
             valid = false;
         }
-        if (btnTypePrestamo.isSelected()) {
+        if ("PRÉSTAMO".equals(currentType)) {
             LocalDate date = dtpFechaTentativa.getValue();
             if (date == null) {
                 triggerLabelFeedback(lblFechaTentativaStatus, "Ingrese fecha tentativa", "#ef4444");

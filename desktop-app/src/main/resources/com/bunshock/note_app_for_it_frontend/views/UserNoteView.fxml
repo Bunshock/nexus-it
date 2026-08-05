@@ -9,33 +9,8 @@
       fx:controller="com.bunshock.note_app_for_it_frontend.controllers.UserNoteController">
     <children>
 
-        <!-- Note type selection -->
-        <VBox spacing="8">
-            <children>
-                <Label text="TIPO DE MOVIMIENTO" styleClass="section-label"/>
-                <VBox spacing="0" style="-fx-border-color: #e2e8f0; -fx-border-radius: 8; -fx-border-width: 1; -fx-background-color: white; -fx-background-radius: 8;">
-                    <children>
-                        <ToggleButton fx:id="btnTypeEntrega" text="ENTREGA" selected="true"
-                                      maxWidth="Infinity" styleClass="small-toggle-button-vtop">
-                            <toggleGroup>
-                                <ToggleGroup fx:id="userNoteTypeGroup"/>
-                            </toggleGroup>
-                        </ToggleButton>
-                        <ToggleButton fx:id="btnTypeDevolucion" text="DEVOLUCIÓN"
-                                      maxWidth="Infinity" styleClass="small-toggle-button-vmiddle"
-                                      toggleGroup="$userNoteTypeGroup"/>
-                        <ToggleButton fx:id="btnTypePrestamo" text="PRÉSTAMO"
-                                      maxWidth="Infinity" styleClass="small-toggle-button-vmiddle"
-                                      toggleGroup="$userNoteTypeGroup"/>
-                        <ToggleButton fx:id="btnTypeFinContrato" text="ENTREGA PERMANENTE"
-                                      maxWidth="Infinity" styleClass="small-toggle-button-vbottom"
-                                      toggleGroup="$userNoteTypeGroup"/>
-                    </children>
-                </VBox>
-            </children>
-        </VBox>
-
-        <!-- Motivo: directly below movement type -->
+        <!-- Motivo: note type is now selected externally, at the NoteGeneratorView level
+             (cmbNoteType), pushed in via UserNoteController.setNoteType(). -->
         <VBox fx:id="vboxMotivo" spacing="4" managed="false" visible="false">
             <children>
                 <HBox alignment="CENTER_LEFT" spacing="6">

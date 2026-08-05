@@ -2,9 +2,21 @@
 <?import javafx.scene.layout.*?>
 <?import javafx.scene.control.*?>
 
-<VBox spacing="20" xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1"
+<VBox spacing="20" maxHeight="Infinity" xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1"
       fx:controller="com.bunshock.note_app_for_it_frontend.controllers.ProviderNoteController">
     <children>
+
+        <!-- Motivo (mandatory) — right below the note-type combobox, no separator in between,
+             matching UserNoteView (Motivo is its very first child too). -->
+        <VBox spacing="4">
+            <children>
+                <Label text="MOTIVO" styleClass="input-label-small"/>
+                <ComboBox fx:id="cmbMotivo" promptText="Seleccionar motivo..."
+                          maxWidth="Infinity" styleClass="form-input-main"/>
+            </children>
+        </VBox>
+
+        <Separator style="-fx-opacity: 0.5;"/>
 
         <!-- Provider selection -->
         <VBox spacing="10">
@@ -27,22 +39,11 @@
 
                 <VBox spacing="6">
                     <children>
-                        <CheckBox fx:id="chkEnableCuit" text="CUIT" selected="true"
+                        <CheckBox fx:id="chkEnableCuit" text="CUIT"
                                   styleClass="custom-checkbox-inline"/>
-                        <TextField fx:id="txtCuit" promptText="XX-XXXXXXXX-X" styleClass="form-input-main"/>
+                        <TextField fx:id="txtCuit" disable="true" promptText="XX-XXXXXXXX-X" styleClass="form-input-main"/>
                     </children>
                 </VBox>
-            </children>
-        </VBox>
-
-        <Separator style="-fx-opacity: 0.5;"/>
-
-        <!-- Motivo (mandatory) -->
-        <VBox spacing="4">
-            <children>
-                <Label text="MOTIVO" styleClass="input-label-small"/>
-                <ComboBox fx:id="cmbMotivo" promptText="Seleccionar motivo..."
-                          maxWidth="Infinity" styleClass="form-input-main"/>
             </children>
         </VBox>
 

@@ -7,7 +7,7 @@
 **Preconditions:** App is running; equipment catalog is loaded (mock or DB)
 
 **Main Flow:**
-1. Technician selects "NOTA PARA USUARIO" → profile defaults to "ENTREGA"
+1. Technician selects a type from the "TIPO DE NOTA" combobox (Entrega, Devolución, Entrega Permanente, Préstamo, or Proveedor) → defaults to "Entrega"
 2. Selects Motivo from dropdown
 3. Searches for the recipient in AD (by DNI, name, or username); selects from results if multiple
 4. Adds equipment items via the item dialog (Type → Brand → Model cascade; S/N and A/F if applicable)
@@ -29,9 +29,10 @@ Same as UC-01 but with profile "DEVOLUCIÓN". No Motivo field. Used when equipme
 
 ---
 
-## UC-03 — Generate a User Note (Fin de Contrato)
+## UC-03 — Generate a User Note (Entrega Permanente)
 
-Same as UC-01 but with profile "FIN DE CONTRATO". Used for employees leaving the organization.
+Same as UC-01 but with profile "FIN DE CONTRATO" (raw stored value unchanged; display label is
+"Entrega Permanente"). Used for employees leaving the organization.
 
 ---
 
@@ -41,7 +42,7 @@ Same as UC-01 but with profile "FIN DE CONTRATO". Used for employees leaving the
 **Trigger:** Equipment received from or delivered to a supplier
 
 **Main Flow:**
-1. Technician selects "NOTA PARA PROVEEDOR"
+1. Technician selects "Proveedor (Entrega)" from the "TIPO DE NOTA" combobox
 2. Selects a provider from the "PROVEEDOR" dropdown (populated from the provider catalog — see UC-09; not free text) and enters CUIT
 3. Selects Motivo (Compra, Garantía, Reparación, Otro)
 4. Optionally enables "Recibe en representación" and fills responsible person data
@@ -371,6 +372,46 @@ Same as UC-01 but with profile "FIN DE CONTRATO". Used for employees leaving the
 2. Admin clicks "Recibido" → item status updates to RETURNED ("✓ Recibido"); card refreshes
 3. Admin clicks "No recibido" → a mandatory reason dialog appears; on confirm, status updates to LOST ("✗ No recibido: {reason}")
 
-**Alternate Flow — Provider note's Motivo is not in the returnable list (e.g. "Otro"):** no return-tracking row is shown at all — the equipment is treated as a permanent departure, same as Entrega/Fin de Contrato.
+**Alternate Flow — Provider note's Motivo is not in the returnable list (e.g. "Otro"):** no return-tracking row is shown at all — the equipment is treated as a permanent departure, same as Entrega/Entrega Permanente.
 
 **Note:** Same underlying mechanism as UC-17's Préstamo return validation (same `ReturnStatus` enum, same DB table), but distinct wording — "received back from the provider," not "returned by the borrower."
+
+---
+
+## UC-21 — Generate a Remito de Envío (Inter-Sede Stock Transfer)
+
+**Actor:** IT Technician (generate); IT Administrator (approve — see UC-19)
+**Trigger:** Clicks "Envíos" in the sidebar, then the "Remito de Envío" submenu option
+
+**Main Flow:**
+1. "Sede Origen" shows the technician's own assigned Sede, read-only
+2. Technician selects a destination Sede from "Sede Destino" (every Sede except their own); the "Destino"/"Dirección"/"Destinatarios" fields auto-fill from that Sede's saved shipping info if a superadmin has configured one, and stay disabled (read-only) as long as a catalog Sede is selected
+3. Technician adds one or more equipment items (assets and/or countables), same item dialog as Generar Nota (UC-01/UC-05)
+4. Technician fills "Observaciones Generales" (optional) and clicks "Generar Remito" → the note previews/prints like any other note type (UC-01), then saves to history as PENDING
+
+**Alternate Flow — Custom destination:** technician checks "Personalizar destino (ej. CAU)" instead of picking a Sede; "Destino"/"Dirección"/"Destinatarios" clear and become editable, freely-typed fields with no catalog tie — used for a location not in the SEDE catalog (e.g. a CAU)
+
+**Note:** Unlike every other note type, approving a Remito (UC-19) has a real side effect: it moves
+`MODEL_STOCK` — decrementing the source Sede's stock for every shipped item, and incrementing the
+destination Sede's stock by the same amount only when a real catalog Sede was picked (a custom
+destination only decrements the source, since there's nothing in this app to receive it). This
+happens exactly once, at approval, never at generation — a mistakenly-created Remito can still be
+rejected with no effect on real stock, same as every other note type. Approving a Remito that would
+ship more than the source Sede currently has on hand is blocked with an error instead of allowing
+stock to go negative. Remito items have no GLPI or return-status tracking at all (an inter-Sede
+move, not an assignment to a person, and the items don't come back).
+
+---
+
+## UC-22 — View and Filter Envíos History (Historial de Envíos)
+
+**Actor:** IT Technician (view); IT Administrator (approve/reject — see UC-19)
+**Trigger:** Clicks "Envíos" in the sidebar, then the "Historial de Envíos" submenu option
+
+**Main Flow:**
+1. Table loads; the Sede filter (Sede Origen) is pre-selected to the technician's own assigned Sede, if any (otherwise "Todas") — shows every Remito note, with Fecha, Autor, Sede Origen, Destino, Dirección, Destinatarios, Ítems, and Estado columns, plus a narrow colored strip (orange/red/green) reflecting approval status
+2. Technician applies optional filters: date range, Estado (multi-select: Pendiente/Aprobada/Rechazada), Destino text search, Autor text search, Sede Origen (multi-select, options drawn from the live Sede catalog)
+3. Double-clicking a row opens the same note detail popup used by the global Historial (UC-12), including its Aprobar/Rechazar controls (UC-19) when the session holds the permission
+4. After approving or rejecting from that popup, the Envíos table in the background refreshes to reflect the updated status
+
+**Note:** Unlike UC-17's Préstamo history, this table has no return-status/GLPI dimension at all — a Remito's only meaningful state is its approval status, since that's what actually moves stock (UC-21). Remito notes still also appear in the global Historial (UC-08), same as Préstamo notes do; this section exists for a Destino/Dirección/Destinatarios-focused view those generic columns can't provide.

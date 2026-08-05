@@ -72,7 +72,7 @@ public class HistoryController {
     private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
 
     private static final List<String> PROFILE_TYPE_OPTIONS = List.of(
-        "Entrega", "Devolución", "Fin de Contrato", "Entrega - Proveedor", "Préstamo");
+        "Entrega", "Devolución", "Entrega Permanente", "Entrega - Proveedor", "Préstamo", "Remito de Envío");
 
     private static final List<String> GLPI_STATUS_LABELS = List.of(
         "Pendiente", "Sincronizado", "Rechazado", "Sin GLPI");
@@ -90,9 +90,10 @@ public class HistoryController {
     private static final Map<String, List<String>> PROFILE_TYPE_LABEL_TO_RAW = Map.of(
         "Entrega",             List.of("ENTREGA", "Entrega"),
         "Devolución",          List.of("DEVOLUCIÓN", "Devolución"),
-        "Fin de Contrato",     List.of("ENTREGA PERMANENTE", "FIN DE CONTRATO", "Fin de Contrato"),
+        "Entrega Permanente",  List.of("ENTREGA PERMANENTE", "FIN DE CONTRATO", "Fin de Contrato"),
         "Préstamo",            List.of("PRÉSTAMO", "Préstamo"),
-        "Entrega - Proveedor", List.of("ENTREGA - PROVEEDOR", "Entrega - Proveedor"));
+        "Entrega - Proveedor", List.of("ENTREGA - PROVEEDOR", "Entrega - Proveedor"),
+        "Remito de Envío",     List.of("REMITO DE ENVÍO", "Remito de Envío"));
 
     private final Set<String> selProfileTypes = new LinkedHashSet<>();
     private final Set<String> selGlpiStatuses = new LinkedHashSet<>();
@@ -701,9 +702,10 @@ public class HistoryController {
             case "DEVOLUCION"          -> "Devolución";
             case "PRÉSTAMO"            -> "Préstamo";
             case "PRESTAMO"            -> "Préstamo";
-            case "ENTREGA PERMANENTE"  -> "Fin de contrato";
-            case "FIN DE CONTRATO"     -> "Fin de contrato";
+            case "ENTREGA PERMANENTE"  -> "Entrega Permanente";
+            case "FIN DE CONTRATO"     -> "Entrega Permanente";
             case "ENTREGA - PROVEEDOR" -> "Entrega - Proveedor";
+            case "REMITO DE ENVÍO"     -> "Remito de Envío";
             default                    -> profileType;
         };
     }

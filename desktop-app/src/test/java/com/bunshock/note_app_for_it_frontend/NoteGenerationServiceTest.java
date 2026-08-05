@@ -96,7 +96,7 @@ class NoteGenerationServiceTest {
             oneAsset(), List.of(), "");
 
         assertFalse(html.contains("{{"));
-        assertTrue(html.contains("Fin de contrato"));
+        assertTrue(html.contains("Entrega Permanente"));
         assertTrue(html.contains("Luis Gomez"));
         assertTrue(html.contains("Baja de contrato"));
         assertTrue(html.contains("Marcos Tecnico"));
@@ -187,6 +187,24 @@ class NoteGenerationServiceTest {
         int itemsIdx = html.indexOf("<div class=\"item-list\">");
         int motivoIdx = html.indexOf("Alta");
         assertTrue(itemsIdx < motivoIdx, "Motivo should appear below the item table");
+    }
+
+    @Test
+    void generatesRemitoNoteWithSourceDestinationAndTechnicianTokens() throws Exception {
+        String html = service.generateRemitoNote("Campus Origen",
+            "CAU Recoleta", "Av. Siempreviva 742", "Juan Pérez",
+            "Marcos Tecnico", "27555111",
+            oneAsset(), oneCountable(2), "Sin observaciones");
+
+        assertFalse(html.contains("{{"));
+        assertTrue(html.contains("Campus Origen"));
+        assertTrue(html.contains("CAU Recoleta"));
+        assertTrue(html.contains("Av. Siempreviva 742"));
+        assertTrue(html.contains("Juan Pérez"));
+        assertTrue(html.contains("Marcos Tecnico"));
+        assertTrue(html.contains("27555111"));
+        assertTrue(html.contains("NOTEBOOK"));
+        assertTrue(html.contains("MOUSE"));
     }
 
     @Test

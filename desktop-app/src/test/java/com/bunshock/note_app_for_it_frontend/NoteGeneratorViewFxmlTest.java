@@ -11,9 +11,8 @@ import com.bunshock.note_app_for_it_frontend.services.ConfigService;
 import javafx.application.Platform;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Parent;
+import javafx.scene.control.ComboBox;
 import javafx.scene.control.TextField;
-import javafx.scene.control.ToggleButton;
-import javafx.scene.control.ToggleGroup;
 import javafx.scene.layout.VBox;
 
 import org.junit.jupiter.api.BeforeAll;
@@ -99,11 +98,12 @@ class NoteGeneratorViewFxmlTest {
         }
     }
 
-    // Regression test for the type-button toggle split — checks the 2-way toggle wired
-    // correctly (both share one ToggleGroup) and that the Observaciones Generales footer
-    // resolves via fx:id.
+    // Regression test for the note-type ComboBox that replaced the old Usuario/Proveedor toggle
+    // (and UserNoteView's own inner Entrega/Devolución/Préstamo/Fin de Contrato toggle stack) —
+    // checks cmbNoteType resolves and lists all 5 flattened note types, and that the Observaciones
+    // Generales footer resolves via fx:id.
     @Test
-    void typeTogglesJoinSharedGroupAndObservationsFooterResolves() throws Exception {
+    void noteTypeComboBoxListsAllFiveTypesAndObservationsFooterResolves() throws Exception {
         AtomicReference<Throwable> errorRef = new AtomicReference<>();
         CountDownLatch latch = new CountDownLatch(1);
 
@@ -114,21 +114,17 @@ class NoteGeneratorViewFxmlTest {
                 loader.load();
                 NoteGeneratorController controller = loader.getController();
 
-                Field groupField = NoteGeneratorController.class.getDeclaredField("typeGroup");
-                groupField.setAccessible(true);
-                ToggleGroup group = (ToggleGroup) groupField.get(controller);
-                assertEquals(2, group.getToggles().size());
-
-                Field providerField = NoteGeneratorController.class.getDeclaredField("btnProviderNote");
-                providerField.setAccessible(true);
-                ToggleButton btnProviderNote = (ToggleButton) providerField.get(controller);
-                assertTrue(group.getToggles().contains(btnProviderNote));
+                Field comboField = NoteGeneratorController.class.getDeclaredField("cmbNoteType");
+                comboField.setAccessible(true);
+                ComboBox<?> cmbNoteType = (ComboBox<?>) comboField.get(controller);
+                assertEquals(5, cmbNoteType.getItems().size(),
+                    "Entrega, Devolución, Entrega Permanente, Préstamo, Proveedor");
 
                 Field footerField = NoteGeneratorController.class.getDeclaredField("vboxObservationsFooter");
                 footerField.setAccessible(true);
                 VBox footer = (VBox) footerField.get(controller);
                 assertNotNull(footer);
-                assertTrue(footer.isVisible(), "Footer starts visible — Usuario is selected by default");
+                assertTrue(footer.isVisible(), "Footer starts visible — declared visible by default in FXML");
             } catch (Throwable t) {
                 errorRef.set(t);
             } finally {

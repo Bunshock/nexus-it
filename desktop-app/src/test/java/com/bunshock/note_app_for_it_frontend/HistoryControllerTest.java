@@ -249,8 +249,9 @@ class HistoryControllerTest {
         assertEquals("Entrega", toDisplayName("ENTREGA"));
         assertEquals("Devolución", toDisplayName("DEVOLUCIÓN"));
         assertEquals("Préstamo", toDisplayName("PRÉSTAMO"));
-        assertEquals("Fin de contrato", toDisplayName("ENTREGA PERMANENTE"));
+        assertEquals("Entrega Permanente", toDisplayName("ENTREGA PERMANENTE"));
         assertEquals("Entrega - Proveedor", toDisplayName("Entrega - Proveedor"));
+        assertEquals("Remito de Envío", toDisplayName("REMITO DE ENVÍO"));
     }
 
     @Test
@@ -276,8 +277,18 @@ class HistoryControllerTest {
     }
 
     @Test
-    void expandProfileTypeLabelsHandlesFinDeContratoAliases() throws Exception {
-        List<String> expanded = expandProfileTypeLabels(new LinkedHashSet<>(Set.of("Fin de Contrato")));
+    void expandProfileTypeLabelsMatchesRemitoDeEnvio() throws Exception {
+        List<String> expanded = expandProfileTypeLabels(new LinkedHashSet<>(Set.of("Remito de Envío")));
+        assertTrue(expanded.contains("REMITO DE ENVÍO"));
+        assertTrue(expanded.contains("Remito de Envío"));
+    }
+
+    @Test
+    void expandProfileTypeLabelsHandlesEntregaPermanenteAliases() throws Exception {
+        // "Entrega Permanente" is the current display label; the raw variants it must still
+        // match include the old display casing ("Fin de Contrato") for rows created before the
+        // rename, plus the raw stored value(s) — the rename never touched what's in the DB.
+        List<String> expanded = expandProfileTypeLabels(new LinkedHashSet<>(Set.of("Entrega Permanente")));
         assertTrue(expanded.contains("ENTREGA PERMANENTE"));
         assertTrue(expanded.contains("Fin de Contrato"));
     }

@@ -86,7 +86,7 @@
                            style="-fx-font-size: 12px; -fx-text-fill: #64748b;"/>
                     <Label text="     3.2  Devolución"
                            style="-fx-font-size: 12px; -fx-text-fill: #64748b;"/>
-                    <Label text="     3.3  Fin de Contrato"
+                    <Label text="     3.3  Entrega Permanente"
                            style="-fx-font-size: 12px; -fx-text-fill: #64748b;"/>
                     <Label text="     3.4  Préstamo"
                            style="-fx-font-size: 12px; -fx-text-fill: #64748b;"/>
@@ -148,10 +148,10 @@
                            style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
                 </VBox>
                 <Label wrapText="true"
-                       text="La pantalla del Generador presenta dos pestañas en la parte superior (Nota de Usuario y Nota de Proveedor), el formulario del destinatario o proveedor, las tablas de equipamiento agregado, el campo de observaciones generales de la nota y los botones &quot;Generar Nota&quot; y &quot;Limpiar&quot;."
+                       text="La pantalla del Generador presenta un combo &quot;Tipo de Nota&quot; en la parte superior (Entrega, Devolución, Entrega Permanente, Préstamo o Proveedor), el formulario del destinatario o proveedor, las tablas de equipamiento agregado, el campo de observaciones generales de la nota y los botones &quot;Generar Nota&quot; y &quot;Limpiar&quot;."
                        style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
                 <Label wrapText="true"
-                       text="En la parte inferior de la barra lateral, tres indicadores circulares muestran el estado de conexión de Active Directory, GLPI y la Base de Datos: verde (conectado), rojo (desconectado) o gris (no configurado). Pasar el mouse sobre cada uno muestra más detalle."
+                       text="En la barra de título, junto al botón &quot;Cerrar sesión&quot;, tres indicadores circulares muestran el estado de conexión de Active Directory, GLPI y la Base de Datos: verde (conectado), rojo (desconectado) o gris (no configurado). Pasar el mouse sobre ellos muestra el panel completo con más detalle."
                        style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
 
                 <Separator/>
@@ -197,7 +197,7 @@
                        text="Se utiliza cuando un usuario devuelve equipamiento. Requiere seleccionar un Motivo (Fin de préstamo, Falla, Fin de contrato u Otro). Si el Motivo seleccionado es &quot;Falla&quot;, se abre automáticamente una ventana para indicar la causa de la falla (obligatoria) y un detalle adicional (opcional); cancelar esa ventana vuelve a dejar el Motivo sin seleccionar."
                        style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
 
-                <Label text="3.3  Fin de Contrato"
+                <Label text="3.3  Entrega Permanente"
                        style="-fx-font-size: 13px; -fx-font-weight: bold; -fx-text-fill: #334155;"/>
                 <Label wrapText="true"
                        text="Variante de la devolución que indica explícitamente la finalización de la relación laboral del usuario con la institución. Se usa cuando el motivo de devolución es el egreso del empleado."

@@ -14,7 +14,6 @@ import javafx.application.Platform;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Parent;
 import javafx.scene.control.ComboBox;
-import javafx.scene.control.ToggleButton;
 import javafx.stage.Window;
 
 import org.junit.jupiter.api.BeforeAll;
@@ -63,14 +62,14 @@ class UserNoteFallaPersistenceTest {
 
             Set<Window> before = new HashSet<>(Window.getWindows());
 
-            l.btnDevolucion.setSelected(true);
+            l.controller.setNoteType("DEVOLUCIÓN");
             l.cmbMotivo.setValue("Falla");
 
             assertEquals(0, newWindowCount(before),
                 "Setting an already-confirmed Falla should not open the detail popup");
 
-            l.btnEntrega.setSelected(true);
-            l.btnDevolucion.setSelected(true);
+            l.controller.setNoteType("ENTREGA");
+            l.controller.setNoteType("DEVOLUCIÓN");
 
             assertEquals("No enciende", l.controller.getFailureCause(),
                 "Failure cause must persist across a type switch even when details were left blank");
@@ -91,14 +90,14 @@ class UserNoteFallaPersistenceTest {
 
             Set<Window> before = new HashSet<>(Window.getWindows());
 
-            l.btnDevolucion.setSelected(true);
+            l.controller.setNoteType("DEVOLUCIÓN");
             l.cmbMotivo.setValue("Falla");
 
             assertEquals(0, newWindowCount(before),
                 "Setting an already-confirmed Falla should not open the detail popup");
 
-            l.btnEntrega.setSelected(true);
-            l.btnDevolucion.setSelected(true);
+            l.controller.setNoteType("ENTREGA");
+            l.controller.setNoteType("DEVOLUCIÓN");
 
             assertEquals("No enciende", l.controller.getFailureCause(),
                 "Failure cause must persist across a type switch when details were also filled");
@@ -158,8 +157,6 @@ class UserNoteFallaPersistenceTest {
 
     private static class Loaded {
         UserNoteController controller;
-        ToggleButton btnDevolucion;
-        ToggleButton btnEntrega;
         ComboBox<String> cmbMotivo;
     }
 
@@ -169,13 +166,10 @@ class UserNoteFallaPersistenceTest {
         Parent root = loader.load();
         Loaded l = new Loaded();
         l.controller = loader.getController();
-        l.btnDevolucion = (ToggleButton) root.lookup("#btnTypeDevolucion");
-        l.btnEntrega = (ToggleButton) root.lookup("#btnTypeEntrega");
         @SuppressWarnings("unchecked")
         ComboBox<String> cmb = (ComboBox<String>) root.lookup("#cmbMotivo");
         l.cmbMotivo = cmb;
-        assertNotNull(l.btnDevolucion);
-        assertNotNull(l.btnEntrega);
+        assertNotNull(l.controller);
         assertNotNull(l.cmbMotivo);
         return l;
     }

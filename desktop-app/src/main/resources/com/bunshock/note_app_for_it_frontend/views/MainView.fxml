@@ -13,6 +13,7 @@
    <fx:define>
       <ToggleGroup fx:id="flyoutMovimientosGroup" />
       <ToggleGroup fx:id="flyoutPrestamosGroup" />
+      <ToggleGroup fx:id="flyoutEnviosGroup" />
    </fx:define>
 
    <top>
@@ -30,6 +31,18 @@
                <HBox.margin><Insets left="10"/></HBox.margin>
             </Label>
             <Region HBox.hgrow="ALWAYS"/>
+            <!-- Compact status preview: mirrors circleAD/circleGLPI/circleDB's colors (kept in
+                 sync by MainController's updateADStatus/updateGLPIStatus/updateDBStatus). Hovering
+                 opens the full "ESTADO DE SERVICIOS" panel (statusPanel below, reparented into a
+                 PopOver at runtime by MainController.setupTitleBarStatusHover()). -->
+            <HBox fx:id="statusPreview" spacing="6" alignment="CENTER" style="-fx-cursor: hand;">
+               <HBox.margin><Insets right="14"/></HBox.margin>
+               <children>
+                  <Circle fx:id="circleADMini" radius="4.0" fill="#ff9800" stroke="#ffffff" strokeWidth="1.0"/>
+                  <Circle fx:id="circleGLPIMini" radius="4.0" fill="#f44336" stroke="#ffffff" strokeWidth="1.0"/>
+                  <Circle fx:id="circleDBMini" radius="4.0" fill="#94a3b8" stroke="#ffffff" strokeWidth="1.0"/>
+               </children>
+            </HBox>
             <Button fx:id="btnLogout" text="Cerrar sesión" onAction="#handleLogout" styleClass="title-bar-logout-button">
                <HBox.margin><Insets right="10"/></HBox.margin>
             </Button>
@@ -162,6 +175,23 @@
                </children>
             </VBox>
 
+            <Button text="Envíos" fx:id="btnEnviosGroup"
+                  maxWidth="Infinity" styleClass="nav-button" onAction="#handleToggleEnviosFlyout"/>
+            <VBox fx:id="flyoutEnvios" visible="false" managed="false" spacing="4" prefWidth="235" styleClass="nav-flyout">
+               <children>
+                  <ToggleButton text="Remito de Envío" fx:id="btnRemito" toggleGroup="$flyoutEnviosGroup"
+                        maxWidth="Infinity" styleClass="nav-button" onAction="#handleShowRemito"/>
+                  <ToggleButton text="Historial de Envíos" fx:id="btnHistorialEnvios" toggleGroup="$flyoutEnviosGroup"
+                        maxWidth="Infinity" styleClass="nav-button" onAction="#handleShowHistorialEnvios"/>
+               </children>
+            </VBox>
+
+            <!-- Separator -->
+            <Region maxWidth="Infinity"
+                    style="-fx-background-color: rgba(255,255,255,0.15); -fx-min-height: 1; -fx-max-height: 1;">
+               <VBox.margin><Insets left="12" right="12" top="4" bottom="4"/></VBox.margin>
+            </Region>
+
             <Button text="Base de Datos" fx:id="btnData"
                   maxWidth="Infinity" styleClass="nav-button" onAction="#handleShowDatabase"/>
 
@@ -179,8 +209,12 @@
             <Button text="Acerca de" fx:id="btnAbout"
                   maxWidth="Infinity" styleClass="nav-button" onAction="#handleShowAbout"/>
 
-            <!-- Server status -->
-            <VBox spacing="8" style="-fx-padding: 15 0 0 0;">
+            <!-- Server status — declared hidden/unmanaged here, same "reparented at runtime"
+                 pattern as flyoutMovimientos/flyoutPrestamos/flyoutEnvios above.
+                 MainController.setupTitleBarStatusHover() moves this into a PopOver's content
+                 node and flips visible/managed back to true, anchored off statusPreview above. -->
+            <VBox fx:id="statusPanel" spacing="8" visible="false" managed="false"
+                  style="-fx-background-color: #0c8570; -fx-background-radius: 8; -fx-border-color: rgba(255,255,255,0.18); -fx-border-width: 1; -fx-border-radius: 8; -fx-padding: 10;">
                <children>
                   <Label text="ESTADO DE SERVICIOS" style="-fx-text-fill: rgba(255,255,255,0.5); -fx-font-size: 9px; -fx-font-weight: bold; -fx-letter-spacing: 1px;"/>
                   <!-- Active Directory -->

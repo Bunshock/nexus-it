@@ -54,6 +54,9 @@ public class ProviderNoteController {
 
         refreshProviders();
 
+        // Disable-only, deliberately — the fields stay visible (just grayed out) when unchecked,
+        // per explicit user direction, so the form's layout doesn't shift when this checkbox is
+        // toggled. Superseded the earlier visible/managed toggle that was here.
         chkEnableResponsible.selectedProperty().addListener((obs, was, now) ->
             gridResponsibleDetails.setDisable(!now));
         chkEnableCuit.selectedProperty().addListener((obs, was, now) -> txtCuit.setDisable(!now));
@@ -164,7 +167,7 @@ public class ProviderNoteController {
         cmbProviderSearch.getSelectionModel().clearSelection();
         cmbProviderSearch.setValue(null);
         txtCuit.clear();
-        chkEnableCuit.setSelected(true);
+        chkEnableCuit.setSelected(false);
         cmbMotivo.getSelectionModel().clearSelection();
         chkEnableResponsible.setSelected(false);
         txtProviderResponsibleName.clear();

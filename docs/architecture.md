@@ -106,7 +106,7 @@ desktop-app/src/main/java/com/bunshock/note_app_for_it_frontend/
 ├── controllers/
 │   ├── MainController.java           — Root layout: sidebar nav, status polling, AD startup lookup
 │   ├── NoteGeneratorController.java  — Equipment tables, note profile switching, generate trigger
-│   ├── UserNoteController.java       — User note fields: type toggle, Motivo, AD search
+│   ├── UserNoteController.java       — User note fields: Motivo, AD search (note type set externally via setNoteType())
 │   ├── ProviderNoteController.java   — Provider note fields: name, CUIT, Motivo, responsible
 │   ├── ItemDialogController.java     — Add/edit item: cascading dropdowns, S/N, A/F, quantity
 │   ├── NotePreviewController.java    — Preview popup: rendered HTML, print/email options
@@ -214,6 +214,7 @@ classDiagram
         +getModelsForBrandAndType(brandId, typeId) List~EquipmentModel~
         +getAllProviders() List~EquipmentProvider~
         +getAllSedes() List~Sede~
+        +getSedeShippingInfo(sedeId) Optional~SedeShippingInfo~
         +getSnValidation(modelId) Optional~SnValidation~
         +addType(name, isAsset)
         +addBrand(name) addModel(name, brandId, typeId)
@@ -222,6 +223,7 @@ classDiagram
         +setRequiresSerial(typeId, requiresSerial)
         +getModelStock(modelId, brandId, typeId) int
         +setModelStock(modelId, brandId, typeId, stock)
+        +adjustModelStock(modelId, brandId, typeId, sedeId, delta)
         +getStockTotalsByType() Map~int,int~
         +getStockTotalsByBrandForType(typeId) Map~int,int~
         +getStockTotalsByModelForBrandAndType(brandId, typeId) Map~int,int~
@@ -344,7 +346,7 @@ including the rejected code-only-permission-map alternative and every Sede-scopi
 - **Error handling**: any non-200 response (401 `invalid_api_key`/`missing_api_key`, 5xx, network failure) throws, so existing callers (e.g. `TechnicianSessionService`) can keep distinguishing "AD reachable, zero matches" from "AD unreachable" without change. A `200` with an empty array is a normal zero-match result.
 - **Any DTO field can be a JSON array**: discovered 2026-07-08 via two real crashes (`MismatchedInputException`) on the same broad search — first on `dni`, then (after fixing that one field) again on `mail` for the same account. Confirmed this isn't a one-field quirk: every field on `AdApiUserDto` (`samAccountName`, `displayName`, `dni`, `mail`, `ou`) is typed `JsonNode`, not `String`, and normalized via `extractString()`: plain string → as-is, array → first element (or `""` if empty), `null`/missing → `null`. If a crash on this DTO ever recurs, it's almost certainly a new field needing the same treatment, not a one-off.
 - **`dni`/`displayName` are normalized at the same `toADUser()` boundary** (2026-07-10 fix): the real AD API returns `dni` with thousands-separator dots (`"00.000.000"`) and `displayName` as `"Apellido, Nombre"`. Every destination `TextField` for these values (`UserNoteController.txtUserDni`/`txtUserName`, `ProfileController.txtProfileDni`/`txtProfileName`) has a `TextFormatter` restricting input to digits-only or letters-and-spaces — and `TextFormatter` filters programmatic `setText()` calls exactly like typed input, so an un-normalized value is silently rejected instead of shown (the field is left blank). `AdApiService.normalizeDni()` strips non-digit characters; `normalizeName()` strips the comma and collapses whitespace, keeping AD's `"Apellido Nombre"` word order as-is (no reordering to "Nombre Apellido"). `MockADService`'s fixture data was already in the clean format, which is why this went unnoticed until tested against the real API's raw shape.
-- **Reachability check**: `MainController`'s periodic 60s AD status poll queries by the current technician's own already-resolved username (`TechnicianSessionService.getUsername()`) instead of an unbounded/empty query, to avoid pulling the full directory just to check liveness; the sidebar dot shows a third gray "No configurado" state via `IADService.isConfigured()` when the URL/token aren't set, distinct from red "Desconectado".
+- **Reachability check**: `MainController`'s periodic 60s AD status poll queries by the current technician's own already-resolved username (`TechnicianSessionService.getUsername()`) instead of an unbounded/empty query, to avoid pulling the full directory just to check liveness; the status dot shows a third gray "No configurado" state via `IADService.isConfigured()` when the URL/token aren't set, distinct from red "Desconectado". The AD/GLPI/DB status dots themselves moved from a permanent sidebar block to a compact 3-dot title-bar preview (`statusPreview`, next to "Cerrar sesión") with the full panel (`statusPanel`, unchanged content/logic) shown in a `PopOver` on hover — see "Title Bar Status Hover Panel" below.
 - **`ADUser` no longer carries group memberships** — the real API's DTO has no such field. It now carries the raw `ou` string (e.g. `OU=2025,OU=Bajas,OU=Cau2018,OU=SEDES CAU`) in the existing `distinguishedName` field, shown as-is in `ADUserSelectionController`'s multi-result popup; the "GRUPOS" line was removed.
 
 ### Technician Display Name Preference (TechnicianSessionService)
@@ -362,6 +364,12 @@ Added 2026-07-22, a second exception to `TechnicianSessionService`'s otherwise s
 - **UI**: `SettingsController`'s "SEDE" field (`SettingsView.fxml`) — placed in Configuración per explicit user request, not Mi Perfil, even though the value is per-technician like the display name. Not admin-gated: always editable, with its own "Guardar" button (`handleSaveSede()`), unlike every other field in that panel.
 - **Mandatory to generate a note**: `NoteGeneratorController.handleGenerateNote()` and `PrestamoNewLoanController.handleGuardarPrestamo()` both block (same pattern as the existing AD-profile-incomplete check) if `getSede()` is blank, showing a dedicated warning directing the technician to Configuración.
 - **Snapshotted onto every note, printed on every template**: `NOTE_REPORT.sede` stores the value at generation time (same "snapshot, don't reference" pattern as `technician_name`/`technician_dni`/`observations`), rendered via a `{{SEDE}}` token. On all 5 templates (`entrega.html`, `devolucion.html`, `entrega - fin de contrato.html`, `proveedor.html`, `prestamo.html`) it replaces a previously hardcoded "Campus" in the intro sentence ("En la sede {{SEDE}} de la Universidad Siglo 21...").
+
+### Title Bar Status Hover Panel
+The AD/GLPI/DB status indicators moved from a permanent block at the bottom of the sidebar into the title bar, to keep the sidebar's fixed-height budget from growing. `MainView.fxml`'s original "Estado de Servicios" `VBox` (header label + 3 `Circle`+`Label`+`Tooltip` rows) is unchanged in content and is still what `MainController`'s `updateADStatus()`/`updateGLPIStatus()`/`updateDBStatus()` write to — it's just declared `visible="false" managed="false"` and reparented at runtime (`setupTitleBarStatusHover()`, same "declared hidden, reparented into a floating container" pattern the Movimientos/Préstamos/Envíos nav flyouts already use) into an `org.controlsfx.control.PopOver`. A compact 3-dot preview (`statusPreview`, next to "Cerrar sesión") mirrors the same 3 circles' colors; hovering it (a `PauseTransition`-delayed show, same ~400ms pattern `ADUserSelectionController`'s own AD-result hover popover already uses, chosen over the click-toggled `Popup` the nav flyouts use since hover needs none of their outside-click/focus-loss plumbing) opens the full panel.
+
+### Generar Nota — Flattened Note-Type Selector
+The old two-level type selection (a top-level "NOTA PARA USUARIO"/"NOTA PARA PROVEEDOR" toggle in `NoteGeneratorView.fxml`, plus — only when Usuario was picked — a second inner 4-button "TIPO DE MOVIMIENTO" stack inside `UserNoteView.fxml` for Entrega/Devolución/Préstamo/Entrega Permanente) was replaced by one `ComboBox` (`cmbNoteType`) at the top of Generar Nota listing all 5 types flat, plus a plain `page-title-card`/`page-title` header ("GENERAR NOTA") where the old toggle used to sit — a `ComboBox` doesn't grow taller as more note types are added, unlike a button stack. `NoteGeneratorController.NoteTypeOption` (a private record: raw type string, display label, `isProvider` flag) drives both the dropdown's display text and which sub-view (`UserNoteView` vs `ProviderNoteView`) is shown; raw values (`"ENTREGA"`/`"DEVOLUCIÓN"`/`"ENTREGA PERMANENTE"`/`"PRÉSTAMO"`) are unchanged from what `UserNoteController.getSelectedNoteType()` always returned, so `NOTE_REPORT.profile_type`/History/`toDisplayName()` needed no changes. `UserNoteController` no longer owns type selection internally — `setNoteType(String)` is a new public entry point `NoteGeneratorController` calls whenever the combobox selection changes to a non-Proveedor option, replacing what the removed toggle-group listener used to do (Motivo-options reload, Fecha Tentativa/Área Evento visibility, Falla-popup trigger checks) — the Falla-persistence-across-type-switch behavior and `restoringMotivo` guard are unchanged, just re-keyed from the removed `ToggleButton` objects to plain type strings.
 
 ### ViewFactory — State Persistence Across Navigation
 `ViewFactory` loads each section FXML exactly once and caches the result. When `MainController` switches sections via sidebar, it calls `viewFactory.getXxxView()` which returns the cached node. Controller instances — and their bound data — remain alive in memory for the session. This implements FR-08 (in-session data persistence).
@@ -410,6 +418,80 @@ Added 2026-07-17. Closes the gap left by the existing Préstamo note type (see `
 - **`PrestamoHistoryController`**: a Préstamo-scoped, GLPI-free sibling of `HistoryController`, reusing the existing `IHistoryService.getFiltered()` (profile type fixed to Préstamo) — no new listing query. Adds an overdue "Vencido" visual (red border) when a row has pending items past its tentative return date.
 - **`PrestamoDetailController`**: a separate popup (not a branch inside `NoteDetailController`, which stays GLPI-only) showing per-item return status with admin-gated "Validar devolución"/"Marcar como perdido" actions, mirroring `buildGlpiStatusRow()`'s exact admin-gating pattern.
 - **No new header-level table** — `profile_type = 'PRÉSTAMO'` plus the existing `motivo` column (tentative date) are enough to identify and list a Préstamo note.
+
+### Remito de Envío Section (inter-Sede stock transfer)
+
+Its own top-level sidebar group, "Envíos" (a sibling of Movimientos/Préstamos, not nested inside
+either), with two flyout items: "Remito de Envío" (`RemitoNoteController`/`RemitoNoteView.fxml` —
+not a third toggle inside Generar Nota, which was this feature's original, since-removed
+2026-07-24 design; see `docs/database.md`'s `NOTE_REMITO` entry and CLAUDE.md's note on the old
+removal for why this is a re-derived design, not a resurrection) and "Historial de Envíos"
+(`RemitoHistoryController`/`RemitoHistoryView.fxml`, below). Both are wrapped by
+`EnviosController`/`EnviosView.fxml` — a page-title-card header (text set programmatically by
+`showRemitoTab()`/`showHistorialTab()`) plus a `dynamicContentArea` StackPane swapping between the
+two child views, an exact mirror of `PrestamosController`/`PrestamosView.fxml`'s own shape (see
+"Préstamos section" above) — chosen over giving `RemitoNoteView`/`RemitoHistoryView` their own
+independent page titles (the `HistoryView.fxml` pattern) specifically to match how the sibling
+"Préstamos" flyout group already looks, since both groups have the same "two full-screen leaf
+items switched from one flyout" structure. Ships equipment from the technician's own assigned Sede to either a `SEDE`-catalog
+destination (`cmbDestinationSede`, auto-fills `destino`/`dirección`/`destinatarios` from the new
+read-only `SEDE_SHIPPING_INFO` table if configured for that Sede — the 3 fields are disabled
+(read-only, reflecting the catalog data) while a Sede is picked, and only become editable once
+"Personalizar destino" is checked) or a custom one-off destination via that same checkbox (e.g. a
+CAU not in the catalog — no stock is tracked there).
+
+**Own dedicated history, not just the global one — added the same day, direct user request after
+noticing a Remito's "Destinatario"/"Motivo" columns showed blank in the global Historial** (neither
+maps to anything a Remito has). Remitos still appear in the global Historial too, same as Préstamo
+notes already do — `LIST_BASE_SQL`'s `recipient` COALESCE gained a `rm.destination_label` fallback
+so that column at least shows the destination there now, but a Remito has no real "Motivo" and that
+column stays blank in the global view, an accepted quirk of a mixed-type table (same as e.g.
+"Fecha Tentativa" not applying to non-Préstamo rows). "Historial de Envíos"
+(`RemitoHistoryController`) is a Remito-scoped sibling of `HistoryController`/
+`PrestamoHistoryController` — same duplicated shape, filtered to `profileTypes = ["REMITO DE
+ENVÍO"]`. Unlike Préstamo, Remito has no per-item tracking dimension at all (no GLPI, no return
+status), so its own dedicated columns are Destino/Dirección/Destinatarios (from `NOTE_REMITO`,
+added to `LIST_BASE_SQL` alongside the recipient fix above) and a narrow colored status column
+keyed on **approval status** instead of a return-status mix — approval is the only state that
+actually matters for a Remito, since it's what triggers the stock movement. Double-clicking a row
+reuses the existing `NoteDetailController` as-is (not a new dedicated detail popup like
+`PrestamoDetailController`) — a Remito's only admin action is the note-level Aprobar/Rechazar,
+already generic across every profile type, and its items render with no GLPI/return-status rows at
+all since both are N_A.
+
+- **Item tables reused, person/AD-lookup dropped**: `RemitoNoteController implements ItemDialogHost`
+  and duplicates `PrestamoNewLoanController`'s equipment-table wiring (its closest precedent as a
+  top-level, flyout-driven screen) — but has no `AdSearchHost`/borrower-identity fields at all,
+  since a Remito's "recipient" is a Sede or a free-text destination, not a person.
+- **Does render/print**, unlike Préstamo's no-print "Cargar Nuevo Préstamo" entry point — routes
+  through the same `NotePreviewController` preview/print/save popup every other note type uses via
+  `NoteGeneratorController.openPreview()` (duplicated here per the no-shared-abstraction
+  convention), rendering a new `templates/remito.html` (`NoteGenerationService.generateRemitoNote()`)
+  — a first-pass template, not a finished design, per the user's own note that its design would
+  come later.
+- **Stock only moves on approval, never at generation time** — the single biggest departure from
+  every prior note type, and the reason this needed its own design pass rather than just reusing
+  the approval workflow as-is: a Remito is the first note type whose approval has a real side
+  effect on `MODEL_STOCK`, not just a paper trail. `SqliteHistoryService.updateNoteApprovalStatus()`
+  detects the `PENDING → APPROVED` transition for a Remito (a `NOTE_REMITO` row exists,
+  `stock_applied = 0`), aggregates quantity per (model, brand, type) across the note's items,
+  verifies the source Sede has enough of each *before* writing anything, then calls the new
+  `IEquipmentService.adjustModelStock(modelId, brandId, typeId, sedeId, delta)` — a delta-based
+  sibling to the existing absolute-value `setModelStock()`, implemented as an explicit-transaction
+  read-then-write so two concurrent adjustments to the same (model, sede) can't race. Decrements the
+  source Sede always; increments the destination Sede only when it's a real catalog Sede (a custom
+  destination has nothing to increment). Sets `stock_applied = 1` once done, so re-approving never
+  double-applies. Rejecting a Remito never touches stock at all — same guarantee the approval
+  workflow already gives every other note type, now actually load-bearing for a real operational
+  number instead of just a history record.
+- **GLPI/return tracking**: Remito assets are `GlpiStatus.N_A` (an inter-Sede move, not an
+  assignment to a person — same reasoning already documented for excluding Préstamo assets from
+  GLPI sync) and `ReturnStatus.N_A` (items don't come back, unlike Préstamo) — `NotePreviewController.
+  buildReportWithItems()` gained an `isRemito` check alongside its existing `isPrestamo` one.
+- **`SEDE_SHIPPING_INFO`**: read-only from the app's side (`IEquipmentService.getSedeShippingInfo(sedeId)`)
+  — a superadmin configures a Sede's Remito destination label/address/recipients directly via SQL,
+  same "no in-app CRUD" convention as `PROVIDER`/`SEDE` themselves (see the Provider Catalog section
+  above).
 
 ---
 
@@ -522,4 +604,12 @@ flowchart LR
 
     PrestamoDetailController -->|return-status updates| ServiceLocator
     PrestamoDetailController -->|gates Validar/Marcar como perdido| AdminSession
+
+    RemitoNoteController --> ServiceLocator
+    RemitoNoteController -->|destination Sede + SEDE_SHIPPING_INFO| IEquipmentService
+    RemitoNoteController --> NoteGenerationService
+    RemitoNoteController -->|preview/print/save, same as NoteGeneratorController| NotePreviewController
+
+    RemitoHistoryController -->|filtered queries| ServiceLocator
+    RemitoHistoryController -->|reuses the existing detail popup, no dedicated one| NoteDetailController
 ```

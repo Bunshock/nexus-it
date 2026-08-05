@@ -87,11 +87,42 @@ public class NoteGenerationService {
         return engine.render(template, tokens, loops);
     }
 
+    // Source Sede, destination label/address/recipients, technician, and item lists — a Remito
+    // has no Motivo/user-recipient/failure/area-evento concepts, unlike generateUserNote().
+    public String generateRemitoNote(String sourceSede,
+                                     String destinationLabel, String address, String recipients,
+                                     String technicianName, String technicianDni,
+                                     List<AssetItem> assets, List<CountableItem> countables,
+                                     String observations) throws IOException {
+        String template = loadTemplate("remito.html");
+
+        Map<String, String> tokens = new LinkedHashMap<>();
+        tokens.put("TEMPLATE_NAME", "Remito de Envío");
+        tokens.put("DATE", LocalDateTime.now().format(DT_FMT));
+        tokens.put("SEDE", sourceSede != null ? sourceSede : "");
+        tokens.put("DESTINATION_LABEL", destinationLabel != null ? destinationLabel : "");
+        tokens.put("ADDRESS", address != null ? address : "");
+        tokens.put("RECIPIENTS", recipients != null ? recipients : "");
+        tokens.put("TECHNICIAN_NAME", technicianName);
+        tokens.put("TECHNICIAN_DNI", technicianDni);
+        tokens.put("OBSERVATIONS", observations);
+
+        Map<String, List<Map<String, String>>> loops = new LinkedHashMap<>();
+        loops.put("ASSET_ITEMS", buildAssetItemTokens(assets));
+        loops.put("HAS_ASSET_ITEMS", presenceFlag(!assets.isEmpty()));
+        loops.put("COUNTABLE_ITEMS", buildCountableItemTokens(countables));
+        loops.put("HAS_COUNTABLE_ITEMS", presenceFlag(!countables.isEmpty()));
+
+        return engine.render(template, tokens, loops);
+    }
+
     /** Re-renders a stored NoteReport back into HTML for the history detail view. */
     public String generateFromStoredReport(NoteReport report) throws IOException {
-        String templateName = report.getProviderName() != null
-            ? "proveedor.html"
-            : resolveTemplateName(report.getProfileType());
+        String templateName = report.getDestinationLabel() != null
+            ? "remito.html"
+            : report.getProviderName() != null
+                ? "proveedor.html"
+                : resolveTemplateName(report.getProfileType());
         String template = loadTemplate(templateName);
 
         String dateStr = report.getCreatedAt() != null
@@ -113,6 +144,9 @@ public class NoteGenerationService {
         tokens.put("COMPANY_NAME", orEmpty(report.getProviderName()));
         tokens.put("RESPONSIBLE_NAME", orEmpty(report.getResponsibleName()));
         tokens.put("RESPONSIBLE_DNI", orEmpty(report.getResponsibleDni()));
+        tokens.put("DESTINATION_LABEL", orEmpty(report.getDestinationLabel()));
+        tokens.put("ADDRESS", orEmpty(report.getAddress()));
+        tokens.put("RECIPIENTS", orEmpty(report.getRecipients()));
 
         List<Map<String, String>> assetTokens = new ArrayList<>();
         List<Map<String, String>> countableTokens = new ArrayList<>();
@@ -252,9 +286,10 @@ public class NoteGenerationService {
             case "DEVOLUCION"          -> "Devolución";
             case "PRÉSTAMO"            -> "Préstamo";
             case "PRESTAMO"            -> "Préstamo";
-            case "ENTREGA PERMANENTE"  -> "Fin de contrato";
-            case "FIN DE CONTRATO"     -> "Fin de contrato";
+            case "ENTREGA PERMANENTE"  -> "Entrega Permanente";
+            case "FIN DE CONTRATO"     -> "Entrega Permanente";
             case "ENTREGA - PROVEEDOR" -> "Entrega - Proveedor";
+            case "REMITO DE ENVÍO"     -> "Remito de Envío";
             default                    -> profileType;
         };
     }

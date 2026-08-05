@@ -80,7 +80,17 @@
 
 ##### 9. Provider Equipment Return Tracking
 
-- **FR-29**: The system shall track a return status (Pendiente/Recibido/No recibido) per item on a Provider note whenever its Motivo is in an administrator-configured list of returnable motivos (e.g. Garantía, Reparación), using the same underlying mechanism as Préstamo return tracking (FR-22) but with Provider-appropriate wording, and leaving items on non-returnable Provider notes untracked (same as Entrega/Fin de Contrato).
+- **FR-29**: The system shall track a return status (Pendiente/Recibido/No recibido) per item on a Provider note whenever its Motivo is in an administrator-configured list of returnable motivos (e.g. Garantía, Reparación), using the same underlying mechanism as Préstamo return tracking (FR-22) but with Provider-appropriate wording, and leaving items on non-returnable Provider notes untracked (same as Entrega/Entrega Permanente).
+
+##### 10. Inter-Sede Stock Transfer (Remito de Envío)
+
+- **FR-30**: The system shall allow a technician to generate a Remito de Envío note, reachable from a dedicated "Envíos" sidebar group, shipping one or more equipment items from their own assigned Sede to either an administrator-curated destination Sede (destination label, address, and recipients auto-filled from that Sede's saved shipping info and disabled/read-only) or a freely-typed custom destination (the three fields cleared and made editable via a "Personalizar destino" checkbox), producing a printed note the same way as every other note type.
+
+- **FR-31**: The system shall move stock (`MODEL_STOCK`) only when an administrator approves a Remito note — decrementing the source Sede's stock for every shipped item and, only when the destination is a real catalog Sede, incrementing that Sede's stock by the same amount — never at note generation time, and shall reject the approval outright (with no partial effect) if it would drive the source Sede's stock below zero for any item.
+
+- **FR-32**: Remito note items shall not be tracked for GLPI sync or return status, since a Remito represents an inter-Sede stock movement rather than an assignment to a person or a loan expected to come back.
+
+- **FR-33**: The system shall provide a dedicated "Historial de Envíos" view, reachable from the same "Envíos" sidebar group, scoped to Remito notes only, showing Destino/Dirección/Destinatarios and approval-status columns not present in the global Historial, with filtering by date, Estado, Destino, Autor, and Sede Origen (defaulting to the technician's own assigned Sede) — in addition to, not instead of, Remito notes' continued appearance in the global Historial.
 
 ### Non-Functional Requirements (NFR)
 
@@ -260,3 +270,28 @@
         - There is no Sede selector left anywhere in Settings or Mi Perfil — Sede is entirely read-only from the technician's perspective.
         - A technician with no Sede assigned sees a standing warning in the sidebar (not just a hidden/blank line) and a one-time popup at startup, and cannot generate a note or register a Préstamo until a superadmin assigns one.
         - A sidebar badge showing pending GLPI-sync/approval/return counts is scoped to a plain ADMIN's own Sede, and shows the global count for a SUPERADMIN or a non-admin technician.
+
+##### 9. Inter-Sede Stock Transfer
+
+- **US 9.1** - **Ship Equipment Between Sedes**: As a technician, I want to generate a note that ships equipment from my own Sede to another Sede (or a custom destination like a CAU), so that the transfer is documented and reflected in stock without a separate paper process.
+    - ***Acceptance Criteria***:
+        - "Remito de Envío" is a submenu under its own "Envíos" sidebar group, alongside "Historial de Envíos".
+        - Source Sede is always the technician's own assigned Sede, shown read-only.
+        - Destination is either a picked Sede (auto-filling saved destination/address/recipients as disabled/read-only fields) or a "Personalizar destino" custom entry with no catalog tie, which clears and enables the three fields for free typing.
+        - The note previews, prints, and saves the same way as every other note type.
+
+- **US 9.3** - **Dedicated Envíos History**: As a technician, I want a history view scoped to Remito notes with their own Destino/Dirección/Destinatarios columns, so that I don't have to read those details out of blank/generic global-history columns.
+    - ***Acceptance Criteria***:
+        - "Historial de Envíos" is reachable from the "Envíos" sidebar group, next to "Remito de Envío".
+        - The table shows Fecha, Autor, Sede Origen, Destino, Dirección, Destinatarios, Ítems, and Estado, with a colored strip reflecting approval status (orange/red/green).
+        - Filters: date range, Estado (multi-select), Destino text search, Autor text search, Sede Origen (multi-select, defaulting to the technician's own assigned Sede).
+        - Double-clicking a row opens the same note detail popup used by the global Historial, including Aprobar/Rechazar when the session holds the permission.
+        - Remito notes still also appear in the global Historial, unchanged — this view is additional, not a replacement.
+
+- **US 9.2** - **Stock Moves Only on Approval**: As an administrator, I want a Remito's stock impact to happen only when I approve it, so that a mistakenly-generated transfer can be rejected without corrupting real stock counts.
+    - ***Acceptance Criteria***:
+        - A newly-generated Remito starts PENDING, same as every other note type, with no stock changed yet.
+        - Approving it decrements the source Sede's stock for every item, and increments the destination Sede's stock by the same amount only if a real catalog Sede was chosen.
+        - Rejecting it never touches stock.
+        - Attempting to approve a Remito that would ship more than the source Sede currently has blocks the approval with an error, changing nothing.
+        - Re-approving an already-approved Remito never applies the stock movement a second time.
