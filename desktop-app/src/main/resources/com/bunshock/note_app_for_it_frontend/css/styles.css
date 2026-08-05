@@ -208,6 +208,14 @@
     -fx-text-fill: #475569;
 }
 
+/* Sede name inside .page-subtitle — a softer, muted teal (not .page-title-card's hard #0c8570
+   accent) so it reads as a highlight, not a second heading. */
+.page-subtitle-sede {
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #3f9d8f;
+}
+
 /* Primary action button */
 .button-primary {
     -fx-background-color: #0c8570;
@@ -371,6 +379,35 @@
     -fx-padding: 0 8;
 }
 
+/* Base de Datos' "↻ Actualizar datos" button, next to cmbStockSede — its own class (not
+   .button-primary itself) purely so its padding/border-width can be tuned to height-match the
+   Sede combobox beside it, but reusing .button-primary's exact colors (#0c8570 solid fill, white
+   text, #0e9a82 hover) rather than inventing a new palette — explicit user feedback that an
+   earlier light-teal-outline attempt looked unlike any other button in the app; this is the same
+   solid-teal look already used by the "+ Agregar" buttons directly below in this same view.
+   Vertical padding started at 6 (matching .combo-box.sede-combo's own list-cell padding) to
+   height-match the Sede combobox beside it, then trimmed to 4 (.button-primary's own default)
+   per direct user feedback that it still read a few pixels too tall next to the combobox. */
+.button-refresh-catalog {
+    -fx-background-color: #0c8570;
+    -fx-text-fill: white;
+    -fx-font-weight: bold;
+    -fx-border-color: transparent;
+    -fx-border-width: 1.5;
+    -fx-border-radius: 4;
+    -fx-background-radius: 4;
+    -fx-padding: 4 14;
+    -fx-cursor: hand;
+}
+.button-refresh-catalog:hover {
+    -fx-background-color: #0e9a82;
+    -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.1), 5, 0, 0, 2);
+}
+.button-refresh-catalog:pressed {
+    -fx-translate-y: 1px;
+    -fx-effect: none;
+}
+
 /* Compact input for filter bars (date pickers + combo boxes) */
 .form-input-filter {
     -fx-background-color: white;
@@ -411,10 +448,25 @@
 }
 .date-picker.form-input-filter > .arrow-button {
     -fx-background-color: transparent;
-    -fx-padding: 0 6;
+    -fx-background-radius: 100;
+    -fx-min-width: 22;
+    -fx-min-height: 22;
+    -fx-max-width: 22;
+    -fx-max-height: 22;
+    -fx-alignment: CENTER;
+}
+.date-picker.form-input-filter > .arrow-button:hover {
+    -fx-background-color: rgba(12, 133, 112, 0.14);
+}
+.date-picker.form-input-filter > .arrow-button:pressed {
+    -fx-background-color: rgba(12, 133, 112, 0.24);
 }
 .date-picker.form-input-filter > .arrow-button .arrow {
-    -fx-background-color: #475569;
+    -fx-background-color: #0c8570;
+    -fx-scale-x: 1.35;
+    -fx-scale-y: 1.35;
+    -fx-translate-x: -0.5;
+    -fx-translate-y: -1.5;
 }
 
 /* Multi-select MenuButton for filter bars */
@@ -704,6 +756,48 @@
     -fx-font-size: 10px;
     -fx-font-weight: bold;
     -fx-font-family: "Segoe UI", sans-serif;
+}
+
+/* Persistent (non-fading) stock-shortage indicator shown in Generar Nota/Cargar Préstamo/
+   Remito's equipment section header row (next to "+ Agregar Equipo") — a compact amber pill,
+   not a full-width banner, so its appearance never resizes the item tables below it. "Ver
+   detalle" reveals the full per-item breakdown as a hover PopOver (see
+   NoteGeneratorController/PrestamoNewLoanController/RemitoNoteController's
+   setupStockWarningHover()) — the popover's own content is built and inline-styled in Java,
+   same convention as ADUserSelectionController's hover preview, since a PopOver's popup Window
+   doesn't inherit this stylesheet. */
+/* A permanent, transparent 2px border reserves the same layout space at rest that
+   flashStockWarningPill() later fills with orange — same "always render the border, vary only
+   its color" fix already applied to Historial/Préstamos Historial's approval-status accent, so
+   the pill never grows/shifts sibling nodes (lblTableStatus, "+ Agregar Equipo") the instant the
+   flash animation starts. Java only ever sets -fx-border-color inline; width/radius stay here. */
+.stock-warning-inline {
+    -fx-padding: 2 8;
+    -fx-background-color: rgba(245, 158, 11, 0.12);
+    -fx-background-radius: 12;
+    -fx-border-width: 2;
+    -fx-border-color: transparent;
+    -fx-border-radius: 12;
+}
+.stock-warning-summary-inline {
+    -fx-text-fill: #b45309;
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+}
+.stock-warning-toggle {
+    -fx-text-fill: #b45309;
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-underline: false;
+    -fx-padding: 0;
+    -fx-border-color: transparent;
+}
+.stock-warning-toggle:hover {
+    -fx-text-fill: #92400e;
+    -fx-underline: true;
+}
+.stock-warning-toggle:visited {
+    -fx-text-fill: #b45309;
 }
 
 /* Sidebar button */
@@ -1190,6 +1284,130 @@
     -fx-border-width: 0;
     -fx-focus-color: transparent;
     -fx-faint-focus-color: transparent;
+}
+
+/* Calendar icon — every DatePicker in the app (Préstamo's Fecha Tentativa via .form-input-main,
+   History/Préstamos Historial's date filters via .form-input-filter, which further overrides
+   this with the same color above). Org teal replacing Modena's default dark mark. */
+.date-picker > .arrow-button {
+    -fx-background-color: transparent;
+    -fx-background-radius: 100;
+    -fx-min-width: 24;
+    -fx-min-height: 24;
+    -fx-max-width: 24;
+    -fx-max-height: 24;
+    -fx-alignment: CENTER;
+    -fx-cursor: hand;
+}
+.date-picker > .arrow-button:hover {
+    -fx-background-color: rgba(12, 133, 112, 0.14);
+}
+.date-picker > .arrow-button:pressed {
+    -fx-background-color: rgba(12, 133, 112, 0.24);
+}
+.date-picker > .arrow-button > .arrow {
+    -fx-background-color: #0c8570;
+    -fx-scale-x: 1.35;
+    -fx-scale-y: 1.35;
+    -fx-translate-x: -0.5;
+    -fx-translate-y: -1.5;
+}
+.date-picker > .arrow-button:hover > .arrow {
+    -fx-background-color: #0a6b5c;
+}
+
+/* Calendar popup — full redesign to match the app's teal/white card visual language (same
+   teal header + white body convention as .ad-header-gradient's dialogs, same corner radius/
+   shadow as .nav-flyout). Applies globally to every DatePicker's popup, since JavaFX renders
+   it in its own top-level popup window, not scoped by the anchoring control's own style class. */
+.date-picker-popup {
+    -fx-background-color: white;
+    -fx-background-insets: 0;
+    -fx-background-radius: 10;
+    -fx-border-color: #e2e8f0;
+    -fx-border-width: 1;
+    -fx-border-radius: 10;
+    -fx-effect: dropshadow(three-pass-box, rgba(0, 0, 0, 0.25), 16, 0, 0, 6);
+    -fx-padding: 0;
+}
+
+/* Month/year header bar + prev/next month arrows — light teal tint (not a solid dark fill,
+   which read too heavy for a small popup), dark teal text/icons instead of white so it doesn't
+   need to fight for contrast against a light background. */
+.date-picker-popup > .month-year-pane {
+    -fx-background-color: #e6f4f1;
+    -fx-background-radius: 10 10 0 0;
+    -fx-padding: 8 10;
+}
+.date-picker-popup > .month-year-pane > .label {
+    -fx-text-fill: #0c8570;
+    -fx-font-weight: bold;
+    -fx-font-size: 13px;
+}
+.date-picker-popup > .month-year-pane > .spinner > .button {
+    -fx-background-color: transparent;
+    -fx-background-radius: 4;
+    -fx-cursor: hand;
+}
+.date-picker-popup > .month-year-pane > .spinner > .button:hover {
+    -fx-background-color: rgba(12, 133, 112, 0.15);
+}
+.date-picker-popup > .month-year-pane > .spinner > .button > .left-arrow,
+.date-picker-popup > .month-year-pane > .spinner > .button > .right-arrow {
+    -fx-background-color: #0c8570;
+}
+
+/* Day-of-week header row (LU MA MI ...) */
+.date-picker-popup > * > .day-name-cell {
+    -fx-text-fill: #64748b;
+    -fx-font-size: 10px;
+    -fx-font-weight: bold;
+    -fx-alignment: CENTER;
+}
+
+/* Day cells: default, hover, selected, today */
+.date-picker-popup > * > .day-cell {
+    -fx-background-color: white;
+    -fx-text-fill: #1e293b;
+    -fx-alignment: CENTER;
+    -fx-background-radius: 4;
+    -fx-cursor: hand;
+}
+.date-picker-popup > * > .day-cell:hover {
+    -fx-background-color: #e6f4f1;
+}
+/* !important on both: JavaFX's built-in DateCell :focused styling otherwise overrides just the
+   background back to a light color on keyboard focus/re-open, while our white text-fill (set
+   only on .selected, not .selected:focused) stays applied — white text on a light background,
+   invisible. Forcing both together here guarantees the selected day stays readable regardless
+   of focus state. */
+.date-picker-popup > * > .selected {
+    -fx-background-color: #0c8570 !important;
+    -fx-background-radius: 4;
+    -fx-text-fill: white !important;
+}
+/* Inset, not flush with the cell's own edge — a border drawn right at the cell boundary reads
+   as touching/cramped against the neighboring cells, since day cells sit edge-to-edge with no
+   grid gap. -fx-border-insets pulls the ring inward so it reads as a distinct outline. */
+.date-picker-popup > * > .today {
+    -fx-border-color: #0c8570;
+    -fx-border-width: 1;
+    -fx-border-insets: 2;
+    -fx-border-radius: 4;
+    -fx-background-radius: 4;
+}
+.date-picker-popup > * > .today.selected {
+    -fx-border-color: white;
+}
+.date-picker-popup > * > .previous-month,
+.date-picker-popup > * > .next-month {
+    -fx-background-color: #f8fafc;
+    -fx-text-fill: #cbd5e1;
+}
+.date-picker-popup > * > .week-number-cell {
+    -fx-text-fill: #94a3b8;
+    -fx-font-size: 9px;
+    -fx-alignment: CENTER;
 }
 
 /* --- UserNoteView styles - END --- */
