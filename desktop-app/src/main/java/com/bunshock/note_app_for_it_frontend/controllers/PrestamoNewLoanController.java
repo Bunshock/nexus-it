@@ -114,6 +114,9 @@ public class PrestamoNewLoanController implements ItemDialogHost, AdSearchHost {
     // search-by-name box, so only the length is restricted here, not the character set, unlike
     // UserNoteController's own copy of this field).
     private static final int USER_NAME_MAX_LENGTH = 255;
+    // txtUserAccount is never persisted (an AD-username lookup box only), so there's no DB column
+    // bound to match; capped purely as a sanity guard against an accidental huge paste.
+    private static final int USER_ACCOUNT_MAX_LENGTH = 100;
 
     public void initialize() {
         setupAssetTable();
@@ -125,6 +128,8 @@ public class PrestamoNewLoanController implements ItemDialogHost, AdSearchHost {
             change.getControlNewText().length() <= USER_NAME_MAX_LENGTH ? change : null));
         txtAreaEvento.setTextFormatter(new TextFormatter<>(change ->
             change.getControlNewText().length() <= AREA_EVENTO_MAX_LENGTH ? change : null));
+        txtUserAccount.setTextFormatter(new TextFormatter<>(change ->
+            change.getControlNewText().length() <= USER_ACCOUNT_MAX_LENGTH ? change : null));
 
         colAssetActions.setCellFactory(createActionCellFactory(
             this::handleEditAsset, asset -> { assetList.remove(asset); updateAddButtonState(); refreshStockWarning(); }));

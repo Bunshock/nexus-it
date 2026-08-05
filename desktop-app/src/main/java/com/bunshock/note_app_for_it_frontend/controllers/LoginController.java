@@ -17,6 +17,7 @@ import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.PasswordField;
 import javafx.scene.control.TextField;
+import javafx.scene.control.TextFormatter;
 
 /**
  * Standalone login screen shown before MainView (and its startup connectivity overlay) is
@@ -37,11 +38,21 @@ public class LoginController {
 
     private Runnable onLoginSuccess;
 
+    // Neither field is persisted (username is only ever compared to AD's own records, password
+    // only ever sent to the AD validate-credentials call) — capped purely as a sanity guard
+    // against an accidental huge paste, same reasoning as UserNoteController's AD-lookup field.
+    private static final int LOGIN_FIELD_MAX_LENGTH = 100;
+
     public void setOnLoginSuccess(Runnable onLoginSuccess) {
         this.onLoginSuccess = onLoginSuccess;
     }
 
     public void initialize() {
+        txtUsername.setTextFormatter(new TextFormatter<>(change ->
+            change.getControlNewText().length() <= LOGIN_FIELD_MAX_LENGTH ? change : null));
+        pfPassword.setTextFormatter(new TextFormatter<>(change ->
+            change.getControlNewText().length() <= LOGIN_FIELD_MAX_LENGTH ? change : null));
+
         // Convenience only — never trusted for authentication. The technician still has to
         // type their own password; this just saves them typing their username too.
         String sessionEmail = WindowsIdentityService.getInstance().getSessionEmail();

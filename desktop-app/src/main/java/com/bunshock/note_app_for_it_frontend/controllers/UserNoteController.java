@@ -48,6 +48,11 @@ public class UserNoteController implements AdSearchHost {
     // this field only restricted character set before, with no length limit.
     private static final int USER_NAME_MAX_LENGTH = 255;
 
+    // txtUserAccount is never persisted (an AD-username lookup box only — see getUserAccount()),
+    // so there's no DB column bound to match; capped purely as a sanity guard against an
+    // accidental huge paste, same reasoning already applied to SettingsController's regex field.
+    private static final int USER_ACCOUNT_MAX_LENGTH = 100;
+
     // Note type is now pushed in externally via setNoteType() (called by NoteGeneratorController
     // from its own cmbNoteType), rather than selected from a toggle stack that used to live here —
     // see "TIPO DE MOVIMIENTO" removal from UserNoteView.fxml. Raw values match exactly what
@@ -173,6 +178,8 @@ public class UserNoteController implements AdSearchHost {
         }));
         txtAreaEvento.setTextFormatter(new TextFormatter<>(change ->
             change.getControlNewText().length() <= AREA_EVENTO_MAX_LENGTH ? change : null));
+        txtUserAccount.setTextFormatter(new TextFormatter<>(change ->
+            change.getControlNewText().length() <= USER_ACCOUNT_MAX_LENGTH ? change : null));
 
         // Defensive default so the view renders sensibly even before setNoteType() is called
         // externally by NoteGeneratorController.

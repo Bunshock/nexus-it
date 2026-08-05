@@ -30,6 +30,7 @@ import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextField;
+import javafx.scene.control.TextFormatter;
 import javafx.scene.layout.VBox;
 import javafx.scene.web.WebView;
 import javafx.stage.Stage;
@@ -54,6 +55,10 @@ public class NotePreviewController {
     private List<CountableItem> countables;
     private Runnable onSuccess;
 
+    // Never persisted (a one-off SMTP recipient address, not written to any table) — capped
+    // purely as a sanity guard against an accidental huge paste.
+    private static final int EMAIL_RECIPIENT_MAX_LENGTH = 255;
+
     public void setOnSuccess(Runnable onSuccess) {
         this.onSuccess = onSuccess;
     }
@@ -64,6 +69,9 @@ public class NotePreviewController {
 
         chkPrint.setSelected(true);
         updateGenerateButton();
+
+        txtEmailRecipient.setTextFormatter(new TextFormatter<>(change ->
+            change.getControlNewText().length() <= EMAIL_RECIPIENT_MAX_LENGTH ? change : null));
 
         Rectangle clip = new Rectangle();
         clip.setArcWidth(20);

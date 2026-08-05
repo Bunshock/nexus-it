@@ -93,6 +93,15 @@ public class SettingsController {
     private static final List<String> SN_ACTIVE_OPTIONS = List.of("Sí", "No");
     private static final int SN_REGEX_MAX_LENGTH = 500;
 
+    // None of these five are backed by a SQL Server column (app-config.json's afFormat.prefix/
+    // separator, smtp.senderAddress, glpiApi.baseUrl, adApi.baseUrl; the two PasswordFields are
+    // encrypted APP_SETTINGS values, local-only) — capped purely as a sanity guard against an
+    // accidental huge paste, same reasoning already applied to SN_REGEX_MAX_LENGTH above.
+    private static final int AF_FORMAT_MAX_LENGTH = 20;
+    private static final int URL_MAX_LENGTH = 255;
+    private static final int SMTP_SENDER_MAX_LENGTH = 255;
+    private static final int API_SECRET_MAX_LENGTH = 500;
+
     private final Set<String> selSnTypes  = new LinkedHashSet<>();
     private final Set<String> selSnBrands = new LinkedHashSet<>();
     private final Set<String> selSnModels = new LinkedHashSet<>();
@@ -112,6 +121,23 @@ public class SettingsController {
         txtSmtpSender.setText(config.smtp.senderAddress);
         txtGlpiUrl.setText(config.glpiApi.baseUrl);
         txtAdUrl.setText(config.adApi.baseUrl);
+
+        txtAfPrefix.setTextFormatter(new TextFormatter<>(change ->
+            change.getControlNewText().length() <= AF_FORMAT_MAX_LENGTH ? change : null));
+        txtAfSeparator.setTextFormatter(new TextFormatter<>(change ->
+            change.getControlNewText().length() <= AF_FORMAT_MAX_LENGTH ? change : null));
+        txtSmtpSender.setTextFormatter(new TextFormatter<>(change ->
+            change.getControlNewText().length() <= SMTP_SENDER_MAX_LENGTH ? change : null));
+        txtGlpiUrl.setTextFormatter(new TextFormatter<>(change ->
+            change.getControlNewText().length() <= URL_MAX_LENGTH ? change : null));
+        txtAdUrl.setTextFormatter(new TextFormatter<>(change ->
+            change.getControlNewText().length() <= URL_MAX_LENGTH ? change : null));
+        pfSmtpPassword.setTextFormatter(new TextFormatter<>(change ->
+            change.getControlNewText().length() <= API_SECRET_MAX_LENGTH ? change : null));
+        pfGlpiApiKey.setTextFormatter(new TextFormatter<>(change ->
+            change.getControlNewText().length() <= API_SECRET_MAX_LENGTH ? change : null));
+        pfAdApiToken.setTextFormatter(new TextFormatter<>(change ->
+            change.getControlNewText().length() <= API_SECRET_MAX_LENGTH ? change : null));
 
         txtAfPrefix.textProperty().addListener((o, a, b) -> updateAfPreview());
         txtAfSeparator.textProperty().addListener((o, a, b) -> updateAfPreview());
