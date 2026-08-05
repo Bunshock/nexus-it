@@ -2,7 +2,7 @@
 <?import javafx.scene.layout.*?>
 <?import javafx.scene.control.*?>
 
-<VBox fx:id="rootContainer" spacing="15"
+<VBox fx:id="rootContainer" spacing="20" style="-fx-background-color: #f4f4f4;"
       xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1"
       fx:controller="com.bunshock.note_app_for_it_frontend.controllers.PrestamoNewLoanController">
 
@@ -94,10 +94,24 @@
                       style="-fx-background-color: white; -fx-background-radius: 0 10 10 0; -fx-padding: 20;">
                     <children>
 
+                        <!-- Section title + add button. The stock-shortage indicator lives right
+                             here (not between this row and the tables below) so its appearance
+                             never resizes the item tables — see
+                             PrestamoNewLoanController.refreshStockWarning()/showStockWarning().
+                             "Ver detalle" reveals the full per-item breakdown as a hover popover
+                             (setupStockWarningHover()) instead of expanding inline, so a long
+                             shortage list floats above the layout rather than taking it over. -->
                         <HBox alignment="CENTER_LEFT" spacing="10">
                             <children>
                                 <Label text="DETALLES DEL EQUIPAMIENTO" styleClass="section-label"/>
                                 <Region HBox.hgrow="ALWAYS"/>
+                                <HBox fx:id="stockWarningBox" alignment="CENTER_LEFT" spacing="20"
+                                      visible="false" managed="false" styleClass="stock-warning-inline">
+                                    <children>
+                                        <Label fx:id="lblStockWarningSummary" styleClass="stock-warning-summary-inline"/>
+                                        <Hyperlink fx:id="lnkStockWarningToggle" text="Ver detalle" styleClass="stock-warning-toggle"/>
+                                    </children>
+                                </HBox>
                                 <Label fx:id="lblTableStatus" text=""
                                        style="-fx-text-fill: #ef4444; -fx-font-size: 10px; -fx-font-weight: bold;" opacity="0"/>
                                 <Button fx:id="btnAddItem" text="+ Agregar Equipo" onAction="#handleAddItem" styleClass="button-primary"/>

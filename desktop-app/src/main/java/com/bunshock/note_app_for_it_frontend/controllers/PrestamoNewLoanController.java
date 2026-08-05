@@ -9,6 +9,8 @@ import java.util.List;
 import java.util.function.Consumer;
 import java.util.regex.Pattern;
 
+import org.controlsfx.control.PopOver;
+
 import com.bunshock.note_app_for_it_frontend.models.ADUser;
 import com.bunshock.note_app_for_it_frontend.models.AssetItem;
 import com.bunshock.note_app_for_it_frontend.models.CountableItem;
@@ -20,6 +22,8 @@ import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;
 import com.bunshock.note_app_for_it_frontend.services.TechnicianSessionService;
 
 import javafx.animation.FadeTransition;
+import javafx.animation.PauseTransition;
+import javafx.animation.Transition;
 import javafx.application.Platform;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
@@ -30,6 +34,7 @@ import javafx.scene.Parent;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
 import javafx.scene.control.DatePicker;
+import javafx.scene.control.Hyperlink;
 import javafx.scene.control.Label;
 import javafx.scene.control.ProgressIndicator;
 import javafx.scene.control.TableCell;
@@ -91,6 +96,10 @@ public class PrestamoNewLoanController implements ItemDialogHost, AdSearchHost {
     @FXML private Button btnAddItem;
     @FXML private Label lblTableStatus;
     @FXML private Label lblGenerationStatus;
+    @FXML private HBox stockWarningBox;
+    @FXML private Label lblStockWarningSummary;
+    @FXML private Hyperlink lnkStockWarningToggle;
+    private final PopOver stockWarningPopOver = new PopOver();
     @FXML private TextField txtObservations;
 
     private final ObservableList<AssetItem> assetList = FXCollections.observableArrayList();
@@ -118,11 +127,12 @@ public class PrestamoNewLoanController implements ItemDialogHost, AdSearchHost {
             change.getControlNewText().length() <= AREA_EVENTO_MAX_LENGTH ? change : null));
 
         colAssetActions.setCellFactory(createActionCellFactory(
-            this::handleEditAsset, asset -> { assetList.remove(asset); updateAddButtonState(); }));
+            this::handleEditAsset, asset -> { assetList.remove(asset); updateAddButtonState(); refreshStockWarning(); }));
         colCountActions.setCellFactory(createActionCellFactory(
-            this::handleEditCountable, countable -> { countableList.remove(countable); updateAddButtonState(); }));
+            this::handleEditCountable, countable -> { countableList.remove(countable); updateAddButtonState(); refreshStockWarning(); }));
 
         dtpFechaTentativa.setValue(nextWorkingDay());
+        setupStockWarningHover();
         updateAddButtonState();
     }
 
@@ -156,9 +166,9 @@ public class PrestamoNewLoanController implements ItemDialogHost, AdSearchHost {
     }
 
     @Override
-    public void addAsset(AssetItem item) { assetList.add(item); }
+    public void addAsset(AssetItem item) { assetList.add(item); refreshStockWarning(); }
     @Override
-    public void addCountable(CountableItem item) { countableList.add(item); }
+    public void addCountable(CountableItem item) { countableList.add(item); refreshStockWarning(); }
 
     private <T> Callback<TableColumn<T, Void>, TableCell<T, Void>> createActionCellFactory(
             Consumer<T> editAction, Consumer<T> deleteAction) {
@@ -215,7 +225,7 @@ public class PrestamoNewLoanController implements ItemDialogHost, AdSearchHost {
             dialogScene.getStylesheets().add(getClass().getResource(
                 "/com/bunshock/note_app_for_it_frontend/css/styles.css").toExternalForm());
             stage.setScene(dialogScene);
-            stage.setOnHidden(e -> updateAddButtonState());
+            stage.setOnHidden(e -> { updateAddButtonState(); refreshStockWarning(); });
             stage.show();
 
             javafx.geometry.Bounds btn = btnAddItem.localToScreen(btnAddItem.getBoundsInLocal());
@@ -521,6 +531,182 @@ public class PrestamoNewLoanController implements ItemDialogHost, AdSearchHost {
         return valid;
     }
 
+    // Live heuristic only — does NOT move any stock itself (that happens on admin approval, see
+    // SqliteHistoryService.applyNoteStockIfNeeded()). Recomputed on every item add/edit/delete;
+    // also the actual gate at "Guardar" time (return value) — a Préstamo loan is always egress,
+    // unlike Generar Nota's combobox there's no Devolución case to skip here.
+    private boolean refreshStockWarning() {
+        Integer sedeId = TechnicianSessionService.getInstance().getSedeId();
+        if (sedeId == null) {
+            hideStockWarning();
+            return true;
+        }
+        List<String> shortages = computeStockShortages(sedeId);
+        if (shortages.isEmpty()) {
+            hideStockWarning();
+            return true;
+        }
+        showStockWarning(shortages);
+        return false;
+    }
+
+    // Detail shows on hover over "Ver detalle" instead of a click-to-expand panel — a long
+    // shortage list would otherwise take over the layout below it. Same PopOver +
+    // MainController.setupTitleBarStatusHover() precedent, but that alone still flickered here:
+    // the popover opens directly beneath a small text link, close enough that the moment it
+    // appears the cursor is already geometrically inside its screen bounds — the OS then routes
+    // further mouse-move events to the (now topmost) popover window, JavaFX synthesizes a
+    // MOUSE_EXITED on the link, and an immediate hide()-on-exit closes the very popover the
+    // cursor is sitting on. Fixed with the standard "hoverable popover" bridge: hiding always
+    // goes through a short delay that's cancelled if the cursor lands on the link OR the
+    // popover's own content before it fires — so crossing the small gap between them (or the
+    // instant of the popover appearing under the cursor) never closes it.
+    private static final Duration STOCK_WARNING_SHOW_DELAY = Duration.millis(400);
+    private static final Duration STOCK_WARNING_HIDE_DELAY = Duration.millis(200);
+    private final PauseTransition stockWarningShowDelay = new PauseTransition(STOCK_WARNING_SHOW_DELAY);
+    private final PauseTransition stockWarningHideDelay = new PauseTransition(STOCK_WARNING_HIDE_DELAY);
+
+    private void setupStockWarningHover() {
+        stockWarningPopOver.setDetachable(false);
+        stockWarningPopOver.setArrowLocation(PopOver.ArrowLocation.TOP_RIGHT);
+        stockWarningPopOver.setArrowSize(10);
+        stockWarningPopOver.setCornerRadius(8);
+        stockWarningPopOver.setAnimated(true);
+        stockWarningPopOver.setAutoHide(false);
+
+        stockWarningShowDelay.setOnFinished(e -> stockWarningPopOver.show(lnkStockWarningToggle));
+        stockWarningHideDelay.setOnFinished(e -> stockWarningPopOver.hide());
+
+        lnkStockWarningToggle.setOnMouseEntered(e -> {
+            stockWarningHideDelay.stop();
+            if (!stockWarningPopOver.isShowing()) stockWarningShowDelay.playFromStart();
+        });
+        lnkStockWarningToggle.setOnMouseExited(e -> {
+            stockWarningShowDelay.stop();
+            if (stockWarningPopOver.isShowing()) stockWarningHideDelay.playFromStart();
+        });
+    }
+
+    // Updates the summary count and the hover popover's content in place — the popover itself
+    // only actually appears while the mouse is over "Ver detalle" (see setupStockWarningHover()).
+    private void showStockWarning(List<String> shortages) {
+        lblStockWarningSummary.setText((shortages.size() == 1
+            ? "⚠ 1 ítem supera"
+            : "⚠ " + shortages.size() + " ítems superan") + " el stock disponible en su Sede");
+        stockWarningPopOver.setContentNode(buildStockWarningPopoverContent(shortages));
+        stockWarningBox.setVisible(true);
+        stockWarningBox.setManaged(true);
+    }
+
+    // PopOver renders in its own popup Window, which doesn't inherit the app's stylesheet the
+    // way an in-scene node would — inline-styled, same convention already established by
+    // ADUserSelectionController's own hover PopOver in this codebase.
+    private VBox buildStockWarningPopoverContent(List<String> shortages) {
+        VBox box = new VBox(6);
+        box.setStyle("-fx-padding: 14; -fx-background-color: #fffbeb; -fx-border-color: #f59e0b;"
+            + " -fx-border-width: 1; -fx-border-radius: 8; -fx-background-radius: 8;");
+        box.setMaxWidth(340);
+        Label header = new Label("STOCK INSUFICIENTE EN SU SEDE");
+        header.setStyle("-fx-text-fill: #b45309; -fx-font-weight: bold; -fx-font-size: 10px;");
+        box.getChildren().add(header);
+        for (String shortage : shortages) {
+            Label line = new Label("• " + shortage);
+            line.setWrapText(true);
+            line.setMaxWidth(320);
+            line.setStyle("-fx-text-fill: #92400e; -fx-font-size: 11px;");
+            box.getChildren().add(line);
+        }
+        // Bridges the gap between the link and the popup below it — see setupStockWarningHover().
+        box.setOnMouseEntered(e -> stockWarningHideDelay.stop());
+        box.setOnMouseExited(e -> {
+            if (stockWarningPopOver.isShowing()) stockWarningHideDelay.playFromStart();
+        });
+        return box;
+    }
+
+    private void hideStockWarning() {
+        stockWarningBox.setVisible(false);
+        stockWarningBox.setManaged(false);
+        stockWarningShowDelay.stop();
+        stockWarningHideDelay.stop();
+        if (stockWarningPopOver.isShowing()) stockWarningPopOver.hide();
+    }
+
+    // Draws attention to the (already-visible) pill when a click on "Guardar Préstamo" is
+    // actually blocked by it — same border-fade mechanism/timing as this controller's own
+    // highlightFields() above (FEEDBACK_HOLD/FEEDBACK_FADE), just its own separate Transition
+    // field/target so it can't stomp on the AD-field highlight animation running independently.
+    // Fades toward fully transparent instead of toward DEFAULT_BORDER_COLOR — the pill has no
+    // border at rest, unlike a text field.
+    // Only -fx-border-color is ever set here, never -fx-border-width/-fx-border-radius —
+    // .stock-warning-inline (styles.css) already reserves a permanent, transparent 2px border at
+    // rest, so this animation only ever changes color, never the pill's actual size. Setting the
+    // width here too (as a first attempt did) made the pill visibly grow/shift its siblings the
+    // instant the flash started, since no border-width was reserved at rest — same class of bug
+    // already fixed once for Historial's row accents.
+    private Transition stockWarningBorderFade;
+
+    private void flashStockWarningPill() {
+        if (stockWarningBorderFade != null) stockWarningBorderFade.stop();
+
+        Color flashColor = Color.web("#f59e0b");
+        applyStockWarningPillBorder(toRgbaString(flashColor, 1.0));
+
+        Transition fade = new Transition() {
+            { setDelay(FEEDBACK_HOLD); setCycleDuration(FEEDBACK_FADE); }
+            @Override
+            protected void interpolate(double frac) {
+                applyStockWarningPillBorder(toRgbaString(flashColor, 1.0 - frac));
+            }
+        };
+        fade.setOnFinished(e -> stockWarningBox.setStyle(""));
+        stockWarningBorderFade = fade;
+        fade.play();
+    }
+
+    private void applyStockWarningPillBorder(String colorValue) {
+        stockWarningBox.setStyle("-fx-border-color: " + colorValue + ";");
+    }
+
+    private static String toRgbaString(Color c, double alpha) {
+        int r = (int) Math.round(c.getRed() * 255);
+        int g = (int) Math.round(c.getGreen() * 255);
+        int b = (int) Math.round(c.getBlue() * 255);
+        return String.format("rgba(%d,%d,%d,%.3f)", r, g, b, alpha);
+    }
+
+    // Aggregates assetList/countableList by (typeId, brandId, modelId) — the same model can
+    // appear on multiple rows — and compares each requested total against current stock at
+    // sedeId. Returns one human-readable line per short model, or an empty list if everything
+    // requested fits.
+    private List<String> computeStockShortages(int sedeId) {
+        record StockKey(int typeId, int brandId, int modelId) {}
+        java.util.Map<StockKey, Integer> requested = new java.util.LinkedHashMap<>();
+        java.util.Map<StockKey, String> labels = new java.util.LinkedHashMap<>();
+        for (AssetItem a : assetList) {
+            StockKey key = new StockKey(a.getTypeId(), a.getBrandId(), a.getModelId());
+            requested.merge(key, 1, Integer::sum);
+            labels.putIfAbsent(key, a.getType().get() + " " + a.getBrand().get() + " " + a.getModel().get());
+        }
+        for (CountableItem item : countableList) {
+            StockKey key = new StockKey(item.getTypeId(), item.getBrandId(), item.getModelId());
+            requested.merge(key, item.getQuantity().get(), Integer::sum);
+            labels.putIfAbsent(key, item.getType().get() + " " + item.getBrand().get() + " " + item.getModel().get());
+        }
+        if (requested.isEmpty()) return List.of();
+
+        var equipmentService = ServiceLocator.getInstance().getEquipmentService();
+        List<String> shortages = new java.util.ArrayList<>();
+        for (var entry : requested.entrySet()) {
+            StockKey key = entry.getKey();
+            int available = equipmentService.getModelStock(key.modelId(), key.brandId(), key.typeId(), sedeId);
+            if (available < entry.getValue()) {
+                shortages.add(labels.get(key) + " (solicita " + entry.getValue() + ", disponible " + available + ")");
+            }
+        }
+        return shortages;
+    }
+
     @FXML
     private void handleGuardarPrestamo() {
         TechnicianSessionService technician = TechnicianSessionService.getInstance();
@@ -534,7 +720,15 @@ public class PrestamoNewLoanController implements ItemDialogHost, AdSearchHost {
             return;
         }
 
-        if (!validateAndShowErrors()) return;
+        // Both accumulated into one boolean, neither short-circuiting the other, so a field error
+        // and an insufficient-stock pill both animate together on the same click instead of the
+        // stock check only ever running once every other error is already fixed.
+        boolean valid = validateAndShowErrors();
+        if (!refreshStockWarning()) {
+            flashStockWarningPill();
+            valid = false;
+        }
+        if (!valid) return;
 
         NoteReport report = new NoteReport();
         report.setProfileType("PRÉSTAMO");

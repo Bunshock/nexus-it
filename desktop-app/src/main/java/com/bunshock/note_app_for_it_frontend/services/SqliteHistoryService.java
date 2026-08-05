@@ -66,9 +66,13 @@ public class SqliteHistoryService implements IHistoryService {
                r.approval_status, rr.rejection_reason,
                r.technician_name AS author_name,
                r.technician_dni AS author_dni,
-               COALESCE(e.user_name, pv.name, '') AS recipient,
-               COALESCE(e.motivo, p.motivo, '') AS motivo,
+               COALESCE(e.user_name, pv.name, rm.destination_label, '') AS recipient,
+               CASE WHEN r.profile_type = 'REMITO DE ENVÍO' THEN 'Envío'
+                    ELSE COALESCE(e.motivo, p.motivo, '') END AS motivo,
                COALESCE(sd.name, '') AS sede,
+               COALESCE(rm.destination_label, '') AS destination_label,
+               COALESCE(rm.address, '') AS remito_address,
+               COALESCE(rm.recipients, '') AS remito_recipients,
                SUM(CASE WHEN COALESCE(igr.status, ig.status) = 'PENDING'  THEN 1 ELSE 0 END) AS pending_count,
                SUM(CASE WHEN COALESCE(igr.status, ig.status) = 'SYNCED'   THEN 1 ELSE 0 END) AS synced_count,
                SUM(CASE WHEN COALESCE(igr.status, ig.status) = 'REJECTED' THEN 1 ELSE 0 END) AS rejected_count,
@@ -99,6 +103,7 @@ public class SqliteHistoryService implements IHistoryService {
         LEFT JOIN NOTE_PROVEEDOR            p  ON p.note_report_id  = r.id
         LEFT JOIN PROVIDER                  pv ON pv.id             = p.provider_id
         LEFT JOIN SEDE                       sd ON sd.id             = r.sede_id
+        LEFT JOIN NOTE_REMITO                rm ON rm.note_report_id = r.id
         LEFT JOIN NOTE_ITEM                 i  ON i.note_id         = r.id
         LEFT JOIN NOTE_ITEM_ASSET           ia ON ia.item_id        = i.id
         LEFT JOIN NOTE_ITEM_COUNTABLE       ic ON ic.item_id        = i.id
@@ -166,7 +171,23 @@ public class SqliteHistoryService implements IHistoryService {
     }
 
     private void insertProfileDetail(Connection c, int reportId, NoteReport report) throws SQLException {
-        if (report.getProviderName() != null) {
+        if (report.getDestinationLabel() != null) {
+            PreparedStatement ps = c.prepareStatement("""
+                INSERT INTO NOTE_REMITO
+                    (note_report_id, destination_sede_id, destination_label, address, recipients)
+                VALUES (?, ?, ?, ?, ?)
+                """);
+            ps.setInt(1, reportId);
+            if (report.getDestinationSedeId() != null) {
+                ps.setInt(2, report.getDestinationSedeId());
+            } else {
+                ps.setNull(2, java.sql.Types.INTEGER);
+            }
+            ps.setString(3, report.getDestinationLabel());
+            ps.setString(4, report.getAddress());
+            ps.setString(5, report.getRecipients());
+            ps.executeUpdate();
+        } else if (report.getProviderName() != null) {
             PreparedStatement ps = c.prepareStatement("""
                 INSERT INTO NOTE_PROVEEDOR
                     (note_report_id, provider_id, cuit, motivo, responsible_name, responsible_dni)
@@ -312,7 +333,7 @@ public class SqliteHistoryService implements IHistoryService {
         appendIn(sql, params, "r.profile_type", filter.getProfileTypes());
         appendIn(sql, params, "r.approval_status", filter.getApprovalStatuses());
         if (filter.getRecipientSearch() != null && !filter.getRecipientSearch().isBlank()) {
-            sql.append(" AND COALESCE(e.user_name, pv.name, '') LIKE ?");
+            sql.append(" AND COALESCE(e.user_name, pv.name, rm.destination_label, '') LIKE ?");
             params.add("%" + filter.getRecipientSearch().trim() + "%");
         }
         if (filter.getAuthorSearch() != null && !filter.getAuthorSearch().isBlank()) {
@@ -423,6 +444,12 @@ public class SqliteHistoryService implements IHistoryService {
     // upserts one.
     @Override
     public void updateNoteApprovalStatus(int reportId, String status, String rejectionReason) {
+        // Applied before the approval_status write below, not after — if a note's stock
+        // adjustment fails (e.g. requesting more than the Sede has on hand), the note must not
+        // end up APPROVED with the stock left unmoved.
+        if ("APPROVED".equals(status)) {
+            applyNoteStockIfNeeded(reportId);
+        }
         try (Connection c = connector.get()) {
             try (PreparedStatement ps = c.prepareStatement(
                     "UPDATE NOTE_REPORT SET approval_status = ? WHERE id = ?")) {
@@ -454,6 +481,140 @@ public class SqliteHistoryService implements IHistoryService {
         } catch (SQLException e) {
             throw new RuntimeException("Failed to update note approval status", e);
         }
+    }
+
+    private record StockItemKey(int modelId, int brandId, int typeId) {}
+
+    // Every note type that actually moves physical equipment (egress: Entrega/Entrega Permanente/
+    // Préstamo/Provider; ingress: Devolución) dispatches through here — Remito keeps its own
+    // dual-Sede shape below since it's the only type that can write to two Sedes per item.
+    // Case/legacy-variant tolerant, matching HistoryController.PROFILE_TYPE_LABEL_TO_RAW's own
+    // alias lists (a pre-rename installation's rows still say "FIN DE CONTRATO").
+    private static final List<String> EGRESS_PROFILE_TYPES = List.of(
+        "ENTREGA", "ENTREGA PERMANENTE", "FIN DE CONTRATO", "PRÉSTAMO", "PRESTAMO", "ENTREGA - PROVEEDOR");
+    private static final List<String> INGRESS_PROFILE_TYPES = List.of("DEVOLUCIÓN", "DEVOLUCION");
+
+    // Consolidated stock dispatcher for every note type — called unconditionally from
+    // updateNoteApprovalStatus() on approval. No-op for a note with no stock effect (an
+    // unrecognized/other profile type) and for a note already applied (stock_applied = 1), via the
+    // single shared NOTE_REPORT.stock_applied flag (see migrateStockAppliedSchema() — this used to
+    // be Remito-only, tracked on NOTE_REMITO itself, before every note type started moving stock).
+    private void applyNoteStockIfNeeded(int reportId) {
+        try (Connection c = connector.get()) {
+            String profileType;
+            int sedeId;
+            try (PreparedStatement ps = c.prepareStatement(
+                    "SELECT profile_type, sede_id, stock_applied FROM NOTE_REPORT WHERE id = ?")) {
+                ps.setInt(1, reportId);
+                ResultSet rs = ps.executeQuery();
+                if (!rs.next() || rs.getInt("stock_applied") != 0) return;
+                profileType = rs.getString("profile_type");
+                sedeId = rs.getInt("sede_id");
+            }
+
+            boolean applied;
+            if ("REMITO DE ENVÍO".equalsIgnoreCase(profileType)) {
+                applied = applyRemitoStock(c, reportId, sedeId);
+            } else if (EGRESS_PROFILE_TYPES.stream().anyMatch(profileType::equalsIgnoreCase)) {
+                applied = applyDirectionalStock(c, reportId, sedeId, -1,
+                    "Stock insuficiente en la sede para aprobar esta nota");
+            } else if (INGRESS_PROFILE_TYPES.stream().anyMatch(profileType::equalsIgnoreCase)) {
+                applied = applyDirectionalStock(c, reportId, sedeId, 1, null);
+            } else {
+                applied = false;
+            }
+
+            if (applied) {
+                try (PreparedStatement mark = c.prepareStatement(
+                        "UPDATE NOTE_REPORT SET stock_applied = 1 WHERE id = ?")) {
+                    mark.setInt(1, reportId);
+                    mark.executeUpdate();
+                }
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to apply note stock adjustment", e);
+        }
+    }
+
+    // Aggregates this note's items by (model, brand, type) first — the same model can appear on
+    // multiple item rows (e.g. several units of the global "Genérico / Otro" model, or several
+    // asset rows of one model), and only their combined total is what actually needs to fit in the
+    // Sede's current stock. On egress (insufficientMessage != null), every aggregate is checked
+    // against current stock BEFORE any write happens, so a note that would over-request one model
+    // doesn't leave a different model's stock already moved; ingress has no upper bound to check.
+    // Not cross-connection-transactional (two notes approved at the exact same instant could still
+    // both pass the check before either writes) — an accepted limitation given this app has no
+    // equivalent cross-row locking anywhere else either, and approval is a low-concurrency,
+    // single-admin action in practice (same accepted limitation Remito's own move already had).
+    // Returns whether anything was actually moved (false for a note with zero items).
+    private boolean applyDirectionalStock(Connection c, int reportId, int sedeId, int direction,
+            String insufficientMessage) throws SQLException {
+        java.util.Map<StockItemKey, Integer> quantities = aggregateItemQuantities(c, reportId);
+        if (quantities.isEmpty()) return false;
+
+        IEquipmentService equipment = ServiceLocator.getInstance().getEquipmentService();
+        if (insufficientMessage != null) {
+            for (var entry : quantities.entrySet()) {
+                StockItemKey key = entry.getKey();
+                int available = equipment.getModelStock(key.modelId(), key.brandId(), key.typeId(), sedeId);
+                if (available < entry.getValue()) {
+                    throw new IllegalArgumentException(insufficientMessage);
+                }
+            }
+        }
+        for (var entry : quantities.entrySet()) {
+            StockItemKey key = entry.getKey();
+            equipment.adjustModelStock(key.modelId(), key.brandId(), key.typeId(), sedeId,
+                direction * entry.getValue());
+        }
+        return true;
+    }
+
+    // Remito's own dual-Sede move — source always decrements, destination only increments when
+    // it's a real catalog Sede (destination_sede_id is null for a custom/manual destination, e.g.
+    // a CAU not in the SEDE catalog, which has no stock to receive at all). Kept separate from
+    // applyDirectionalStock() since it can write to two Sedes per item, not one.
+    private boolean applyRemitoStock(Connection c, int reportId, int sourceSedeId) throws SQLException {
+        Integer destinationSedeId;
+        try (PreparedStatement ps = c.prepareStatement(
+                "SELECT destination_sede_id FROM NOTE_REMITO WHERE note_report_id = ?")) {
+            ps.setInt(1, reportId);
+            ResultSet rs = ps.executeQuery();
+            if (!rs.next()) return false;
+            int destSedeId = rs.getInt("destination_sede_id");
+            destinationSedeId = rs.wasNull() ? null : destSedeId;
+        }
+
+        java.util.Map<StockItemKey, Integer> quantities = aggregateItemQuantities(c, reportId);
+        if (quantities.isEmpty()) return false;
+
+        IEquipmentService equipment = ServiceLocator.getInstance().getEquipmentService();
+        for (var entry : quantities.entrySet()) {
+            StockItemKey key = entry.getKey();
+            int available = equipment.getModelStock(key.modelId(), key.brandId(), key.typeId(), sourceSedeId);
+            if (available < entry.getValue()) {
+                throw new IllegalArgumentException(
+                    "Stock insuficiente en la sede de origen para aprobar este remito");
+            }
+        }
+        for (var entry : quantities.entrySet()) {
+            StockItemKey key = entry.getKey();
+            equipment.adjustModelStock(key.modelId(), key.brandId(), key.typeId(), sourceSedeId, -entry.getValue());
+            if (destinationSedeId != null) {
+                equipment.adjustModelStock(key.modelId(), key.brandId(), key.typeId(), destinationSedeId, entry.getValue());
+            }
+        }
+        return true;
+    }
+
+    private java.util.Map<StockItemKey, Integer> aggregateItemQuantities(Connection c, int reportId) throws SQLException {
+        java.util.Map<StockItemKey, Integer> quantities = new java.util.LinkedHashMap<>();
+        for (NoteReportItem item : loadItems(c, reportId)) {
+            StockItemKey key = new StockItemKey(item.getModelId(), item.getBrandId(), item.getTypeId());
+            int qty = item.isAsset() ? 1 : item.getQuantity();
+            quantities.merge(key, qty, Integer::sum);
+        }
+        return quantities;
     }
 
     @Override
@@ -559,6 +720,9 @@ public class SqliteHistoryService implements IHistoryService {
         r.setRecipientDisplay(rs.getString("recipient"));
         r.setMotivo(rs.getString("motivo"));
         r.setSede(rs.getString("sede"));
+        r.setDestinationLabel(rs.getString("destination_label"));
+        r.setAddress(rs.getString("remito_address"));
+        r.setRecipients(rs.getString("remito_recipients"));
         r.setAssetItemCount(rs.getInt("asset_count"));
         r.setCountableItemCount(rs.getInt("countable_count"));
         r.setPendingItemCount(rs.getInt("pending_count"));
@@ -591,7 +755,12 @@ public class SqliteHistoryService implements IHistoryService {
                    COALESCE(p.provider_id, 0) AS provider_id,
                    COALESCE(p.cuit, '')          AS cuit,
                    COALESCE(p.responsible_name, '') AS responsible_name,
-                   COALESCE(p.responsible_dni, '')  AS responsible_dni
+                   COALESCE(p.responsible_dni, '')  AS responsible_dni,
+                   rm.destination_sede_id AS destination_sede_id,
+                   rm.destination_label   AS destination_label,
+                   rm.address             AS remito_address,
+                   rm.recipients          AS remito_recipients,
+                   r.stock_applied        AS stock_applied
             FROM NOTE_REPORT r
             LEFT JOIN NOTE_REPORT_REJECTION    rr ON rr.note_report_id = r.id
             LEFT JOIN NOTE_ENTREGA_DEVOLUCION  e  ON e.note_report_id  = r.id
@@ -600,6 +769,7 @@ public class SqliteHistoryService implements IHistoryService {
             LEFT JOIN NOTE_PROVEEDOR           p  ON p.note_report_id  = r.id
             LEFT JOIN PROVIDER                 pv ON pv.id             = p.provider_id
             LEFT JOIN SEDE                     sd ON sd.id             = r.sede_id
+            LEFT JOIN NOTE_REMITO              rm ON rm.note_report_id = r.id
             WHERE r.id = ?
             """;
         try (Connection c = connector.get();
@@ -633,6 +803,12 @@ public class SqliteHistoryService implements IHistoryService {
             r.setResponsibleName(rs.getString("responsible_name"));
             r.setResponsibleDni(rs.getString("responsible_dni"));
             r.setRecipientDisplay(!provName.isBlank() ? provName : rs.getString("user_name"));
+            int destSedeId = rs.getInt("destination_sede_id");
+            r.setDestinationSedeId(rs.wasNull() ? null : destSedeId);
+            r.setDestinationLabel(rs.getString("destination_label"));
+            r.setAddress(rs.getString("remito_address"));
+            r.setRecipients(rs.getString("remito_recipients"));
+            r.setStockApplied(rs.getInt("stock_applied") != 0);
             r.setItems(loadItems(c, id));
             return r;
         } catch (SQLException e) {
@@ -903,6 +1079,7 @@ public class SqliteHistoryService implements IHistoryService {
         // Same UPDATE-then-INSERT-if-missing shape as updateItemGlpiStatus() above, for the same
         // SQL Server compatibility reason.
         try (Connection c = connector.get()) {
+            String previousStatus = currentReturnStatus(c, itemId);
             String updatedAt = LocalDateTime.now().toString();
             try (PreparedStatement up = c.prepareStatement("""
                     UPDATE NOTE_ITEM_RETURN_TRACKING
@@ -926,8 +1103,46 @@ public class SqliteHistoryService implements IHistoryService {
                     }
                 }
             }
+            // Credit stock back only on a genuine transition INTO Returned (old status was
+            // Pending/Lost, new status is Returned) — not on an already-Returned re-call
+            // (idempotency, e.g. a UI double-click) and never for Lost (permanently gone, no
+            // credit). Whole-item, so always +1 regardless of asset vs. countable-as-a-whole-unit.
+            if (status == ReturnStatus.RETURNED && !"RETURNED".equals(previousStatus)) {
+                ItemStockInfo info = resolveItemStockInfo(c, itemId);
+                if (info != null) {
+                    ServiceLocator.getInstance().getEquipmentService()
+                        .adjustModelStock(info.modelId(), info.brandId(), info.typeId(), info.sedeId(), 1);
+                }
+            }
         } catch (SQLException e) {
             throw new RuntimeException("Failed to update item return status", e);
+        }
+    }
+
+    private String currentReturnStatus(Connection c, int itemId) throws SQLException {
+        try (PreparedStatement ps = c.prepareStatement(
+                "SELECT status FROM NOTE_ITEM_RETURN_TRACKING WHERE item_id = ?")) {
+            ps.setInt(1, itemId);
+            ResultSet rs = ps.executeQuery();
+            return rs.next() ? rs.getString("status") : null;
+        }
+    }
+
+    private record ItemStockInfo(int modelId, int brandId, int typeId, int sedeId) {}
+
+    // Resolves what a NOTE_ITEM's return actually credits back — its own catalog ids plus the
+    // Sede it was loaned/shipped from (the note's own sede_id; Préstamo/Provider have no separate
+    // "destination Sede" the way Remito does, equipment always returns to where it left from).
+    private ItemStockInfo resolveItemStockInfo(Connection c, int itemId) throws SQLException {
+        try (PreparedStatement ps = c.prepareStatement("""
+                SELECT i.model_id, i.brand_id, i.type_id, r.sede_id
+                FROM NOTE_ITEM i JOIN NOTE_REPORT r ON r.id = i.note_id
+                WHERE i.id = ?
+                """)) {
+            ps.setInt(1, itemId);
+            ResultSet rs = ps.executeQuery();
+            if (!rs.next()) return null;
+            return new ItemStockInfo(rs.getInt("model_id"), rs.getInt("brand_id"), rs.getInt("type_id"), rs.getInt("sede_id"));
         }
     }
 
@@ -957,6 +1172,18 @@ public class SqliteHistoryService implements IHistoryService {
                 ins.setString(4, reason);
                 ins.setString(5, LocalDateTime.now().toString());
                 ins.executeUpdate();
+            }
+            // Credit stock on every Returned allocation, unconditionally — unlike the whole-item
+            // case above, each call here already represents a genuinely-new partial-return event
+            // (the pending-quantity check just above already prevents over-allocating beyond what
+            // was actually loaned/shipped out), so the quantity itself is the idempotency guard;
+            // no "was it already Returned" check needed. Never credit Lost.
+            if (status == ReturnStatus.RETURNED) {
+                ItemStockInfo info = resolveItemStockInfo(c, itemId);
+                if (info != null) {
+                    ServiceLocator.getInstance().getEquipmentService()
+                        .adjustModelStock(info.modelId(), info.brandId(), info.typeId(), info.sedeId(), quantity);
+                }
             }
         } catch (SQLException e) {
             throw new RuntimeException("Failed to allocate countable return", e);

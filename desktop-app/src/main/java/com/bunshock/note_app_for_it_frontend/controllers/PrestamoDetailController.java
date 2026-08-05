@@ -26,6 +26,8 @@ import javafx.print.PrinterJob;
 import javafx.scene.Parent;
 import javafx.scene.input.KeyCode;
 import javafx.scene.Scene;
+import javafx.scene.control.Alert;
+import javafx.scene.control.Alert.AlertType;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.Separator;
@@ -170,13 +172,30 @@ public class PrestamoDetailController {
 
     private void handleApprove() {
         AdminSession.getInstance().refreshActivity();
-        ServiceLocator.getInstance().getHistoryService().updateNoteApprovalStatus(report.getId(), "APPROVED", null);
+        try {
+            ServiceLocator.getInstance().getHistoryService().updateNoteApprovalStatus(report.getId(), "APPROVED", null);
+        } catch (RuntimeException e) {
+            // Approval can fail for a real, user-facing reason now — most commonly insufficient
+            // stock at the note's Sede (see SqliteHistoryService.applyNoteStockIfNeeded()'s
+            // IllegalArgumentException). Must not update local state/rebuild the UI as if it
+            // succeeded when it didn't.
+            showApprovalError(e.getMessage());
+            return;
+        }
         report.setApprovalStatus("APPROVED");
         report.setRejectionReason(null);
         PendingCountsService.getInstance().notifyChanged();
         buildApprovalSection();
         buildItemCards();
         if (onUpdate != null) onUpdate.run();
+    }
+
+    private void showApprovalError(String message) {
+        Alert alert = new Alert(AlertType.ERROR);
+        alert.setTitle("No se pudo aprobar la nota");
+        alert.setHeaderText(null);
+        alert.setContentText(message != null ? message : "Ocurrió un error inesperado al aprobar la nota.");
+        alert.showAndWait();
     }
 
     private void handleRejectNote() {

@@ -39,6 +39,12 @@ class SqliteHistoryServiceTest {
             try { return DriverManager.getConnection(url); }
             catch (SQLException e) { throw new RuntimeException(e); }
         });
+        // applyRemitoStockIfNeeded() resolves IEquipmentService via ServiceLocator — pointed at
+        // this same temp database so Remito approval tests can assert real stock movement.
+        ServiceLocator.getInstance().setEquipmentService(new SqliteEquipmentService(() -> {
+            try { return DriverManager.getConnection(url); }
+            catch (SQLException e) { throw new RuntimeException(e); }
+        }));
     }
 
     private void createSchema(String url) throws SQLException {
@@ -78,6 +84,14 @@ class SqliteHistoryServiceTest {
                     deprecated INTEGER NOT NULL DEFAULT 0
                 )""");
             stmt.executeUpdate("""
+                CREATE TABLE MODEL_STOCK (
+                    brand_type_id INTEGER NOT NULL REFERENCES BRAND_TYPE_LINK(id),
+                    model_id      INTEGER NOT NULL REFERENCES MODEL(id),
+                    sede_id       INTEGER NOT NULL REFERENCES SEDE(id),
+                    stock         INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY (brand_type_id, model_id, sede_id)
+                )""");
+            stmt.executeUpdate("""
                 CREATE TABLE SEDE (
                     id         INTEGER PRIMARY KEY AUTOINCREMENT,
                     name       TEXT NOT NULL UNIQUE,
@@ -93,7 +107,8 @@ class SqliteHistoryServiceTest {
                     observations      TEXT,
                     sede              TEXT,
                     sede_id           INTEGER REFERENCES SEDE(id),
-                    approval_status   TEXT NOT NULL DEFAULT 'PENDING'
+                    approval_status   TEXT NOT NULL DEFAULT 'PENDING',
+                    stock_applied     INTEGER NOT NULL DEFAULT 0
                 )""");
             stmt.executeUpdate("""
                 CREATE TABLE NOTE_REPORT_REJECTION (
@@ -127,6 +142,14 @@ class SqliteHistoryServiceTest {
                     motivo           TEXT,
                     responsible_name TEXT,
                     responsible_dni  TEXT
+                )""");
+            stmt.executeUpdate("""
+                CREATE TABLE NOTE_REMITO (
+                    note_report_id      INTEGER PRIMARY KEY REFERENCES NOTE_REPORT(id),
+                    destination_sede_id INTEGER REFERENCES SEDE(id),
+                    destination_label   TEXT NOT NULL,
+                    address             TEXT,
+                    recipients          TEXT
                 )""");
             stmt.executeUpdate("""
                 CREATE TABLE NOTE_ITEM (
@@ -1091,5 +1114,345 @@ class SqliteHistoryServiceTest {
         assertEquals(1, summary.getLostItemCount());
         // countable still pending (5 - 3 - 1 = 1); asset is fully resolved, contributes 0
         assertEquals(1, summary.getReturnPendingItemCount());
+    }
+
+    // ── Remito ────────────────────────────────────────────────────────────────
+
+    private NoteReport remitoReport(int sourceSedeId, Integer destSedeId, String destinationLabel,
+                                     List<NoteReportItem> items) {
+        NoteReport r = new NoteReport();
+        r.setProfileType("REMITO DE ENVÍO");
+        r.setCreatedAt(LocalDateTime.now());
+        r.setSedeId(sourceSedeId);
+        r.setDestinationSedeId(destSedeId);
+        r.setDestinationLabel(destinationLabel);
+        r.setAddress("Av. Test 123");
+        r.setRecipients("Juan Pérez");
+        r.setItems(items);
+        return r;
+    }
+
+    @Test
+    void getByIdPersistsAndReturnsRemitoFields() throws SQLException {
+        int sourceSedeId = resolveOrCreate("SEDE", "Campus Origen");
+        int destSedeId = resolveOrCreate("SEDE", "Campus Destino");
+        int id = service.save(remitoReport(sourceSedeId, destSedeId, "Campus Destino",
+            List.of(assetItem("NOTEBOOK", "DELL", "LATITUDE", "SN1", "AF1", GlpiStatus.N_A))));
+
+        NoteReport full = service.getById(id);
+        assertEquals("REMITO DE ENVÍO", full.getProfileType());
+        assertEquals(destSedeId, full.getDestinationSedeId());
+        assertEquals("Campus Destino", full.getDestinationLabel());
+        assertEquals("Av. Test 123", full.getAddress());
+        assertEquals("Juan Pérez", full.getRecipients());
+        assertFalse(full.isStockApplied());
+    }
+
+    // NOTE_REMITO has no motivo column of its own (a Remito has no natural "reason" the way
+    // Entrega/Devolución/Proveedor do) — LIST_BASE_SQL's motivo column (used by both getAll()'s
+    // summary rows and, via HistoryController.exportRowValues(), the CSV/XLSX export) special-
+    // cases REMITO DE ENVÍO to a constant "Envío" instead, computed at query time rather than
+    // persisted, so the global Historial de Notas table's Motivo column isn't left blank for
+    // these rows.
+    @Test
+    void getAllShowsEnvioAsMotivoForRemitoSummaryRows() throws SQLException {
+        int sourceSedeId = resolveOrCreate("SEDE", "Campus Origen");
+        service.save(remitoReport(sourceSedeId, null, "CAU Recoleta",
+            List.of(assetItem("NOTEBOOK", "DELL", "LATITUDE", "SN1", "AF1", GlpiStatus.N_A))));
+
+        NoteReport summary = service.getAll().stream()
+            .filter(r -> "REMITO DE ENVÍO".equals(r.getProfileType()))
+            .findFirst().orElseThrow();
+        assertEquals("Envío", summary.getMotivo());
+    }
+
+    @Test
+    void remitoWithCustomDestinationPersistsNullDestinationSedeId() throws SQLException {
+        int sourceSedeId = resolveOrCreate("SEDE", "Campus Origen");
+        int id = service.save(remitoReport(sourceSedeId, null, "CAU Recoleta",
+            List.of(assetItem("NOTEBOOK", "DELL", "LATITUDE", "SN1", "AF1", GlpiStatus.N_A))));
+
+        assertNull(service.getById(id).getDestinationSedeId());
+    }
+
+    // Neither isPrestamo() nor isProviderReturnable() match a Remito's profile type, so
+    // needsReturnTracking stays false — items keep whatever ReturnStatus the caller set (N_A),
+    // not PENDING. Locks in that a Remito's items are never mistaken for a Préstamo loan.
+    @Test
+    void remitoItemsKeepNAReturnStatusNotPending() throws SQLException {
+        int sourceSedeId = resolveOrCreate("SEDE", "Campus Origen");
+        int id = service.save(remitoReport(sourceSedeId, null, "CAU Recoleta",
+            List.of(assetItem("NOTEBOOK", "DELL", "LATITUDE", "SN1", "AF1", GlpiStatus.N_A))));
+
+        assertEquals(ReturnStatus.N_A, service.getById(id).getItems().get(0).getReturnStatus());
+    }
+
+    @Test
+    void approvingRemitoWithCatalogDestinationMovesStockBothWays() throws SQLException {
+        int sourceSedeId = resolveOrCreate("SEDE", "Campus Origen");
+        int destSedeId = resolveOrCreate("SEDE", "Campus Destino");
+        NoteReportItem item = assetItem("NOTEBOOK", "DELL", "LATITUDE", "SN1", "AF1", GlpiStatus.N_A);
+        IEquipmentService equipment = ServiceLocator.getInstance().getEquipmentService();
+        equipment.setModelStock(item.getModelId(), item.getBrandId(), item.getTypeId(), sourceSedeId, 5);
+
+        int id = service.save(remitoReport(sourceSedeId, destSedeId, "Campus Destino", List.of(item)));
+        service.updateNoteApprovalStatus(id, "APPROVED", null);
+
+        assertEquals(4, equipment.getModelStock(item.getModelId(), item.getBrandId(), item.getTypeId(), sourceSedeId));
+        assertEquals(1, equipment.getModelStock(item.getModelId(), item.getBrandId(), item.getTypeId(), destSedeId));
+        assertTrue(service.getById(id).isStockApplied());
+    }
+
+    @Test
+    void approvingRemitoWithCustomDestinationOnlyDecrementsSource() throws SQLException {
+        int sourceSedeId = resolveOrCreate("SEDE", "Campus Origen");
+        NoteReportItem item = countableItem("HEADSET", "LOGITECH", "H390", 3);
+        IEquipmentService equipment = ServiceLocator.getInstance().getEquipmentService();
+        equipment.setModelStock(item.getModelId(), item.getBrandId(), item.getTypeId(), sourceSedeId, 10);
+
+        int id = service.save(remitoReport(sourceSedeId, null, "CAU Recoleta", List.of(item)));
+        service.updateNoteApprovalStatus(id, "APPROVED", null);
+
+        assertEquals(7, equipment.getModelStock(item.getModelId(), item.getBrandId(), item.getTypeId(), sourceSedeId));
+    }
+
+    @Test
+    void approvingRemitoTwiceDoesNotDoubleApplyStock() throws SQLException {
+        int sourceSedeId = resolveOrCreate("SEDE", "Campus Origen");
+        int destSedeId = resolveOrCreate("SEDE", "Campus Destino");
+        NoteReportItem item = assetItem("NOTEBOOK", "DELL", "LATITUDE", "SN1", "AF1", GlpiStatus.N_A);
+        IEquipmentService equipment = ServiceLocator.getInstance().getEquipmentService();
+        equipment.setModelStock(item.getModelId(), item.getBrandId(), item.getTypeId(), sourceSedeId, 5);
+
+        int id = service.save(remitoReport(sourceSedeId, destSedeId, "Campus Destino", List.of(item)));
+        service.updateNoteApprovalStatus(id, "APPROVED", null);
+        service.updateNoteApprovalStatus(id, "APPROVED", null);
+
+        assertEquals(4, equipment.getModelStock(item.getModelId(), item.getBrandId(), item.getTypeId(), sourceSedeId));
+        assertEquals(1, equipment.getModelStock(item.getModelId(), item.getBrandId(), item.getTypeId(), destSedeId));
+    }
+
+    @Test
+    void approvingRemitoRejectsShippingMoreThanAvailableStock() throws SQLException {
+        int sourceSedeId = resolveOrCreate("SEDE", "Campus Origen");
+        int destSedeId = resolveOrCreate("SEDE", "Campus Destino");
+        NoteReportItem item = assetItem("NOTEBOOK", "DELL", "LATITUDE", "SN1", "AF1", GlpiStatus.N_A);
+        IEquipmentService equipment = ServiceLocator.getInstance().getEquipmentService();
+        equipment.setModelStock(item.getModelId(), item.getBrandId(), item.getTypeId(), sourceSedeId, 0);
+
+        int id = service.save(remitoReport(sourceSedeId, destSedeId, "Campus Destino", List.of(item)));
+
+        assertThrows(IllegalArgumentException.class, () -> service.updateNoteApprovalStatus(id, "APPROVED", null));
+        assertFalse(service.getById(id).isStockApplied());
+    }
+
+    // ── Stock: every other note type (applyNoteStockIfNeeded's non-Remito dispatch) ────────────
+
+    @Test
+    void approvingEntregaDecrementsStockAtTechniciansSede() throws SQLException {
+        int sedeId = resolveOrCreate("SEDE", "Campus Test");
+        NoteReportItem item = assetItem("NOTEBOOK", "DELL", "LATITUDE", "SN1", "AF1", GlpiStatus.PENDING);
+        IEquipmentService equipment = ServiceLocator.getInstance().getEquipmentService();
+        equipment.setModelStock(item.getModelId(), item.getBrandId(), item.getTypeId(), sedeId, 5);
+
+        NoteReport r = userReport("ENTREGA", LocalDateTime.now(), "Juan Perez", List.of(item));
+        r.setSedeId(sedeId);
+        int id = service.save(r);
+        service.updateNoteApprovalStatus(id, "APPROVED", null);
+
+        assertEquals(4, equipment.getModelStock(item.getModelId(), item.getBrandId(), item.getTypeId(), sedeId));
+        assertTrue(service.getById(id).isStockApplied());
+    }
+
+    @Test
+    void approvingDevolucionIncrementsStockAtTechniciansSede() throws SQLException {
+        int sedeId = resolveOrCreate("SEDE", "Campus Test");
+        NoteReportItem item = countableItem("HEADSET", "LOGITECH", "H390", 2);
+        IEquipmentService equipment = ServiceLocator.getInstance().getEquipmentService();
+        equipment.setModelStock(item.getModelId(), item.getBrandId(), item.getTypeId(), sedeId, 3);
+
+        NoteReport r = userReport("DEVOLUCIÓN", LocalDateTime.now(), "Juan Perez", List.of(item));
+        r.setSedeId(sedeId);
+        int id = service.save(r);
+        service.updateNoteApprovalStatus(id, "APPROVED", null);
+
+        assertEquals(5, equipment.getModelStock(item.getModelId(), item.getBrandId(), item.getTypeId(), sedeId));
+    }
+
+    @Test
+    void approvingPrestamoDecrementsStockAtTechniciansSede() throws SQLException {
+        int sedeId = resolveOrCreate("SEDE", "Campus Test");
+        NoteReportItem item = assetItem("NOTEBOOK", "DELL", "LATITUDE", "SN1", "AF1", GlpiStatus.N_A);
+        IEquipmentService equipment = ServiceLocator.getInstance().getEquipmentService();
+        equipment.setModelStock(item.getModelId(), item.getBrandId(), item.getTypeId(), sedeId, 2);
+
+        NoteReport r = userReport("PRÉSTAMO", LocalDateTime.now(), "Juan Perez", List.of(item));
+        r.setSedeId(sedeId);
+        int id = service.save(r);
+        service.updateNoteApprovalStatus(id, "APPROVED", null);
+
+        assertEquals(1, equipment.getModelStock(item.getModelId(), item.getBrandId(), item.getTypeId(), sedeId));
+    }
+
+    @Test
+    void approvingProviderNoteDecrementsStockAtTechniciansSede() throws SQLException {
+        int sedeId = resolveOrCreate("SEDE", "Campus Test");
+        NoteReportItem item = assetItem("NOTEBOOK", "DELL", "LATITUDE", "SN1", "AF1", GlpiStatus.PENDING);
+        IEquipmentService equipment = ServiceLocator.getInstance().getEquipmentService();
+        equipment.setModelStock(item.getModelId(), item.getBrandId(), item.getTypeId(), sedeId, 1);
+
+        NoteReport r = providerReport(LocalDateTime.now(), "Proveedor Test", List.of(item));
+        r.setSedeId(sedeId);
+        int id = service.save(r);
+        service.updateNoteApprovalStatus(id, "APPROVED", null);
+
+        assertEquals(0, equipment.getModelStock(item.getModelId(), item.getBrandId(), item.getTypeId(), sedeId));
+    }
+
+    @Test
+    void approvingEntregaTwiceDoesNotDoubleDecrementStock() throws SQLException {
+        int sedeId = resolveOrCreate("SEDE", "Campus Test");
+        NoteReportItem item = assetItem("NOTEBOOK", "DELL", "LATITUDE", "SN1", "AF1", GlpiStatus.PENDING);
+        IEquipmentService equipment = ServiceLocator.getInstance().getEquipmentService();
+        equipment.setModelStock(item.getModelId(), item.getBrandId(), item.getTypeId(), sedeId, 5);
+
+        NoteReport r = userReport("ENTREGA", LocalDateTime.now(), "Juan Perez", List.of(item));
+        r.setSedeId(sedeId);
+        int id = service.save(r);
+        service.updateNoteApprovalStatus(id, "APPROVED", null);
+        service.updateNoteApprovalStatus(id, "APPROVED", null);
+
+        assertEquals(4, equipment.getModelStock(item.getModelId(), item.getBrandId(), item.getTypeId(), sedeId));
+    }
+
+    @Test
+    void approvingEntregaRejectsRequestingMoreThanAvailableStock() throws SQLException {
+        int sedeId = resolveOrCreate("SEDE", "Campus Test");
+        NoteReportItem item = assetItem("NOTEBOOK", "DELL", "LATITUDE", "SN1", "AF1", GlpiStatus.PENDING);
+        IEquipmentService equipment = ServiceLocator.getInstance().getEquipmentService();
+        equipment.setModelStock(item.getModelId(), item.getBrandId(), item.getTypeId(), sedeId, 0);
+
+        NoteReport r = userReport("ENTREGA", LocalDateTime.now(), "Juan Perez", List.of(item));
+        r.setSedeId(sedeId);
+        int id = service.save(r);
+
+        assertThrows(IllegalArgumentException.class, () -> service.updateNoteApprovalStatus(id, "APPROVED", null));
+        assertFalse(service.getById(id).isStockApplied());
+    }
+
+    // aggregateItemQuantities() merges by (modelId, brandId, typeId) before moving stock — the
+    // same model can appear on more than one NOTE_ITEM row (e.g. two individually-serialized
+    // units of one model), and only their combined total should ever hit MODEL_STOCK.
+    @Test
+    void approvingEntregaWithSameModelOnMultipleRowsAggregatesTheirCombinedQuantity() throws SQLException {
+        int sedeId = resolveOrCreate("SEDE", "Campus Test");
+        NoteReportItem item1 = assetItem("NOTEBOOK", "DELL", "LATITUDE", "SN1", "AF1", GlpiStatus.PENDING);
+        NoteReportItem item2 = assetItem("NOTEBOOK", "DELL", "LATITUDE", "SN2", "AF2", GlpiStatus.PENDING);
+        IEquipmentService equipment = ServiceLocator.getInstance().getEquipmentService();
+        equipment.setModelStock(item1.getModelId(), item1.getBrandId(), item1.getTypeId(), sedeId, 5);
+
+        NoteReport r = userReport("ENTREGA", LocalDateTime.now(), "Juan Perez", List.of(item1, item2));
+        r.setSedeId(sedeId);
+        int id = service.save(r);
+        service.updateNoteApprovalStatus(id, "APPROVED", null);
+
+        // Two rows of the same model must decrement by their combined total (2), not be treated
+        // as two unrelated single-unit moves that could each independently pass an availability
+        // check a combined check would have failed.
+        assertEquals(3, equipment.getModelStock(item1.getModelId(), item1.getBrandId(), item1.getTypeId(), sedeId));
+    }
+
+    @Test
+    void approvingEntregaWithMultipleDifferentModelsDecrementsEachIndependently() throws SQLException {
+        int sedeId = resolveOrCreate("SEDE", "Campus Test");
+        NoteReportItem asset = assetItem("NOTEBOOK", "DELL", "LATITUDE", "SN1", "AF1", GlpiStatus.PENDING);
+        NoteReportItem countable = countableItem("HEADSET", "LOGITECH", "H390", 3);
+        IEquipmentService equipment = ServiceLocator.getInstance().getEquipmentService();
+        equipment.setModelStock(asset.getModelId(), asset.getBrandId(), asset.getTypeId(), sedeId, 4);
+        equipment.setModelStock(countable.getModelId(), countable.getBrandId(), countable.getTypeId(), sedeId, 10);
+
+        NoteReport r = userReport("ENTREGA", LocalDateTime.now(), "Juan Perez", List.of(asset, countable));
+        r.setSedeId(sedeId);
+        int id = service.save(r);
+        service.updateNoteApprovalStatus(id, "APPROVED", null);
+
+        assertEquals(3, equipment.getModelStock(asset.getModelId(), asset.getBrandId(), asset.getTypeId(), sedeId));
+        assertEquals(7, equipment.getModelStock(countable.getModelId(), countable.getBrandId(), countable.getTypeId(), sedeId));
+    }
+
+    // The insufficient-stock guard in applyDirectionalStock() compares a countable's requested
+    // quantity (not just a flat "1 per row" like an asset) against availability — previously only
+    // ever exercised with an asset (an implicit quantity of 1 against 0 available).
+    @Test
+    void approvingEntregaRejectsWhenCountableQuantityExceedsAvailableStock() throws SQLException {
+        int sedeId = resolveOrCreate("SEDE", "Campus Test");
+        NoteReportItem item = countableItem("HEADSET", "LOGITECH", "H390", 5);
+        IEquipmentService equipment = ServiceLocator.getInstance().getEquipmentService();
+        equipment.setModelStock(item.getModelId(), item.getBrandId(), item.getTypeId(), sedeId, 2);
+
+        NoteReport r = userReport("ENTREGA", LocalDateTime.now(), "Juan Perez", List.of(item));
+        r.setSedeId(sedeId);
+        int id = service.save(r);
+
+        assertThrows(IllegalArgumentException.class, () -> service.updateNoteApprovalStatus(id, "APPROVED", null));
+        assertEquals(2, equipment.getModelStock(item.getModelId(), item.getBrandId(), item.getTypeId(), sedeId));
+        assertFalse(service.getById(id).isStockApplied());
+    }
+
+    // ── Stock: return/receive crediting (updateItemReturnStatus / allocateCountableReturn) ─────
+
+    @Test
+    void returningAssetItemCreditsStockBackOnce() throws SQLException {
+        int sedeId = resolveOrCreate("SEDE", "Campus Test");
+        NoteReportItem item = assetItem("NOTEBOOK", "DELL", "LATITUDE", "SN1", "AF1", GlpiStatus.N_A);
+        IEquipmentService equipment = ServiceLocator.getInstance().getEquipmentService();
+        equipment.setModelStock(item.getModelId(), item.getBrandId(), item.getTypeId(), sedeId, 3);
+
+        NoteReport r = userReport("PRÉSTAMO", LocalDateTime.now(), "Juan Perez", List.of(item));
+        r.setSedeId(sedeId);
+        int reportId = service.save(r);
+        int itemId = service.getById(reportId).getItems().get(0).getId();
+
+        service.updateItemReturnStatus(itemId, ReturnStatus.RETURNED, null);
+        assertEquals(4, equipment.getModelStock(item.getModelId(), item.getBrandId(), item.getTypeId(), sedeId));
+
+        // Re-calling on an already-Returned item must not credit stock a second time.
+        service.updateItemReturnStatus(itemId, ReturnStatus.RETURNED, null);
+        assertEquals(4, equipment.getModelStock(item.getModelId(), item.getBrandId(), item.getTypeId(), sedeId));
+    }
+
+    @Test
+    void markingAssetItemLostDoesNotCreditStock() throws SQLException {
+        int sedeId = resolveOrCreate("SEDE", "Campus Test");
+        NoteReportItem item = assetItem("NOTEBOOK", "DELL", "LATITUDE", "SN1", "AF1", GlpiStatus.N_A);
+        IEquipmentService equipment = ServiceLocator.getInstance().getEquipmentService();
+        equipment.setModelStock(item.getModelId(), item.getBrandId(), item.getTypeId(), sedeId, 3);
+
+        NoteReport r = userReport("PRÉSTAMO", LocalDateTime.now(), "Juan Perez", List.of(item));
+        r.setSedeId(sedeId);
+        int reportId = service.save(r);
+        int itemId = service.getById(reportId).getItems().get(0).getId();
+
+        service.updateItemReturnStatus(itemId, ReturnStatus.LOST, "No devuelto");
+        assertEquals(3, equipment.getModelStock(item.getModelId(), item.getBrandId(), item.getTypeId(), sedeId));
+    }
+
+    @Test
+    void allocatingCountableReturnCreditsStockOnEveryCall() throws SQLException {
+        int sedeId = resolveOrCreate("SEDE", "Campus Test");
+        NoteReportItem item = countableItem("HEADSET", "LOGITECH", "H390", 5);
+        IEquipmentService equipment = ServiceLocator.getInstance().getEquipmentService();
+        equipment.setModelStock(item.getModelId(), item.getBrandId(), item.getTypeId(), sedeId, 0);
+
+        NoteReport r = userReport("PRÉSTAMO", LocalDateTime.now(), "Juan Perez", List.of(item));
+        r.setSedeId(sedeId);
+        int reportId = service.save(r);
+        int itemId = service.getById(reportId).getItems().get(0).getId();
+
+        service.allocateCountableReturn(itemId, ReturnStatus.RETURNED, 3, null);
+        assertEquals(3, equipment.getModelStock(item.getModelId(), item.getBrandId(), item.getTypeId(), sedeId));
+
+        service.allocateCountableReturn(itemId, ReturnStatus.LOST, 2, "Perdido");
+        assertEquals(3, equipment.getModelStock(item.getModelId(), item.getBrandId(), item.getTypeId(), sedeId));
     }
 }

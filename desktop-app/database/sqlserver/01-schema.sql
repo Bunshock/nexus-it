@@ -128,15 +128,31 @@ BEGIN
     );
 END
 
+-- Row exists only once a superadmin has configured a Sede's Remito shipping info via direct SQL —
+-- not nullable columns on SEDE itself, which every Sede would carry regardless of whether
+-- shipping was ever configured for it.
+IF OBJECT_ID('dbo.SEDE_SHIPPING_INFO', 'U') IS NULL
+BEGIN
+    CREATE TABLE SEDE_SHIPPING_INFO (
+        sede_id           INT PRIMARY KEY REFERENCES SEDE(id),
+        destination_label NVARCHAR(255) NOT NULL,
+        address           NVARCHAR(500),
+        recipients        NVARCHAR(500)
+    );
+END
+
 -- brand_type_id is stored explicitly (not inferred from model_id) so the single global
 -- "Genérico / Otro" model can carry an independent stock number per (Type,Brand) it's used under.
+-- sede_id makes stock genuinely per-site: the same Model at two Sedes carries two independent
+-- counts, not one shared global number.
 IF OBJECT_ID('dbo.MODEL_STOCK', 'U') IS NULL
 BEGIN
     CREATE TABLE MODEL_STOCK (
         brand_type_id INT NOT NULL REFERENCES BRAND_TYPE_LINK(id),
         model_id      INT NOT NULL REFERENCES MODEL(id),
+        sede_id       INT NOT NULL REFERENCES SEDE(id),
         stock         INT NOT NULL DEFAULT 0,
-        CONSTRAINT pk_model_stock PRIMARY KEY (brand_type_id, model_id)
+        CONSTRAINT pk_model_stock PRIMARY KEY (brand_type_id, model_id, sede_id)
     );
 END
 
@@ -167,7 +183,11 @@ END
 
 -- glpi_synced/sede are deliberately absent here — both were confirmed dead (no reader/writer
 -- anywhere in the app) and are actively dropped from an existing database further down
--- (dropDeadNoteReportColumns), never re-created for a fresh install.
+-- (dropDeadNoteReportColumns), never re-created for a fresh install. stock_applied guards
+-- against double-applying a note's stock adjustment on re-approve — every note type moves stock
+-- on approval now (not just Remito), so this is a universal per-note flag, not a NOTE_REMITO-only
+-- one (see the migration block further down for the path off the old NOTE_REMITO.stock_applied
+-- column on an already-running installation).
 IF OBJECT_ID('dbo.NOTE_REPORT', 'U') IS NULL
 BEGIN
     CREATE TABLE NOTE_REPORT (
@@ -178,7 +198,8 @@ BEGIN
         technician_dni  NVARCHAR(255),
         observations    NVARCHAR(300),
         sede_id         INT REFERENCES SEDE(id),
-        approval_status NVARCHAR(20) NOT NULL DEFAULT 'PENDING'
+        approval_status NVARCHAR(20) NOT NULL DEFAULT 'PENDING',
+        stock_applied   INT NOT NULL DEFAULT 0
     );
 END
 
@@ -233,6 +254,22 @@ BEGIN
         motivo           NVARCHAR(100),
         responsible_name NVARCHAR(255),
         responsible_dni  NVARCHAR(255)
+    );
+END
+
+-- destination_sede_id is nullable — null for a custom/manual destination (e.g. a CAU not in the
+-- SEDE catalog), which has no stock to receive. destination_label/address/recipients are
+-- snapshotted at generation time, same "snapshot, don't reference" pattern as technician_name/
+-- technician_dni. No stock_applied column here — that idempotency flag now lives on
+-- NOTE_REPORT, shared by every note type, not just Remito.
+IF OBJECT_ID('dbo.NOTE_REMITO', 'U') IS NULL
+BEGIN
+    CREATE TABLE NOTE_REMITO (
+        note_report_id      INT PRIMARY KEY REFERENCES NOTE_REPORT(id),
+        destination_sede_id INT REFERENCES SEDE(id),
+        destination_label   NVARCHAR(255) NOT NULL,
+        address             NVARCHAR(500),
+        recipients          NVARCHAR(500)
     );
 END
 
@@ -498,6 +535,36 @@ BEGIN
     END TRY
     BEGIN CATCH
         -- see comment above
+    END CATCH
+END
+
+IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE lower(table_name) = 'note_report' AND lower(column_name) = 'stock_applied')
+    ALTER TABLE NOTE_REPORT ADD stock_applied INT NOT NULL DEFAULT 0;
+
+-- NOTE_REMITO.stock_applied used to be its own idempotency flag, only for Remito notes. Once
+-- every note type started moving stock on approval, "has this note's stock effect already been
+-- applied" became a universal NOTE_REPORT-level fact instead. Backfill from the old column
+-- before dropping it — a brand-new install never creates NOTE_REMITO.stock_applied at all (see
+-- the CREATE TABLE block above), so this only fires on an already-running installation.
+IF EXISTS (SELECT 1 FROM information_schema.columns WHERE lower(table_name) = 'note_remito' AND lower(column_name) = 'stock_applied')
+BEGIN
+    UPDATE r
+    SET r.stock_applied = 1
+    FROM NOTE_REPORT r
+    JOIN NOTE_REMITO rm ON rm.note_report_id = r.id
+    WHERE rm.stock_applied = 1;
+
+    BEGIN TRY
+        DECLARE @remitoStockAppliedDefault NVARCHAR(128);
+        SELECT @remitoStockAppliedDefault = dc.name FROM sys.columns col
+            JOIN sys.default_constraints dc ON col.default_object_id = dc.object_id
+            WHERE col.object_id = OBJECT_ID('NOTE_REMITO') AND col.name = 'stock_applied';
+        IF @remitoStockAppliedDefault IS NOT NULL
+            EXEC('ALTER TABLE NOTE_REMITO DROP CONSTRAINT ' + @remitoStockAppliedDefault);
+        ALTER TABLE NOTE_REMITO DROP COLUMN stock_applied;
+    END TRY
+    BEGIN CATCH
+        -- leave it for next run to retry — not worth blocking this script over
     END CATCH
 END
 

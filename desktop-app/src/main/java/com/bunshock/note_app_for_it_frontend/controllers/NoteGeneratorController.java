@@ -6,6 +6,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
 
+import org.controlsfx.control.PopOver;
+
 import com.bunshock.note_app_for_it_frontend.models.AssetItem;
 import com.bunshock.note_app_for_it_frontend.models.CountableItem;
 import com.bunshock.note_app_for_it_frontend.models.NoteReport;
@@ -16,6 +18,8 @@ import com.bunshock.note_app_for_it_frontend.services.TechnicianSessionService;
 import com.bunshock.note_app_for_it_frontend.utils.ViewFactory;
 
 import javafx.animation.FadeTransition;
+import javafx.animation.PauseTransition;
+import javafx.animation.Transition;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.fxml.FXML;
@@ -26,14 +30,15 @@ import javafx.scene.Scene;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Alert.AlertType;
 import javafx.scene.control.Button;
+import javafx.scene.control.ComboBox;
+import javafx.scene.control.Hyperlink;
 import javafx.scene.control.Label;
+import javafx.scene.control.ListCell;
 import javafx.scene.control.TableCell;
 import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableView;
 import javafx.scene.control.TextField;
 import javafx.scene.control.TextFormatter;
-import javafx.scene.control.ToggleButton;
-import javafx.scene.control.ToggleGroup;
 import javafx.scene.control.Tooltip;
 import javafx.scene.input.KeyCode;
 import javafx.scene.layout.HBox;
@@ -49,10 +54,26 @@ import javafx.util.Duration;
 public class NoteGeneratorController implements ItemDialogHost {
 
     @FXML private VBox rootContainer;
-    @FXML private ToggleButton btnUserNote;
-    @FXML private ToggleButton btnProviderNote;
-    @FXML private ToggleGroup typeGroup;
+    @FXML private ComboBox<NoteTypeOption> cmbNoteType;
     @FXML private StackPane dynamicContentArea;
+
+    // Flat list of every note type Generar Nota can produce — replaces the old Usuario/Proveedor
+    // toggle plus UserNoteView's own inner Entrega/Devolución/Préstamo/Fin de Contrato toggle
+    // stack. Raw values stay byte-identical to what UserNoteController.getSelectedNoteType() (and
+    // therefore NOTE_REPORT.profile_type) has always returned, so History/filtering/toDisplayName()
+    // downstream need no changes. Display labels match NoteGenerationService.toDisplayName()'s
+    // existing mapping.
+    private record NoteTypeOption(String rawType, String displayLabel, boolean isProvider) {
+        @Override public String toString() { return displayLabel; }
+    }
+
+    private static final List<NoteTypeOption> NOTE_TYPE_OPTIONS = List.of(
+        new NoteTypeOption("ENTREGA", "Entrega", false),
+        new NoteTypeOption("DEVOLUCIÓN", "Devolución", false),
+        new NoteTypeOption("ENTREGA PERMANENTE", "Entrega Permanente", false),
+        new NoteTypeOption("PRÉSTAMO", "Préstamo", false),
+        new NoteTypeOption(null, "Proveedor (Entrega)", true)
+    );
     @FXML private VBox vboxObservationsFooter;
 
     @FXML private TableView<AssetItem> tblAssets;
@@ -76,6 +97,10 @@ public class NoteGeneratorController implements ItemDialogHost {
     @FXML private Button btnAddItem;
     @FXML private Label lblTableStatus;
     @FXML private Label lblGenerationStatus;
+    @FXML private HBox stockWarningBox;
+    @FXML private Label lblStockWarningSummary;
+    @FXML private Hyperlink lnkStockWarningToggle;
+    private final PopOver stockWarningPopOver = new PopOver();
 
     private final ObservableList<AssetItem> assetList = FXCollections.observableArrayList();
     private final ObservableList<CountableItem> countableList = FXCollections.observableArrayList();
@@ -85,32 +110,103 @@ public class NoteGeneratorController implements ItemDialogHost {
 
     public void setViewFactory(ViewFactory viewFactory) {
         this.viewFactory = viewFactory;
-        showUserNoteView();
+        // Fires the cmbNoteType listener below, landing on the first option ("Entrega") — same
+        // effective default the old btnTypeEntrega selected="true" toggle used to give.
+        cmbNoteType.getSelectionModel().selectFirst();
     }
 
     private static final int OBSERVATIONS_MAX_LENGTH = 300;
 
+    // Same thin-top-border divider ItemDialogController.applyGenericCellFactory() draws above
+    // its own trailing "Genérico / Otro" fallback entry — duplicated per this codebase's
+    // no-shared-abstraction convention, applied here above "Proveedor (Entrega)" since it's
+    // conceptually a different kind of option from the 4 Usuario sub-types above it.
+    private static final String DIVIDER_STYLE =
+        "-fx-border-color: #e2e8f0 transparent transparent transparent; -fx-border-width: 1 0 0 0;";
+
+    private void applyNoteTypeCellFactory() {
+        cmbNoteType.setCellFactory(lv -> new ListCell<>() {
+            @Override
+            protected void updateItem(NoteTypeOption item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    setText(null);
+                    setStyle("");
+                } else {
+                    setText(item.toString());
+                    setStyle(item.isProvider() ? DIVIDER_STYLE : "");
+                }
+            }
+        });
+    }
+
     public void initialize() {
-        btnUserNote.setOnAction(e -> showUserNoteView());
-        btnProviderNote.setOnAction(e -> showProviderNoteView());
+        cmbNoteType.setItems(FXCollections.observableArrayList(NOTE_TYPE_OPTIONS));
+        applyNoteTypeCellFactory();
+        cmbNoteType.valueProperty().addListener((obs, old, selected) -> {
+            if (selected == null) return;
+            if (selected.isProvider()) {
+                showProviderNoteView();
+            } else {
+                showUserNoteView();
+                if (viewFactory != null) {
+                    viewFactory.getUserNoteController().setNoteType(selected.rawType());
+                }
+            }
+            refreshStockWarning();
+        });
 
         txtObservations.setTextFormatter(new TextFormatter<>(change ->
             change.getControlNewText().length() <= OBSERVATIONS_MAX_LENGTH ? change : null));
-
-        typeGroup.selectedToggleProperty().addListener((obs, old, next) -> {
-            if (next == null) old.setSelected(true);
-        });
 
         setupAssetTable();
         setupCountableTable();
 
         colAssetActions.setCellFactory(createActionCellFactory(
-            this::handleEditAsset, asset -> { assetList.remove(asset); updateAddButtonState(); }));
+            this::handleEditAsset, asset -> { assetList.remove(asset); updateAddButtonState(); refreshStockWarning(); }));
 
         colCountActions.setCellFactory(createActionCellFactory(
-            this::handleEditCountable, countable -> { countableList.remove(countable); updateAddButtonState(); }));
+            this::handleEditCountable, countable -> { countableList.remove(countable); updateAddButtonState(); refreshStockWarning(); }));
 
+        setupStockWarningHover();
         updateAddButtonState();
+    }
+
+    // Detail shows on hover over "Ver detalle" instead of a click-to-expand panel — a long
+    // shortage list would otherwise take over the layout below it. Same PopOver +
+    // MainController.setupTitleBarStatusHover() precedent, but that alone still flickered here:
+    // the popover opens directly beneath a small text link, close enough that the moment it
+    // appears the cursor is already geometrically inside its screen bounds — the OS then routes
+    // further mouse-move events to the (now topmost) popover window, JavaFX synthesizes a
+    // MOUSE_EXITED on the link, and an immediate hide()-on-exit closes the very popover the
+    // cursor is sitting on. Fixed with the standard "hoverable popover" bridge: hiding always
+    // goes through a short delay that's cancelled if the cursor lands on the link OR the
+    // popover's own content before it fires — so crossing the small gap between them (or the
+    // instant of the popover appearing under the cursor) never closes it.
+    private static final Duration STOCK_WARNING_SHOW_DELAY = Duration.millis(400);
+    private static final Duration STOCK_WARNING_HIDE_DELAY = Duration.millis(200);
+    private final PauseTransition stockWarningShowDelay = new PauseTransition(STOCK_WARNING_SHOW_DELAY);
+    private final PauseTransition stockWarningHideDelay = new PauseTransition(STOCK_WARNING_HIDE_DELAY);
+
+    private void setupStockWarningHover() {
+        stockWarningPopOver.setDetachable(false);
+        stockWarningPopOver.setArrowLocation(PopOver.ArrowLocation.TOP_RIGHT);
+        stockWarningPopOver.setArrowSize(10);
+        stockWarningPopOver.setCornerRadius(8);
+        stockWarningPopOver.setAnimated(true);
+        stockWarningPopOver.setAutoHide(false);
+
+        stockWarningShowDelay.setOnFinished(e -> stockWarningPopOver.show(lnkStockWarningToggle));
+        stockWarningHideDelay.setOnFinished(e -> stockWarningPopOver.hide());
+
+        lnkStockWarningToggle.setOnMouseEntered(e -> {
+            stockWarningHideDelay.stop();
+            if (!stockWarningPopOver.isShowing()) stockWarningShowDelay.playFromStart();
+        });
+        lnkStockWarningToggle.setOnMouseExited(e -> {
+            stockWarningShowDelay.stop();
+            if (stockWarningPopOver.isShowing()) stockWarningHideDelay.playFromStart();
+        });
     }
 
     private void showUserNoteView() {
@@ -194,7 +290,7 @@ public class NoteGeneratorController implements ItemDialogHost {
             dialogScene.getStylesheets().add(getClass().getResource(
                 "/com/bunshock/note_app_for_it_frontend/css/styles.css").toExternalForm());
             stage.setScene(dialogScene);
-            stage.setOnHidden(e -> updateAddButtonState());
+            stage.setOnHidden(e -> { updateAddButtonState(); refreshStockWarning(); });
             stage.show();
 
             javafx.geometry.Bounds btn = btnAddItem.localToScreen(btnAddItem.getBoundsInLocal());
@@ -253,15 +349,16 @@ public class NoteGeneratorController implements ItemDialogHost {
         tblCountables.setItems(countableList);
     }
 
-    public void addAsset(AssetItem item) { assetList.add(item); }
-    public void addCountable(CountableItem item) { countableList.add(item); }
+    public void addAsset(AssetItem item) { assetList.add(item); refreshStockWarning(); }
+    public void addCountable(CountableItem item) { countableList.add(item); refreshStockWarning(); }
 
     public ObservableList<AssetItem> getAssetList() { return assetList; }
     public ObservableList<CountableItem> getCountableList() { return countableList; }
     public String getObservations() { return txtObservations.getText().trim(); }
 
     public boolean isUserNote() {
-        return typeGroup.getSelectedToggle() == btnUserNote;
+        NoteTypeOption selected = cmbNoteType.getValue();
+        return selected != null && !selected.isProvider();
     }
 
     @FXML
@@ -334,6 +431,16 @@ public class NoteGeneratorController implements ItemDialogHost {
                 canGenerate = false;
             }
             if (!isUserNote() && !viewFactory.getProviderNoteController().validateAndShowErrors()) {
+                canGenerate = false;
+            }
+            // Evaluated unconditionally, alongside every other check above — not gated behind an
+            // early return — so the stock pill's flash always fires together with any other
+            // validation error animation on the same click, instead of only when it's the sole
+            // problem. Skips entirely for Devolución (see refreshStockWarning()'s own comment),
+            // which is also the only case checkGlpiAssignments() below applies to — the two
+            // never both fire on the same click.
+            if (!refreshStockWarning()) {
+                flashStockWarningPill();
                 canGenerate = false;
             }
             if (!canGenerate) return;
@@ -520,6 +627,151 @@ public class NoteGeneratorController implements ItemDialogHost {
             + String.join("\n", conflicts));
         alert.showAndWait();
         return false;
+    }
+
+    // Live heuristic only — does NOT move any stock itself (that happens on admin approval, see
+    // SqliteHistoryService.applyNoteStockIfNeeded()). Recomputed on every item add/edit/delete and
+    // on note-type change, so the warning stays live while the technician keeps editing; also the
+    // actual gate at Generar-click time (return value), reusing the same computation rather than a
+    // separate popup — the persistent warning already shown in the view is the explanation. Skips
+    // entirely for Devolución (ingress — nothing to block, you can always receive stock back).
+    private boolean refreshStockWarning() {
+        NoteTypeOption selected = cmbNoteType.getValue();
+        if (selected == null || "DEVOLUCIÓN".equals(selected.rawType())) {
+            hideStockWarning();
+            return true;
+        }
+        Integer sedeId = TechnicianSessionService.getInstance().getSedeId();
+        if (sedeId == null) {
+            hideStockWarning();
+            return true;
+        }
+        List<String> shortages = computeStockShortages(sedeId);
+        if (shortages.isEmpty()) {
+            hideStockWarning();
+            return true;
+        }
+        showStockWarning(shortages);
+        return false;
+    }
+
+    // Updates the summary count and the hover popover's content in place — the popover itself
+    // only actually appears while the mouse is over "Ver detalle" (see setupStockWarningHover()).
+    private void showStockWarning(List<String> shortages) {
+        lblStockWarningSummary.setText((shortages.size() == 1
+            ? "⚠ 1 ítem supera"
+            : "⚠ " + shortages.size() + " ítems superan") + " el stock disponible en su Sede");
+        stockWarningPopOver.setContentNode(buildStockWarningPopoverContent(shortages));
+        stockWarningBox.setVisible(true);
+        stockWarningBox.setManaged(true);
+    }
+
+    // PopOver renders in its own popup Window, which doesn't inherit the app's stylesheet the
+    // way an in-scene node would — inline-styled, same convention already established by
+    // ADUserSelectionController's own hover PopOver in this codebase.
+    private VBox buildStockWarningPopoverContent(List<String> shortages) {
+        VBox box = new VBox(6);
+        box.setStyle("-fx-padding: 14; -fx-background-color: #fffbeb; -fx-border-color: #f59e0b;"
+            + " -fx-border-width: 1; -fx-border-radius: 8; -fx-background-radius: 8;");
+        box.setMaxWidth(340);
+        Label header = new Label("STOCK INSUFICIENTE EN SU SEDE");
+        header.setStyle("-fx-text-fill: #b45309; -fx-font-weight: bold; -fx-font-size: 10px;");
+        box.getChildren().add(header);
+        for (String shortage : shortages) {
+            Label line = new Label("• " + shortage);
+            line.setWrapText(true);
+            line.setMaxWidth(320);
+            line.setStyle("-fx-text-fill: #92400e; -fx-font-size: 11px;");
+            box.getChildren().add(line);
+        }
+        // Bridges the gap between the link and the popup below it — see setupStockWarningHover().
+        box.setOnMouseEntered(e -> stockWarningHideDelay.stop());
+        box.setOnMouseExited(e -> {
+            if (stockWarningPopOver.isShowing()) stockWarningHideDelay.playFromStart();
+        });
+        return box;
+    }
+
+    private void hideStockWarning() {
+        stockWarningBox.setVisible(false);
+        stockWarningBox.setManaged(false);
+        stockWarningShowDelay.stop();
+        stockWarningHideDelay.stop();
+        if (stockWarningPopOver.isShowing()) stockWarningPopOver.hide();
+    }
+
+    // Draws attention to the (already-visible) pill when a click on "Generar Nota" is actually
+    // blocked by it — same border-fade mechanism/timing as UserNoteController.highlightFields()
+    // (TABLE_ERROR_HOLD/TABLE_ERROR_FADE = 2000ms hold / 650ms fade, reused here rather than a
+    // third pair of identical constants), fading toward fully transparent instead of toward a
+    // "default border color" — the pill has no border at rest, unlike a text field.
+    // Only -fx-border-color is ever set here, never -fx-border-width/-fx-border-radius —
+    // .stock-warning-inline (styles.css) already reserves a permanent, transparent 2px border at
+    // rest, so this animation only ever changes color, never the pill's actual size. Setting the
+    // width here too (as a first attempt did) made the pill visibly grow/shift its siblings
+    // (lblTableStatus, "+ Agregar Equipo") the instant the flash started, since no border-width
+    // was reserved at rest — same class of bug already fixed once for Historial's row accents.
+    private Transition stockWarningBorderFade;
+
+    private void flashStockWarningPill() {
+        if (stockWarningBorderFade != null) stockWarningBorderFade.stop();
+
+        Color flashColor = Color.web("#f59e0b");
+        applyStockWarningPillBorder(toRgbaString(flashColor, 1.0));
+
+        Transition fade = new Transition() {
+            { setDelay(TABLE_ERROR_HOLD); setCycleDuration(TABLE_ERROR_FADE); }
+            @Override
+            protected void interpolate(double frac) {
+                applyStockWarningPillBorder(toRgbaString(flashColor, 1.0 - frac));
+            }
+        };
+        fade.setOnFinished(e -> stockWarningBox.setStyle(""));
+        stockWarningBorderFade = fade;
+        fade.play();
+    }
+
+    private void applyStockWarningPillBorder(String colorValue) {
+        stockWarningBox.setStyle("-fx-border-color: " + colorValue + ";");
+    }
+
+    private static String toRgbaString(Color c, double alpha) {
+        int r = (int) Math.round(c.getRed() * 255);
+        int g = (int) Math.round(c.getGreen() * 255);
+        int b = (int) Math.round(c.getBlue() * 255);
+        return String.format("rgba(%d,%d,%d,%.3f)", r, g, b, alpha);
+    }
+
+    // Aggregates assetList/countableList by (typeId, brandId, modelId) — the same model can
+    // appear on multiple rows — and compares each requested total against current stock at
+    // sedeId. Returns one human-readable line per short model, or an empty list if everything
+    // requested fits.
+    private List<String> computeStockShortages(int sedeId) {
+        record StockKey(int typeId, int brandId, int modelId) {}
+        java.util.Map<StockKey, Integer> requested = new java.util.LinkedHashMap<>();
+        java.util.Map<StockKey, String> labels = new java.util.LinkedHashMap<>();
+        for (AssetItem a : assetList) {
+            StockKey key = new StockKey(a.getTypeId(), a.getBrandId(), a.getModelId());
+            requested.merge(key, 1, Integer::sum);
+            labels.putIfAbsent(key, a.getType().get() + " " + a.getBrand().get() + " " + a.getModel().get());
+        }
+        for (CountableItem item : countableList) {
+            StockKey key = new StockKey(item.getTypeId(), item.getBrandId(), item.getModelId());
+            requested.merge(key, item.getQuantity().get(), Integer::sum);
+            labels.putIfAbsent(key, item.getType().get() + " " + item.getBrand().get() + " " + item.getModel().get());
+        }
+        if (requested.isEmpty()) return List.of();
+
+        var equipmentService = ServiceLocator.getInstance().getEquipmentService();
+        List<String> shortages = new ArrayList<>();
+        for (var entry : requested.entrySet()) {
+            StockKey key = entry.getKey();
+            int available = equipmentService.getModelStock(key.modelId(), key.brandId(), key.typeId(), sedeId);
+            if (available < entry.getValue()) {
+                shortages.add(labels.get(key) + " (solicita " + entry.getValue() + ", disponible " + available + ")");
+            }
+        }
+        return shortages;
     }
 
     private void openPreview(String html, String profileType, NoteReport report) throws IOException {

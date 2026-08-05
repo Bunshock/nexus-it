@@ -520,6 +520,25 @@ class DatabaseServiceMigrationTest {
         }
     }
 
+    @Test
+    void createEquipmentTablesCreatesSedeShippingInfoTable() throws Exception {
+        String url = "jdbc:sqlite:" + tempDir.resolve("sede-shipping-info-table.db").toAbsolutePath();
+        try (Connection c = DriverManager.getConnection(url); Statement stmt = c.createStatement()) {
+            invokeCreateEquipmentTables(stmt);
+            assertTrue(tableExists(c, "SEDE_SHIPPING_INFO"));
+        }
+    }
+
+    @Test
+    void createHistoryTablesCreatesNoteRemitoTable() throws Exception {
+        String url = "jdbc:sqlite:" + tempDir.resolve("note-remito-table.db").toAbsolutePath();
+        try (Connection c = DriverManager.getConnection(url); Statement stmt = c.createStatement()) {
+            invokeCreateEquipmentTables(stmt);
+            invokeCreateHistoryTables(stmt);
+            assertTrue(tableExists(c, "NOTE_REMITO"));
+        }
+    }
+
     // MODEL_STOCK gained sede_id as part of its primary key — an already-running installation's
     // old-shape table (no sede_id, one global number per Model) has no correct way to attribute
     // its existing numbers to any one Sede, so the explicit user decision was to reset: drop the
@@ -600,6 +619,61 @@ class DatabaseServiceMigrationTest {
 
             assertEquals(1, singleInt(c, "SELECT COUNT(*) FROM BRAND_TYPE_LINK WHERE id = 1"),
                 "a link with a MODEL_STOCK row (even with zero MODEL rows) must survive");
+        }
+    }
+
+    // NOTE_REMITO.stock_applied used to be its own idempotency flag, only for Remito notes.
+    // Once every note type started moving stock on approval, "has this note's stock effect
+    // already been applied" became a universal NOTE_REPORT-level fact instead — see
+    // SqliteHistoryService.applyNoteStockIfNeeded(). Reproduces an installation with one
+    // already-approved-and-stock-applied Remito (plus one never-applied Remito, to confirm the
+    // backfill doesn't false-positive) to confirm migrateSchema() backfills the flag onto
+    // NOTE_REPORT.stock_applied and drops the old NOTE_REMITO column, not just skips re-adding it
+    // on a fresh install.
+    @Test
+    void migrateSchemaBackfillsStockAppliedFromNoteRemitoAndDropsColumn() throws Exception {
+        String url = "jdbc:sqlite:" + tempDir.resolve("dead-remito-stock-applied.db").toAbsolutePath();
+
+        try (Connection c = DriverManager.getConnection(url); Statement stmt = c.createStatement()) {
+            stmt.executeUpdate("""
+                CREATE TABLE NOTE_REPORT (
+                    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                    created_at   TEXT NOT NULL,
+                    profile_type TEXT NOT NULL
+                )""");
+            stmt.executeUpdate("INSERT INTO NOTE_REPORT (id, created_at, profile_type) VALUES (1, '2026-01-01T10:00', 'REMITO DE ENVÍO')");
+            stmt.executeUpdate("INSERT INTO NOTE_REPORT (id, created_at, profile_type) VALUES (2, '2026-01-02T10:00', 'REMITO DE ENVÍO')");
+            // Old shape — stock_applied lived on NOTE_REMITO itself, before every note type
+            // started moving stock and the flag was consolidated onto NOTE_REPORT.
+            stmt.executeUpdate("""
+                CREATE TABLE NOTE_REMITO (
+                    note_report_id      INTEGER PRIMARY KEY REFERENCES NOTE_REPORT(id),
+                    destination_sede_id INTEGER,
+                    destination_label   TEXT NOT NULL,
+                    address             TEXT,
+                    recipients          TEXT,
+                    stock_applied       INTEGER NOT NULL DEFAULT 0
+                )""");
+            stmt.executeUpdate("""
+                INSERT INTO NOTE_REMITO (note_report_id, destination_label, stock_applied)
+                VALUES (1, 'CAU Recoleta', 1)""");
+            stmt.executeUpdate("""
+                INSERT INTO NOTE_REMITO (note_report_id, destination_label, stock_applied)
+                VALUES (2, 'CAU Palermo', 0)""");
+
+            // createHistoryTables()'s own NOTE_REMITO is CREATE TABLE IF NOT EXISTS — since the
+            // old-shape table above already exists, this is a no-op and the old shape survives
+            // until migrateSchema() itself backfills and drops the column.
+            invokeCreateEquipmentTables(stmt);
+            invokeCreateHistoryTables(stmt);
+            invokeMigrateSchema(c, stmt);
+
+            assertTrue(hasColumn(c, "NOTE_REPORT", "stock_applied"));
+            assertFalse(hasColumn(c, "NOTE_REMITO", "stock_applied"));
+            assertEquals(1, singleInt(c, "SELECT stock_applied FROM NOTE_REPORT WHERE id = 1"),
+                "backfilled from the already-applied Remito row");
+            assertEquals(0, singleInt(c, "SELECT stock_applied FROM NOTE_REPORT WHERE id = 2"),
+                "an unapplied Remito row must not be backfilled to 1");
         }
     }
 

@@ -152,6 +152,16 @@ public class RemoteDatabaseService {
                     name       NVARCHAR(255) NOT NULL UNIQUE,
                     deprecated INT NOT NULL DEFAULT 0
                 )""");
+            // Row exists only once a superadmin has configured a Sede's Remito shipping info via
+            // direct SQL — not nullable columns on SEDE itself, which every Sede would carry
+            // regardless of whether shipping was ever configured for it.
+            createTableIfMissing(stmt, "SEDE_SHIPPING_INFO", """
+                CREATE TABLE SEDE_SHIPPING_INFO (
+                    sede_id           INT PRIMARY KEY REFERENCES SEDE(id),
+                    destination_label NVARCHAR(255) NOT NULL,
+                    address           NVARCHAR(500),
+                    recipients        NVARCHAR(500)
+                )""");
             // Mirrors DatabaseService's identical SQLite MODEL_STOCK table — brand_type_id is
             // stored explicitly (not inferred from model_id) so the single global "Genérico /
             // Otro" model can carry an independent stock number per (Type,Brand) it's used under.
@@ -212,7 +222,8 @@ public class RemoteDatabaseService {
                     technician_dni  NVARCHAR(255),
                     observations      NVARCHAR(300),
                     sede_id           INT REFERENCES SEDE(id),
-                    approval_status   NVARCHAR(20) NOT NULL DEFAULT 'PENDING'
+                    approval_status   NVARCHAR(20) NOT NULL DEFAULT 'PENDING',
+                    stock_applied     INT NOT NULL DEFAULT 0
                 )""");
             // Row exists only for a note an admin has actually rejected — not a NULL sentinel on
             // every NOTE_REPORT row that's PENDING/APPROVED, see DatabaseService's identical
@@ -255,6 +266,22 @@ public class RemoteDatabaseService {
                     motivo           NVARCHAR(100),
                     responsible_name NVARCHAR(255),
                     responsible_dni  NVARCHAR(255)
+                )""");
+            // destination_sede_id is nullable — null for a custom/manual destination (e.g. a CAU
+            // not in the SEDE catalog), which has no stock to receive. destination_label/address/
+            // recipients are snapshotted at generation time (not re-read from
+            // SEDE_SHIPPING_INFO on reprint), same "snapshot, don't reference" pattern as
+            // technician_name/technician_dni. No stock_applied column here anymore — every note
+            // type now moves stock on approval, not just Remito, so the double-approval guard
+            // moved to a single shared NOTE_REPORT.stock_applied column instead (see
+            // migrateStockAppliedSchema()).
+            createTableIfMissing(stmt, "NOTE_REMITO", """
+                CREATE TABLE NOTE_REMITO (
+                    note_report_id      INT PRIMARY KEY REFERENCES NOTE_REPORT(id),
+                    destination_sede_id INT REFERENCES SEDE(id),
+                    destination_label   NVARCHAR(255) NOT NULL,
+                    address             NVARCHAR(500),
+                    recipients          NVARCHAR(500)
                 )""");
             // Slim base table — asset-only, countable-only, GLPI-tracking, and return-tracking
             // fields each live in their own subtype table below, so a row never carries a column
@@ -378,6 +405,8 @@ public class RemoteDatabaseService {
             migrateRejectionReasonSchema(stmt, c);
             migrateEntregaDevolucionSplitSchema(stmt, c);
             migrateTimestampColumnsToDatetime2(stmt, c);
+            addColumnIfMissing(stmt, c, "NOTE_REPORT", "stock_applied", "INT NOT NULL DEFAULT 0");
+            migrateStockAppliedSchema(stmt, c);
 
             if (noteItemStillWide) {
                 migrateNoteItemSchema(stmt, c);
@@ -1023,6 +1052,26 @@ public class RemoteDatabaseService {
             } catch (SQLException ignored) {
                 // leave it for next startup to retry
             }
+        }
+    }
+
+    // SQL Server mirror of DatabaseService.migrateStockAppliedSchema() — consolidates the
+    // double-approval stock guard onto one shared NOTE_REPORT.stock_applied column instead of
+    // NOTE_REMITO's own, now that every note type moves stock on approval, not just Remito.
+    // Guarded on NOTE_REMITO still having its own stock_applied column — a no-op once already
+    // migrated, including on a brand-new install, which never creates that column at all.
+    private void migrateStockAppliedSchema(Statement stmt, Connection c) throws SQLException {
+        if (!columnExists(c, "NOTE_REMITO", "stock_applied")) return;
+        try {
+            stmt.executeUpdate("""
+                UPDATE r SET r.stock_applied = 1
+                FROM NOTE_REPORT r JOIN NOTE_REMITO rm ON rm.note_report_id = r.id
+                WHERE rm.stock_applied = 1
+                """);
+            dropDefaultConstraintIfAny(stmt, c, "NOTE_REMITO", "stock_applied");
+            stmt.executeUpdate("ALTER TABLE NOTE_REMITO DROP COLUMN stock_applied");
+        } catch (SQLException ignored) {
+            // leave it for next startup to retry
         }
     }
 

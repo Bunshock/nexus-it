@@ -16,6 +16,7 @@ erDiagram
     MODEL ||--o| SN_VALIDATION : ""
     BRAND_TYPE_LINK ||--o{ MODEL_STOCK : ""
     MODEL ||--o{ MODEL_STOCK : ""
+    SEDE ||--o{ MODEL_STOCK : ""
     
     TYPE {
         int id PK
@@ -53,26 +54,36 @@ erDiagram
     }
 
     MODEL_STOCK {
-        int brand_type_id PK_FK "part of composite PK, with model_id"
-        int model_id PK_FK "part of composite PK, with brand_type_id"
-        int stock "current quantity on hand for this (Type,Brand) usage of this model"
+        int brand_type_id PK_FK "part of composite PK, with model_id and sede_id"
+        int model_id PK_FK "part of composite PK, with brand_type_id and sede_id"
+        int sede_id PK_FK "part of composite PK — the same Model carries an independent count per Sede"
+        int stock "current quantity on hand for this (Type,Brand,Sede) usage of this model"
     }
 ```
 
-`MODEL_STOCK`'s composite PK `(brand_type_id, model_id)` is not just the global-generic model's
-own `brand_type_id` mirrored — for a normal (non-generic) model, `brand_type_id` here is
+`MODEL_STOCK`'s composite PK `(brand_type_id, model_id, sede_id)` is not just the global-generic
+model's own `brand_type_id` mirrored — for a normal (non-generic) model, `brand_type_id` here is
 redundantly the same value the model's own `MODEL.brand_type_id` row already carries (one natural
 row). The table exists specifically so the single global `MODEL` row (`brand_type_id IS NULL`)
 can carry an independent stock number per (Type,Brand) it's actually used under, which a plain
-`MODEL.stock` column couldn't express.
+`MODEL.stock` column couldn't express. `sede_id` makes stock genuinely per-site: the same Model at
+two Sedes carries two independent counts, not one shared global number — a Remito moves stock from
+one Sede's row to another's (see the Notes tables section below).
 
-#### Provider table
+#### Provider and Sede tables
 
-Independent of the equipment catalog above — no FK relationship, just a flat, admin-managed list backing Nota de Proveedor's "PROVEEDOR" dropdown (`IEquipmentService.getAllProviders()`/`addProvider()`/`renameProvider()`/`removeProvider()`). Added 2026-07-10 to fix the dropdown, which was previously unpopulated and non-functional.
+Independent of the equipment catalog above — no FK relationship, just flat, admin-managed lists.
+`PROVIDER` backs Nota de Proveedor's "PROVEEDOR" dropdown; `SEDE` backs the technician's own
+assigned site and every Sede-scoped selector in the app (Historial's filter, Base de Datos' Stock
+— Sede selector, a Remito's destination). Both are read-only from the app's own side —
+`IEquipmentService.getAllProviders()`/`getAllSedes()` only — a superadmin adds/renames/removes rows
+directly via SQL, same "no in-app CRUD" convention as `APP_USER`/`ROLE_PERMISSION` below.
 
 ```mermaid
 
 erDiagram
+    SEDE ||--o| SEDE_SHIPPING_INFO : "optional — configured for Remito destinations"
+
     PROVIDER {
         int id PK
         string name "UNIQUE regardless of deprecated status"
@@ -83,6 +94,13 @@ erDiagram
         int id PK
         string name "UNIQUE regardless of deprecated status"
         int deprecated "0 = active/selectable; 1 = renamed-away or removed"
+    }
+
+    SEDE_SHIPPING_INFO {
+        int sede_id PK_FK "one row per Sede that has ever been configured as a Remito destination"
+        string destination_label "printed on the Remito note; may differ from the Sede's own catalog name"
+        string address "optional"
+        string recipients "optional — free text, may name more than one person"
     }
 ```
 
@@ -144,6 +162,7 @@ erDiagram
 
     NOTE_REPORT ||--o| NOTE_ENTREGA_DEVOLUCION : ""
     NOTE_REPORT ||--o| NOTE_PROVEEDOR : ""
+    NOTE_REPORT ||--o| NOTE_REMITO : ""
     NOTE_REPORT ||--o| NOTE_REPORT_REJECTION : "row exists only for a rejected note"
 
     NOTE_ENTREGA_DEVOLUCION ||--o| NOTE_DEVOLUCION_FALLA : "row exists only for Devolucion+Falla"
@@ -159,15 +178,17 @@ erDiagram
     MODEL ||--o{ NOTE_ITEM : ""
     PROVIDER ||--o{ NOTE_PROVEEDOR : ""
     SEDE |o--o{ NOTE_REPORT : "optional — NULL only for notes predating this feature"
+    SEDE |o--o{ NOTE_REMITO : "optional — NULL for a custom/manual destination not in the catalog"
     
     NOTE_REPORT {
         int id PK
         datetime created_at "DATETIME2 on SQL Server (2026-07-29); ISO-8601 TEXT on SQLite (SqliteHistoryService reads both formats)"
-        string profile_type "ENTREGA / DEVOLUCION / FIN_DE_CONTRATO / PROVEEDOR"
+        string profile_type "ENTREGA / DEVOLUCION / FIN_DE_CONTRATO / PROVEEDOR / PRESTAMO / REMITO DE ENVIO"
         string technician_name "plain text, snapshot at generation time"
         string technician_dni "plain text, snapshot at generation time"
         int sede_id FK "nullable — resolves to SEDE.name at read time via JOIN, same pattern as provider_id"
         string approval_status "PENDING (default) / APPROVED / RECHAZADO — added 2026-07-29, see Notes below"
+        int stock_applied "0/1 — guards against double-applying a note's stock movement if it's re-approved; every note type moves stock on approval now, not just Remito, see Notes below"
     }
 
     NOTE_REPORT_REJECTION {
@@ -199,6 +220,14 @@ erDiagram
         int provider_id FK "references PROVIDER(id), possibly a deprecated/renamed-away row — see Notes below"
         string cuit
         string motivo "mandatory"
+    }
+
+    NOTE_REMITO {
+        int note_report_id PK_FK
+        int destination_sede_id FK "nullable — NULL for a custom/manual destination (e.g. a CAU not in the SEDE catalog)"
+        string destination_label "NOT NULL — snapshot at generation time, same pattern as technician_name"
+        string address "optional"
+        string recipients "optional — free text, may name more than one person"
     }
 
     NOTE_ITEM {
@@ -241,6 +270,35 @@ erDiagram
 **Catalog-FK redesign (2026-07-22, same day)** — `NOTE_ITEM.type_name`/`brand_name`/`model_name` and `NOTE_PROVEEDOR.provider_name` (plain text snapshots) were replaced with real `type_id`/`brand_id`/`model_id`/`provider_id` foreign keys into the catalog. `TYPE`, `BRAND`, `MODEL`, and `PROVIDER` each gained a `deprecated` column: renaming or removing a row never mutates or deletes it — it's marked `deprecated = 1` and a new (or reactivated, if a matching deprecated row already exists) `deprecated = 0` row takes over the name, so a historical note's FK still resolves to a row carrying its exact original name. Uniqueness on `name` (and, for `MODEL`, `(brand_type_id, name)`) is enforced regardless of `deprecated` status — a given name lives on exactly one row at a time. Renaming a `TYPE`/`BRAND` cascades: every `BRAND_TYPE_LINK` that used the old id gets an equivalent link under the new id, with every active `MODEL` under it cloned forward, so the active catalog never silently loses children. See `CLAUDE.md`'s catalog-FK redesign section for the full backfill/migration mechanics (both SQLite and SQL Server) and `SqliteEquipmentService.java` for the rename/cascade logic.
 
 **`NOTE_ENTREGA_DEVOLUCION`/`NOTE_REPORT` split further (2026-07-30)** — a fresh schema-normalization audit found the same "doesn't apply to this row" pattern the `NOTE_ITEM` split above already fixed: `failure_cause`/`failure_details` (Devolución+Falla only) and `area_evento` (Préstamo-only, and optional even there) were nullable columns shared across all 4 profile types `NOTE_ENTREGA_DEVOLUCION` serves; `NOTE_REPORT.rejection_reason` (added 2026-07-29) was nullable unless `approval_status = 'RECHAZADO'`. Split into `NOTE_DEVOLUCION_FALLA`, `NOTE_PRESTAMO_AREA_EVENTO`, and `NOTE_REPORT_REJECTION` above — each a row-exists-only-when-applicable subtype table, same shape as `NOTE_ITEM_GLPI_TRACKING`/`NOTE_ITEM_RETURN_TRACKING`. No table-rebuild needed for either engine (none of the 4 retired columns were referenced by FK) — a plain backfill + native `DROP COLUMN` on both SQLite (3.35+) and SQL Server. See `CLAUDE.md`'s "NOTE_ENTREGA_DEVOLUCION and NOTE_REPORT normalized further" section for the full migration mechanics.
+
+**`NOTE_REMITO` (Remito de Envío — inter-Sede stock transfer)** — a technician ships equipment from
+their own assigned Sede to either a `SEDE`-catalog destination or a custom one-off destination
+(e.g. a CAU not in the catalog). `destination_sede_id`/`destination_label`/`address`/`recipients`
+are captured once at generation time on this subtype table, same shape as `NOTE_PROVEEDOR`; the
+source Sede is just `NOTE_REPORT.sede_id`, reused unchanged. Approving a Remito moves `MODEL_STOCK` —
+decrementing the source Sede's row for every shipped item (by quantity) and, only when
+`destination_sede_id` is non-null, incrementing the destination Sede's row by the same amount.
+
+**Every note type moves stock on approval now, not just Remito** — Entrega/Entrega Permanente/
+Préstamo/Provider notes decrement `MODEL_STOCK` at the technician's own Sede, and Devolución notes
+increment it back, on the same `PENDING → APPROVED` transition. Préstamo/Provider items also credit
+stock back individually when marked returned/received (`updateItemReturnStatus`/
+`allocateCountableReturn`), independent of the note-level approval flag. This happens exactly once
+per note, gated by `NOTE_REPORT.stock_applied` (a single consolidated flag shared by every profile
+type — `NOTE_REMITO` used to have its own copy of this flag before it was retired in favor of the
+shared one) — never at generation time — so a mistakenly-created note can be rejected with zero
+effect on real stock, the same guarantee the approval workflow (below) already gives for everything
+else. Requesting more than the acting Sede currently has on hand fails the approval outright (same
+negative-stock guard `MODEL_STOCK` writes already enforce) rather than letting it go negative; a
+generation-time heuristic warns the technician in the UI beforehand, but the approval-time check is
+the one that's actually authoritative, since stock can shift between generation and approval.
+
+`NOTE_REMITO` has no `motivo` column of its own — a Remito has no natural "reason" the way
+Entrega/Devolución/Proveedor do. The global Historial de Notas table's Motivo column (and the
+CSV/XLSX export, which reads the same summary row) show a constant `"Envío"` for these rows
+instead, computed at query time in `SqliteHistoryService.LIST_BASE_SQL` via a `CASE WHEN
+profile_type = 'REMITO DE ENVÍO'` — not persisted, since the value is fully determined by
+`profile_type` already and storing it again in every row would just be redundant constant data.
 
 ---
 

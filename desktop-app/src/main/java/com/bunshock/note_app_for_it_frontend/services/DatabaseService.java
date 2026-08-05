@@ -80,6 +80,8 @@ public class DatabaseService {
         dropDeadNoteReportColumns(conn, stmt);
         migrateRejectionReasonSchema(conn, stmt);
         migrateEntregaDevolucionSplitSchema(conn, stmt);
+        addColumnIfMissing(stmt, "NOTE_REPORT", "stock_applied", "INTEGER NOT NULL DEFAULT 0");
+        migrateStockAppliedSchema(conn, stmt);
 
         // Column just introduced — backfill the type that used to be hardcoded as
         // "always requires S/N" (ItemDialogController's old "Notebook".equals(...) check)
@@ -671,6 +673,27 @@ public class DatabaseService {
         }
     }
 
+    // Consolidates the double-approval stock guard onto one shared NOTE_REPORT.stock_applied
+    // column instead of NOTE_REMITO's own — every note type moves stock on approval now (see
+    // SqliteHistoryService.applyNoteStockIfNeeded()), not just Remito, so "has this note's stock
+    // effect already been applied" is a universal per-note fact now, not a Remito-only one.
+    // Backfills from the old column before dropping it, same "backfill + native DROP COLUMN
+    // (SQLite 3.35+), wrapped in try/catch to fail safely" precedent as dropDeadNoteReportColumns()
+    // above. Guarded on NOTE_REMITO still having its own stock_applied column — a no-op once
+    // already migrated, including on a brand-new install, which never creates that column at all.
+    private void migrateStockAppliedSchema(Connection conn, Statement stmt) throws SQLException {
+        if (!columnExists(conn, "NOTE_REMITO", "stock_applied")) return;
+        try {
+            stmt.executeUpdate("""
+                UPDATE NOTE_REPORT SET stock_applied = 1
+                WHERE id IN (SELECT note_report_id FROM NOTE_REMITO WHERE stock_applied = 1)
+                """);
+            stmt.executeUpdate("ALTER TABLE NOTE_REMITO DROP COLUMN stock_applied");
+        } catch (SQLException ignored) {
+            // leave it for next startup to retry — not worth blocking initialize() over
+        }
+    }
+
     // NOTE_REPORT.rejection_reason used to sit inline, nullable on every row and only ever
     // populated once an admin actually rejects a note — the same "doesn't apply to this row"
     // pattern the NOTE_ITEM 5-table split fixed. Split into NOTE_REPORT_REJECTION (see
@@ -941,6 +964,17 @@ public class DatabaseService {
                 deprecated INTEGER NOT NULL DEFAULT 0
             )""");
 
+        // Row exists only once a superadmin has actually configured a Sede's Remito shipping
+        // info via direct SQL — not a set of nullable columns on SEDE itself, which every Sede
+        // would carry regardless of whether shipping was ever configured for it.
+        stmt.executeUpdate("""
+            CREATE TABLE IF NOT EXISTS SEDE_SHIPPING_INFO (
+                sede_id            INTEGER PRIMARY KEY REFERENCES SEDE(id),
+                destination_label  TEXT NOT NULL,
+                address            TEXT,
+                recipients         TEXT
+            )""");
+
         // brand_type_id is stored explicitly rather than inferred from model_id — required
         // because the single global "Genérico / Otro" MODEL row (brand_type_id IS NULL) needs
         // an independent, non-shared stock number per (Type,Brand) it's used under. For every
@@ -968,7 +1002,8 @@ public class DatabaseService {
                 technician_dni    TEXT,
                 observations      TEXT,
                 sede_id           INTEGER REFERENCES SEDE(id),
-                approval_status   TEXT NOT NULL DEFAULT 'PENDING'
+                approval_status   TEXT NOT NULL DEFAULT 'PENDING',
+                stock_applied     INTEGER NOT NULL DEFAULT 0
             )""");
 
         // Row exists only for a note an admin has actually rejected — not a NULL sentinel on
@@ -1016,6 +1051,23 @@ public class DatabaseService {
                 motivo           TEXT,
                 responsible_name TEXT,
                 responsible_dni  TEXT
+            )""");
+
+        // destination_sede_id is nullable — null for a custom/manual destination (e.g. a CAU not
+        // in the SEDE catalog), which has no stock to receive at all. destination_label/address/
+        // recipients are snapshotted here (not re-read from SEDE_SHIPPING_INFO on reprint), same
+        // "snapshot, don't reference" pattern as technician_name/technician_dni — a later change
+        // to a Sede's saved shipping info must not retroactively alter an already-generated note.
+        // No stock_applied column here anymore — every note type now moves stock on approval, not
+        // just Remito, so the double-approval guard moved to a single shared NOTE_REPORT.stock_applied
+        // column instead (see migrateStockAppliedSchema()).
+        stmt.executeUpdate("""
+            CREATE TABLE IF NOT EXISTS NOTE_REMITO (
+                note_report_id      INTEGER PRIMARY KEY REFERENCES NOTE_REPORT(id),
+                destination_sede_id INTEGER REFERENCES SEDE(id),
+                destination_label   TEXT NOT NULL,
+                address             TEXT,
+                recipients          TEXT
             )""");
 
         // Slim base table — asset-only, countable-only, GLPI-tracking, and return-tracking
