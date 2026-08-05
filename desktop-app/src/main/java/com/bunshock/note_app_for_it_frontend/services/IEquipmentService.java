@@ -9,6 +9,7 @@ import com.bunshock.note_app_for_it_frontend.models.EquipmentModel;
 import com.bunshock.note_app_for_it_frontend.models.EquipmentProvider;
 import com.bunshock.note_app_for_it_frontend.models.EquipmentType;
 import com.bunshock.note_app_for_it_frontend.models.Sede;
+import com.bunshock.note_app_for_it_frontend.models.SedeShippingInfo;
 import com.bunshock.note_app_for_it_frontend.models.SnValidation;
 import com.bunshock.note_app_for_it_frontend.models.SnValidationRow;
 
@@ -25,6 +26,11 @@ public interface IEquipmentService {
     List<EquipmentProvider> getAllProviders();
 
     List<Sede> getAllSedes();
+
+    // Read-only — a superadmin configures SEDE_SHIPPING_INFO directly via SQL (see CLAUDE.md's
+    // Provider/Sede "no in-app CRUD" convention). Empty when the Sede has no shipping info
+    // configured yet.
+    Optional<SedeShippingInfo> getSedeShippingInfo(int sedeId);
 
     Optional<SnValidation> getSnValidation(int modelId);
 
@@ -62,6 +68,13 @@ public interface IEquipmentService {
     int getModelStock(int modelId, int brandId, int typeId, int sedeId);
 
     void setModelStock(int modelId, int brandId, int typeId, int sedeId, int stock);
+
+    // Delta-based, unlike setModelStock()'s absolute value — used by a Remito's stock movement on
+    // approval (decrement the source Sede, increment the destination Sede). Implementations must
+    // read-then-write inside one transaction so two concurrent adjustments to the same
+    // (model, sede) can't race; driving the result negative throws IllegalArgumentException, same
+    // as setModelStock().
+    void adjustModelStock(int modelId, int brandId, int typeId, int sedeId, int delta);
 
     // Batched rollup reads — one query per list-refresh, not one per row. Map key is the
     // Type/Brand/Model id respectively; a missing key means 0 (no MODEL_STOCK rows for it).

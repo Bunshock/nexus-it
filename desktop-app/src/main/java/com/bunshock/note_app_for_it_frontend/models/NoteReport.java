@@ -25,6 +25,11 @@ public class NoteReport {
     private int sedeId;
     private String approvalStatus = "PENDING";
     private String rejectionReason;
+    private Integer destinationSedeId;
+    private String destinationLabel;
+    private String address;
+    private String recipients;
+    private boolean stockApplied;
     private List<NoteReportItem> items;
 
     // Populated from JOIN queries — not stored directly in NOTE_REPORT
@@ -104,6 +109,21 @@ public class NoteReport {
 
     public String getRejectionReason() { return rejectionReason; }
     public void setRejectionReason(String rejectionReason) { this.rejectionReason = rejectionReason; }
+
+    public Integer getDestinationSedeId() { return destinationSedeId; }
+    public void setDestinationSedeId(Integer destinationSedeId) { this.destinationSedeId = destinationSedeId; }
+
+    public String getDestinationLabel() { return destinationLabel; }
+    public void setDestinationLabel(String destinationLabel) { this.destinationLabel = destinationLabel; }
+
+    public String getAddress() { return address; }
+    public void setAddress(String address) { this.address = address; }
+
+    public String getRecipients() { return recipients; }
+    public void setRecipients(String recipients) { this.recipients = recipients; }
+
+    public boolean isStockApplied() { return stockApplied; }
+    public void setStockApplied(boolean stockApplied) { this.stockApplied = stockApplied; }
 
     public List<NoteReportItem> getItems() { return items; }
     public void setItems(List<NoteReportItem> items) { this.items = items; }

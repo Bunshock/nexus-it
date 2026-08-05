@@ -9,6 +9,7 @@ import com.bunshock.note_app_for_it_frontend.models.EquipmentModel;
 import com.bunshock.note_app_for_it_frontend.models.EquipmentProvider;
 import com.bunshock.note_app_for_it_frontend.models.EquipmentType;
 import com.bunshock.note_app_for_it_frontend.models.Sede;
+import com.bunshock.note_app_for_it_frontend.models.SedeShippingInfo;
 import com.bunshock.note_app_for_it_frontend.models.SnValidation;
 import com.bunshock.note_app_for_it_frontend.models.SnValidationRow;
 
@@ -53,6 +54,11 @@ public class CachingEquipmentService implements IEquipmentService {
     @Override
     public List<Sede> getAllSedes() {
         try { return primary.getAllSedes(); } catch (Exception e) { return local.getAllSedes(); }
+    }
+
+    @Override
+    public Optional<SedeShippingInfo> getSedeShippingInfo(int sedeId) {
+        try { return primary.getSedeShippingInfo(sedeId); } catch (Exception e) { return local.getSedeShippingInfo(sedeId); }
     }
 
     @Override
@@ -149,6 +155,12 @@ public class CachingEquipmentService implements IEquipmentService {
     public void setModelStock(int modelId, int brandId, int typeId, int sedeId, int stock) {
         primary.setModelStock(modelId, brandId, typeId, sedeId, stock);
         try { local.setModelStock(modelId, brandId, typeId, sedeId, stock); } catch (Exception ignored) {}
+    }
+
+    @Override
+    public void adjustModelStock(int modelId, int brandId, int typeId, int sedeId, int delta) {
+        primary.adjustModelStock(modelId, brandId, typeId, sedeId, delta);
+        try { local.adjustModelStock(modelId, brandId, typeId, sedeId, delta); } catch (Exception ignored) {}
     }
 
     @Override

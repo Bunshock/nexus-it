@@ -154,4 +154,5 @@ public class ServiceLocator {
     public void setEquipmentService(IEquipmentService s) { equipmentService = s; }
     public void setAdService(IADService s)               { adService = s; }
     public void setUserRoleService(IUserRoleService s)   { userRoleService = s; }
+    public void setHistoryService(IHistoryService s)     { historyService = s; }
 }

@@ -19,6 +19,7 @@ import com.bunshock.note_app_for_it_frontend.models.EquipmentModel;
 import com.bunshock.note_app_for_it_frontend.models.EquipmentProvider;
 import com.bunshock.note_app_for_it_frontend.models.EquipmentType;
 import com.bunshock.note_app_for_it_frontend.models.Sede;
+import com.bunshock.note_app_for_it_frontend.models.SedeShippingInfo;
 import com.bunshock.note_app_for_it_frontend.models.SnValidation;
 import com.bunshock.note_app_for_it_frontend.models.SnValidationRow;
 
@@ -163,6 +164,21 @@ public class SqliteEquipmentService implements IEquipmentService {
             throw new RuntimeException("Failed to load sedes", e);
         }
         return result;
+    }
+
+    @Override
+    public Optional<SedeShippingInfo> getSedeShippingInfo(int sedeId) {
+        String sql = "SELECT destination_label, address, recipients FROM SEDE_SHIPPING_INFO WHERE sede_id = ?";
+        try (Connection c = connector.get(); PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setInt(1, sedeId);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next()) return Optional.empty();
+                return Optional.of(new SedeShippingInfo(sedeId,
+                    rs.getString("destination_label"), rs.getString("address"), rs.getString("recipients")));
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to load sede shipping info", e);
+        }
     }
 
     @Override
@@ -827,6 +843,54 @@ public class SqliteEquipmentService implements IEquipmentService {
             }
         } catch (SQLException e) {
             throw new RuntimeException("Failed to set model stock", e);
+        }
+    }
+
+    // Delta-based, unlike setModelStock()'s absolute value — read-then-write inside one explicit
+    // transaction (not a separate getModelStock()+setModelStock() call pair) so two concurrent
+    // adjustments to the same (model, sede) can't race and clobber each other. Reuses
+    // setModelStock()'s "never go negative" rule: driving the result below zero throws
+    // IllegalArgumentException, same message, so a Remito that would over-ship a source Sede's
+    // stock fails loudly instead of silently going negative.
+    @Override
+    public void adjustModelStock(int modelId, int brandId, int typeId, int sedeId, int delta) {
+        try (Connection c = connector.get()) {
+            c.setAutoCommit(false);
+            int linkId = ensureBrandTypeLink(c, brandId, typeId);
+            int current;
+            try (PreparedStatement sel = c.prepareStatement(
+                    "SELECT stock FROM MODEL_STOCK WHERE brand_type_id = ? AND model_id = ? AND sede_id = ?")) {
+                sel.setInt(1, linkId);
+                sel.setInt(2, modelId);
+                sel.setInt(3, sedeId);
+                try (ResultSet rs = sel.executeQuery()) {
+                    current = rs.next() ? rs.getInt(1) : 0;
+                }
+            }
+            int updated = current + delta;
+            if (updated < 0) {
+                throw new IllegalArgumentException("El stock no puede ser negativo");
+            }
+            try (PreparedStatement up = c.prepareStatement(
+                    "UPDATE MODEL_STOCK SET stock = ? WHERE brand_type_id = ? AND model_id = ? AND sede_id = ?")) {
+                up.setInt(1, updated);
+                up.setInt(2, linkId);
+                up.setInt(3, modelId);
+                up.setInt(4, sedeId);
+                if (up.executeUpdate() == 0) {
+                    try (PreparedStatement ins = c.prepareStatement(
+                            "INSERT INTO MODEL_STOCK (brand_type_id, model_id, sede_id, stock) VALUES (?, ?, ?, ?)")) {
+                        ins.setInt(1, linkId);
+                        ins.setInt(2, modelId);
+                        ins.setInt(3, sedeId);
+                        ins.setInt(4, updated);
+                        ins.executeUpdate();
+                    }
+                }
+            }
+            c.commit();
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to adjust model stock", e);
         }
     }
 

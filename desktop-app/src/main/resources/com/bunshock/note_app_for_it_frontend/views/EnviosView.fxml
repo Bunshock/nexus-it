@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?import javafx.scene.layout.*?>
+<?import javafx.scene.control.*?>
+
+<VBox fx:id="rootContainer" spacing="20" style="-fx-padding: 30; -fx-background-color: #f4f4f4;"
+      xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1"
+      fx:controller="com.bunshock.note_app_for_it_frontend.controllers.EnviosController">
+
+    <children>
+
+        <!-- Page title — text set programmatically by EnviosController.showHistorialTab()/
+             showRemitoTab(), called from MainController's sidebar "Envíos" flyout, which is the
+             only way to switch between these two views. Same page-title-card/page-title +
+             dynamicContentArea wrapper convention as PrestamosView.fxml. -->
+        <HBox styleClass="page-title-card" alignment="CENTER_LEFT">
+            <Label fx:id="lblSectionTitle" text="REMITO DE ENVÍO" styleClass="page-title"/>
+        </HBox>
+
+        <StackPane fx:id="dynamicContentArea" VBox.vgrow="ALWAYS">
+            <children>
+                <Label text="Cargando..." style="-fx-text-fill: #aaa;"/>
+            </children>
+        </StackPane>
+
+    </children>
+</VBox>

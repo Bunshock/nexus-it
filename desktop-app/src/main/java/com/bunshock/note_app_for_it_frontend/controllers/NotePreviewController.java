@@ -184,8 +184,11 @@ public class NotePreviewController {
         // buildGlpiStatusRow()), and nothing in the Préstamo return flow ever un-syncs an item,
         // so syncing a temporary loan would leave GLPI permanently believing the asset is still
         // assigned to the borrower after it's returned. Préstamo already has its own dedicated
-        // return-tracking dimension (ReturnStatus) — see CLAUDE.md's "Préstamos section".
+        // return-tracking dimension (ReturnStatus) — see CLAUDE.md's "Préstamos section". A
+        // Remito's assets are excluded for the same reason — they're moving between Sedes, not
+        // being assigned to a person, and this app has no way to update GLPI's location for them.
         boolean isPrestamo = "PRÉSTAMO".equals(profileType);
+        boolean isRemito = "REMITO DE ENVÍO".equals(profileType);
 
         List<NoteReportItem> items = new java.util.ArrayList<>();
         for (AssetItem a : assets) {
@@ -201,7 +204,7 @@ public class NotePreviewController {
             i.setQuantity(1);
             i.setObservations(a.getObservations().get());
             i.setAsset(true);
-            i.setGlpiStatus(isPrestamo ? GlpiStatus.N_A : GlpiStatus.PENDING);
+            i.setGlpiStatus((isPrestamo || isRemito) ? GlpiStatus.N_A : GlpiStatus.PENDING);
             items.add(i);
         }
         for (CountableItem c : countables) {

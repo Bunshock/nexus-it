@@ -1,0 +1,356 @@
+<!doctype html>
+
+<html lang="es">
+    <head>
+        <meta charset="UTF-8" />
+
+        <title>Remito de Envío</title>
+
+        <style>
+            /* A4 Paper Setup */
+
+            @page {
+                size: A4;
+                margin: 10mm;
+            }
+
+            * {
+                box-sizing: border-box;
+            }
+
+            body {
+                font-family: "Calibri", Helvetica, Arial, sans-serif;
+                margin: 0;
+                padding: 0;
+                color: #000;
+                background-color: #fff;
+
+                width: 210mm;
+                height: 297mm;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+            }
+
+            .page-container {
+                display: contents;
+            }
+
+            .main-frame {
+                height: 275mm;
+                width: 190mm;
+
+                border: 2px solid black;
+                padding: 20px;
+                box-sizing: border-box;
+
+                display: flex;
+                flex-direction: column;
+                justify-content: space-between;
+            }
+
+            .content-wrapper {
+                flex: 1;
+                overflow: hidden;
+            }
+
+            .header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                border: 2px solid black;
+                border-radius: 15px;
+                padding: 15px;
+                margin-bottom: 10px;
+                height: 25mm;
+            }
+
+            .header-left {
+                width: 15%;
+                text-align: center;
+            }
+
+            .logo-img {
+                width: 100%;
+                max-width: 60px;
+                height: auto;
+                object-fit: contain;
+            }
+
+            .header-center {
+                text-align: center;
+                flex-grow: 1;
+            }
+
+            .area-name {
+                font-size: 16pt;
+                font-weight: bold;
+            }
+
+            .template-name {
+                font-size: 12pt;
+                font-style: italic;
+                margin-top: 5px;
+            }
+
+            .header-right {
+                width: 100px;
+                text-align: right;
+                font-size: 12pt;
+                font-weight: bold;
+            }
+
+            .intro-text,
+            .outro-text {
+                font-size: 11pt;
+                line-height: 1.6;
+                margin-bottom: 20px;
+                text-align: justify;
+            }
+
+            .outro-text {
+                margin-top: 20px;
+            }
+
+            /* Destino block — same bordered-tab look as the signature boxes below, reused here
+               for the destination's address/recipients rather than inventing a new shape. */
+            .destination-box {
+                border: 1.4pt solid black;
+                border-radius: 6px;
+                padding: 14px 14px 12px;
+                position: relative;
+                margin-bottom: 20px;
+                font-size: 11pt;
+                line-height: 1.6;
+            }
+
+            .destination-tab {
+                position: absolute;
+                top: -9px;
+                left: 12px;
+                background: #fff;
+                padding: 0 6px;
+                font-size: 10pt;
+                font-weight: bold;
+            }
+
+            /* --- Item list: compact single-line rows, same shape as every other template --- */
+
+            .item-list {
+                width: 100%;
+                page-break-inside: avoid;
+                border-bottom: 1.2pt solid black;
+                padding-bottom: 4px;
+            }
+
+            .item-list + .item-list {
+                margin-top: 14px;
+            }
+
+            .item-list-header {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                margin-bottom: 8px;
+            }
+
+            .item-list-header-rule-left {
+                width: 16px;
+                border-top: 1.2pt solid black;
+            }
+
+            .item-list-header-text {
+                font-size: 9.5pt;
+                font-weight: bold;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+                white-space: nowrap;
+            }
+
+            .item-list-header-rule {
+                flex: 1;
+                border-top: 1.2pt solid black;
+            }
+
+            .item-row {
+                display: flex;
+                justify-content: space-between;
+                align-items: baseline;
+                gap: 16px;
+                padding: 5px 2px;
+                border-bottom: 1px solid #ccc;
+            }
+
+            .item-row:last-child {
+                border-bottom: none;
+            }
+
+            .item-main {
+                font-size: 11pt;
+            }
+
+            .item-equipo {
+                font-weight: bold;
+            }
+
+            .item-meta {
+                font-size: 9.8pt;
+                color: #444;
+                white-space: nowrap;
+            }
+
+            .section-separator {
+                border-bottom: 1px solid black;
+                margin-bottom: 10px;
+                width: 100%;
+            }
+
+            /* --- Signature (technician only — no in-person delivery step to sign for here) --- */
+
+            .signature-row {
+                display: flex;
+                justify-content: flex-start;
+                margin-top: 10px;
+            }
+
+            .signature-section {
+                width: 48%;
+            }
+
+            .signature-box {
+                width: 100%;
+                border: 1.4pt solid black;
+                border-radius: 6px;
+                padding: 14px 14px 10px;
+                position: relative;
+            }
+
+            .signature-tab {
+                position: absolute;
+                top: -9px;
+                left: 12px;
+                background: #fff;
+                padding: 0 6px;
+                font-size: 10pt;
+                font-weight: bold;
+            }
+
+            .sign-line-graphic {
+                border-top: 1px solid black;
+                width: 70%;
+                margin: 26px 0 8px;
+            }
+
+            .sign-data {
+                font-size: 11pt;
+                line-height: 1.5;
+            }
+
+            @media print {
+                html, body {
+                    height: 100%;
+                    margin: 0 !important;
+                    padding: 0 !important;
+                    overflow: hidden;
+                }
+
+                body {
+                    zoom: 0.95;
+                }
+            }
+        </style>
+    </head>
+
+    <body>
+        <div class="main-frame">
+            <div class="content-wrapper">
+                <div class="header">
+                    <div class="header-left">
+                        <img src="logo.jpg" alt="Logo" class="logo-img" />
+                    </div>
+
+                    <div class="header-center">
+                        <div class="area-name">Oficina de Soporte IT</div>
+
+                        <div class="template-name">Tipo de nota: {{TEMPLATE_NAME}}</div>
+                    </div>
+
+                    <div class="header-right">{{DATE}}</div>
+                </div>
+
+                <div class="intro-text">
+                    <p>
+                        En el día de la fecha, el área de Soporte IT de la sede <strong>{{SEDE}}</strong>
+                        de la Universidad Siglo 21 remite los siguientes componentes con destino a
+                        <strong>{{DESTINATION_LABEL}}</strong>.
+                    </p>
+                </div>
+
+                <div class="destination-box">
+                    <span class="destination-tab">Destino</span>
+                    <strong>Destino:</strong> {{DESTINATION_LABEL}}<br />
+                    <strong>Dirección:</strong> {{ADDRESS}}<br />
+                    <strong>Destinatarios:</strong> {{RECIPIENTS}}
+                </div>
+
+                <div class="item-list-header">
+                    <span class="item-list-header-rule-left"></span>
+                    <span class="item-list-header-text">Equipos</span>
+                    <span class="item-list-header-rule"></span>
+                </div>
+
+                {{#HAS_ASSET_ITEMS}}
+                <div class="item-list">
+                    {{#ASSET_ITEMS}}<div class="item-row">
+                        <div class="item-main"><span class="item-equipo">{{TYPE}}</span> — {{BRAND}} {{MODEL}}</div>
+                        <div class="item-meta">{{META}}</div>
+                    </div>
+                    {{/ASSET_ITEMS}}
+                </div>
+                {{/HAS_ASSET_ITEMS}}
+
+                {{#HAS_COUNTABLE_ITEMS}}
+                <div class="item-list">
+                    {{#COUNTABLE_ITEMS}}<div class="item-row">
+                        <div class="item-main"><span class="item-equipo">{{TYPE}}</span> — {{BRAND}} {{MODEL}}</div>
+                        <div class="item-meta">{{META}}</div>
+                    </div>
+                    {{/COUNTABLE_ITEMS}}
+                </div>
+                {{/HAS_COUNTABLE_ITEMS}}
+
+                <div class="outro-text">
+                    <p>
+                        <strong>Observaciones</strong> : {{OBSERVATIONS}}
+                    </p>
+                </div>
+
+                <div class="section-separator"></div>
+
+                <div class="outro-text">
+                    <p>
+                        No siendo para más se da por finalizada la nota. Para consultas generales, por
+                        favor comunicarse vía mail: <strong>soporteit@ues21.edu.ar</strong>
+                    </p>
+                </div>
+
+                <div class="section-separator"></div>
+            </div>
+
+            <div class="signature-row">
+
+                <div class="signature-section">
+                    <div class="signature-box">
+                        <span class="signature-tab">Soporte IT</span>
+                        <div class="sign-line-graphic"></div>
+                        <div class="sign-data">
+                            <strong>Aclaración:</strong> {{TECHNICIAN_NAME}}<br />
+                            <strong>DNI:</strong> {{TECHNICIAN_DNI}}
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </body>
+</html>

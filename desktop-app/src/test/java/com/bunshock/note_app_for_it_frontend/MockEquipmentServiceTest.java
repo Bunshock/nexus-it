@@ -267,6 +267,34 @@ class MockEquipmentServiceTest {
     }
 
     @Test
+    void adjustModelStockAppliesDelta() {
+        EquipmentType notebook = service.getAllTypes().stream()
+            .filter(t -> t.getName().equalsIgnoreCase("Notebook"))
+            .findFirst().orElseThrow();
+        EquipmentBrand brand = service.getBrandsForType(notebook.getId()).get(0);
+        EquipmentModel model = service.getModelsForBrandAndType(brand.getId(), notebook.getId()).get(0);
+
+        service.setModelStock(model.getId(), brand.getId(), notebook.getId(), SEDE_ID, 5);
+        service.adjustModelStock(model.getId(), brand.getId(), notebook.getId(), SEDE_ID, -2);
+        assertEquals(3, service.getModelStock(model.getId(), brand.getId(), notebook.getId(), SEDE_ID));
+
+        service.adjustModelStock(model.getId(), brand.getId(), notebook.getId(), SEDE_ID, 4);
+        assertEquals(7, service.getModelStock(model.getId(), brand.getId(), notebook.getId(), SEDE_ID));
+    }
+
+    @Test
+    void sedeShippingInfoEmptyByDefaultAndReturnsWhatWasSeeded() {
+        assertTrue(service.getSedeShippingInfo(SEDE_ID).isEmpty());
+
+        service.setSedeShippingInfo(new com.bunshock.note_app_for_it_frontend.models.SedeShippingInfo(
+            SEDE_ID, "CAU Recoleta", "Av. Siempreviva 742", "Juan Pérez"));
+
+        var info = service.getSedeShippingInfo(SEDE_ID);
+        assertTrue(info.isPresent());
+        assertEquals("CAU Recoleta", info.get().getDestinationLabel());
+    }
+
+    @Test
     void getStockTotalsByTypeSumsAcrossBrandsAndModels() {
         EquipmentType notebook = service.getAllTypes().stream()
             .filter(t -> t.getName().equalsIgnoreCase("Notebook"))

@@ -91,6 +91,13 @@ class SqliteEquipmentServiceTest {
                     stock         INTEGER NOT NULL DEFAULT 0,
                     PRIMARY KEY (brand_type_id, model_id, sede_id)
                 )""");
+            stmt.executeUpdate("""
+                CREATE TABLE SEDE_SHIPPING_INFO (
+                    sede_id            INTEGER PRIMARY KEY REFERENCES SEDE(id),
+                    destination_label  TEXT NOT NULL,
+                    address            TEXT,
+                    recipients         TEXT
+                )""");
         }
     }
 
@@ -497,6 +504,71 @@ class SqliteEquipmentServiceTest {
             service.setModelStock(latitude.getId(), dell.getId(), notebook.getId(), sedeId, -1));
         // rejecting the call must not leave a stray MODEL_STOCK row behind
         assertEquals(0, service.getModelStock(latitude.getId(), dell.getId(), notebook.getId(), sedeId));
+    }
+
+    // Remito's stock movement uses this instead of setModelStock() — decrement the source Sede,
+    // increment the destination Sede, both by the same delta.
+    @Test
+    void adjustModelStockAppliesDeltaAcrossTwoSedes() throws SQLException {
+        int sedeA = insertSede("Campus Norte");
+        int sedeB = insertSede("Campus Sur");
+        service.addType("NOTEBOOK", true);
+        EquipmentType notebook = findType("NOTEBOOK");
+        service.addBrandForType("DELL", notebook.getId());
+        EquipmentBrand dell = service.getBrandsForType(notebook.getId()).get(0);
+        service.addModel("LATITUDE", dell.getId(), notebook.getId());
+        EquipmentModel latitude = service.getModelsForBrandAndType(dell.getId(), notebook.getId()).get(0);
+        service.setModelStock(latitude.getId(), dell.getId(), notebook.getId(), sedeA, 5);
+
+        service.adjustModelStock(latitude.getId(), dell.getId(), notebook.getId(), sedeA, -2);
+        service.adjustModelStock(latitude.getId(), dell.getId(), notebook.getId(), sedeB, 2);
+
+        assertEquals(3, service.getModelStock(latitude.getId(), dell.getId(), notebook.getId(), sedeA));
+        assertEquals(2, service.getModelStock(latitude.getId(), dell.getId(), notebook.getId(), sedeB));
+    }
+
+    @Test
+    void adjustModelStockRejectsDrivingStockNegative() throws SQLException {
+        int sedeId = insertSede("Campus Norte");
+        service.addType("NOTEBOOK", true);
+        EquipmentType notebook = findType("NOTEBOOK");
+        service.addBrandForType("DELL", notebook.getId());
+        EquipmentBrand dell = service.getBrandsForType(notebook.getId()).get(0);
+        service.addModel("LATITUDE", dell.getId(), notebook.getId());
+        EquipmentModel latitude = service.getModelsForBrandAndType(dell.getId(), notebook.getId()).get(0);
+        service.setModelStock(latitude.getId(), dell.getId(), notebook.getId(), sedeId, 1);
+
+        assertThrows(IllegalArgumentException.class, () ->
+            service.adjustModelStock(latitude.getId(), dell.getId(), notebook.getId(), sedeId, -2));
+        assertEquals(1, service.getModelStock(latitude.getId(), dell.getId(), notebook.getId(), sedeId));
+    }
+
+    // ── Sede shipping info (Remito) ──────────────────────────────────────────
+
+    @Test
+    void getSedeShippingInfoReturnsEmptyWhenNotConfigured() throws SQLException {
+        int sedeId = insertSede("Campus Norte");
+        assertTrue(service.getSedeShippingInfo(sedeId).isEmpty());
+    }
+
+    @Test
+    void getSedeShippingInfoReturnsConfiguredRow() throws SQLException {
+        int sedeId = insertSede("Campus Norte");
+        try (Connection c = DriverManager.getConnection(url);
+             java.sql.PreparedStatement ps = c.prepareStatement(
+                 "INSERT INTO SEDE_SHIPPING_INFO (sede_id, destination_label, address, recipients) VALUES (?, ?, ?, ?)")) {
+            ps.setInt(1, sedeId);
+            ps.setString(2, "CAU Recoleta");
+            ps.setString(3, "Av. Siempreviva 742");
+            ps.setString(4, "Juan Pérez");
+            ps.executeUpdate();
+        }
+
+        var info = service.getSedeShippingInfo(sedeId);
+        assertTrue(info.isPresent());
+        assertEquals("CAU Recoleta", info.get().getDestinationLabel());
+        assertEquals("Av. Siempreviva 742", info.get().getAddress());
+        assertEquals("Juan Pérez", info.get().getRecipients());
     }
 
     @Test

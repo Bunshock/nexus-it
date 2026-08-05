@@ -133,6 +133,44 @@ class CachingServiceTest {
         assertEquals(4, primary.getModelStock(model.getId(), brand.getId(), notebook.getId(), SEDE_ID));
     }
 
+    @Test
+    void adjustModelStockWritesGoToBothPrimaryAndLocal() {
+        var notebook = primary.getAllTypes().stream()
+            .filter(t -> t.getName().equalsIgnoreCase("Notebook")).findFirst().orElseThrow();
+        var brand = primary.getBrandsForType(notebook.getId()).get(0);
+        var model = primary.getModelsForBrandAndType(brand.getId(), notebook.getId()).get(0);
+        caching.setModelStock(model.getId(), brand.getId(), notebook.getId(), SEDE_ID, 10);
+
+        caching.adjustModelStock(model.getId(), brand.getId(), notebook.getId(), SEDE_ID, -3);
+
+        assertEquals(7, primary.getModelStock(model.getId(), brand.getId(), notebook.getId(), SEDE_ID));
+        assertEquals(7, local.getModelStock(model.getId(), brand.getId(), notebook.getId(), SEDE_ID));
+    }
+
+    @Test
+    void adjustModelStockLocalWriteFailureDoesNotPropagate() {
+        var notebook = primary.getAllTypes().stream()
+            .filter(t -> t.getName().equalsIgnoreCase("Notebook")).findFirst().orElseThrow();
+        var brand = primary.getBrandsForType(notebook.getId()).get(0);
+        var model = primary.getModelsForBrandAndType(brand.getId(), notebook.getId()).get(0);
+        primary.setModelStock(model.getId(), brand.getId(), notebook.getId(), SEDE_ID, 10);
+
+        CachingEquipmentService failingLocal = new CachingEquipmentService(
+            primary, new FailingEquipmentService());
+        assertDoesNotThrow(() ->
+            failingLocal.adjustModelStock(model.getId(), brand.getId(), notebook.getId(), SEDE_ID, -4));
+        assertEquals(6, primary.getModelStock(model.getId(), brand.getId(), notebook.getId(), SEDE_ID));
+    }
+
+    @Test
+    void sedeShippingInfoFallsBackToLocalWhenPrimaryThrows() {
+        local.setSedeShippingInfo(new com.bunshock.note_app_for_it_frontend.models.SedeShippingInfo(
+            SEDE_ID, "CAU Recoleta", "Dir", "Juan"));
+        CachingEquipmentService failingPrimary = new CachingEquipmentService(
+            new FailingEquipmentService(), local);
+        assertTrue(failingPrimary.getSedeShippingInfo(SEDE_ID).isPresent());
+    }
+
     // ── User role / permissions ─────────────────────────────────────
 
     @Test
@@ -206,6 +244,8 @@ class CachingServiceTest {
         @Override public void addType(String n, boolean a) { throw new RuntimeException("primary down"); }
         @Override public int getModelStock(int modelId, int brandId, int typeId, int sedeId) { throw new RuntimeException("primary down"); }
         @Override public void setModelStock(int modelId, int brandId, int typeId, int sedeId, int stock) { throw new RuntimeException("primary down"); }
+        @Override public void adjustModelStock(int modelId, int brandId, int typeId, int sedeId, int delta) { throw new RuntimeException("primary down"); }
+        @Override public java.util.Optional<com.bunshock.note_app_for_it_frontend.models.SedeShippingInfo> getSedeShippingInfo(int sedeId) { throw new RuntimeException("primary down"); }
     }
 
     private static class MockHistoryService implements com.bunshock.note_app_for_it_frontend.services.IHistoryService {

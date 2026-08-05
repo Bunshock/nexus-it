@@ -180,6 +180,7 @@ Each template is a plain `.html` file. The template engine replaces `{{TOKEN}}` 
 | `entrega - fin de contrato.html` | Fin de Contrato notes |
 | `prestamo.html` | Préstamo notes |
 | `proveedor.html` | Entrega - Proveedor notes |
+| `remito.html` | Remito de Envío notes |
 
 To customize the look of a generated note, edit the corresponding HTML file — no Java changes needed. The CSS inside the template controls print layout. Common tokens available in both templates:
 
@@ -207,7 +208,7 @@ mvn test
 
 ### Note Generation
 
-- **5 note profiles**: Entrega, Devolución, Fin de Contrato, Préstamo, Entrega - Proveedor
+- **6 note profiles**: Entrega, Devolución, Fin de Contrato, Préstamo, Entrega - Proveedor, Remito de Envío
 - Motivo dropdown (configurable per profile type) — mandatory for Entrega, Devolución, Fin de Contrato, and Provider notes
 - Provider notes select the provider from an admin-managed catalog (see [Database Section](#database-section-base-de-datos)) — not free text, to keep naming consistent across notes; generation is blocked with an inline message if none is selected
 - HTML template rendering with `{{TOKEN}}` substitution and `{{#ITEMS}}` loops
@@ -265,10 +266,19 @@ mvn test
 
 ### Database Section (Base de Datos)
 
-- Admin-managed catalogs: Tipos, Marcas, Modelos (cascading), and Proveedores (flat list) — add/rename/remove, all admin-gated
+- Admin-managed catalog: Tipos, Marcas, Modelos (cascading), with a live per-Sede stock rollup — add/rename/remove, admin-gated
 - "Generic" brand protected from deletion
-- A provider added here is immediately selectable in Nota de Proveedor's dropdown, even in a tab already open earlier in the session
+- Proveedores and Sedes are **not** managed here — both change infrequently, so a superadmin adds/renames/removes them directly via SQL instead (see [Login](#login) below for the same convention already used for roles/permissions). The app only ever reads them: Nota de Proveedor's dropdown, History's Sede filter, and this section's own Stock — Sede selector.
 - Remote SQL Server connection config and connectivity test (see [Remote database (SQL Server)](#remote-database-sql-server) below)
+
+### Envíos (Inter-Sede Stock Transfer)
+
+- Its own top-level sidebar group — "Remito de Envío" and "Historial de Envíos" — ships equipment from the technician's own Sede to another Sede (or a custom one-off destination like a CAU)
+- Destination is either picked from the Sede catalog (auto-fills saved destination/address/recipients as disabled, read-only fields if a superadmin configured them) or typed freely via a "Personalizar destino" checkbox, which clears and enables the three fields
+- Same item tables/dialog and preview/print/save flow as Generar Nota
+- **Stock only moves on approval, never at generation** — approving decrements the source Sede's stock and, only for a real catalog destination, increments that Sede's stock by the same amount; rejecting a Remito never touches stock, and shipping more than the source Sede has on hand blocks the approval instead of going negative
+- No GLPI sync or return tracking on Remito items — it's an inter-Sede move, not an assignment to a person or a loan expected back
+- **Historial de Envíos** — a Remito-scoped history view with its own Destino/Dirección/Destinatarios columns and an approval-status color strip, filterable by date/Estado/Destino/Autor/Sede Origen; double-clicking a row opens the same detail popup (and Aprobar/Rechazar controls) as the global Historial. Remito notes still also appear in the global Historial — this is an additional, more detailed view, not a replacement.
 
 ### Login
 

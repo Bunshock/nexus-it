@@ -12,6 +12,7 @@ import com.bunshock.note_app_for_it_frontend.models.EquipmentBrand;
 import com.bunshock.note_app_for_it_frontend.models.EquipmentModel;
 import com.bunshock.note_app_for_it_frontend.models.EquipmentProvider;
 import com.bunshock.note_app_for_it_frontend.models.Sede;
+import com.bunshock.note_app_for_it_frontend.models.SedeShippingInfo;
 import com.bunshock.note_app_for_it_frontend.models.EquipmentType;
 import com.bunshock.note_app_for_it_frontend.models.SnValidation;
 import com.bunshock.note_app_for_it_frontend.models.SnValidationRow;
@@ -132,6 +133,19 @@ public class MockEquipmentService implements IEquipmentService {
     @Override
     public List<Sede> getAllSedes() {
         return List.copyOf(sedes);
+    }
+
+    private final Map<Integer, SedeShippingInfo> sedeShippingInfo = new HashMap<>();
+
+    @Override
+    public Optional<SedeShippingInfo> getSedeShippingInfo(int sedeId) {
+        return Optional.ofNullable(sedeShippingInfo.get(sedeId));
+    }
+
+    // Not part of IEquipmentService (this data is read-only from the app's side — a superadmin
+    // configures it via direct SQL) — kept test-only so callers can seed it without a real DB.
+    public void setSedeShippingInfo(SedeShippingInfo info) {
+        sedeShippingInfo.put(info.getSedeId(), info);
     }
 
     @Override
@@ -305,6 +319,12 @@ public class MockEquipmentService implements IEquipmentService {
             }
         }
         modelStocks.add(new int[]{linkId, modelId, sedeId, stock});
+    }
+
+    @Override
+    public void adjustModelStock(int modelId, int brandId, int typeId, int sedeId, int delta) {
+        int current = getModelStock(modelId, brandId, typeId, sedeId);
+        setModelStock(modelId, brandId, typeId, sedeId, current + delta);
     }
 
     // sedeId null means "every Sede combined" (summed), matching SqliteEquipmentService's
