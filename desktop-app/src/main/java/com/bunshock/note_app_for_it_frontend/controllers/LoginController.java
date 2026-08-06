@@ -6,6 +6,7 @@ import com.bunshock.note_app_for_it_frontend.models.ADUser;
 import com.bunshock.note_app_for_it_frontend.models.AdCredentialResult;
 import com.bunshock.note_app_for_it_frontend.services.AdminSession;
 import com.bunshock.note_app_for_it_frontend.services.ConfigService;
+import com.bunshock.note_app_for_it_frontend.services.IAuditService;
 import com.bunshock.note_app_for_it_frontend.services.IUserRoleService;
 import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;
 import com.bunshock.note_app_for_it_frontend.services.TechnicianSessionService;
@@ -42,6 +43,13 @@ public class LoginController {
     // only ever sent to the AD validate-credentials call) — capped purely as a sanity guard
     // against an accidental huge paste, same reasoning as UserNoteController's AD-lookup field.
     private static final int LOGIN_FIELD_MAX_LENGTH = 100;
+
+    // Rate-limits repeated failed attempts against AUDIT_LOGIN itself, not a separate lockout
+    // table — a blocked attempt below never calls validateCredentials() and never inserts a new
+    // AUDIT_LOGIN row, so the table's own growth is bounded by MAX_FAILED_ATTEMPTS per rolling
+    // window per username, not by how many times someone keeps clicking "Iniciar sesión".
+    private static final int MAX_FAILED_ATTEMPTS = 5;
+    private static final int LOCKOUT_WINDOW_MINUTES = 15;
 
     public void setOnLoginSuccess(Runnable onLoginSuccess) {
         this.onLoginSuccess = onLoginSuccess;
@@ -81,11 +89,26 @@ public class LoginController {
         showStatus("Verificando credenciales...", "#64748b");
 
         Thread t = new Thread(() -> {
+            IAuditService audit = ServiceLocator.getInstance().getAuditService();
             try {
+                // Checked before anything else, including the AD call itself — a locked-out
+                // attempt never reaches AD and never inserts a new AUDIT_LOGIN row, which is what
+                // actually bounds that table's growth (the point of this check in the first
+                // place), not just a UI-level annoyance.
+                int recentFailures = audit.countRecentFailedLoginAttempts(username, LOCKOUT_WINDOW_MINUTES);
+                if (recentFailures >= MAX_FAILED_ATTEMPTS) {
+                    Platform.runLater(() -> {
+                        setBusy(false);
+                        showError("Demasiados intentos fallidos. Intente nuevamente en unos minutos.");
+                    });
+                    return;
+                }
+
                 AdCredentialResult credentials = ServiceLocator.getInstance().getAdService()
                     .validateCredentials(username, password);
 
                 if (!credentials.isValid()) {
+                    audit.recordLoginAttempt(username, false, "Credenciales inválidas");
                     Platform.runLater(() -> {
                         setBusy(false);
                         showError("Usuario o contraseña incorrectos.");
@@ -95,6 +118,7 @@ public class LoginController {
 
                 String allowedGroup = allowedGroupName();
                 if (allowedGroup != null && !credentials.getGroups().contains(allowedGroup)) {
+                    audit.recordLoginAttempt(username, false, "No pertenece al grupo permitido");
                     Platform.runLater(() -> {
                         setBusy(false);
                         showError("No tiene permisos para usar esta aplicación.");
@@ -112,6 +136,7 @@ public class LoginController {
                     .findFirst()
                     .orElse(null);
                 if (user == null) {
+                    audit.recordLoginAttempt(username, false, "Perfil no encontrado en Active Directory");
                     Platform.runLater(() -> {
                         setBusy(false);
                         showError("No se pudo obtener el perfil desde Active Directory.");
@@ -123,6 +148,7 @@ public class LoginController {
                 // ROLE_USER default is a permission fallback for already-registered accounts, not
                 // an implicit "anyone with valid AD credentials may use the app" gate.
                 if (!ServiceLocator.getInstance().getUserRoleService().isRegistered(user.getUsername())) {
+                    audit.recordLoginAttempt(username, false, "Usuario no registrado en la aplicación");
                     Platform.runLater(() -> {
                         setBusy(false);
                         showError("Usuario no registrado en la aplicación. Solicite acceso a un administrador.");
@@ -131,6 +157,7 @@ public class LoginController {
                 }
 
                 String role = ServiceLocator.getInstance().getUserRoleService().getRole(user.getUsername());
+                audit.recordLoginAttempt(username, true, null);
 
                 Platform.runLater(() -> {
                     TechnicianSessionService.getInstance().loginResolved(user, role);
@@ -140,6 +167,9 @@ public class LoginController {
                     if (onLoginSuccess != null) onLoginSuccess.run();
                 });
             } catch (Exception adUnreachable) {
+                // Deliberately not recorded in AUDIT_LOGIN and not counted toward the rate limit
+                // above — this is AD/DB connectivity failing, not evidence of the technician
+                // guessing credentials, and counting it against them would be unfair.
                 Platform.runLater(() -> {
                     setBusy(false);
                     showError("No se pudo conectar con Active Directory.");

@@ -13,6 +13,7 @@ import com.bunshock.note_app_for_it_frontend.services.ConfigService;
 import com.bunshock.note_app_for_it_frontend.services.IADService;
 import com.bunshock.note_app_for_it_frontend.services.IUserRoleService;
 import com.bunshock.note_app_for_it_frontend.services.MockADService;
+import com.bunshock.note_app_for_it_frontend.services.MockAuditService;
 import com.bunshock.note_app_for_it_frontend.services.MockUserRoleService;
 import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;
 import com.bunshock.note_app_for_it_frontend.services.TechnicianSessionService;
@@ -49,6 +50,7 @@ class LoginControllerTest {
     // code) — kept as its concrete Mock type here so tests can still seed a role, via
     // MockUserRoleService's own test-only setRole(), not part of the interface.
     private MockUserRoleService mockUserRoleService;
+    private MockAuditService mockAuditService;
 
     @BeforeAll
     static void initFx() {
@@ -64,6 +66,8 @@ class LoginControllerTest {
         ServiceLocator.getInstance().setAdService(new MockADService());
         mockUserRoleService = new MockUserRoleService();
         ServiceLocator.getInstance().setUserRoleService(mockUserRoleService);
+        mockAuditService = new MockAuditService();
+        ServiceLocator.getInstance().setAuditService(mockAuditService);
 
         ConfigService.getInstance().load();
         // Deterministic regardless of whatever's in this machine's real app-config.json — the
@@ -255,6 +259,27 @@ class LoginControllerTest {
 
         waitUntilStatusContains("perfil");
         assertFalse(TechnicianSessionService.getInstance().isResolved());
+    }
+
+    @Test
+    void tooManyFailedAttemptsBlocksFurtherLoginsWithoutHittingAdOrLoggingMore() throws Exception {
+        // Seed 5 prior failures directly (mirrors real usage without needing to actually fail 5
+        // real logins first) — MAX_FAILED_ATTEMPTS in LoginController.
+        for (int i = 0; i < 5; i++) {
+            mockAuditService.recordLoginAttempt("jperez", false, "Credenciales inválidas");
+        }
+        int countBefore = mockAuditService.loginAttemptCount();
+
+        runOnFx(() -> {
+            txtUsername.setText("jperez");
+            pfPassword.setText(MOCK_PASSWORD); // correct credentials — must still be blocked
+            invoke("handleLogin");
+        });
+
+        waitUntilStatusContains("Demasiados intentos");
+        assertFalse(TechnicianSessionService.getInstance().isResolved());
+        assertEquals(countBefore, mockAuditService.loginAttemptCount(),
+            "a blocked attempt must not insert another AUDIT_LOGIN row — that's what bounds the table's growth");
     }
 
     @Test

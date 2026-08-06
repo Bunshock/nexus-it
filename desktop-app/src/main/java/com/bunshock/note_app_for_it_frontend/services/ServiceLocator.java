@@ -16,6 +16,7 @@ public class ServiceLocator {
     private IEmailService emailService;
     private IHistoryService historyService;
     private IUserRoleService userRoleService;
+    private IAuditService auditService;
 
     private boolean remoteConnected = false;
 
@@ -38,6 +39,10 @@ public class ServiceLocator {
         equipmentService = localEquipment;
         historyService   = localHistory;
         userRoleService  = localUserRole;
+        // Local-only, deliberately — no remote-first CachingAuditService wrapper yet, same
+        // reasoning as APP_SETTINGS staying local-only regardless of remote config. See
+        // IAuditService's Javadoc.
+        auditService     = new SqliteAuditService();
 
         String host = loadSetting("db_host");
         if (host != null && !host.isBlank()) {
@@ -149,10 +154,12 @@ public class ServiceLocator {
     public IEmailService     getEmailService()      { return emailService; }
     public IHistoryService   getHistoryService()    { return historyService; }
     public IUserRoleService  getUserRoleService()   { return userRoleService; }
+    public IAuditService     getAuditService()      { return auditService; }
     public boolean           isRemoteConnected()    { return remoteConnected; }
 
     public void setEquipmentService(IEquipmentService s) { equipmentService = s; }
     public void setAdService(IADService s)               { adService = s; }
     public void setUserRoleService(IUserRoleService s)   { userRoleService = s; }
     public void setHistoryService(IHistoryService s)     { historyService = s; }
+    public void setAuditService(IAuditService s)         { auditService = s; }
 }
