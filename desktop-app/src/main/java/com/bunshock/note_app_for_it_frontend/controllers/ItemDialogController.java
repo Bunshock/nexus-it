@@ -24,17 +24,24 @@ import javafx.animation.FadeTransition;
 import javafx.collections.FXCollections;
 import javafx.concurrent.Task;
 import javafx.fxml.FXML;
+import javafx.geometry.Pos;
+import javafx.scene.Scene;
 import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ProgressIndicator;
+import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
 import javafx.scene.control.TextFormatter;
 import javafx.scene.control.Tooltip;
+import javafx.scene.input.KeyCode;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
+import javafx.scene.paint.Color;
+import javafx.stage.Modality;
 import javafx.stage.Stage;
 import javafx.stage.StageStyle;
 import javafx.util.Duration;
@@ -64,6 +71,7 @@ public class ItemDialogController {
     @FXML private ProgressIndicator progressGlpi;
     @FXML private Label lblGlpiStatus;
 
+    @FXML private CheckBox chkModifiesStock;
     @FXML private TextField txtObs;
     @FXML private Button btnSave;
 
@@ -103,6 +111,9 @@ public class ItemDialogController {
     private IHistoryService historyService;
     private AssetItem editingAsset;
     private CountableItem editingCountable;
+    // Only ever non-null while chkModifiesStock is unchecked — set from the confirmation popup's
+    // mandatory reason field, cleared the moment the checkbox is re-checked.
+    private String stockExceptionReason;
 
     private int pinnedTypeCount;
     private int pinnedBrandCount;
@@ -289,6 +300,17 @@ public class ItemDialogController {
         // itself, or a real brand picked for a type it's never been paired with).
         List<EquipmentModel> models = new ArrayList<>(
             equipmentService.getModelsForBrandAndType(brand.getId(), type.getId()));
+        // That query's ORDER BY name sorts the global generic row alphabetically alongside
+        // real models instead of always last (unlike Brand's own query, which never includes
+        // the generic row at all — it's appended separately in onTypeSelected() above, always
+        // landing at the true end of the list). Pull it out and re-append it here so the
+        // divider drawn by applyGenericCellFactory() lines up with the actual last row, same
+        // "generic sits last" fix DatabaseSectionController.refreshModelsForBrandType() already
+        // applies for its own Model list.
+        models.stream().filter(this::isGenericItem).findFirst().ifPresent(generic -> {
+            models.remove(generic);
+            models.add(generic);
+        });
         List<String> mostUsedModels = historyService.getMostUsedModelNames(
             type.getName(), brand.getName(), MOST_USED_WINDOW_DAYS, MOST_USED_MIN_USES, MOST_USED_LIMIT);
         cmbModel.setItems(FXCollections.observableArrayList(reorderWithPinned(
@@ -354,6 +376,103 @@ public class ItemDialogController {
         txtAF.setStyle("");
         txtAF.setPromptText(enabled ? "Ingrese S/N para calcular A/F..." : "Deshabilitado");
         recomputeAf();
+    }
+
+    // Unchecking "Modifica stock" is an exceptional action (e.g. formalizing a delivery that
+    // already happened informally, with no stock movement actually needed) — require an explicit
+    // confirmation AND a written reason, not a plain click, so it can't be toggled off by accident
+    // and so there's a real audit trail for admins reviewing the note later. Re-checking it needs
+    // no confirmation, since re-enabling normal behavior is never the risky direction — it also
+    // discards whatever reason was previously entered, since it no longer applies.
+    @FXML
+    private void handleModifiesStockToggle() {
+        if (chkModifiesStock.isSelected()) {
+            stockExceptionReason = null;
+            return;
+        }
+        String reason = confirmDisableStockModification();
+        if (reason == null) {
+            chkModifiesStock.setSelected(true);
+        } else {
+            stockExceptionReason = reason;
+        }
+    }
+
+    private static final String STOCK_EXCEPTION_TITLE = "Excepción de modificación de stock";
+    private static final String STOCK_EXCEPTION_MESSAGE =
+        "Al desmarcar esta opción, este ítem NO modificará el stock cuando la nota sea aprobada.\n\n"
+        + "Use esta opción solo en casos excepcionales, por ejemplo: al generar una nota para "
+        + "formalizar la entrega de un equipo que la persona ya tenía en su poder, sin que la "
+        + "entrega se haya registrado formalmente en su momento.\n\n"
+        + "Un administrador verá esta excepción, junto con el motivo indicado, al revisar la nota "
+        + "para aprobarla.";
+    private static final int STOCK_EXCEPTION_REASON_MAX_LENGTH = 300;
+
+    // Returns the entered reason on confirm, or null if the technician cancelled — the caller
+    // uses null to distinguish "cancelled" from "confirmed with an (impossible, since mandatory)
+    // blank reason."
+    private String confirmDisableStockModification() {
+        Stage stage = new Stage(StageStyle.TRANSPARENT);
+        stage.initModality(Modality.APPLICATION_MODAL);
+        stage.initOwner(btnSave.getScene().getWindow());
+        String[] result = {null};
+
+        Label title = new Label(STOCK_EXCEPTION_TITLE);
+        title.setStyle("-fx-font-size: 14px; -fx-font-weight: bold; -fx-text-fill: #1a1a1a;");
+
+        Label message = new Label(STOCK_EXCEPTION_MESSAGE);
+        message.setWrapText(true);
+        message.setStyle("-fx-text-fill: #475569; -fx-font-size: 12px;");
+
+        Label lblReason = new Label("MOTIVO *");
+        lblReason.setStyle("-fx-font-size: 10px; -fx-font-weight: bold; -fx-text-fill: #64748b; -fx-letter-spacing: 0.5;");
+
+        TextArea txtReason = new TextArea();
+        txtReason.setPromptText("Explique por qué este ítem no debe modificar el stock...");
+        txtReason.setWrapText(true);
+        txtReason.setPrefRowCount(3);
+        txtReason.setStyle("-fx-font-size: 12px;");
+        txtReason.setTextFormatter(new TextFormatter<>(change ->
+            change.getControlNewText().length() <= STOCK_EXCEPTION_REASON_MAX_LENGTH ? change : null));
+        VBox reasonGroup = new VBox(4, lblReason, txtReason);
+
+        Button btnCancel = new Button("Cancelar");
+        btnCancel.setStyle("-fx-background-color: #e2e8f0; -fx-text-fill: #334155; -fx-background-radius: 6; -fx-padding: 8 16;");
+        btnCancel.setOnAction(e -> stage.close());
+
+        Button btnConfirm = new Button("Confirmar");
+        btnConfirm.setStyle("-fx-background-color: #f97316; -fx-text-fill: white; -fx-background-radius: 6; -fx-padding: 8 16; -fx-font-weight: bold;");
+        btnConfirm.setDisable(true);
+        btnConfirm.setOnAction(e -> { result[0] = txtReason.getText().trim(); stage.close(); });
+
+        txtReason.textProperty().addListener((obs, old, val) ->
+            btnConfirm.setDisable(val == null || val.trim().isEmpty()));
+
+        HBox buttons = new HBox(8, btnCancel, btnConfirm);
+        buttons.setAlignment(Pos.CENTER_RIGHT);
+
+        VBox card = new VBox(14, title, message, reasonGroup, buttons);
+        card.setMaxWidth(380);
+        card.setPrefWidth(380);
+        card.setStyle("""
+            -fx-background-color: #f97316, white;
+            -fx-background-radius: 12, 10;
+            -fx-background-insets: 0, 2;
+            -fx-padding: 24;
+            -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.6), 20, 0, 0, 5);
+            """);
+
+        StackPane wrapper = new StackPane(card);
+        wrapper.setStyle("-fx-background-color: transparent; -fx-padding: 20;");
+        Scene scene = new Scene(wrapper);
+        scene.setFill(Color.TRANSPARENT);
+        java.net.URL cssUrl = getClass().getResource("/com/bunshock/note_app_for_it_frontend/css/styles.css");
+        if (cssUrl != null) scene.getStylesheets().add(cssUrl.toExternalForm());
+        scene.setOnKeyPressed(ev -> { if (ev.getCode() == KeyCode.ESCAPE) stage.close(); });
+        stage.setScene(scene);
+        stage.showAndWait();
+
+        return result[0];
     }
 
     private void applySnFormatting() {
@@ -494,6 +613,11 @@ public class ItemDialogController {
         chkEnableAF.setSelected(af != null && !af.isEmpty());
         handleAfToggle();
 
+        // Reflects the item's existing state — no confirmation prompt here, since the exceptional
+        // choice (and its reason) was already made and confirmed when this item was first added.
+        chkModifiesStock.setSelected(asset.isModifiesStock());
+        stockExceptionReason = asset.isModifiesStock() ? null : asset.getModifiesStockReason();
+
         txtObs.setText(asset.getObservations().get());
     }
 
@@ -515,6 +639,8 @@ public class ItemDialogController {
             .findFirst().ifPresent(cmbModel::setValue);
 
         txtQty.setText(String.valueOf(countable.getQuantity().get()));
+        chkModifiesStock.setSelected(countable.isModifiesStock());
+        stockExceptionReason = countable.isModifiesStock() ? null : countable.getModifiesStockReason();
         txtObs.setText(countable.getObservations().get());
     }
 
@@ -651,6 +777,8 @@ public class ItemDialogController {
         String brandName = brand.getName();
         String modelName = model.getName();
         String obs = txtObs.getText().trim();
+        boolean modifiesStock = chkModifiesStock.isSelected();
+        String modifiesStockReason = modifiesStock ? null : stockExceptionReason;
 
         if (type.isAsset()) {
             String sn = chkSinSN.isSelected() ? "" : txtSerial.getText().trim();
@@ -667,9 +795,13 @@ public class ItemDialogController {
                 editingAsset.getSerial().set(sn);
                 editingAsset.getAf().set(af);
                 editingAsset.getObservations().set(obs);
+                editingAsset.setModifiesStock(modifiesStock);
+                editingAsset.setModifiesStockReason(modifiesStockReason);
             } else {
-                parentController.addAsset(new AssetItem(typeName, brandName, modelName, obs, sn, af,
-                    type.getId(), brand.getId(), model.getId()));
+                AssetItem newAsset = new AssetItem(typeName, brandName, modelName, obs, sn, af,
+                    type.getId(), brand.getId(), model.getId(), modifiesStock);
+                newAsset.setModifiesStockReason(modifiesStockReason);
+                parentController.addAsset(newAsset);
             }
         } else {
                 String qtyText = txtQty.getText().trim();
@@ -683,9 +815,13 @@ public class ItemDialogController {
                 editingCountable.setModelId(model.getId());
                 editingCountable.getQuantity().set(qty);
                 editingCountable.getObservations().set(obs);
+                editingCountable.setModifiesStock(modifiesStock);
+                editingCountable.setModifiesStockReason(modifiesStockReason);
             } else {
-                parentController.addCountable(new CountableItem(typeName, brandName, modelName, qty, obs,
-                    type.getId(), brand.getId(), model.getId()));
+                CountableItem newCountable = new CountableItem(typeName, brandName, modelName, qty, obs,
+                    type.getId(), brand.getId(), model.getId(), modifiesStock);
+                newCountable.setModifiesStockReason(modifiesStockReason);
+                parentController.addCountable(newCountable);
             }
         }
 

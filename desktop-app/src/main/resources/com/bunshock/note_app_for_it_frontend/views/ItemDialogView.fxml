@@ -79,7 +79,8 @@
                     <CheckBox fx:id="chkEnableAF" text="N° ACTIVO FIJO (A/F)" selected="true"
                               styleClass="input-label-small" onAction="#handleAfToggle"/>
                     <TextField fx:id="txtAF" styleClass="form-input-main"
-                               promptText="Ingrese S/N para calcular A/F..." editable="false"/>
+                               promptText="Ingrese S/N para calcular A/F..." editable="false"
+                               mouseTransparent="true" focusTraversable="false"/>
                 </VBox>
             </VBox>
 
@@ -100,10 +101,20 @@
         </VBox>
 
         <!-- Observations — fixed footer position, never shifts -->
-        <VBox spacing="5" style="-fx-padding: 10 25 14 25; -fx-background-color: white; -fx-border-color: #e2e8f0 transparent transparent transparent; -fx-border-width: 1;">
+        <VBox spacing="8" style="-fx-padding: 10 25 14 25; -fx-background-color: white; -fx-border-color: #e2e8f0 transparent transparent transparent; -fx-border-width: 1;">
             <Label text="OBSERVACIONES / ESTADO" styleClass="input-label-small"/>
             <TextField fx:id="txtObs" styleClass="form-input-main" promptText="Opcional..."/>
         </VBox>
+
+        <!-- Modifica stock — own prominent row, last thing seen before Cancelar/Agregar -->
+        <HBox alignment="CENTER_LEFT"
+              style="-fx-padding: 12 25; -fx-background-color: #f0fdfa; -fx-border-color: #e2e8f0 transparent #e2e8f0 transparent; -fx-border-width: 1;">
+            <CheckBox fx:id="chkModifiesStock" text="Modifica stock" selected="true"
+                      onAction="#handleModifiesStockToggle"
+                      style="-fx-font-size: 11px; -fx-font-weight: bold; -fx-text-fill: #0a6b5a;">
+                <tooltip><Tooltip text="Desmarcar solo en casos excepcionales — este ítem no sumará/restará stock al aprobarse la nota"/></tooltip>
+            </CheckBox>
+        </HBox>
 
         <!-- Footer -->
         <HBox alignment="CENTER_RIGHT" spacing="10"

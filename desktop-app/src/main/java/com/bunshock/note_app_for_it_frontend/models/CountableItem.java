@@ -8,7 +8,12 @@ public class CountableItem extends EquipmentItem {
 
     public CountableItem(String type, String brand, String model, int quantity, String observations,
             int typeId, int brandId, int modelId) {
-        super(type, brand, model, observations, typeId, brandId, modelId);
+        this(type, brand, model, quantity, observations, typeId, brandId, modelId, true);
+    }
+
+    public CountableItem(String type, String brand, String model, int quantity, String observations,
+            int typeId, int brandId, int modelId, boolean modifiesStock) {
+        super(type, brand, model, observations, typeId, brandId, modelId, modifiesStock);
         this.quantity = new SimpleIntegerProperty(quantity);
     }
 

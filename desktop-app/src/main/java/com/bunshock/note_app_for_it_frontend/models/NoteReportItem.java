@@ -16,6 +16,8 @@ public class NoteReportItem {
     private int quantity;
     private String observations;
     private boolean isAsset;
+    private boolean modifiesStock = true;
+    private String modifiesStockReason;
     private GlpiStatus glpiStatus = GlpiStatus.N_A;
     private String glpiRejectionReason;
     private String glpiStatusUpdatedAt;
@@ -81,6 +83,12 @@ public class NoteReportItem {
 
     public boolean isAsset() { return isAsset; }
     public void setAsset(boolean asset) { isAsset = asset; }
+
+    public boolean isModifiesStock() { return modifiesStock; }
+    public void setModifiesStock(boolean modifiesStock) { this.modifiesStock = modifiesStock; }
+
+    public String getModifiesStockReason() { return modifiesStockReason; }
+    public void setModifiesStockReason(String modifiesStockReason) { this.modifiesStockReason = modifiesStockReason; }
 
     public GlpiStatus getGlpiStatus() { return glpiStatus; }
     public void setGlpiStatus(GlpiStatus glpiStatus) { this.glpiStatus = glpiStatus; }

@@ -9,7 +9,12 @@ public class AssetItem extends EquipmentItem {
 
     public AssetItem(String type, String brand, String model, String observations, String serial, String af,
             int typeId, int brandId, int modelId) {
-        super(type, brand, model, observations, typeId, brandId, modelId);
+        this(type, brand, model, observations, serial, af, typeId, brandId, modelId, true);
+    }
+
+    public AssetItem(String type, String brand, String model, String observations, String serial, String af,
+            int typeId, int brandId, int modelId, boolean modifiesStock) {
+        super(type, brand, model, observations, typeId, brandId, modelId, modifiesStock);
         this.serial = new SimpleStringProperty(serial);
         this.af = new SimpleStringProperty(af);
     }

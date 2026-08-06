@@ -212,6 +212,8 @@ public class NotePreviewController {
             i.setQuantity(1);
             i.setObservations(a.getObservations().get());
             i.setAsset(true);
+            i.setModifiesStock(a.isModifiesStock());
+            i.setModifiesStockReason(a.getModifiesStockReason());
             i.setGlpiStatus((isPrestamo || isRemito) ? GlpiStatus.N_A : GlpiStatus.PENDING);
             items.add(i);
         }
@@ -226,6 +228,8 @@ public class NotePreviewController {
             i.setQuantity(c.getQuantity().get());
             i.setObservations(c.getObservations().get());
             i.setAsset(false);
+            i.setModifiesStock(c.isModifiesStock());
+            i.setModifiesStockReason(c.getModifiesStockReason());
             i.setGlpiStatus(GlpiStatus.N_A);
             items.add(i);
         }
