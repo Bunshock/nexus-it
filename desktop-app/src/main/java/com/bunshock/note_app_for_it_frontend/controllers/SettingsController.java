@@ -158,6 +158,10 @@ public class SettingsController {
 
     private void onAdminStateChanged() {
         updateFieldEditability();
+        // Forces colSnEdit's cell factory to re-run updateItem() immediately, so the "Editar"
+        // button's disabled state reflects the new permission state right away instead of only
+        // on the next scroll/data reload.
+        tblSnValidation.refresh();
     }
 
     private void updateFieldEditability() {
@@ -205,6 +209,14 @@ public class SettingsController {
             return;
         }
 
+        // Captured before any mutation below, purely for AUDIT_ADMIN_ACTION's old_value —
+        // never used for anything that affects the actual save.
+        String oldAfPrefix    = config.afFormat.prefix;
+        String oldAfSeparator = config.afFormat.separator;
+        String oldSmtpSender  = config.smtp.senderAddress;
+        String oldGlpiUrl     = config.glpiApi.baseUrl;
+        String oldAdUrl       = config.adApi.baseUrl;
+
         if (canAf) {
             config.afFormat.prefix    = txtAfPrefix.getText().trim();
             config.afFormat.separator = txtAfSeparator.getText();
@@ -221,26 +233,32 @@ public class SettingsController {
         Runnable persist = () -> {
             if (canAd) config.adApi.baseUrl = adUrl;
 
+            boolean smtpPasswordChanged = false;
             if (canSmtp) {
                 String smtpPassword = pfSmtpPassword.getText();
                 if (!smtpPassword.isBlank()) {
                     saveEncryptedSetting("smtp_password", smtpPassword);
                     pfSmtpPassword.clear();
+                    smtpPasswordChanged = true;
                 }
             }
 
+            boolean glpiKeyChanged = false;
             if (canGlpi) {
                 String glpiApiKey = pfGlpiApiKey.getText();
                 if (!glpiApiKey.isBlank()) {
                     saveEncryptedSetting("glpi_api_key", glpiApiKey);
                     pfGlpiApiKey.clear();
+                    glpiKeyChanged = true;
                 }
             }
 
+            boolean adTokenChanged = false;
             if (canAd) {
                 if (!adToken.isBlank()) {
                     saveEncryptedSetting("ad_api_token", adToken);
                     pfAdApiToken.clear();
+                    adTokenChanged = true;
                 }
                 String effectiveToken = !adToken.isBlank() ? adToken : decryptSetting("ad_api_token");
                 AdApiService.getInstance().configure(adUrl.isBlank() ? null : adUrl, effectiveToken);
@@ -249,6 +267,29 @@ public class SettingsController {
             try {
                 ConfigService.getInstance().save();
                 triggerSaveStatus("Configuración guardada", "#0c8570");
+                String username = TechnicianSessionService.getInstance().getUsername();
+                // Secret values (SMTP password, GLPI key, AD token) are NEVER written to
+                // old_value/new_value here — only that a change happened, via the reason field.
+                if (canAf && (!oldAfPrefix.equals(config.afFormat.prefix) || !oldAfSeparator.equals(config.afFormat.separator))) {
+                    ServiceLocator.getInstance().getAuditService().recordAdminAction(username,
+                        "EDIT_AF_FORMAT_CONFIG", "APP_CONFIG", "afFormat",
+                        oldAfPrefix + oldAfSeparator, config.afFormat.prefix + config.afFormat.separator, null);
+                }
+                if (canSmtp && (!oldSmtpSender.equals(config.smtp.senderAddress) || smtpPasswordChanged)) {
+                    ServiceLocator.getInstance().getAuditService().recordAdminAction(username,
+                        "EDIT_SMTP_CONFIG", "APP_SETTINGS", "smtp",
+                        oldSmtpSender, config.smtp.senderAddress, smtpPasswordChanged ? "Contraseña actualizada" : null);
+                }
+                if (canGlpi && (!oldGlpiUrl.equals(config.glpiApi.baseUrl) || glpiKeyChanged)) {
+                    ServiceLocator.getInstance().getAuditService().recordAdminAction(username,
+                        "EDIT_GLPI_CONFIG", "APP_SETTINGS", "glpi_api_key",
+                        oldGlpiUrl, config.glpiApi.baseUrl, glpiKeyChanged ? "Clave API actualizada" : null);
+                }
+                if (canAd && (!oldAdUrl.equals(config.adApi.baseUrl) || adTokenChanged)) {
+                    ServiceLocator.getInstance().getAuditService().recordAdminAction(username,
+                        "EDIT_AD_CONFIG", "APP_SETTINGS", "ad_api_token",
+                        oldAdUrl, config.adApi.baseUrl, adTokenChanged ? "Token actualizado" : null);
+                }
             } catch (Exception e) {
                 triggerSaveStatus("Error al guardar la configuración", "#ef4444");
             }
@@ -451,6 +492,14 @@ public class SettingsController {
                 super.updateItem(item, empty);
                 setAlignment(Pos.CENTER);
                 setGraphic(empty ? null : btn);
+                // Disabled, not hidden, for a technician without the permission — visible but
+                // unusable, so it's clear the action exists rather than looking like the row has
+                // no edit action at all. handleEditRow()'s own permission check is what actually
+                // enforces this; disabling the button is cosmetic, same "check is the real gate,
+                // button state is cosmetic" precedent as DatabaseSectionController's CRUD buttons.
+                if (!empty) {
+                    btn.setDisable(!AdminSession.getInstance().hasPermission(Permission.EDIT_SN_VALIDATION));
+                }
             }
         });
 
@@ -605,12 +654,12 @@ public class SettingsController {
 
     // ── Edit row ──────────────────────────────────────────────────────
 
+    // colSnEdit's button (see its cell factory above) is disabled for anyone without
+    // EDIT_SN_VALIDATION and is this method's only caller, so there's no path here without the
+    // permission already held — no redundant re-check, unlike DatabaseSectionController's
+    // requirePermission(), which stays necessary there because it's a shared gate with a
+    // password-fallback path reused across many call sites; this method has neither.
     private void handleEditRow(SnValidationRow row) {
-        if (!AdminSession.getInstance().hasPermission(Permission.EDIT_SN_VALIDATION)) {
-            showErrorDialog("Acceso restringido",
-                "Activa el modo administrador desde Configuración para editar la validación S/N.");
-            return;
-        }
         AdminSession.getInstance().refreshActivity();
         openEditDialog(row);
     }
@@ -669,6 +718,11 @@ public class SettingsController {
             }
             equipmentService.upsertSnValidation(row.getModelId(),
                 newRegex.isEmpty() ? null : newRegex, chkActive.isSelected());
+            ServiceLocator.getInstance().getAuditService().recordAdminAction(
+                TechnicianSessionService.getInstance().getUsername(), "EDIT_SN_VALIDATION", "SN_VALIDATION",
+                String.valueOf(row.getModelId()),
+                "regex=" + row.getRegex() + ", activa=" + row.isActive(),
+                "regex=" + newRegex + ", activa=" + chkActive.isSelected(), null);
             saved[0] = true;
             stage.close();
         });
@@ -689,33 +743,6 @@ public class SettingsController {
     }
 
     // ── Dialog helpers ────────────────────────────────────────────────
-
-    private void showErrorDialog(String title, String message) {
-        Stage stage = buildDialogStage();
-        centerOnContent(stage);
-
-        Label lblTitle = new Label(title);
-        lblTitle.getStyleClass().add("section-label");
-
-        Label lblMsg = new Label(message);
-        lblMsg.setStyle("-fx-text-fill: #475569; -fx-font-size: 12px;");
-        lblMsg.setWrapText(true);
-
-        Button btnOk = new Button("Aceptar");
-        btnOk.getStyleClass().add("button-primary");
-        btnOk.setOnAction(e -> stage.close());
-
-        HBox buttons = new HBox(btnOk);
-        buttons.setAlignment(Pos.CENTER_RIGHT);
-
-        VBox root = buildDialogRoot(360);
-        root.getChildren().addAll(lblTitle, lblMsg, buttons);
-
-        Scene scene = buildDialogScene(root);
-        scene.setOnKeyPressed(e -> { if (e.getCode() == javafx.scene.input.KeyCode.ESCAPE) stage.close(); });
-        stage.setScene(scene);
-        stage.showAndWait();
-    }
 
     private void centerOnContent(Stage stage) {
         stage.setOpacity(0);

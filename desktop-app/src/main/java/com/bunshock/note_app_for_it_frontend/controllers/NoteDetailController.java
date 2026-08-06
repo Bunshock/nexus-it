@@ -109,7 +109,7 @@ public class NoteDetailController {
                 badgeText = "✓ Aprobada";
                 badgeColor = "#22c55e";
             }
-            case "RECHAZADO" -> {
+            case "REJECTED" -> {
                 String reason = report.getRejectionReason() != null ? ": " + report.getRejectionReason() : "";
                 badgeText = "✗ Rechazada" + reason;
                 badgeColor = "#ef4444";
@@ -169,6 +169,7 @@ public class NoteDetailController {
 
     private void handleApprove() {
         AdminSession.getInstance().refreshActivity();
+        String oldStatus = report.getApprovalStatus();
         try {
             ServiceLocator.getInstance().getHistoryService().updateNoteApprovalStatus(report.getId(), "APPROVED", null);
         } catch (RuntimeException e) {
@@ -179,6 +180,9 @@ public class NoteDetailController {
             showApprovalError(e.getMessage());
             return;
         }
+        ServiceLocator.getInstance().getAuditService().recordAdminAction(
+            TechnicianSessionService.getInstance().getUsername(), "APPROVE_NOTE", "NOTE_REPORT",
+            String.valueOf(report.getId()), oldStatus, "APPROVED", null);
         report.setApprovalStatus("APPROVED");
         report.setRejectionReason(null);
         PendingCountsService.getInstance().notifyChanged();
@@ -199,8 +203,12 @@ public class NoteDetailController {
         AdminSession.getInstance().refreshActivity();
         String reason = promptNoteRejectionReason();
         if (reason == null) return;
-        ServiceLocator.getInstance().getHistoryService().updateNoteApprovalStatus(report.getId(), "RECHAZADO", reason);
-        report.setApprovalStatus("RECHAZADO");
+        String oldStatus = report.getApprovalStatus();
+        ServiceLocator.getInstance().getHistoryService().updateNoteApprovalStatus(report.getId(), "REJECTED", reason);
+        ServiceLocator.getInstance().getAuditService().recordAdminAction(
+            TechnicianSessionService.getInstance().getUsername(), "REJECT_NOTE", "NOTE_REPORT",
+            String.valueOf(report.getId()), oldStatus, "REJECTED", reason);
+        report.setApprovalStatus("REJECTED");
         report.setRejectionReason(reason);
         PendingCountsService.getInstance().notifyChanged();
         buildApprovalSection();
@@ -281,6 +289,15 @@ public class NoteDetailController {
         if (item.getObservations() != null && !item.getObservations().isBlank())
             card.getChildren().add(smallLabel("Obs: " + item.getObservations()));
 
+        // Shown unconditionally, regardless of approval status — this is exactly the information
+        // an admin needs before deciding whether to approve the note (ItemDialogController's
+        // "Modifica stock" checkbox), so it can't be gated behind approval already having happened.
+        if (!item.isModifiesStock()) {
+            String reason = item.getModifiesStockReason();
+            String badgeText = "⚠ No modifica stock" + (reason != null && !reason.isBlank() ? ": " + reason : "");
+            card.getChildren().add(statusBadge(badgeText, "#f97316"));
+        }
+
         // PENDING/RECHAZADO notes show no item-level action rows at all — an admin must approve
         // the note itself first (see buildApprovalSection() above) before GLPI sync/reject or the
         // Provider return-tracking row become reachable.
@@ -308,7 +325,7 @@ public class NoteDetailController {
     // this nor any special handling here. Duplicated from SqliteHistoryService's identical check
     // per this codebase's no-shared-abstraction convention.
     private boolean isProviderReturnableNote() {
-        if (!"Entrega - Proveedor".equalsIgnoreCase(report.getProfileType())) return false;
+        if (!"ENTREGA - PROVEEDOR".equalsIgnoreCase(report.getProfileType())) return false;
         String motivo = report.getMotivo();
         if (motivo == null) return false;
         try {
@@ -491,8 +508,12 @@ public class NoteDetailController {
     private void handleProviderReceived(NoteReportItem item, Button btnReceived) {
         AdminSession.getInstance().refreshActivity();
         btnReceived.setDisable(true);
+        ReturnStatus oldStatus = item.getReturnStatus();
         ServiceLocator.getInstance().getHistoryService()
             .updateItemReturnStatus(item.getId(), ReturnStatus.RETURNED, null);
+        ServiceLocator.getInstance().getAuditService().recordItemStatusChange(item.getId(), "RETURN",
+            oldStatus.toDbString(), ReturnStatus.RETURNED.toDbString(), null, 1,
+            TechnicianSessionService.getInstance().getUsername());
         item.setReturnStatus(ReturnStatus.RETURNED);
         item.setReturnStatusUpdatedAt(java.time.LocalDateTime.now().toString());
         // Seeds the second, independent GLPI dimension now that the return is validated — GLPI
@@ -511,8 +532,12 @@ public class NoteDetailController {
         AdminSession.getInstance().refreshActivity();
         String reason = promptProviderNotReceivedReason();
         if (reason == null) return;
+        ReturnStatus oldStatus = item.getReturnStatus();
         ServiceLocator.getInstance().getHistoryService()
             .updateItemReturnStatus(item.getId(), ReturnStatus.LOST, reason);
+        ServiceLocator.getInstance().getAuditService().recordItemStatusChange(item.getId(), "RETURN",
+            oldStatus.toDbString(), ReturnStatus.LOST.toDbString(), reason, 1,
+            TechnicianSessionService.getInstance().getUsername());
         item.setReturnStatus(ReturnStatus.LOST);
         item.setReturnRejectionReason(reason);
         item.setReturnStatusUpdatedAt(java.time.LocalDateTime.now().toString());
@@ -527,6 +552,9 @@ public class NoteDetailController {
         if (qty <= 0) return;
         ServiceLocator.getInstance().getHistoryService()
             .allocateCountableReturn(item.getId(), ReturnStatus.RETURNED, qty, null);
+        ServiceLocator.getInstance().getAuditService().recordItemStatusChange(item.getId(), "RETURN",
+            ReturnStatus.PENDING.toDbString(), ReturnStatus.RETURNED.toDbString(), null, qty,
+            TechnicianSessionService.getInstance().getUsername());
         item.setReturnedQuantity(item.getReturnedQuantity() + qty);
         // Same "in-memory item must reflect what was just written" fix as the whole-item status
         // handlers above — without appending this batch here too, the new line wouldn't show up
@@ -545,6 +573,9 @@ public class NoteDetailController {
         if (reason == null) return;
         ServiceLocator.getInstance().getHistoryService()
             .allocateCountableReturn(item.getId(), ReturnStatus.LOST, qty, reason);
+        ServiceLocator.getInstance().getAuditService().recordItemStatusChange(item.getId(), "RETURN",
+            ReturnStatus.PENDING.toDbString(), ReturnStatus.LOST.toDbString(), reason, qty,
+            TechnicianSessionService.getInstance().getUsername());
         item.setLostQuantity(item.getLostQuantity() + qty);
         item.getLostBatches().add(new ReturnAllocationBatch(qty, reason, java.time.LocalDateTime.now().toString()));
         PendingCountsService.getInstance().notifyChanged();
@@ -659,8 +690,12 @@ public class NoteDetailController {
     private void handleSync(NoteReportItem item, Button btnSync) {
         AdminSession.getInstance().refreshActivity();
         btnSync.setDisable(true);
+        GlpiStatus oldStatus = item.getGlpiStatus();
         ServiceLocator.getInstance().getHistoryService()
             .updateItemGlpiStatus(item.getId(), GlpiStatus.SYNCED, null);
+        ServiceLocator.getInstance().getAuditService().recordItemStatusChange(item.getId(), "GLPI",
+            oldStatus.toDbString(), GlpiStatus.SYNCED.toDbString(), null, 1,
+            TechnicianSessionService.getInstance().getUsername());
         item.setGlpiStatus(GlpiStatus.SYNCED);
         // Without this, the badge kept showing no timestamp at all until the popup was closed
         // and reopened — updateItemGlpiStatus() above writes the real timestamp to the DB, but
@@ -677,8 +712,12 @@ public class NoteDetailController {
         AdminSession.getInstance().refreshActivity();
         String reason = promptRejectionReason();
         if (reason == null) return;
+        GlpiStatus oldStatus = item.getGlpiStatus();
         ServiceLocator.getInstance().getHistoryService()
             .updateItemGlpiStatus(item.getId(), GlpiStatus.REJECTED, reason);
+        ServiceLocator.getInstance().getAuditService().recordItemStatusChange(item.getId(), "GLPI",
+            oldStatus.toDbString(), GlpiStatus.REJECTED.toDbString(), reason, 1,
+            TechnicianSessionService.getInstance().getUsername());
         item.setGlpiStatus(GlpiStatus.REJECTED);
         item.setGlpiRejectionReason(reason);
         item.setGlpiStatusUpdatedAt(java.time.LocalDateTime.now().toString());

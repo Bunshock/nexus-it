@@ -112,7 +112,7 @@ public class PrestamoDetailController {
                 badgeText = "✓ Aprobada";
                 badgeColor = "#22c55e";
             }
-            case "RECHAZADO" -> {
+            case "REJECTED" -> {
                 String reason = report.getRejectionReason() != null ? ": " + report.getRejectionReason() : "";
                 badgeText = "✗ Rechazada" + reason;
                 badgeColor = "#ef4444";
@@ -172,8 +172,12 @@ public class PrestamoDetailController {
 
     private void handleApprove() {
         AdminSession.getInstance().refreshActivity();
+        String oldStatus = report.getApprovalStatus();
         try {
             ServiceLocator.getInstance().getHistoryService().updateNoteApprovalStatus(report.getId(), "APPROVED", null);
+            ServiceLocator.getInstance().getAuditService().recordAdminAction(
+                TechnicianSessionService.getInstance().getUsername(), "APPROVE_NOTE", "NOTE_REPORT",
+                String.valueOf(report.getId()), oldStatus, "APPROVED", null);
         } catch (RuntimeException e) {
             // Approval can fail for a real, user-facing reason now — most commonly insufficient
             // stock at the note's Sede (see SqliteHistoryService.applyNoteStockIfNeeded()'s
@@ -202,8 +206,12 @@ public class PrestamoDetailController {
         AdminSession.getInstance().refreshActivity();
         String reason = promptNoteRejectionReason();
         if (reason == null) return;
-        ServiceLocator.getInstance().getHistoryService().updateNoteApprovalStatus(report.getId(), "RECHAZADO", reason);
-        report.setApprovalStatus("RECHAZADO");
+        String oldStatus = report.getApprovalStatus();
+        ServiceLocator.getInstance().getHistoryService().updateNoteApprovalStatus(report.getId(), "REJECTED", reason);
+        ServiceLocator.getInstance().getAuditService().recordAdminAction(
+            TechnicianSessionService.getInstance().getUsername(), "REJECT_NOTE", "NOTE_REPORT",
+            String.valueOf(report.getId()), oldStatus, "REJECTED", reason);
+        report.setApprovalStatus("REJECTED");
         report.setRejectionReason(reason);
         PendingCountsService.getInstance().notifyChanged();
         buildApprovalSection();
@@ -283,6 +291,15 @@ public class PrestamoDetailController {
 
         if (item.getObservations() != null && !item.getObservations().isBlank())
             card.getChildren().add(smallLabel("Obs: " + item.getObservations()));
+
+        // Shown unconditionally, regardless of approval status — this is exactly the information
+        // an admin needs before deciding whether to approve the note (ItemDialogController's
+        // "Modifica stock" checkbox), so it can't be gated behind approval already having happened.
+        if (!item.isModifiesStock()) {
+            String reason = item.getModifiesStockReason();
+            String badgeText = "⚠ No modifica stock" + (reason != null && !reason.isBlank() ? ": " + reason : "");
+            card.getChildren().add(statusBadge(badgeText, "#f97316"));
+        }
 
         // Same gate as NoteDetailController's buildItemCard() — no item-level action row until
         // the note itself has been approved.
@@ -471,6 +488,9 @@ public class PrestamoDetailController {
         if (qty <= 0) return;
         ServiceLocator.getInstance().getHistoryService()
             .allocateCountableReturn(item.getId(), ReturnStatus.RETURNED, qty, null);
+        ServiceLocator.getInstance().getAuditService().recordItemStatusChange(item.getId(), "RETURN",
+            ReturnStatus.PENDING.toDbString(), ReturnStatus.RETURNED.toDbString(), null, qty,
+            TechnicianSessionService.getInstance().getUsername());
         item.setReturnedQuantity(item.getReturnedQuantity() + qty);
         // Without this, the new batch wouldn't show up in buildCountableReturnStatusRow()'s loop
         // until the popup was closed and reopened — updateItemReturnStatus()/allocateCountableReturn()
@@ -489,6 +509,9 @@ public class PrestamoDetailController {
         if (reason == null) return;
         ServiceLocator.getInstance().getHistoryService()
             .allocateCountableReturn(item.getId(), ReturnStatus.LOST, qty, reason);
+        ServiceLocator.getInstance().getAuditService().recordItemStatusChange(item.getId(), "RETURN",
+            ReturnStatus.PENDING.toDbString(), ReturnStatus.LOST.toDbString(), reason, qty,
+            TechnicianSessionService.getInstance().getUsername());
         item.setLostQuantity(item.getLostQuantity() + qty);
         item.getLostBatches().add(new ReturnAllocationBatch(qty, reason, java.time.LocalDateTime.now().toString()));
         PendingCountsService.getInstance().notifyChanged();
@@ -505,8 +528,12 @@ public class PrestamoDetailController {
     private void handleReturn(NoteReportItem item, Button btnReturn) {
         AdminSession.getInstance().refreshActivity();
         btnReturn.setDisable(true);
+        ReturnStatus oldStatus = item.getReturnStatus();
         ServiceLocator.getInstance().getHistoryService()
             .updateItemReturnStatus(item.getId(), ReturnStatus.RETURNED, null);
+        ServiceLocator.getInstance().getAuditService().recordItemStatusChange(item.getId(), "RETURN",
+            oldStatus.toDbString(), ReturnStatus.RETURNED.toDbString(), null, 1,
+            TechnicianSessionService.getInstance().getUsername());
         item.setReturnStatus(ReturnStatus.RETURNED);
         item.setReturnStatusUpdatedAt(java.time.LocalDateTime.now().toString());
         PendingCountsService.getInstance().notifyChanged();
@@ -518,8 +545,12 @@ public class PrestamoDetailController {
         AdminSession.getInstance().refreshActivity();
         String reason = promptRejectionReason();
         if (reason == null) return;
+        ReturnStatus oldStatus = item.getReturnStatus();
         ServiceLocator.getInstance().getHistoryService()
             .updateItemReturnStatus(item.getId(), ReturnStatus.LOST, reason);
+        ServiceLocator.getInstance().getAuditService().recordItemStatusChange(item.getId(), "RETURN",
+            oldStatus.toDbString(), ReturnStatus.LOST.toDbString(), reason, 1,
+            TechnicianSessionService.getInstance().getUsername());
         item.setReturnStatus(ReturnStatus.LOST);
         item.setReturnRejectionReason(reason);
         item.setReturnStatusUpdatedAt(java.time.LocalDateTime.now().toString());
