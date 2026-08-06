@@ -7,6 +7,7 @@ import com.bunshock.note_app_for_it_frontend.controllers.EnviosController;
 import com.bunshock.note_app_for_it_frontend.controllers.HistoryController;
 import com.bunshock.note_app_for_it_frontend.controllers.NoteGeneratorController;
 import com.bunshock.note_app_for_it_frontend.controllers.PrestamoHistoryController;
+import com.bunshock.note_app_for_it_frontend.controllers.PrestamoNewLoanController;
 import com.bunshock.note_app_for_it_frontend.controllers.PrestamosController;
 import com.bunshock.note_app_for_it_frontend.controllers.ProviderNoteController;
 import com.bunshock.note_app_for_it_frontend.controllers.RemitoHistoryController;
@@ -28,6 +29,7 @@ public class ViewFactory {
     private ProviderNoteController providerNoteController;
 
     private Parent generatorView;
+    private NoteGeneratorController generatorController;
     private Parent remitoNoteView;
     private RemitoNoteController remitoNoteController;
     private Parent remitoHistoryView;
@@ -46,6 +48,7 @@ public class ViewFactory {
     private Parent prestamosView;
     private PrestamosController prestamosController;
     private Parent prestamoNewLoanView;
+    private PrestamoNewLoanController prestamoNewLoanController;
     private Parent prestamoHistoryView;
     private PrestamoHistoryController prestamoHistoryController;
 
@@ -71,11 +74,13 @@ public class ViewFactory {
         if (generatorView == null) {
             FXMLLoader loader = loader("NoteGeneratorView.fxml");
             generatorView = load(loader);
-            NoteGeneratorController ctrl = loader.getController();
-            ctrl.setViewFactory(this);
+            generatorController = loader.getController();
+            generatorController.setViewFactory(this);
         }
         return generatorView;
     }
+
+    public NoteGeneratorController getGeneratorController() { return generatorController; }
 
     public Parent getRemitoNoteView() {
         if (remitoNoteView == null) {
@@ -170,9 +175,15 @@ public class ViewFactory {
     public PrestamosController getPrestamosController() { return prestamosController; }
 
     public Parent getPrestamoNewLoanView() {
-        if (prestamoNewLoanView == null) prestamoNewLoanView = load(loader("PrestamoNewLoanView.fxml"));
+        if (prestamoNewLoanView == null) {
+            FXMLLoader loader = loader("PrestamoNewLoanView.fxml");
+            prestamoNewLoanView = load(loader);
+            prestamoNewLoanController = loader.getController();
+        }
         return prestamoNewLoanView;
     }
+
+    public PrestamoNewLoanController getPrestamoNewLoanController() { return prestamoNewLoanController; }
 
     public Parent getPrestamoHistoryView() {
         if (prestamoHistoryView == null) {

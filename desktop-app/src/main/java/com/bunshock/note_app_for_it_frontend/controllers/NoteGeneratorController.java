@@ -285,7 +285,7 @@ public class NoteGeneratorController implements ItemDialogHost {
             Stage stage = new Stage();
             stage.initStyle(StageStyle.TRANSPARENT);
             stage.initModality(Modality.APPLICATION_MODAL);
-            Scene dialogScene = new Scene(root, 544, 580);
+            Scene dialogScene = new Scene(root, 544, 620);
             dialogScene.setFill(javafx.scene.paint.Color.TRANSPARENT);
             dialogScene.getStylesheets().add(getClass().getResource(
                 "/com/bunshock/note_app_for_it_frontend/css/styles.css").toExternalForm());
@@ -490,7 +490,7 @@ public class NoteGeneratorController implements ItemDialogHost {
                 report.setMotivo(pnc.getMotivo());
                 report.setResponsibleName(pnc.getResponsibleName());
                 report.setResponsibleDni(pnc.getResponsibleDni());
-                report.setProfileType("Entrega - Proveedor");
+                report.setProfileType("ENTREGA - PROVEEDOR");
             }
 
             report.setAuthorName(technician.getName());
@@ -635,7 +635,7 @@ public class NoteGeneratorController implements ItemDialogHost {
     // actual gate at Generar-click time (return value), reusing the same computation rather than a
     // separate popup — the persistent warning already shown in the view is the explanation. Skips
     // entirely for Devolución (ingress — nothing to block, you can always receive stock back).
-    private boolean refreshStockWarning() {
+    public boolean refreshStockWarning() {
         NoteTypeOption selected = cmbNoteType.getValue();
         if (selected == null || "DEVOLUCIÓN".equals(selected.rawType())) {
             hideStockWarning();
@@ -751,11 +751,13 @@ public class NoteGeneratorController implements ItemDialogHost {
         java.util.Map<StockKey, Integer> requested = new java.util.LinkedHashMap<>();
         java.util.Map<StockKey, String> labels = new java.util.LinkedHashMap<>();
         for (AssetItem a : assetList) {
+            if (!a.isModifiesStock()) continue;
             StockKey key = new StockKey(a.getTypeId(), a.getBrandId(), a.getModelId());
             requested.merge(key, 1, Integer::sum);
             labels.putIfAbsent(key, a.getType().get() + " " + a.getBrand().get() + " " + a.getModel().get());
         }
         for (CountableItem item : countableList) {
+            if (!item.isModifiesStock()) continue;
             StockKey key = new StockKey(item.getTypeId(), item.getBrandId(), item.getModelId());
             requested.merge(key, item.getQuantity().get(), Integer::sum);
             labels.putIfAbsent(key, item.getType().get() + " " + item.getBrand().get() + " " + item.getModel().get());

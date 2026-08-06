@@ -225,7 +225,7 @@ public class PrestamoNewLoanController implements ItemDialogHost, AdSearchHost {
             Stage stage = new Stage();
             stage.initStyle(StageStyle.TRANSPARENT);
             stage.initModality(Modality.APPLICATION_MODAL);
-            Scene dialogScene = new Scene(root, 544, 580);
+            Scene dialogScene = new Scene(root, 544, 620);
             dialogScene.setFill(Color.TRANSPARENT);
             dialogScene.getStylesheets().add(getClass().getResource(
                 "/com/bunshock/note_app_for_it_frontend/css/styles.css").toExternalForm());
@@ -540,7 +540,7 @@ public class PrestamoNewLoanController implements ItemDialogHost, AdSearchHost {
     // SqliteHistoryService.applyNoteStockIfNeeded()). Recomputed on every item add/edit/delete;
     // also the actual gate at "Guardar" time (return value) — a Préstamo loan is always egress,
     // unlike Generar Nota's combobox there's no Devolución case to skip here.
-    private boolean refreshStockWarning() {
+    public boolean refreshStockWarning() {
         Integer sedeId = TechnicianSessionService.getInstance().getSedeId();
         if (sedeId == null) {
             hideStockWarning();
@@ -689,11 +689,13 @@ public class PrestamoNewLoanController implements ItemDialogHost, AdSearchHost {
         java.util.Map<StockKey, Integer> requested = new java.util.LinkedHashMap<>();
         java.util.Map<StockKey, String> labels = new java.util.LinkedHashMap<>();
         for (AssetItem a : assetList) {
+            if (!a.isModifiesStock()) continue;
             StockKey key = new StockKey(a.getTypeId(), a.getBrandId(), a.getModelId());
             requested.merge(key, 1, Integer::sum);
             labels.putIfAbsent(key, a.getType().get() + " " + a.getBrand().get() + " " + a.getModel().get());
         }
         for (CountableItem item : countableList) {
+            if (!item.isModifiesStock()) continue;
             StockKey key = new StockKey(item.getTypeId(), item.getBrandId(), item.getModelId());
             requested.merge(key, item.getQuantity().get(), Integer::sum);
             labels.putIfAbsent(key, item.getType().get() + " " + item.getBrand().get() + " " + item.getModel().get());
@@ -764,6 +766,8 @@ public class PrestamoNewLoanController implements ItemDialogHost, AdSearchHost {
             i.setQuantity(1);
             i.setObservations(a.getObservations().get());
             i.setAsset(true);
+            i.setModifiesStock(a.isModifiesStock());
+            i.setModifiesStockReason(a.getModifiesStockReason());
             // N_A, not PENDING — Préstamo assets are deliberately excluded from GLPI sync (see
             // NotePreviewController.buildReportWithItems()'s matching comment for the full
             // rationale: GLPI sync here is one-way/no-revert, and nothing un-syncs an item when
@@ -783,6 +787,8 @@ public class PrestamoNewLoanController implements ItemDialogHost, AdSearchHost {
             i.setQuantity(c.getQuantity().get());
             i.setObservations(c.getObservations().get());
             i.setAsset(false);
+            i.setModifiesStock(c.isModifiesStock());
+            i.setModifiesStockReason(c.getModifiesStockReason());
             i.setGlpiStatus(GlpiStatus.N_A);
             items.add(i);
         }

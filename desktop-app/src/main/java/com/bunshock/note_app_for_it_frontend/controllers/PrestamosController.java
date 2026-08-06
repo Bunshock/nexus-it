@@ -34,7 +34,14 @@ public class PrestamosController {
     }
 
     private void showNewLoanView() {
-        if (viewFactory != null) dynamicContentArea.getChildren().setAll(viewFactory.getPrestamoNewLoanView());
+        if (viewFactory == null) return;
+        dynamicContentArea.getChildren().setAll(viewFactory.getPrestamoNewLoanView());
+        // ViewFactory caches this view for the session — without this, a stock-shortage warning
+        // shown before navigating away (e.g. to Base de Datos to top up stock) stayed stuck on
+        // screen even after the shortage was actually fixed, since nothing had recomputed it
+        // since the last item add/edit/delete. Same staleness fix as showHistoryView()'s own
+        // refresh() call just above.
+        viewFactory.getPrestamoNewLoanController().refreshStockWarning();
     }
 
     private void showHistoryView() {

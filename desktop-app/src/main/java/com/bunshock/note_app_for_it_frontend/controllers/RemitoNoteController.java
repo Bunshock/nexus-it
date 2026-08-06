@@ -253,7 +253,7 @@ public class RemitoNoteController implements ItemDialogHost {
             Stage stage = new Stage();
             stage.initStyle(StageStyle.TRANSPARENT);
             stage.initModality(Modality.APPLICATION_MODAL);
-            Scene dialogScene = new Scene(root, 544, 580);
+            Scene dialogScene = new Scene(root, 544, 620);
             dialogScene.setFill(Color.TRANSPARENT);
             dialogScene.getStylesheets().add(getClass().getResource(
                 "/com/bunshock/note_app_for_it_frontend/css/styles.css").toExternalForm());
@@ -371,7 +371,7 @@ public class RemitoNoteController implements ItemDialogHost {
     // also the actual gate at "Generar Remito" time (return value). Always egress from the
     // SOURCE Sede (technician.getSedeId()) regardless of catalog vs. custom destination — the
     // destination doesn't affect what's available to ship out.
-    private boolean refreshStockWarning() {
+    public boolean refreshStockWarning() {
         Integer sedeId = TechnicianSessionService.getInstance().getSedeId();
         if (sedeId == null) {
             hideStockWarning();
@@ -519,11 +519,13 @@ public class RemitoNoteController implements ItemDialogHost {
         java.util.Map<StockKey, Integer> requested = new java.util.LinkedHashMap<>();
         java.util.Map<StockKey, String> labels = new java.util.LinkedHashMap<>();
         for (AssetItem a : assetList) {
+            if (!a.isModifiesStock()) continue;
             StockKey key = new StockKey(a.getTypeId(), a.getBrandId(), a.getModelId());
             requested.merge(key, 1, Integer::sum);
             labels.putIfAbsent(key, a.getType().get() + " " + a.getBrand().get() + " " + a.getModel().get());
         }
         for (CountableItem item : countableList) {
+            if (!item.isModifiesStock()) continue;
             StockKey key = new StockKey(item.getTypeId(), item.getBrandId(), item.getModelId());
             requested.merge(key, item.getQuantity().get(), Integer::sum);
             labels.putIfAbsent(key, item.getType().get() + " " + item.getBrand().get() + " " + item.getModel().get());

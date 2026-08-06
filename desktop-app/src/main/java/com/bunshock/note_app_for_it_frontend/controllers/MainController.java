@@ -1003,6 +1003,11 @@ public class MainController {
     @FXML
     private void handleShowGenerator() {
         showSection(viewFactory.getGeneratorView());
+        // Same staleness fix as PrestamosController.showNewLoanView()/EnviosController.
+        // showRemitoView() — a stock-shortage warning shown before navigating away must be
+        // recomputed on return, not left stuck from before the shortage was actually fixed
+        // elsewhere (e.g. Base de Datos).
+        viewFactory.getGeneratorController().refreshStockWarning();
         setActiveTopLevelButton(btnMovimientosGroup);
         flyoutPrestamosGroup.selectToggle(null);
         flyoutEnviosGroup.selectToggle(null);

@@ -36,7 +36,12 @@ public class EnviosController {
     }
 
     private void showRemitoView() {
-        if (viewFactory != null) dynamicContentArea.getChildren().setAll(viewFactory.getRemitoNoteView());
+        if (viewFactory == null) return;
+        dynamicContentArea.getChildren().setAll(viewFactory.getRemitoNoteView());
+        // Same staleness fix as PrestamosController.showNewLoanView() — a stock-shortage warning
+        // shown before navigating away must be recomputed on return, not left stuck from before
+        // the shortage was actually fixed elsewhere (e.g. Base de Datos).
+        viewFactory.getRemitoNoteController().refreshStockWarning();
     }
 
     private void showHistorialView() {
