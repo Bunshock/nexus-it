@@ -62,6 +62,11 @@ public class CachingEquipmentService implements IEquipmentService {
     }
 
     @Override
+    public java.util.Set<Integer> getSedeIdsWithShippingInfo() {
+        try { return primary.getSedeIdsWithShippingInfo(); } catch (Exception e) { return local.getSedeIdsWithShippingInfo(); }
+    }
+
+    @Override
     public Optional<SnValidation> getSnValidation(int modelId) {
         try { return primary.getSnValidation(modelId); } catch (Exception e) { return local.getSnValidation(modelId); }
     }

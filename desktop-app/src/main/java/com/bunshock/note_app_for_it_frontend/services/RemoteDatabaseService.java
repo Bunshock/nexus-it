@@ -155,13 +155,19 @@ public class RemoteDatabaseService {
             // Row exists only once a superadmin has configured a Sede's Remito shipping info via
             // direct SQL — not nullable columns on SEDE itself, which every Sede would carry
             // regardless of whether shipping was ever configured for it.
+            // deprecated-flag versioned, same pattern as TYPE/BRAND/MODEL/PROVIDER/SEDE — see
+            // DatabaseService's identical SQLite table for the full rationale (NOTE_REMITO_SEDE
+            // below references a specific row by FK instead of duplicating its text).
             createTableIfMissing(stmt, "SEDE_SHIPPING_INFO", """
                 CREATE TABLE SEDE_SHIPPING_INFO (
-                    sede_id           INT PRIMARY KEY REFERENCES SEDE(id),
+                    id                INT IDENTITY(1,1) PRIMARY KEY,
+                    sede_id           INT NOT NULL REFERENCES SEDE(id),
                     destination_label NVARCHAR(255) NOT NULL,
                     address           NVARCHAR(500),
-                    recipients        NVARCHAR(500)
+                    recipients        NVARCHAR(500),
+                    deprecated        INT NOT NULL DEFAULT 0
                 )""");
+            migrateSedeShippingInfoIdSchema(stmt, c);
             // Mirrors DatabaseService's identical SQLite MODEL_STOCK table — brand_type_id is
             // stored explicitly (not inferred from model_id) so the single global "Genérico /
             // Otro" model can carry an independent stock number per (Type,Brand) it's used under.
@@ -309,22 +315,26 @@ public class RemoteDatabaseService {
                     responsible_name NVARCHAR(255),
                     responsible_dni  NVARCHAR(255)
                 )""");
-            // destination_sede_id is nullable — null for a custom/manual destination (e.g. a CAU
-            // not in the SEDE catalog), which has no stock to receive. destination_label/address/
-            // recipients are snapshotted at generation time (not re-read from
-            // SEDE_SHIPPING_INFO on reprint), same "snapshot, don't reference" pattern as
-            // technician_name/technician_dni. No stock_applied column here anymore — every note
-            // type now moves stock on approval, not just Remito, so the double-approval guard
-            // moved to a single shared NOTE_REPORT.stock_applied column instead (see
-            // migrateStockAppliedSchema()).
-            createTableIfMissing(stmt, "NOTE_REMITO", """
-                CREATE TABLE NOTE_REMITO (
-                    note_report_id      INT PRIMARY KEY REFERENCES NOTE_REPORT(id),
-                    destination_sede_id INT REFERENCES SEDE(id),
-                    destination_label   NVARCHAR(255) NOT NULL,
+            // Split into two mutually-exclusive subtype tables — see DatabaseService's identical
+            // SQLite tables for the full rationale (a catalog-Sede destination's 3 text fields
+            // are locked/disabled in RemitoNoteController the moment a Sede is picked, so they can
+            // only ever equal that Sede's currently-active SEDE_SHIPPING_INFO row — referencing
+            // it by FK is safe and avoids duplicating the text at all; a custom/manual
+            // destination has no catalog row to reference, so NOTE_REMITO_OTHER keeps its own
+            // free text).
+            createTableIfMissing(stmt, "NOTE_REMITO_SEDE", """
+                CREATE TABLE NOTE_REMITO_SEDE (
+                    note_report_id   INT PRIMARY KEY REFERENCES NOTE_REPORT(id),
+                    shipping_info_id INT NOT NULL REFERENCES SEDE_SHIPPING_INFO(id)
+                )""");
+            createTableIfMissing(stmt, "NOTE_REMITO_OTHER", """
+                CREATE TABLE NOTE_REMITO_OTHER (
+                    note_report_id     INT PRIMARY KEY REFERENCES NOTE_REPORT(id),
+                    destination_label  NVARCHAR(255) NOT NULL,
                     address             NVARCHAR(500),
                     recipients          NVARCHAR(500)
                 )""");
+            migrateNoteRemitoSplitSchema(stmt, c);
             // Slim base table — asset-only, countable-only, GLPI-tracking, and return-tracking
             // fields each live in their own subtype table below, so a row never carries a column
             // that doesn't apply to it. See the backfill/DROP COLUMN block further down for the
@@ -750,6 +760,165 @@ public class RemoteDatabaseService {
                     CONSTRAINT pk_model_stock PRIMARY KEY (brand_type_id, model_id, sede_id)
                 )""");
         }
+    }
+
+    // SEDE_SHIPPING_INFO's PK changed from sede_id itself to a surrogate id — see
+    // DatabaseService.migrateSedeShippingInfoIdSchema()'s SQLite mirror for the full rationale.
+    // T-SQL supports adding an IDENTITY column to an existing (non-empty) table directly via
+    // ALTER TABLE ADD, so unlike the SQLite side this doesn't need a rebuild-under-a-temp-name
+    // dance — just drop the old inline PK constraint (auto-named by SQL Server, so its name has
+    // to be looked up dynamically first, same as dropDefaultConstraintIfAny() does for DEFAULT
+    // constraints) and add the new one. No live SQL Server instance in this project's test
+    // infrastructure to validate the IDENTITY-on-a-non-empty-table behavior against — same
+    // limitation already accepted elsewhere in this file. No-ops (past the index check) once
+    // already migrated (id column present), including on a brand-new install.
+    private void migrateSedeShippingInfoIdSchema(Statement stmt, Connection c) throws SQLException {
+        if (tableExists(c, "SEDE_SHIPPING_INFO") && !columnExists(c, "SEDE_SHIPPING_INFO", "id")) {
+            boolean originalAutoCommit = c.getAutoCommit();
+            c.setAutoCommit(false);
+            try {
+                dropPrimaryKeyConstraint(stmt, c, "SEDE_SHIPPING_INFO");
+                stmt.executeUpdate("ALTER TABLE SEDE_SHIPPING_INFO ADD id INT IDENTITY(1,1)");
+                stmt.executeUpdate("ALTER TABLE SEDE_SHIPPING_INFO ADD CONSTRAINT pk_sede_shipping_info PRIMARY KEY (id)");
+                addColumnIfMissing(stmt, c, "SEDE_SHIPPING_INFO", "deprecated", "INT NOT NULL DEFAULT 0");
+                c.commit();
+            } catch (SQLException migrationFailed) {
+                c.rollback();
+                throw migrationFailed;
+            } finally {
+                c.setAutoCommit(originalAutoCommit);
+            }
+        }
+
+        // Mirrors DatabaseService's identical SQLite index — "at most one active row per Sede."
+        // Wrapped the same "fail safely" way as the MODEL indexes above: a pre-existing
+        // installation with duplicate active rows for the same Sede degrades to app-layer-only
+        // enforcement rather than blocking startup.
+        try {
+            if (!indexExists(c, "idx_sede_shipping_single_active")) {
+                stmt.executeUpdate(
+                    "CREATE UNIQUE INDEX idx_sede_shipping_single_active ON SEDE_SHIPPING_INFO(sede_id) WHERE deprecated = 0");
+            }
+        } catch (SQLException duplicatesExist) {
+            // same "fail safely" degradation as idx_model_brand_type_name above
+        }
+    }
+
+    private void dropPrimaryKeyConstraint(Statement stmt, Connection c, String table) throws SQLException {
+        try (PreparedStatement ps = c.prepareStatement("""
+                SELECT kc.name FROM sys.key_constraints kc
+                WHERE kc.parent_object_id = OBJECT_ID(?) AND kc.type = 'PK'""")) {
+            ps.setString(1, table);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    stmt.executeUpdate("ALTER TABLE " + table + " DROP CONSTRAINT " + rs.getString(1));
+                }
+            }
+        }
+    }
+
+    // SQL Server mirror of DatabaseService.migrateNoteRemitoSplitSchema() — see that method's
+    // Javadoc for the full rationale. Must run after migrateSedeShippingInfoIdSchema() — relies on
+    // SEDE_SHIPPING_INFO already having its id/deprecated columns. Row-by-row JDBC backfill, same
+    // shape as migrateNoteItemToFk()/migrateNoteProveedorToFk() above, since this needs per-row
+    // resolve-or-create logic no single set-based SQL statement can express cleanly.
+    private void migrateNoteRemitoSplitSchema(Statement stmt, Connection c) throws SQLException {
+        if (!tableExists(c, "NOTE_REMITO")) return;
+
+        Map<String, Integer> shippingInfoCache = new HashMap<>();
+        List<Integer> reportIds = new ArrayList<>();
+        List<Integer> sedeIds = new ArrayList<>();
+        List<String> labels = new ArrayList<>();
+        List<String> addresses = new ArrayList<>();
+        List<String> recipientsList = new ArrayList<>();
+        try (ResultSet rs = stmt.executeQuery(
+                "SELECT note_report_id, destination_sede_id, destination_label, address, recipients FROM NOTE_REMITO")) {
+            while (rs.next()) {
+                reportIds.add(rs.getInt("note_report_id"));
+                int sedeId = rs.getInt("destination_sede_id");
+                sedeIds.add(rs.wasNull() ? null : sedeId);
+                labels.add(rs.getString("destination_label"));
+                addresses.add(rs.getString("address"));
+                recipientsList.add(rs.getString("recipients"));
+            }
+        }
+
+        for (int i = 0; i < reportIds.size(); i++) {
+            int reportId = reportIds.get(i);
+            Integer sedeId = sedeIds.get(i);
+            String label = labels.get(i);
+            String address = addresses.get(i);
+            String recipients = recipientsList.get(i);
+
+            if (sedeId != null) {
+                int shippingInfoId = resolveOrCreateShippingInfoRow(
+                    c, shippingInfoCache, sedeId, label, address, recipients);
+                try (PreparedStatement ins = c.prepareStatement(
+                        "INSERT INTO NOTE_REMITO_SEDE (note_report_id, shipping_info_id) VALUES (?, ?)")) {
+                    ins.setInt(1, reportId);
+                    ins.setInt(2, shippingInfoId);
+                    ins.executeUpdate();
+                }
+            } else {
+                try (PreparedStatement ins = c.prepareStatement("""
+                        INSERT INTO NOTE_REMITO_OTHER (note_report_id, destination_label, address, recipients)
+                        VALUES (?, ?, ?, ?)
+                        """)) {
+                    ins.setInt(1, reportId);
+                    ins.setString(2, label);
+                    ins.setString(3, address);
+                    ins.setString(4, recipients);
+                    ins.executeUpdate();
+                }
+            }
+        }
+
+        stmt.executeUpdate("DROP TABLE NOTE_REMITO");
+    }
+
+    // T-SQL's IS operator only compares against the NULL literal, not an arbitrary bound
+    // parameter (unlike SQLite's, see DatabaseService's identical helper) — the explicit
+    // "(col IS NULL AND ? IS NULL) OR col = ?" form is the portable null-safe equality idiom here.
+    private int resolveOrCreateShippingInfoRow(Connection c, Map<String, Integer> cache,
+            int sedeId, String label, String address, String recipients) throws SQLException {
+        String key = sedeId + "|" + label + "|" + address + "|" + recipients;
+        Integer cached = cache.get(key);
+        if (cached != null) return cached;
+
+        Integer existing = null;
+        try (PreparedStatement sel = c.prepareStatement("""
+                SELECT id FROM SEDE_SHIPPING_INFO
+                WHERE sede_id = ? AND destination_label = ?
+                  AND ((address IS NULL AND ? IS NULL) OR address = ?)
+                  AND ((recipients IS NULL AND ? IS NULL) OR recipients = ?)
+                """)) {
+            sel.setInt(1, sedeId);
+            sel.setString(2, label);
+            sel.setString(3, address);
+            sel.setString(4, address);
+            sel.setString(5, recipients);
+            sel.setString(6, recipients);
+            try (ResultSet rs = sel.executeQuery()) {
+                if (rs.next()) existing = rs.getInt("id");
+            }
+        }
+        if (existing == null) {
+            try (PreparedStatement ins = c.prepareStatement(
+                    "INSERT INTO SEDE_SHIPPING_INFO (sede_id, destination_label, address, recipients, deprecated) VALUES (?, ?, ?, ?, 1)",
+                    Statement.RETURN_GENERATED_KEYS)) {
+                ins.setInt(1, sedeId);
+                ins.setString(2, label);
+                ins.setString(3, address);
+                ins.setString(4, recipients);
+                ins.executeUpdate();
+                try (ResultSet keys = ins.getGeneratedKeys()) {
+                    keys.next();
+                    existing = keys.getInt(1);
+                }
+            }
+        }
+        cache.put(key, existing);
+        return existing;
     }
 
     /**

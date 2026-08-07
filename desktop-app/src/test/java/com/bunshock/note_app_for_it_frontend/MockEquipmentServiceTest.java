@@ -287,11 +287,21 @@ class MockEquipmentServiceTest {
         assertTrue(service.getSedeShippingInfo(SEDE_ID).isEmpty());
 
         service.setSedeShippingInfo(new com.bunshock.note_app_for_it_frontend.models.SedeShippingInfo(
-            SEDE_ID, "CAU Recoleta", "Av. Siempreviva 742", "Juan Pérez"));
+            1, SEDE_ID, "CAU Recoleta", "Av. Siempreviva 742", "Juan Pérez"));
 
         var info = service.getSedeShippingInfo(SEDE_ID);
         assertTrue(info.isPresent());
         assertEquals("CAU Recoleta", info.get().getDestinationLabel());
+    }
+
+    @Test
+    void sedeIdsWithShippingInfoReflectsWhatWasSeeded() {
+        assertTrue(service.getSedeIdsWithShippingInfo().isEmpty());
+
+        service.setSedeShippingInfo(new com.bunshock.note_app_for_it_frontend.models.SedeShippingInfo(
+            1, SEDE_ID, "CAU Recoleta", "Av. Siempreviva 742", "Juan Pérez"));
+
+        assertTrue(service.getSedeIdsWithShippingInfo().contains(SEDE_ID));
     }
 
     @Test

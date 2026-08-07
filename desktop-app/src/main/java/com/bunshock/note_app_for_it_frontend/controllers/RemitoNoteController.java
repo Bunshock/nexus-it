@@ -98,6 +98,10 @@ public class RemitoNoteController implements ItemDialogHost {
     private final ObservableList<CountableItem> countableList = FXCollections.observableArrayList();
 
     private IEquipmentService equipmentService;
+    // Captured at Sede-selection time (fillDestinationFields()), not re-derived at save time —
+    // see NoteReport.shippingInfoId's own Javadoc for why. Null whenever "Personalizar destino"
+    // is in effect, or before any Sede has been picked yet.
+    private Integer selectedShippingInfoId;
 
     private static final int OBSERVATIONS_MAX_LENGTH = 300;
     // Matches SEDE_SHIPPING_INFO/NOTE_REMITO's NVARCHAR(255)/(500) bounds on SQL Server.
@@ -145,23 +149,35 @@ public class RemitoNoteController implements ItemDialogHost {
         updateAddButtonState();
     }
 
-    // A Remito can't target the technician's own Sede — nothing to ship "between."
+    // A Remito can't target the technician's own Sede — nothing to ship "between." Also excludes
+    // any Sede with no active SEDE_SHIPPING_INFO configured — NOTE_REMITO_SEDE.shipping_info_id
+    // is a mandatory FK now (see CLAUDE.md's Remito schema notes), so a Sede with nothing to
+    // reference simply isn't offered as a catalog destination at all; "Personalizar destino"
+    // remains the escape hatch for shipping somewhere not yet configured (or not in the SEDE
+    // catalog to begin with, e.g. a CAU).
     private void populateDestinationSedeCombo() {
         Integer mySedeId = TechnicianSessionService.getInstance().getSedeId();
+        java.util.Set<Integer> sedesWithShippingInfo = equipmentService.getSedeIdsWithShippingInfo();
         List<Sede> options = equipmentService.getAllSedes().stream()
             .filter(s -> mySedeId == null || s.getId() != mySedeId)
+            .filter(s -> sedesWithShippingInfo.contains(s.getId()))
             .toList();
         cmbDestinationSede.setItems(FXCollections.observableArrayList(options));
     }
 
-    // Pre-fills from the Sede's saved shipping info if configured (falls back to just the Sede's
-    // own name for Destino when it isn't) — still freely editable afterward for this one note.
+    // Pre-fills from the Sede's saved shipping info and captures its id for save time (see
+    // selectedShippingInfoId's own Javadoc) — the 3 fields are disabled while a catalog Sede is
+    // selected (see initialize()/handleToggleCustomDestination()), so they can never diverge from
+    // this snapshot. Every Sede reaching this point is guaranteed to have shipping info
+    // configured (populateDestinationSedeCombo() already filtered the combo to only those), so
+    // the Optional is only ever empty defensively.
     private void fillDestinationFields(Sede sede) {
-        if (sede == null) return;
+        if (sede == null) { selectedShippingInfoId = null; return; }
         Optional<SedeShippingInfo> info = equipmentService.getSedeShippingInfo(sede.getId());
         txtDestinationLabel.setText(info.map(SedeShippingInfo::getDestinationLabel).orElse(sede.getName()));
         txtAddress.setText(info.map(SedeShippingInfo::getAddress).orElse(""));
         txtRecipients.setText(info.map(SedeShippingInfo::getRecipients).orElse(""));
+        selectedShippingInfoId = info.map(SedeShippingInfo::getId).orElse(null);
     }
 
     @FXML
@@ -175,6 +191,7 @@ public class RemitoNoteController implements ItemDialogHost {
         txtDestinationLabel.clear();
         txtAddress.clear();
         txtRecipients.clear();
+        selectedShippingInfoId = null;
     }
 
     // ── Item tables (ItemDialogHost) ────────────────────────────────────────────
@@ -292,6 +309,7 @@ public class RemitoNoteController implements ItemDialogHost {
         txtDestinationLabel.clear();
         txtAddress.clear();
         txtRecipients.clear();
+        selectedShippingInfoId = null;
         txtObservations.clear();
         assetList.clear();
         countableList.clear();
@@ -581,6 +599,7 @@ public class RemitoNoteController implements ItemDialogHost {
             NoteReport report = new NoteReport();
             report.setProfileType("REMITO DE ENVÍO");
             report.setDestinationSedeId(destSede != null ? destSede.getId() : null);
+            report.setShippingInfoId(destSede != null ? selectedShippingInfoId : null);
             report.setDestinationLabel(destinationLabel);
             report.setAddress(address);
             report.setRecipients(recipients);

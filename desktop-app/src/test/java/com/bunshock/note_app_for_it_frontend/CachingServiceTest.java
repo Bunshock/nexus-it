@@ -165,10 +165,19 @@ class CachingServiceTest {
     @Test
     void sedeShippingInfoFallsBackToLocalWhenPrimaryThrows() {
         local.setSedeShippingInfo(new com.bunshock.note_app_for_it_frontend.models.SedeShippingInfo(
-            SEDE_ID, "CAU Recoleta", "Dir", "Juan"));
+            1, SEDE_ID, "CAU Recoleta", "Dir", "Juan"));
         CachingEquipmentService failingPrimary = new CachingEquipmentService(
             new FailingEquipmentService(), local);
         assertTrue(failingPrimary.getSedeShippingInfo(SEDE_ID).isPresent());
+    }
+
+    @Test
+    void sedeIdsWithShippingInfoFallsBackToLocalWhenPrimaryThrows() {
+        local.setSedeShippingInfo(new com.bunshock.note_app_for_it_frontend.models.SedeShippingInfo(
+            1, SEDE_ID, "CAU Recoleta", "Dir", "Juan"));
+        CachingEquipmentService failingPrimary = new CachingEquipmentService(
+            new FailingEquipmentService(), local);
+        assertTrue(failingPrimary.getSedeIdsWithShippingInfo().contains(SEDE_ID));
     }
 
     // ── User role / permissions ─────────────────────────────────────
@@ -246,6 +255,7 @@ class CachingServiceTest {
         @Override public void setModelStock(int modelId, int brandId, int typeId, int sedeId, int stock) { throw new RuntimeException("primary down"); }
         @Override public void adjustModelStock(int modelId, int brandId, int typeId, int sedeId, int delta) { throw new RuntimeException("primary down"); }
         @Override public java.util.Optional<com.bunshock.note_app_for_it_frontend.models.SedeShippingInfo> getSedeShippingInfo(int sedeId) { throw new RuntimeException("primary down"); }
+        @Override public java.util.Set<Integer> getSedeIdsWithShippingInfo() { throw new RuntimeException("primary down"); }
     }
 
     private static class MockHistoryService implements com.bunshock.note_app_for_it_frontend.services.IHistoryService {

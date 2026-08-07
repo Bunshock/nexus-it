@@ -661,12 +661,15 @@ class DatabaseServiceMigrationTest {
     }
 
     @Test
-    void createHistoryTablesCreatesNoteRemitoTable() throws Exception {
+    void createHistoryTablesCreatesNoteRemitoSedeAndOtherTables() throws Exception {
         String url = "jdbc:sqlite:" + tempDir.resolve("note-remito-table.db").toAbsolutePath();
         try (Connection c = DriverManager.getConnection(url); Statement stmt = c.createStatement()) {
             invokeCreateEquipmentTables(stmt);
             invokeCreateHistoryTables(stmt);
-            assertTrue(tableExists(c, "NOTE_REMITO"));
+            assertTrue(tableExists(c, "NOTE_REMITO_SEDE"));
+            assertTrue(tableExists(c, "NOTE_REMITO_OTHER"));
+            assertFalse(tableExists(c, "NOTE_REMITO"),
+                "a brand-new install must never create the old, now-retired single table");
         }
     }
 
@@ -805,6 +808,134 @@ class DatabaseServiceMigrationTest {
                 "backfilled from the already-applied Remito row");
             assertEquals(0, singleInt(c, "SELECT stock_applied FROM NOTE_REPORT WHERE id = 2"),
                 "an unapplied Remito row must not be backfilled to 1");
+        }
+    }
+
+    @Test
+    void migrateSchemaAddsIdAndDeprecatedToAPreExistingSedeShippingInfoTable() throws Exception {
+        String url = "jdbc:sqlite:" + tempDir.resolve("pre-sede-shipping-id.db").toAbsolutePath();
+
+        try (Connection c = DriverManager.getConnection(url); Statement stmt = c.createStatement()) {
+            // Old shape — sede_id was the PK itself, before the deprecated-flag versioning this
+            // migration adds. createEquipmentTables()'s own CREATE TABLE IF NOT EXISTS is a
+            // no-op against this, so it survives until migrateSchema() rebuilds it.
+            stmt.executeUpdate("""
+                CREATE TABLE SEDE_SHIPPING_INFO (
+                    sede_id            INTEGER PRIMARY KEY,
+                    destination_label  TEXT NOT NULL,
+                    address            TEXT,
+                    recipients         TEXT
+                )""");
+
+            invokeCreateEquipmentTables(stmt);
+            invokeCreateHistoryTables(stmt);
+
+            stmt.executeUpdate("INSERT INTO SEDE (name) VALUES ('Campus Destino')");
+            int sedeId = singleInt(c, "SELECT id FROM SEDE WHERE name = 'Campus Destino'");
+            stmt.executeUpdate("INSERT INTO SEDE_SHIPPING_INFO (sede_id, destination_label, address, recipients) "
+                + "VALUES (" + sedeId + ", 'CAU Recoleta', 'Av. Test 123', 'Juan Pérez')");
+
+            invokeMigrateSchema(c, stmt);
+
+            assertTrue(hasColumn(c, "SEDE_SHIPPING_INFO", "id"));
+            assertTrue(hasColumn(c, "SEDE_SHIPPING_INFO", "deprecated"));
+            assertEquals(1, count(c, "SEDE_SHIPPING_INFO"));
+            assertEquals("CAU Recoleta",
+                singleString(c, "SELECT destination_label FROM SEDE_SHIPPING_INFO WHERE sede_id = " + sedeId));
+            assertEquals(0,
+                singleInt(c, "SELECT deprecated FROM SEDE_SHIPPING_INFO WHERE sede_id = " + sedeId),
+                "an existing row migrated forward must stay active, not be marked deprecated");
+        }
+    }
+
+    @Test
+    void migrateSchemaSplitsNoteRemitoIntoSedeAndOtherSubtypeTables() throws Exception {
+        String url = "jdbc:sqlite:" + tempDir.resolve("pre-remito-split.db").toAbsolutePath();
+
+        try (Connection c = DriverManager.getConnection(url); Statement stmt = c.createStatement()) {
+            invokeCreateEquipmentTables(stmt);
+            invokeCreateHistoryTables(stmt);
+
+            // Old shape — createHistoryTables() only ever creates the split
+            // NOTE_REMITO_SEDE/NOTE_REMITO_OTHER tables now, never this one.
+            stmt.executeUpdate("""
+                CREATE TABLE NOTE_REMITO (
+                    note_report_id      INTEGER PRIMARY KEY REFERENCES NOTE_REPORT(id),
+                    destination_sede_id INTEGER,
+                    destination_label   TEXT NOT NULL,
+                    address             TEXT,
+                    recipients          TEXT
+                )""");
+
+            stmt.executeUpdate("INSERT INTO SEDE (name) VALUES ('Campus Destino')");
+            int sedeId = singleInt(c, "SELECT id FROM SEDE WHERE name = 'Campus Destino'");
+
+            stmt.executeUpdate("INSERT INTO NOTE_REPORT (id, created_at, profile_type) VALUES (101, '2026-01-01T10:00', 'REMITO DE ENVÍO')");
+            stmt.executeUpdate("INSERT INTO NOTE_REPORT (id, created_at, profile_type) VALUES (102, '2026-01-01T10:00', 'REMITO DE ENVÍO')");
+            stmt.executeUpdate("INSERT INTO NOTE_REMITO (note_report_id, destination_sede_id, destination_label, address, recipients) "
+                + "VALUES (101, " + sedeId + ", 'Campus Destino', 'Dir1', 'Juan')");
+            stmt.executeUpdate("""
+                INSERT INTO NOTE_REMITO (note_report_id, destination_sede_id, destination_label, address, recipients)
+                VALUES (102, NULL, 'CAU Recoleta', 'Dir2', 'Pedro')""");
+
+            invokeMigrateSchema(c, stmt);
+
+            assertFalse(tableExists(c, "NOTE_REMITO"));
+            assertEquals(1, count(c, "NOTE_REMITO_SEDE"));
+            assertEquals(1, count(c, "NOTE_REMITO_OTHER"));
+
+            assertEquals("CAU Recoleta",
+                singleString(c, "SELECT destination_label FROM NOTE_REMITO_OTHER WHERE note_report_id = 102"));
+            assertEquals("Dir2", singleString(c, "SELECT address FROM NOTE_REMITO_OTHER WHERE note_report_id = 102"));
+
+            int shippingInfoId = singleInt(c, "SELECT shipping_info_id FROM NOTE_REMITO_SEDE WHERE note_report_id = 101");
+            assertEquals(sedeId, singleInt(c, "SELECT sede_id FROM SEDE_SHIPPING_INFO WHERE id = " + shippingInfoId));
+            assertEquals("Campus Destino",
+                singleString(c, "SELECT destination_label FROM SEDE_SHIPPING_INFO WHERE id = " + shippingInfoId));
+            assertEquals("Dir1", singleString(c, "SELECT address FROM SEDE_SHIPPING_INFO WHERE id = " + shippingInfoId));
+            // No pre-existing active row matched this historical snapshot, so the backfill created
+            // a new one, deprecated — never touching whatever a superadmin sets as the Sede's
+            // actual current shipping info.
+            assertEquals(1, singleInt(c, "SELECT deprecated FROM SEDE_SHIPPING_INFO WHERE id = " + shippingInfoId));
+        }
+    }
+
+    @Test
+    void migrateSchemaReusesExistingActiveShippingInfoRowWhenValuesMatchExactly() throws Exception {
+        String url = "jdbc:sqlite:" + tempDir.resolve("pre-remito-split-reuse.db").toAbsolutePath();
+
+        try (Connection c = DriverManager.getConnection(url); Statement stmt = c.createStatement()) {
+            invokeCreateEquipmentTables(stmt);
+            invokeCreateHistoryTables(stmt);
+
+            stmt.executeUpdate("""
+                CREATE TABLE NOTE_REMITO (
+                    note_report_id      INTEGER PRIMARY KEY REFERENCES NOTE_REPORT(id),
+                    destination_sede_id INTEGER,
+                    destination_label   TEXT NOT NULL,
+                    address             TEXT,
+                    recipients          TEXT
+                )""");
+
+            stmt.executeUpdate("INSERT INTO SEDE (name) VALUES ('Campus Destino')");
+            int sedeId = singleInt(c, "SELECT id FROM SEDE WHERE name = 'Campus Destino'");
+
+            // A superadmin already configured this Sede's current shipping info (post-split
+            // shape) — the backfill below must reuse this exact row, not create a duplicate.
+            stmt.executeUpdate("INSERT INTO SEDE_SHIPPING_INFO (sede_id, destination_label, address, recipients, deprecated) "
+                + "VALUES (" + sedeId + ", 'Campus Destino', 'Dir1', 'Juan', 0)");
+            int existingShippingInfoId = singleInt(c, "SELECT id FROM SEDE_SHIPPING_INFO WHERE sede_id = " + sedeId);
+
+            stmt.executeUpdate("INSERT INTO NOTE_REPORT (id, created_at, profile_type) VALUES (201, '2026-01-01T10:00', 'REMITO DE ENVÍO')");
+            stmt.executeUpdate("INSERT INTO NOTE_REMITO (note_report_id, destination_sede_id, destination_label, address, recipients) "
+                + "VALUES (201, " + sedeId + ", 'Campus Destino', 'Dir1', 'Juan')");
+
+            invokeMigrateSchema(c, stmt);
+
+            assertEquals(1, count(c, "SEDE_SHIPPING_INFO"),
+                "must reuse the existing active row, not create a duplicate");
+            assertEquals(existingShippingInfoId,
+                singleInt(c, "SELECT shipping_info_id FROM NOTE_REMITO_SEDE WHERE note_report_id = 201"));
         }
     }
 

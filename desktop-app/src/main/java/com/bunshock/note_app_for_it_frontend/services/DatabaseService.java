@@ -146,6 +146,10 @@ public class DatabaseService {
         migrateGenericModelSchema(conn, stmt);
         migrateModelStockSedeSchema(conn, stmt);
         cleanupStrayGenericBrandLinks(conn);
+        // Must run in this order — the Remito split's Sede-backed rows reference
+        // SEDE_SHIPPING_INFO.id, which only exists once the id/deprecated migration below has run.
+        migrateSedeShippingInfoIdSchema(conn, stmt);
+        migrateNoteRemitoSplitSchema(conn, stmt);
 
         // Added after every NOTE_ITEM-rebuilding migration above, so it lands correctly
         // regardless of which shape an existing database's NOTE_ITEM table was migrated through.
@@ -189,6 +193,160 @@ public class DatabaseService {
                     PRIMARY KEY (brand_type_id, model_id, sede_id)
                 )""");
         }
+    }
+
+    // SEDE_SHIPPING_INFO's PK changed from sede_id itself to a surrogate id (see
+    // createEquipmentTables() above) — SQLite can't relax/change a PRIMARY KEY via ALTER TABLE,
+    // so this uses the same "build under a temp name, DROP the old table, RENAME the new one into
+    // place" recipe as migrateGenericModelSchema() above. Nothing references SEDE_SHIPPING_INFO
+    // by FK yet at this point (NOTE_REMITO_SEDE is only backfilled afterward, by
+    // migrateNoteRemitoSplitSchema() below), so no other table's schema needs to survive this
+    // rename the way SN_VALIDATION/NOTE_ITEM did for MODEL. Every migrated row is left active
+    // (deprecated=0) — they're all "current" as far as this migration is concerned. No-ops once
+    // already migrated (id column present), including on a brand-new install, which gets the new
+    // shape straight from createEquipmentTables().
+    private void migrateSedeShippingInfoIdSchema(Connection conn, Statement stmt) throws SQLException {
+        if (!tableExists(conn, "SEDE_SHIPPING_INFO") || columnExists(conn, "SEDE_SHIPPING_INFO", "id")) return;
+
+        stmt.executeUpdate("PRAGMA foreign_keys = OFF");
+        boolean originalAutoCommit = conn.getAutoCommit();
+        conn.setAutoCommit(false);
+        try {
+            stmt.executeUpdate("""
+                CREATE TABLE SEDE_SHIPPING_INFO_NEW_20260807 (
+                    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+                    sede_id            INTEGER NOT NULL REFERENCES SEDE(id),
+                    destination_label  TEXT NOT NULL,
+                    address            TEXT,
+                    recipients         TEXT,
+                    deprecated         INTEGER NOT NULL DEFAULT 0
+                )""");
+            stmt.executeUpdate("""
+                INSERT INTO SEDE_SHIPPING_INFO_NEW_20260807 (sede_id, destination_label, address, recipients, deprecated)
+                SELECT sede_id, destination_label, address, recipients, 0 FROM SEDE_SHIPPING_INFO""");
+            stmt.executeUpdate("DROP TABLE SEDE_SHIPPING_INFO");
+            stmt.executeUpdate("ALTER TABLE SEDE_SHIPPING_INFO_NEW_20260807 RENAME TO SEDE_SHIPPING_INFO");
+            stmt.executeUpdate(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_sede_shipping_single_active "
+                    + "ON SEDE_SHIPPING_INFO(sede_id) WHERE deprecated = 0");
+            conn.commit();
+        } catch (SQLException migrationFailed) {
+            conn.rollback();
+            throw migrationFailed;
+        } finally {
+            conn.setAutoCommit(originalAutoCommit);
+            stmt.executeUpdate("PRAGMA foreign_keys = ON");
+        }
+    }
+
+    // NOTE_REMITO mixed a nullable destination_sede_id (meaningful only for a catalog-Sede
+    // destination) with always-populated destination_label/address/recipients text. Split into
+    // NOTE_REMITO_SEDE (references the exact historical SEDE_SHIPPING_INFO row instead of
+    // duplicating its text — see createHistoryTables()'s comment for why that's safe) and
+    // NOTE_REMITO_OTHER (its own free text, for a destination with no catalog row at all). Must
+    // run after migrateSedeShippingInfoIdSchema() — relies on SEDE_SHIPPING_INFO already having
+    // its id/deprecated columns. No table rebuild needed here — nothing references NOTE_REMITO by
+    // FK, so a plain per-row backfill + DROP TABLE is safe. No-ops once NOTE_REMITO is gone,
+    // including on a brand-new install, which never creates it at all (createHistoryTables() only
+    // ever creates NOTE_REMITO_SEDE/NOTE_REMITO_OTHER directly).
+    private void migrateNoteRemitoSplitSchema(Connection conn, Statement stmt) throws SQLException {
+        if (!tableExists(conn, "NOTE_REMITO")) return;
+
+        Map<String, Integer> shippingInfoCache = new HashMap<>();
+        List<Integer> reportIds = new ArrayList<>();
+        List<Integer> sedeIds = new ArrayList<>();
+        List<String> labels = new ArrayList<>();
+        List<String> addresses = new ArrayList<>();
+        List<String> recipientsList = new ArrayList<>();
+        try (ResultSet rs = stmt.executeQuery(
+                "SELECT note_report_id, destination_sede_id, destination_label, address, recipients FROM NOTE_REMITO")) {
+            while (rs.next()) {
+                reportIds.add(rs.getInt("note_report_id"));
+                int sedeId = rs.getInt("destination_sede_id");
+                sedeIds.add(rs.wasNull() ? null : sedeId);
+                labels.add(rs.getString("destination_label"));
+                addresses.add(rs.getString("address"));
+                recipientsList.add(rs.getString("recipients"));
+            }
+        }
+
+        for (int i = 0; i < reportIds.size(); i++) {
+            int reportId = reportIds.get(i);
+            Integer sedeId = sedeIds.get(i);
+            String label = labels.get(i);
+            String address = addresses.get(i);
+            String recipients = recipientsList.get(i);
+
+            if (sedeId != null) {
+                int shippingInfoId = resolveOrCreateShippingInfoRow(
+                    conn, shippingInfoCache, sedeId, label, address, recipients);
+                try (PreparedStatement ins = conn.prepareStatement(
+                        "INSERT INTO NOTE_REMITO_SEDE (note_report_id, shipping_info_id) VALUES (?, ?)")) {
+                    ins.setInt(1, reportId);
+                    ins.setInt(2, shippingInfoId);
+                    ins.executeUpdate();
+                }
+            } else {
+                try (PreparedStatement ins = conn.prepareStatement("""
+                        INSERT INTO NOTE_REMITO_OTHER (note_report_id, destination_label, address, recipients)
+                        VALUES (?, ?, ?, ?)
+                        """)) {
+                    ins.setInt(1, reportId);
+                    ins.setString(2, label);
+                    ins.setString(3, address);
+                    ins.setString(4, recipients);
+                    ins.executeUpdate();
+                }
+            }
+        }
+
+        stmt.executeUpdate("DROP TABLE NOTE_REMITO");
+    }
+
+    // Matches a historical NOTE_REMITO row's exact (sede_id, label, address, recipients) tuple
+    // against SEDE_SHIPPING_INFO, regardless of deprecated status — an old note's snapshot may no
+    // longer match the currently-active row if a superadmin has since edited it, same "resolve by
+    // exact value, deprecated included" reasoning as resolveOrCreateCatalogRow()'s name-based
+    // matching. Creates a new, deprecated=1 row only when nothing matches; never touches whatever
+    // is currently the active row for that Sede. SQLite's IS operator (unlike T-SQL's) compares a
+    // NULL operand against a bound parameter correctly, so this needs no separate NULL-vs-value
+    // branching the way RemoteDatabaseService's SQL Server mirror does.
+    private int resolveOrCreateShippingInfoRow(Connection conn, Map<String, Integer> cache,
+            int sedeId, String label, String address, String recipients) throws SQLException {
+        String key = sedeId + "|" + label + "|" + address + "|" + recipients;
+        Integer cached = cache.get(key);
+        if (cached != null) return cached;
+
+        Integer existing = null;
+        try (PreparedStatement sel = conn.prepareStatement("""
+                SELECT id FROM SEDE_SHIPPING_INFO
+                WHERE sede_id = ? AND destination_label = ? AND address IS ? AND recipients IS ?
+                """)) {
+            sel.setInt(1, sedeId);
+            sel.setString(2, label);
+            sel.setString(3, address);
+            sel.setString(4, recipients);
+            try (ResultSet rs = sel.executeQuery()) {
+                if (rs.next()) existing = rs.getInt("id");
+            }
+        }
+        if (existing == null) {
+            try (PreparedStatement ins = conn.prepareStatement(
+                    "INSERT INTO SEDE_SHIPPING_INFO (sede_id, destination_label, address, recipients, deprecated) VALUES (?, ?, ?, ?, 1)",
+                    Statement.RETURN_GENERATED_KEYS)) {
+                ins.setInt(1, sedeId);
+                ins.setString(2, label);
+                ins.setString(3, address);
+                ins.setString(4, recipients);
+                ins.executeUpdate();
+                try (ResultSet keys = ins.getGeneratedKeys()) {
+                    keys.next();
+                    existing = keys.getInt(1);
+                }
+            }
+        }
+        cache.put(key, existing);
+        return existing;
     }
 
     // ItemDialogController used to lazily create a real BRAND_TYPE_LINK the first time a
@@ -1021,13 +1179,34 @@ public class DatabaseService {
         // Row exists only once a superadmin has actually configured a Sede's Remito shipping
         // info via direct SQL — not a set of nullable columns on SEDE itself, which every Sede
         // would carry regardless of whether shipping was ever configured for it.
+        // deprecated-flag versioned, same pattern as TYPE/BRAND/MODEL/PROVIDER/SEDE — an edit
+        // deprecates the old row and inserts a new one rather than mutating in place, so
+        // NOTE_REMITO_SEDE.shipping_info_id can safely reference a specific row by FK (see
+        // createHistoryTables() below) without that historical value ever silently changing out
+        // from under an already-saved note. id is a surrogate PK now (was sede_id itself) so more
+        // than one row — current + any deprecated history — can exist per Sede; the partial
+        // unique index enforces "at most one active row per Sede" in its place.
         stmt.executeUpdate("""
             CREATE TABLE IF NOT EXISTS SEDE_SHIPPING_INFO (
-                sede_id            INTEGER PRIMARY KEY REFERENCES SEDE(id),
+                id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+                sede_id            INTEGER NOT NULL REFERENCES SEDE(id),
                 destination_label  TEXT NOT NULL,
                 address            TEXT,
-                recipients         TEXT
+                recipients         TEXT,
+                deprecated         INTEGER NOT NULL DEFAULT 0
             )""");
+        // Wrapped like the MODEL indexes above — on an old-shape SEDE_SHIPPING_INFO table (the
+        // CREATE TABLE IF NOT EXISTS above is a no-op against it), `deprecated` doesn't exist yet
+        // until migrateSedeShippingInfoIdSchema() adds it; this statement would otherwise fail
+        // startup with "no such column: deprecated" on every run until that migration catches up.
+        try {
+            stmt.executeUpdate(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_sede_shipping_single_active "
+                    + "ON SEDE_SHIPPING_INFO(sede_id) WHERE deprecated = 0");
+        } catch (SQLException notMigratedYet) {
+            // fails safely — migrateSedeShippingInfoIdSchema() (called later, from migrateSchema())
+            // creates this same index again once the column exists
+        }
 
         // brand_type_id is stored explicitly rather than inferred from model_id — required
         // because the single global "Genérico / Otro" MODEL row (brand_type_id IS NULL) needs
@@ -1107,19 +1286,31 @@ public class DatabaseService {
                 responsible_dni  TEXT
             )""");
 
-        // destination_sede_id is nullable — null for a custom/manual destination (e.g. a CAU not
-        // in the SEDE catalog), which has no stock to receive at all. destination_label/address/
-        // recipients are snapshotted here (not re-read from SEDE_SHIPPING_INFO on reprint), same
-        // "snapshot, don't reference" pattern as technician_name/technician_dni — a later change
-        // to a Sede's saved shipping info must not retroactively alter an already-generated note.
-        // No stock_applied column here anymore — every note type now moves stock on approval, not
-        // just Remito, so the double-approval guard moved to a single shared NOTE_REPORT.stock_applied
-        // column instead (see migrateStockAppliedSchema()).
+        // Split into two mutually-exclusive subtype tables — exactly one exists per Remito note,
+        // never neither, never both, same shape as NOTE_ITEM_ASSET/NOTE_ITEM_COUNTABLE. Replaces
+        // the old single NOTE_REMITO table's nullable destination_sede_id + always-duplicated
+        // destination_label/address/recipients text.
+        //
+        // A catalog-Sede destination's 3 text fields are locked (disabled) in
+        // RemitoNoteController the moment a Sede is picked — they can only ever equal that Sede's
+        // currently-active SEDE_SHIPPING_INFO row, never a technician-edited variant — so
+        // NOTE_REMITO_SEDE references that row by FK instead of duplicating its text at all.
+        // SEDE_SHIPPING_INFO's own deprecated-flag versioning (see createEquipmentTables() above)
+        // is what makes this safe: a later superadmin edit deprecates the old row rather than
+        // mutating it, so an already-saved note's FK keeps resolving to the exact historical
+        // values, same guarantee the old "snapshot, don't reference" text columns gave, without
+        // duplicating the text at all.
         stmt.executeUpdate("""
-            CREATE TABLE IF NOT EXISTS NOTE_REMITO (
-                note_report_id      INTEGER PRIMARY KEY REFERENCES NOTE_REPORT(id),
-                destination_sede_id INTEGER REFERENCES SEDE(id),
-                destination_label   TEXT NOT NULL,
+            CREATE TABLE IF NOT EXISTS NOTE_REMITO_SEDE (
+                note_report_id    INTEGER PRIMARY KEY REFERENCES NOTE_REPORT(id),
+                shipping_info_id  INTEGER NOT NULL REFERENCES SEDE_SHIPPING_INFO(id)
+            )""");
+        // A custom/manual destination (e.g. a CAU not in the SEDE catalog) has no catalog row to
+        // reference at all — genuinely owned free text, not a duplicate of anything.
+        stmt.executeUpdate("""
+            CREATE TABLE IF NOT EXISTS NOTE_REMITO_OTHER (
+                note_report_id     INTEGER PRIMARY KEY REFERENCES NOTE_REPORT(id),
+                destination_label  TEXT NOT NULL,
                 address             TEXT,
                 recipients          TEXT
             )""");

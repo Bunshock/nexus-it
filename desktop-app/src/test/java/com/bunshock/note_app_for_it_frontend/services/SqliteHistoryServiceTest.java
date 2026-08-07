@@ -144,10 +144,23 @@ class SqliteHistoryServiceTest {
                     responsible_dni  TEXT
                 )""");
             stmt.executeUpdate("""
-                CREATE TABLE NOTE_REMITO (
-                    note_report_id      INTEGER PRIMARY KEY REFERENCES NOTE_REPORT(id),
-                    destination_sede_id INTEGER REFERENCES SEDE(id),
-                    destination_label   TEXT NOT NULL,
+                CREATE TABLE SEDE_SHIPPING_INFO (
+                    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+                    sede_id            INTEGER NOT NULL REFERENCES SEDE(id),
+                    destination_label  TEXT NOT NULL,
+                    address            TEXT,
+                    recipients         TEXT,
+                    deprecated         INTEGER NOT NULL DEFAULT 0
+                )""");
+            stmt.executeUpdate("""
+                CREATE TABLE NOTE_REMITO_SEDE (
+                    note_report_id    INTEGER PRIMARY KEY REFERENCES NOTE_REPORT(id),
+                    shipping_info_id  INTEGER NOT NULL REFERENCES SEDE_SHIPPING_INFO(id)
+                )""");
+            stmt.executeUpdate("""
+                CREATE TABLE NOTE_REMITO_OTHER (
+                    note_report_id     INTEGER PRIMARY KEY REFERENCES NOTE_REPORT(id),
+                    destination_label  TEXT NOT NULL,
                     address             TEXT,
                     recipients          TEXT
                 )""");
@@ -1136,8 +1149,11 @@ class SqliteHistoryServiceTest {
 
     // ── Remito ────────────────────────────────────────────────────────────────
 
+    // destSedeId != null needs a real SEDE_SHIPPING_INFO row to reference — NOTE_REMITO_SEDE.
+    // shipping_info_id is a mandatory FK now (see CLAUDE.md's Remito schema notes), same as
+    // RemitoNoteController itself only ever offering a Sede that already has one configured.
     private NoteReport remitoReport(int sourceSedeId, Integer destSedeId, String destinationLabel,
-                                     List<NoteReportItem> items) {
+                                     List<NoteReportItem> items) throws SQLException {
         NoteReport r = new NoteReport();
         r.setProfileType("REMITO DE ENVÍO");
         r.setCreatedAt(LocalDateTime.now());
@@ -1146,8 +1162,28 @@ class SqliteHistoryServiceTest {
         r.setDestinationLabel(destinationLabel);
         r.setAddress("Av. Test 123");
         r.setRecipients("Juan Pérez");
+        if (destSedeId != null) {
+            r.setShippingInfoId(insertShippingInfo(destSedeId, destinationLabel, "Av. Test 123", "Juan Pérez"));
+        }
         r.setItems(items);
         return r;
+    }
+
+    private int insertShippingInfo(int sedeId, String label, String address, String recipients) throws SQLException {
+        try (Connection c = DriverManager.getConnection(url);
+             PreparedStatement ins = c.prepareStatement(
+                 "INSERT INTO SEDE_SHIPPING_INFO (sede_id, destination_label, address, recipients) VALUES (?, ?, ?, ?)",
+                 Statement.RETURN_GENERATED_KEYS)) {
+            ins.setInt(1, sedeId);
+            ins.setString(2, label);
+            ins.setString(3, address);
+            ins.setString(4, recipients);
+            ins.executeUpdate();
+            try (ResultSet keys = ins.getGeneratedKeys()) {
+                keys.next();
+                return keys.getInt(1);
+            }
+        }
     }
 
     @Test

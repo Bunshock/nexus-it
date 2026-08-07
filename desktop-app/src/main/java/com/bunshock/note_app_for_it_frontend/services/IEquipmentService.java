@@ -28,9 +28,15 @@ public interface IEquipmentService {
     List<Sede> getAllSedes();
 
     // Read-only — a superadmin configures SEDE_SHIPPING_INFO directly via SQL (see CLAUDE.md's
-    // Provider/Sede "no in-app CRUD" convention). Empty when the Sede has no shipping info
-    // configured yet.
+    // Provider/Sede "no in-app CRUD" convention). Empty when the Sede has no active (non-
+    // deprecated) shipping info configured yet.
     Optional<SedeShippingInfo> getSedeShippingInfo(int sedeId);
+
+    // One query for the whole set, not one getSedeShippingInfo() call per Sede — used to filter
+    // RemitoNoteController's destination combo down to Sedes that actually have shipping info
+    // configured (see CLAUDE.md's Remito schema notes for why an unconfigured Sede can't be a
+    // valid NOTE_REMITO_SEDE destination at all).
+    java.util.Set<Integer> getSedeIdsWithShippingInfo();
 
     Optional<SnValidation> getSnValidation(int modelId);
 

@@ -1408,6 +1408,102 @@ May be reintroduced in a future release; if so, re-derive the design (including 
 Sede handling, which should now be catalog-backed via [Sede became catalog-backed](#sede-became-catalog-backed--sede-table-combobox-deprecated-flag-rename-2026-07-24)
 rather than free text) rather than assuming the deleted code is still relevant.
 
+**Stale as of 2026-08-07 — this section describes a state that no longer holds.** Remito de Envío
+was in fact reintroduced in a later session (its own "Envíos" sidebar section, per-Sede stock
+transfer on approval) — this section was never updated to reflect that and is kept here only as a
+historical record of the original removal decision. See
+[NOTE_REMITO split into NOTE_REMITO_SEDE/NOTE_REMITO_OTHER](#note_remito-split-into-note_remito_sedenote_remito_other-2026-08-07)
+below for the current schema; a fuller docs-currency pass on this section (and the `README.md`
+Features list, `docs/*.md`) is still pending.
+
+## NOTE_REMITO split into NOTE_REMITO_SEDE/NOTE_REMITO_OTHER (2026-08-07)
+
+A schema-normalization follow-up, prompted by a direct user question ("prevent null FKs and NULL
+values in NOTE_REMITO... redundancy with SEDE_SHIPPING_INFO?") — `NOTE_REMITO` mixed a nullable
+`destination_sede_id` (meaningful only for a catalog-Sede destination) with always-populated
+`destination_label`/`address`/`recipients` text. The initial framing ("just make
+`destination_sede_id` an accepted nullable FK, same precedent as `MODEL.brand_type_id`") was
+revised after checking the actual UI code: `RemitoNoteController` **locks (disables)** those 3
+text fields the moment a real Sede is picked — `fillDestinationFields()` sets them from
+`SEDE_SHIPPING_INFO` and the technician cannot edit them in that mode (only "Personalizar destino"
+enables them, for a genuinely custom/free-text destination) — so a Sede-backed row's text is
+*guaranteed* to exactly match that Sede's `SEDE_SHIPPING_INFO` at the moment it was picked, not a
+possibly-diverging copy. That guarantee is what makes referencing the row by FK safe, instead of
+duplicating its text.
+
+- **`SEDE_SHIPPING_INFO` gained a surrogate `id` PK + `deprecated` flag** — same pattern as
+  `TYPE`/`BRAND`/`MODEL`/`PROVIDER`/`SEDE` (was `sede_id` itself as the PK, one row per Sede, no
+  history). A superadmin edit (still direct-SQL-only, no in-app CRUD) is now deprecate-old-row +
+  insert-new-row, not an `UPDATE` — the same mechanism that lets `NOTE_ITEM`'s catalog FKs safely
+  reference a row that might later be renamed. A partial unique index
+  (`idx_sede_shipping_single_active`, `WHERE deprecated = 0`) enforces "at most one active row per
+  Sede," mirroring `idx_model_single_active_generic`'s exact precedent.
+- **`NOTE_REMITO` split into two mutually-exclusive subtype tables**, same shape as
+  `NOTE_ITEM_ASSET`/`NOTE_ITEM_COUNTABLE` (exactly one exists per note, never neither, never
+  both): `NOTE_REMITO_SEDE` (`shipping_info_id NOT NULL` FK → `SEDE_SHIPPING_INFO(id)`, no
+  duplicated text at all) and `NOTE_REMITO_OTHER` (`destination_label`/`address`/`recipients`,
+  genuinely owned free text for a destination with no catalog row to reference). The old
+  `NOTE_REMITO` table is dropped entirely by the migration, not left in place unused.
+- **A new gap this introduced, resolved before implementing, not silently accepted**: a catalog
+  Sede can legitimately have no `SEDE_SHIPPING_INFO` configured yet (it's optional, superadmin-set)
+  — with `shipping_info_id` now `NOT NULL`, such a Sede has nothing to reference. Explicit user
+  decision: `RemitoNoteController.populateDestinationSedeCombo()` now filters the destination combo
+  to only Sedes with an active `SEDE_SHIPPING_INFO` row (`IEquipmentService
+  .getSedeIdsWithShippingInfo()`, one query for the whole set, not one `getSedeShippingInfo()` call
+  per Sede) — an unconfigured Sede simply isn't offered as a catalog destination; "Personalizar
+  destino" remains the escape hatch, same as it already was for a CAU not in the `SEDE` catalog at
+  all. `SEDE_SHIPPING_INFO` stays superadmin-only/direct-SQL — the app never writes to it.
+- **`NoteReport.shippingInfoId`** (new field) is captured at Sede-selection time
+  (`RemitoNoteController.fillDestinationFields()`), not re-derived at save time — same "ids
+  captured at ComboBox-selection time, not re-derived by name later" precedent already established
+  for `NOTE_ITEM`'s catalog ids, since the active `SEDE_SHIPPING_INFO` row for a Sede could in
+  theory change between selection and save on a shared remote database.
+  `SqliteHistoryService.insertProfileDetail()`'s Remito branch is now discriminated by
+  `shippingInfoId != null`, not `destinationSedeId` — in practice the two are always set together
+  by `RemitoNoteController`, but `shippingInfoId` is the one that actually determines which
+  subtype table a row lands in. `destinationSedeId` itself is unchanged (still written by
+  `RemitoNoteController`, still read back by `getById()` via a join through `shipping_info_id` —
+  `applyRemitoStock()`'s own stock-crediting check resolves it fresh from `NOTE_REMITO_SEDE ⋈
+  SEDE_SHIPPING_INFO` directly rather than trusting a stored copy).
+- **Migration** (both SQLite and SQL Server): `migrateSedeShippingInfoIdSchema()` must run before
+  `migrateNoteRemitoSplitSchema()` — the latter needs `SEDE_SHIPPING_INFO.id`/`deprecated` to
+  already exist. SQLite rebuilds `SEDE_SHIPPING_INFO` under a temp name (can't relax/change a PK
+  via `ALTER TABLE`, same recipe as `migrateGenericModelSchema()`); SQL Server adds the `IDENTITY`
+  column directly via `ALTER TABLE ADD` (supported on a non-empty table) after dynamically looking
+  up and dropping the old inline PK constraint's auto-generated name (same technique
+  `dropDefaultConstraintIfAny()` already uses for `DEFAULT` constraints). The `NOTE_REMITO` split
+  itself is a per-row backfill (no rebuild needed — nothing referenced it by FK): each historical
+  Sede-backed row resolves-or-creates a matching `SEDE_SHIPPING_INFO` row by exact
+  (`sede_id`, `label`, `address`, `recipients`) tuple match (reusing a currently-active row if its
+  values happen to match exactly, otherwise creating a new `deprecated=1` historical row — never
+  touching whatever a superadmin has set as the Sede's actual current shipping info), each custom
+  row moves straight into `NOTE_REMITO_OTHER`. `01-schema.sql` mirrors both migrations as T-SQL
+  cursors, matching the Java's own per-row logic — no live SQL Server instance in this project's
+  test infrastructure to validate either migration against, same limitation already accepted
+  repeatedly elsewhere in this file.
+- **A real bug caught by the test suite, not by inspection**: the new
+  `idx_sede_shipping_single_active` index-creation statement, placed directly in
+  `createEquipmentTables()` right after `SEDE_SHIPPING_INFO`'s `CREATE TABLE IF NOT EXISTS` (a
+  no-op against an old-shape table), ran unconditionally and threw "no such column: deprecated" on
+  every startup against a pre-migration database — that column doesn't exist until
+  `migrateSedeShippingInfoIdSchema()` (called later, from `migrateSchema()`) adds it. Fixed by
+  wrapping the statement in the same swallowed try/catch already used for
+  `idx_model_single_active_generic` immediately above it in the same method — the exact same class
+  of "fails safely against an unmigrated database" guard, not a new pattern.
+- **Tests**: `SqliteEquipmentServiceTest` (`getSedeShippingInfo` ignores deprecated rows,
+  `getSedeIdsWithShippingInfo` reflects only active rows), `MockEquipmentServiceTest`/
+  `CachingServiceTest` (same, plus primary-fail/local-fallback for the new method),
+  `DatabaseServiceMigrationTest` (`SEDE_SHIPPING_INFO` id/deprecated migration, the `NOTE_REMITO`
+  split creating a historical `deprecated=1` row when nothing matches, and reusing an existing
+  active row when values match exactly — the pre-existing
+  `createHistoryTablesCreatesNoteRemitoTable` test renamed and updated for the new table names).
+  `SqliteHistoryServiceTest`'s own duplicated schema copy and `remitoReport()` test helper updated
+  to insert a real `SEDE_SHIPPING_INFO` row and set `shippingInfoId` for the Sede-backed case, same
+  "every new column/table needs its test schema copies updated too" precedent already established
+  elsewhere in this file — this is also what exercises `applyRemitoStock()`'s rewritten
+  Sede-crediting query end to end (`approvingRemitoWithCatalogDestinationMovesStockBothWays` and
+  friends). Full suite: 516 tests passing (509 pre-existing + 7 new).
+
 ---
 
 ## Auto-update system (2026-08-07)
@@ -1558,7 +1654,7 @@ Types, brands, `typeBrands` junction entries, models, `snValidations`. Loaded by
 
 ## SQLite tables
 
-`TYPE`, `BRAND`, `BRAND_TYPE_LINK`, `MODEL`, `MODEL_STOCK`, `SN_VALIDATION`, `PROVIDER`, `SEDE`, `APP_USER`, `ROLE_PERMISSION`, `NOTE_REPORT`, `NOTE_REPORT_REJECTION`, `NOTE_ENTREGA_DEVOLUCION`, `NOTE_DEVOLUCION_FALLA`, `NOTE_PRESTAMO_AREA_EVENTO`, `NOTE_PROVEEDOR`, `NOTE_ITEM`, `NOTE_ITEM_ASSET`, `NOTE_ITEM_COUNTABLE`, `NOTE_ITEM_GLPI_TRACKING`, `NOTE_ITEM_RETURN_TRACKING`, `NOTE_ITEM_STOCK_EXCEPTION`, `AUDIT_LOGIN`, `AUDIT_STOCK`, `AUDIT_ITEM_STATUS`, `AUDIT_ADMIN_ACTION`, `APP_SETTINGS`
+`TYPE`, `BRAND`, `BRAND_TYPE_LINK`, `MODEL`, `MODEL_STOCK`, `SN_VALIDATION`, `PROVIDER`, `SEDE`, `SEDE_SHIPPING_INFO`, `APP_USER`, `ROLE_PERMISSION`, `NOTE_REPORT`, `NOTE_REPORT_REJECTION`, `NOTE_ENTREGA_DEVOLUCION`, `NOTE_DEVOLUCION_FALLA`, `NOTE_PRESTAMO_AREA_EVENTO`, `NOTE_PROVEEDOR`, `NOTE_REMITO_SEDE`, `NOTE_REMITO_OTHER`, `NOTE_ITEM`, `NOTE_ITEM_ASSET`, `NOTE_ITEM_COUNTABLE`, `NOTE_ITEM_GLPI_TRACKING`, `NOTE_ITEM_RETURN_TRACKING`, `NOTE_ITEM_STOCK_EXCEPTION`, `AUDIT_LOGIN`, `AUDIT_STOCK`, `AUDIT_ITEM_STATUS`, `AUDIT_ADMIN_ACTION`, `APP_SETTINGS`
 
 `APP_USER` (`id` surrogate PK, `username UNIQUE`, `role` — `"ADMIN"`/`"USER"`/`"SUPERADMIN"`, `sede_id` FK→`SEDE`, nullable) is a username→role/Sede mapping, unrelated to AD group membership (which gates app access at login, checked live against the AD API, not stored here) — see [Login screen and role-based admin mode](#login-screen-and-role-based-admin-mode). Renamed from `USER_ROLE` (which had no `sede_id` and no `SUPERADMIN` tier) on 2026-07-30 — see [Role-based permissions (RBAC)](#role-based-permissions-rbac-a-superadmin-tier-and-sede-scoped-admin-actions-2026-07-30). `ROLE_PERMISSION` (`role`, `permission`, PK on both) is the deny-by-default permission grant table the same feature added — a permission is denied unless a matching row exists.
 

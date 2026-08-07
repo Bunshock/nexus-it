@@ -51,7 +51,7 @@
                             <children>
                                 <Label text="DESTINO" styleClass="input-label-small"/>
                                 <TextField fx:id="txtDestinationLabel" styleClass="form-input-main"
-                                           promptText="Ej: CAU Recoleta"/>
+                                           promptText="Ej: CAU Tucumán"/>
                             </children>
                         </VBox>
 

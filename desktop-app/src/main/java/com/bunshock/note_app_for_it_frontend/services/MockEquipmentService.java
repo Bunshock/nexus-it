@@ -142,6 +142,11 @@ public class MockEquipmentService implements IEquipmentService {
         return Optional.ofNullable(sedeShippingInfo.get(sedeId));
     }
 
+    @Override
+    public java.util.Set<Integer> getSedeIdsWithShippingInfo() {
+        return java.util.Set.copyOf(sedeShippingInfo.keySet());
+    }
+
     // Not part of IEquipmentService (this data is read-only from the app's side — a superadmin
     // configures it via direct SQL) — kept test-only so callers can seed it without a real DB.
     public void setSedeShippingInfo(SedeShippingInfo info) {

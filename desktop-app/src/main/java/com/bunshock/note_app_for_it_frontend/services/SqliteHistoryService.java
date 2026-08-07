@@ -66,13 +66,13 @@ public class SqliteHistoryService implements IHistoryService {
                r.approval_status, rr.rejection_reason,
                r.technician_name AS author_name,
                r.technician_dni AS author_dni,
-               COALESCE(e.user_name, pv.name, rm.destination_label, '') AS recipient,
+               COALESCE(e.user_name, pv.name, ssi.destination_label, rmo.destination_label, '') AS recipient,
                CASE WHEN r.profile_type = 'REMITO DE ENVÍO' THEN 'Envío'
                     ELSE COALESCE(e.motivo, p.motivo, '') END AS motivo,
                COALESCE(sd.name, '') AS sede,
-               COALESCE(rm.destination_label, '') AS destination_label,
-               COALESCE(rm.address, '') AS remito_address,
-               COALESCE(rm.recipients, '') AS remito_recipients,
+               COALESCE(ssi.destination_label, rmo.destination_label, '') AS destination_label,
+               COALESCE(ssi.address, rmo.address, '') AS remito_address,
+               COALESCE(ssi.recipients, rmo.recipients, '') AS remito_recipients,
                SUM(CASE WHEN COALESCE(igr.status, ig.status) = 'PENDING'  THEN 1 ELSE 0 END) AS pending_count,
                SUM(CASE WHEN COALESCE(igr.status, ig.status) = 'SYNCED'   THEN 1 ELSE 0 END) AS synced_count,
                SUM(CASE WHEN COALESCE(igr.status, ig.status) = 'REJECTED' THEN 1 ELSE 0 END) AS rejected_count,
@@ -103,7 +103,9 @@ public class SqliteHistoryService implements IHistoryService {
         LEFT JOIN NOTE_PROVEEDOR            p  ON p.note_report_id  = r.id
         LEFT JOIN PROVIDER                  pv ON pv.id             = p.provider_id
         LEFT JOIN SEDE                       sd ON sd.id             = r.sede_id
-        LEFT JOIN NOTE_REMITO                rm ON rm.note_report_id = r.id
+        LEFT JOIN NOTE_REMITO_SEDE            rms ON rms.note_report_id = r.id
+        LEFT JOIN SEDE_SHIPPING_INFO          ssi ON ssi.id             = rms.shipping_info_id
+        LEFT JOIN NOTE_REMITO_OTHER           rmo ON rmo.note_report_id = r.id
         LEFT JOIN NOTE_ITEM                 i  ON i.note_id         = r.id
         LEFT JOIN NOTE_ITEM_ASSET           ia ON ia.item_id        = i.id
         LEFT JOIN NOTE_ITEM_COUNTABLE       ic ON ic.item_id        = i.id
@@ -172,21 +174,30 @@ public class SqliteHistoryService implements IHistoryService {
 
     private void insertProfileDetail(Connection c, int reportId, NoteReport report) throws SQLException {
         if (report.getDestinationLabel() != null) {
-            PreparedStatement ps = c.prepareStatement("""
-                INSERT INTO NOTE_REMITO
-                    (note_report_id, destination_sede_id, destination_label, address, recipients)
-                VALUES (?, ?, ?, ?, ?)
-                """);
-            ps.setInt(1, reportId);
-            if (report.getDestinationSedeId() != null) {
-                ps.setInt(2, report.getDestinationSedeId());
+            // Discriminated by shippingInfoId, not destinationSedeId — a catalog-Sede destination
+            // always has a real SEDE_SHIPPING_INFO row to reference (RemitoNoteController only
+            // ever offers Sedes that have one configured, see its populateDestinationSedeCombo()),
+            // captured at Sede-selection time rather than re-derived here (see NoteReport's own
+            // shippingInfoId Javadoc for why).
+            if (report.getShippingInfoId() != null) {
+                PreparedStatement ps = c.prepareStatement("""
+                    INSERT INTO NOTE_REMITO_SEDE (note_report_id, shipping_info_id)
+                    VALUES (?, ?)
+                    """);
+                ps.setInt(1, reportId);
+                ps.setInt(2, report.getShippingInfoId());
+                ps.executeUpdate();
             } else {
-                ps.setNull(2, java.sql.Types.INTEGER);
+                PreparedStatement ps = c.prepareStatement("""
+                    INSERT INTO NOTE_REMITO_OTHER (note_report_id, destination_label, address, recipients)
+                    VALUES (?, ?, ?, ?)
+                    """);
+                ps.setInt(1, reportId);
+                ps.setString(2, report.getDestinationLabel());
+                ps.setString(3, report.getAddress());
+                ps.setString(4, report.getRecipients());
+                ps.executeUpdate();
             }
-            ps.setString(3, report.getDestinationLabel());
-            ps.setString(4, report.getAddress());
-            ps.setString(5, report.getRecipients());
-            ps.executeUpdate();
         } else if (report.getProviderName() != null) {
             PreparedStatement ps = c.prepareStatement("""
                 INSERT INTO NOTE_PROVEEDOR
@@ -345,7 +356,7 @@ public class SqliteHistoryService implements IHistoryService {
         appendIn(sql, params, "r.profile_type", filter.getProfileTypes());
         appendIn(sql, params, "r.approval_status", filter.getApprovalStatuses());
         if (filter.getRecipientSearch() != null && !filter.getRecipientSearch().isBlank()) {
-            sql.append(" AND COALESCE(e.user_name, pv.name, rm.destination_label, '') LIKE ?");
+            sql.append(" AND COALESCE(e.user_name, pv.name, ssi.destination_label, rmo.destination_label, '') LIKE ?");
             params.add("%" + filter.getRecipientSearch().trim() + "%");
         }
         if (filter.getAuthorSearch() != null && !filter.getAuthorSearch().isBlank()) {
@@ -587,14 +598,19 @@ public class SqliteHistoryService implements IHistoryService {
     // a CAU not in the SEDE catalog, which has no stock to receive at all). Kept separate from
     // applyDirectionalStock() since it can write to two Sedes per item, not one.
     private boolean applyRemitoStock(Connection c, int reportId, int sourceSedeId) throws SQLException {
-        Integer destinationSedeId;
-        try (PreparedStatement ps = c.prepareStatement(
-                "SELECT destination_sede_id FROM NOTE_REMITO WHERE note_report_id = ?")) {
+        // Absence from NOTE_REMITO_SEDE is now a valid, expected case (a custom/manual
+        // destination in NOTE_REMITO_OTHER instead), not an error — unlike the old single-table
+        // shape, where "no row at all" was the only way to detect that.
+        Integer destinationSedeId = null;
+        try (PreparedStatement ps = c.prepareStatement("""
+                SELECT ssi.sede_id FROM NOTE_REMITO_SEDE rms
+                JOIN SEDE_SHIPPING_INFO ssi ON ssi.id = rms.shipping_info_id
+                WHERE rms.note_report_id = ?
+                """)) {
             ps.setInt(1, reportId);
-            ResultSet rs = ps.executeQuery();
-            if (!rs.next()) return false;
-            int destSedeId = rs.getInt("destination_sede_id");
-            destinationSedeId = rs.wasNull() ? null : destSedeId;
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) destinationSedeId = rs.getInt("sede_id");
+            }
         }
 
         java.util.Map<StockItemKey, Integer> quantities = aggregateItemQuantities(c, reportId);
@@ -772,10 +788,10 @@ public class SqliteHistoryService implements IHistoryService {
                    COALESCE(p.cuit, '')          AS cuit,
                    COALESCE(p.responsible_name, '') AS responsible_name,
                    COALESCE(p.responsible_dni, '')  AS responsible_dni,
-                   rm.destination_sede_id AS destination_sede_id,
-                   rm.destination_label   AS destination_label,
-                   rm.address             AS remito_address,
-                   rm.recipients          AS remito_recipients,
+                   ssi.sede_id                                             AS destination_sede_id,
+                   COALESCE(ssi.destination_label, rmo.destination_label)  AS destination_label,
+                   COALESCE(ssi.address, rmo.address)                      AS remito_address,
+                   COALESCE(ssi.recipients, rmo.recipients)                AS remito_recipients,
                    r.stock_applied        AS stock_applied
             FROM NOTE_REPORT r
             LEFT JOIN NOTE_REPORT_REJECTION    rr ON rr.note_report_id = r.id
@@ -785,7 +801,9 @@ public class SqliteHistoryService implements IHistoryService {
             LEFT JOIN NOTE_PROVEEDOR           p  ON p.note_report_id  = r.id
             LEFT JOIN PROVIDER                 pv ON pv.id             = p.provider_id
             LEFT JOIN SEDE                     sd ON sd.id             = r.sede_id
-            LEFT JOIN NOTE_REMITO              rm ON rm.note_report_id = r.id
+            LEFT JOIN NOTE_REMITO_SEDE         rms ON rms.note_report_id = r.id
+            LEFT JOIN SEDE_SHIPPING_INFO       ssi ON ssi.id             = rms.shipping_info_id
+            LEFT JOIN NOTE_REMITO_OTHER        rmo ON rmo.note_report_id = r.id
             WHERE r.id = ?
             """;
         try (Connection c = connector.get();

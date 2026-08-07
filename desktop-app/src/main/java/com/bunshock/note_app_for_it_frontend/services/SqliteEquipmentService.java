@@ -168,17 +168,30 @@ public class SqliteEquipmentService implements IEquipmentService {
 
     @Override
     public Optional<SedeShippingInfo> getSedeShippingInfo(int sedeId) {
-        String sql = "SELECT destination_label, address, recipients FROM SEDE_SHIPPING_INFO WHERE sede_id = ?";
+        String sql = "SELECT id, destination_label, address, recipients FROM SEDE_SHIPPING_INFO WHERE sede_id = ? AND deprecated = 0";
         try (Connection c = connector.get(); PreparedStatement ps = c.prepareStatement(sql)) {
             ps.setInt(1, sedeId);
             try (ResultSet rs = ps.executeQuery()) {
                 if (!rs.next()) return Optional.empty();
-                return Optional.of(new SedeShippingInfo(sedeId,
+                return Optional.of(new SedeShippingInfo(rs.getInt("id"), sedeId,
                     rs.getString("destination_label"), rs.getString("address"), rs.getString("recipients")));
             }
         } catch (SQLException e) {
             throw new RuntimeException("Failed to load sede shipping info", e);
         }
+    }
+
+    @Override
+    public java.util.Set<Integer> getSedeIdsWithShippingInfo() {
+        java.util.Set<Integer> result = new java.util.HashSet<>();
+        try (Connection c = connector.get();
+             ResultSet rs = c.createStatement().executeQuery(
+                 "SELECT DISTINCT sede_id FROM SEDE_SHIPPING_INFO WHERE deprecated = 0")) {
+            while (rs.next()) result.add(rs.getInt("sede_id"));
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to load sede ids with shipping info", e);
+        }
+        return result;
     }
 
     @Override

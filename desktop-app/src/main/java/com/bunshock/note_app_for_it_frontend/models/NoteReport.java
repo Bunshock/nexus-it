@@ -26,6 +26,12 @@ public class NoteReport {
     private String approvalStatus = "PENDING";
     private String rejectionReason;
     private Integer destinationSedeId;
+    // Captured at Sede-selection time (RemitoNoteController.fillDestinationFields()), not
+    // re-derived at save time — same "ids captured at ComboBox-selection time, not re-derived by
+    // name later" precedent as NOTE_ITEM's catalog ids, since the active SEDE_SHIPPING_INFO row
+    // for a Sede could in theory change between selection and save on a shared remote database.
+    // Null for a custom/manual destination (no SEDE_SHIPPING_INFO row to reference at all).
+    private Integer shippingInfoId;
     private String destinationLabel;
     private String address;
     private String recipients;
@@ -112,6 +118,9 @@ public class NoteReport {
 
     public Integer getDestinationSedeId() { return destinationSedeId; }
     public void setDestinationSedeId(Integer destinationSedeId) { this.destinationSedeId = destinationSedeId; }
+
+    public Integer getShippingInfoId() { return shippingInfoId; }
+    public void setShippingInfoId(Integer shippingInfoId) { this.shippingInfoId = shippingInfoId; }
 
     public String getDestinationLabel() { return destinationLabel; }
     public void setDestinationLabel(String destinationLabel) { this.destinationLabel = destinationLabel; }

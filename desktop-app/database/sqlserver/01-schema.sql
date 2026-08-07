@@ -130,15 +130,25 @@ END
 
 -- Row exists only once a superadmin has configured a Sede's Remito shipping info via direct SQL —
 -- not nullable columns on SEDE itself, which every Sede would carry regardless of whether
--- shipping was ever configured for it.
+-- shipping was ever configured for it. deprecated-flag versioned, same pattern as
+-- TYPE/BRAND/MODEL/PROVIDER/SEDE — an edit deprecates the old row and inserts a new one rather
+-- than mutating in place, so NOTE_REMITO_SEDE can safely reference a specific row by FK (see
+-- below) without that historical value ever silently changing.
 IF OBJECT_ID('dbo.SEDE_SHIPPING_INFO', 'U') IS NULL
 BEGIN
     CREATE TABLE SEDE_SHIPPING_INFO (
-        sede_id           INT PRIMARY KEY REFERENCES SEDE(id),
+        id                INT IDENTITY(1,1) PRIMARY KEY,
+        sede_id           INT NOT NULL REFERENCES SEDE(id),
         destination_label NVARCHAR(255) NOT NULL,
         address           NVARCHAR(500),
-        recipients        NVARCHAR(500)
+        recipients        NVARCHAR(500),
+        deprecated        INT NOT NULL DEFAULT 0
     );
+END
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'idx_sede_shipping_single_active')
+BEGIN
+    CREATE UNIQUE INDEX idx_sede_shipping_single_active ON SEDE_SHIPPING_INFO(sede_id) WHERE deprecated = 0;
 END
 
 -- brand_type_id is stored explicitly (not inferred from model_id) so the single global
@@ -310,17 +320,26 @@ BEGIN
     );
 END
 
--- destination_sede_id is nullable — null for a custom/manual destination (e.g. a CAU not in the
--- SEDE catalog), which has no stock to receive. destination_label/address/recipients are
--- snapshotted at generation time, same "snapshot, don't reference" pattern as technician_name/
--- technician_dni. No stock_applied column here — that idempotency flag now lives on
--- NOTE_REPORT, shared by every note type, not just Remito.
-IF OBJECT_ID('dbo.NOTE_REMITO', 'U') IS NULL
+-- Split into two mutually-exclusive subtype tables — exactly one exists per Remito note, never
+-- neither, never both. A catalog-Sede destination's 3 text fields are locked (disabled) in the
+-- app the moment a Sede is picked, so they can only ever equal that Sede's currently-active
+-- SEDE_SHIPPING_INFO row — NOTE_REMITO_SEDE references that row by FK instead of duplicating its
+-- text. A custom/manual destination (e.g. a CAU not in the SEDE catalog) has no catalog row to
+-- reference, so NOTE_REMITO_OTHER keeps its own free text. No stock_applied column on either —
+-- that idempotency flag lives on NOTE_REPORT, shared by every note type, not just Remito.
+IF OBJECT_ID('dbo.NOTE_REMITO_SEDE', 'U') IS NULL
 BEGIN
-    CREATE TABLE NOTE_REMITO (
-        note_report_id      INT PRIMARY KEY REFERENCES NOTE_REPORT(id),
-        destination_sede_id INT REFERENCES SEDE(id),
-        destination_label   NVARCHAR(255) NOT NULL,
+    CREATE TABLE NOTE_REMITO_SEDE (
+        note_report_id   INT PRIMARY KEY REFERENCES NOTE_REPORT(id),
+        shipping_info_id INT NOT NULL REFERENCES SEDE_SHIPPING_INFO(id)
+    );
+END
+
+IF OBJECT_ID('dbo.NOTE_REMITO_OTHER', 'U') IS NULL
+BEGIN
+    CREATE TABLE NOTE_REMITO_OTHER (
+        note_report_id     INT PRIMARY KEY REFERENCES NOTE_REPORT(id),
+        destination_label  NVARCHAR(255) NOT NULL,
         address             NVARCHAR(500),
         recipients          NVARCHAR(500)
     );
@@ -690,6 +709,73 @@ BEGIN
     BEGIN CATCH
         -- leave it for next run to retry — not worth blocking this script over
     END CATCH
+END
+
+-- SEDE_SHIPPING_INFO's PK changed from sede_id itself to a surrogate id (see the CREATE TABLE
+-- block above) — T-SQL supports adding an IDENTITY column to an existing (non-empty) table
+-- directly via ALTER TABLE ADD, so this needs no table-rebuild. The old inline PK constraint is
+-- auto-named by SQL Server, so its name has to be looked up dynamically first. Must run before
+-- the NOTE_REMITO split below — that migration needs id/deprecated to already exist.
+IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE lower(table_name) = 'sede_shipping_info' AND lower(column_name) = 'id')
+BEGIN
+    DECLARE @sediShippingInfoPk NVARCHAR(128);
+    SELECT @sediShippingInfoPk = kc.name FROM sys.key_constraints kc
+        WHERE kc.parent_object_id = OBJECT_ID('SEDE_SHIPPING_INFO') AND kc.type = 'PK';
+    IF @sediShippingInfoPk IS NOT NULL
+        EXEC('ALTER TABLE SEDE_SHIPPING_INFO DROP CONSTRAINT ' + @sediShippingInfoPk);
+
+    ALTER TABLE SEDE_SHIPPING_INFO ADD id INT IDENTITY(1,1);
+    ALTER TABLE SEDE_SHIPPING_INFO ADD CONSTRAINT pk_sede_shipping_info PRIMARY KEY (id);
+    ALTER TABLE SEDE_SHIPPING_INFO ADD deprecated INT NOT NULL DEFAULT 0;
+END
+
+-- Splits the old single NOTE_REMITO table into NOTE_REMITO_SEDE/NOTE_REMITO_OTHER (see the
+-- CREATE TABLE blocks above) — row-by-row cursor, matching
+-- RemoteDatabaseService.migrateNoteRemitoSplitSchema()'s Java logic. Unlike that Java version,
+-- this has no per-row in-memory cache — an old note whose exact historical values were already
+-- recreated as a deprecated SEDE_SHIPPING_INFO row by an earlier iteration of this same cursor
+-- just resolves back to that same row via the SELECT below, so no duplicate is created; only a
+-- genuinely new tuple ever gets its own INSERT. A brand-new install never creates NOTE_REMITO at
+-- all (see the CREATE TABLE block above), so this only fires on an already-running installation.
+IF OBJECT_ID('dbo.NOTE_REMITO', 'U') IS NOT NULL
+BEGIN
+    DECLARE @nrReportId INT, @nrSedeId INT, @nrLabel NVARCHAR(255), @nrAddress NVARCHAR(500), @nrRecipients NVARCHAR(500);
+    DECLARE @nrShippingInfoId INT;
+    DECLARE nrCursor CURSOR FOR
+        SELECT note_report_id, destination_sede_id, destination_label, address, recipients FROM NOTE_REMITO;
+    OPEN nrCursor;
+    FETCH NEXT FROM nrCursor INTO @nrReportId, @nrSedeId, @nrLabel, @nrAddress, @nrRecipients;
+    WHILE @@FETCH_STATUS = 0
+    BEGIN
+        IF @nrSedeId IS NOT NULL
+        BEGIN
+            SELECT TOP 1 @nrShippingInfoId = id FROM SEDE_SHIPPING_INFO
+            WHERE sede_id = @nrSedeId AND destination_label = @nrLabel
+                AND ((address IS NULL AND @nrAddress IS NULL) OR address = @nrAddress)
+                AND ((recipients IS NULL AND @nrRecipients IS NULL) OR recipients = @nrRecipients);
+
+            IF @nrShippingInfoId IS NULL
+            BEGIN
+                INSERT INTO SEDE_SHIPPING_INFO (sede_id, destination_label, address, recipients, deprecated)
+                VALUES (@nrSedeId, @nrLabel, @nrAddress, @nrRecipients, 1);
+                SET @nrShippingInfoId = SCOPE_IDENTITY();
+            END
+
+            INSERT INTO NOTE_REMITO_SEDE (note_report_id, shipping_info_id) VALUES (@nrReportId, @nrShippingInfoId);
+        END
+        ELSE
+        BEGIN
+            INSERT INTO NOTE_REMITO_OTHER (note_report_id, destination_label, address, recipients)
+            VALUES (@nrReportId, @nrLabel, @nrAddress, @nrRecipients);
+        END
+
+        SET @nrShippingInfoId = NULL;
+        FETCH NEXT FROM nrCursor INTO @nrReportId, @nrSedeId, @nrLabel, @nrAddress, @nrRecipients;
+    END
+    CLOSE nrCursor;
+    DEALLOCATE nrCursor;
+
+    DROP TABLE NOTE_REMITO;
 END
 
 -- Backfills NOTE_ITEM_ASSET/COUNTABLE/GLPI_TRACKING/RETURN_TRACKING from the still-wide NOTE_ITEM

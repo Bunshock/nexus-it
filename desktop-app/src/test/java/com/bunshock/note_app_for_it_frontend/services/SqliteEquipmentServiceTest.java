@@ -93,11 +93,15 @@ class SqliteEquipmentServiceTest {
                 )""");
             stmt.executeUpdate("""
                 CREATE TABLE SEDE_SHIPPING_INFO (
-                    sede_id            INTEGER PRIMARY KEY REFERENCES SEDE(id),
+                    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+                    sede_id            INTEGER NOT NULL REFERENCES SEDE(id),
                     destination_label  TEXT NOT NULL,
                     address            TEXT,
-                    recipients         TEXT
+                    recipients         TEXT,
+                    deprecated         INTEGER NOT NULL DEFAULT 0
                 )""");
+            stmt.executeUpdate(
+                "CREATE UNIQUE INDEX idx_sede_shipping_single_active ON SEDE_SHIPPING_INFO(sede_id) WHERE deprecated = 0");
         }
     }
 
@@ -569,6 +573,58 @@ class SqliteEquipmentServiceTest {
         assertEquals("CAU Recoleta", info.get().getDestinationLabel());
         assertEquals("Av. Siempreviva 742", info.get().getAddress());
         assertEquals("Juan Pérez", info.get().getRecipients());
+    }
+
+    @Test
+    void getSedeShippingInfoIgnoresDeprecatedRowsAndReturnsOnlyTheActiveOne() throws SQLException {
+        int sedeId = insertSede("Campus Norte");
+        try (Connection c = DriverManager.getConnection(url);
+             java.sql.PreparedStatement ps = c.prepareStatement(
+                 "INSERT INTO SEDE_SHIPPING_INFO (sede_id, destination_label, address, recipients, deprecated) VALUES (?, ?, ?, ?, ?)")) {
+            ps.setInt(1, sedeId);
+            ps.setString(2, "Dirección vieja");
+            ps.setString(3, "Calle Falsa 123");
+            ps.setString(4, "Homero");
+            ps.setInt(5, 1);
+            ps.executeUpdate();
+
+            ps.setInt(1, sedeId);
+            ps.setString(2, "CAU Recoleta");
+            ps.setString(3, "Av. Siempreviva 742");
+            ps.setString(4, "Juan Pérez");
+            ps.setInt(5, 0);
+            ps.executeUpdate();
+        }
+
+        var info = service.getSedeShippingInfo(sedeId);
+        assertTrue(info.isPresent());
+        assertEquals("CAU Recoleta", info.get().getDestinationLabel());
+    }
+
+    @Test
+    void getSedeIdsWithShippingInfoReturnsOnlySedesWithAnActiveRow() throws SQLException {
+        int sedeConfigured = insertSede("Campus Norte");
+        int sedeDeprecatedOnly = insertSede("Campus Sur");
+        int sedeUnconfigured = insertSede("Campus Este");
+
+        try (Connection c = DriverManager.getConnection(url);
+             java.sql.PreparedStatement ps = c.prepareStatement(
+                 "INSERT INTO SEDE_SHIPPING_INFO (sede_id, destination_label, deprecated) VALUES (?, ?, ?)")) {
+            ps.setInt(1, sedeConfigured);
+            ps.setString(2, "CAU Recoleta");
+            ps.setInt(3, 0);
+            ps.executeUpdate();
+
+            ps.setInt(1, sedeDeprecatedOnly);
+            ps.setString(2, "Dirección vieja");
+            ps.setInt(3, 1);
+            ps.executeUpdate();
+        }
+
+        var result = service.getSedeIdsWithShippingInfo();
+        assertTrue(result.contains(sedeConfigured));
+        assertFalse(result.contains(sedeDeprecatedOnly));
+        assertFalse(result.contains(sedeUnconfigured));
     }
 
     @Test
