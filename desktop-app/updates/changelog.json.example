@@ -1,0 +1,17 @@
+[
+  {
+    "version": "1.2.0",
+    "date": "2026-08-01",
+    "notes": "Corrige el ícono de maximizar y agrega la leyenda A/C en Historial."
+  },
+  {
+    "version": "1.1.0",
+    "date": "2026-07-01",
+    "notes": "Agrega el filtro de Sede a Historial y Préstamos."
+  },
+  {
+    "version": "1.0.0",
+    "date": "2026-06-01",
+    "notes": "Primera versión distribuida."
+  }
+]

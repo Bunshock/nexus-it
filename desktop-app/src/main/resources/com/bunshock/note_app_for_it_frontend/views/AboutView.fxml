@@ -14,6 +14,17 @@
                    style="-fx-font-size: 22px; -fx-font-weight: bold; -fx-text-fill: #0c8570;"/>
             <Label fx:id="lblVersion" text="Versión 1.0.0"
                    style="-fx-font-size: 13px; -fx-text-fill: #64748b;"/>
+
+            <!-- Check result (found/not found/unconfigured) and the confirm-before-install step
+                 both surface in a popup dialog, not inline here — keeps this card's layout fixed
+                 regardless of state. See CLAUDE.md's "Auto-update system" section. -->
+            <HBox spacing="8" alignment="CENTER">
+                <Button fx:id="btnCheckUpdates" text="Buscar actualizaciones"
+                        onAction="#handleCheckUpdates" styleClass="button-secondary"/>
+                <Button fx:id="btnChangelog" text="Historial de cambios"
+                        onAction="#handleShowChangelog" styleClass="button-secondary"/>
+            </HBox>
+
             <Separator style="-fx-padding: 10 0;"/>
             <Label text="Oficina de Soporte IT"
                    style="-fx-font-size: 14px; -fx-font-weight: bold;"/>

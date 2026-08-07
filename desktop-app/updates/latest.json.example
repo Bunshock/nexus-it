@@ -1,0 +1,6 @@
+{
+  "version": "1.2.0",
+  "installerFileName": "GeneradorDeNotasIT-1.2.0.exe",
+  "fileSizeBytes": 87654321,
+  "notes": "Corrige el ícono de maximizar y agrega la leyenda A/C en Historial."
+}

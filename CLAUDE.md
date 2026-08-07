@@ -1410,6 +1410,112 @@ rather than free text) rather than assuming the deleted code is still relevant.
 
 ---
 
+## Auto-update system (2026-08-07)
+
+Built per the design already worked out in the user's own OneDrive guide
+(`Guia-Configuracion-Base-de-Datos-y-App.md`, section 10) — a network-share manifest, not a
+database or API, per that design's own stated reasoning (a static `latest.json` file needs no
+write-coordination or new auth/availability dependency; see that guide's section 10.7 for why an
+API was explicitly deferred). Scoped to **manual, About-screen-only checks** for this pass — the
+guide's automatic startup check (a background check at every app launch, with a "Más tarde"-able
+notice) was **not built**, since it wasn't part of what was actually asked for; add it later as a
+separate, explicitly-requested step if wanted, following the same `IUpdateService` the About
+screen already uses.
+
+- **`IUpdateService`** (`checkForUpdate(currentVersion)`, `getChangelog()`,
+  `downloadAndInstall(UpdateInfo)`, default `isConfigured()`) — same Strategy-interface pattern as
+  every other service in this app, specifically so a future `ApiUpdateService` can swap in later
+  as a one-class change without touching `AboutController`.
+- **`NetworkShareUpdateService`** — reads `latest.json` (`{version, installerFileName,
+  fileSizeBytes, notes}`) from `AppConfig.UpdatesConfig.manifestPath` (new `app-config.json` key,
+  `updates.manifestPath`, plain UNC path text, not a secret — blank means the feature is
+  unconfigured, checked via `isConfigured()`, same degrade-gracefully convention as AD/GLPI/SMTP
+  being unconfigured elsewhere in this app). `checkForUpdate()` never throws — an unreachable
+  share, missing file, or malformed JSON all resolve to `Optional.empty()`, not an error surfaced
+  to the technician.
+- **Changelog is full history, not just the latest release's notes** — explicit design choice over
+  the simpler alternative (reusing `latest.json`'s own `notes` field). A second sibling file,
+  `changelog.json` (array of `{version, date, notes}`, newest first), lives next to `latest.json`
+  in the same release folder and is read independently via `getChangelog()` — always available
+  from the About screen's "Historial de cambios" button, whether or not an update is currently
+  pending.
+- **Version compare is numeric, dot-segment-wise** (`NetworkShareUpdateService.isNewer()`,
+  package-private static, tested via reflection like `AdApiService`'s own small static helpers) —
+  a plain string comparison would sort `"1.10.0"` before `"1.9.0"`, which is wrong.
+- **Real build version, not a hardcoded string** — `AboutController.lblVersion` used to be a
+  literal `"Versión 1.0.0"`. Replaced with `utils.AppVersion.getCurrentVersion()`, reading a
+  `version.properties` resource Maven-filters from `pom.xml`'s `project.version` at build time
+  (new `<resources>` block in `pom.xml`, scoped to just that one file so every other resource
+  stays unfiltered). Chosen over `Package.getImplementationVersion()` (the guide's original
+  suggestion) specifically because that only ever populates from a real packaged jar's manifest —
+  it would read `null` under plain `mvn javafx:run`, which is still how this app runs today (no
+  `jpackage` pipeline exists yet, see below). Falls back to `"0.0.0-dev"` if the resource is
+  missing or wasn't actually filtered (e.g. copied some other way), rather than crashing.
+- **UI**: `AboutView.fxml`'s existing version card gained just two buttons directly under the
+  version label — "Buscar actualizaciones" and "Historial de cambios" — nothing else. **Every**
+  check result (unconfigured / already up to date / a newer version found, with the
+  confirm-before-close step and download/install progress folded into the same dialog) surfaces
+  in a popup, never inline in the card — a first version showed the result as an inline
+  `Label`/button pair instead, which visibly resized the card between states and, worse, had to
+  permanently reserve empty space for that result even while idle (direct user report — "HUGE
+  gap" — both problems are what's actually being avoided here, not a preference). A dialog can
+  never affect this panel's layout at all, by construction, so this was a deliberate redesign
+  down to zero inline update-related UI, not a tightened version of the original. All three
+  dialogs (`showUpdateFoundDialog`, `showInfoDialog`, `showChangelogDialog`) are duplicated
+  `Stage`/`buildDialogStage`/`buildDialogRoot`/`buildDialogScene`/`centerOnContent` helpers inside
+  `AboutController` itself, per this codebase's no-shared-abstraction convention (same shape as
+  `SettingsController`'s `confirmSaveDespiteFailedTest()`), since `AboutController` had no
+  dialog-building code at all before this feature — it was previously a plain embedded panel
+  controller, not a `Stage` owner.
+- **Install flow** (`downloadAndInstall()`): copies the installer from the manifest's folder to
+  `%TEMP%\notas-it-update\`, verifies the copied size against `fileSizeBytes` (deletes and throws
+  on a mismatch — catches a truncated network copy, not a cryptographic guarantee), extracts a
+  bundled `update-helper.bat` resource, and launches it detached
+  (`ProcessBuilder`, not waited on). The controller then calls `Platform.exit()` once that returns
+  without error. `update-helper.bat` runs the installer silently (`/quiet /norestart`) and
+  relaunches the app — needed because Windows won't let an installer overwrite files this app's
+  own still-running process has open, so something outside the Java process has to survive to
+  relaunch it. Full content and reasoning: guide section 10.4-D.
+- **A real, accepted gap: this cannot be tested end-to-end yet, and the user explicitly chose this
+  sequencing.** No `jpackage`/installer pipeline exists in this project yet (guide section 9) —
+  there is no real `.exe` to point a manifest at, and `ProcessHandle.current().info().command()`
+  (used to find this app's own running executable path to relaunch) has **not been verified**
+  against a real packaged build — under `mvn javafx:run` it resolves to a `java`/`javaw` launcher
+  path, not the eventual packaged app's `.exe`. Flagged inline in
+  `NetworkShareUpdateService.launchHelperAndRelaunch()`'s Javadoc. Confirm this, and the
+  installer's actual silent-install flags (`/quiet /norestart` is the WiX/Burn-bundle standard
+  `jpackage --type exe` produces, per the guide, but unverified against this project's own
+  installer), once packaging is actually built — same "verify once against a real packaged build"
+  caveat the guide's own section 10.6 already calls out.
+- **Tests**: `NetworkShareUpdateServiceTest` (version-compare edge cases, manifest/changelog
+  parsing against real temp files, the size-mismatch-deletes-the-partial-file case — the one
+  deterministic, non-process-spawning part of the install flow, split into its own
+  package-private `copyAndVerifyInstaller()` specifically so it's testable without spawning a
+  real Windows process or needing a real installer), `AppVersionTest` (sanity-checks the filtered
+  resource actually resolved), `AboutViewFxmlTest` (new — no prior test loaded this FXML). The
+  process-launch step (`extractHelperScript()`/`launchHelperAndRelaunch()`) has no test — same
+  "never leave a test that spawns a real process/window in the permanent suite" precedent already
+  established for `Stage.show()`-driven dialogs elsewhere in this file; verified via code review
+  and the guide's own documented real-build verification checklist instead. Full suite: 509 tests
+  passing (493 pre-existing + 16 new).
+- **UI redesign, same day, after real use**: the inline status label + conditional "Actualizar"
+  button (shown right under the version label) made the About card resize between states and
+  permanently reserve dead space while idle — direct user report. Replaced with popups for every
+  outcome (found/not found/unconfigured), so the card's layout never changes at all; the
+  confirm-before-close step and the download itself live in the same "found" dialog rather than
+  two separate ones. See `AboutController.showUpdateFoundDialog()`/`showInfoDialog()`.
+- **Error messages now explain *why*, not just show a path** (2026-08-07, direct user report) —
+  `copyAndVerifyInstaller()`/`extractHelperScript()`/`launchHelperAndRelaunch()` used to let a raw
+  `IOException` (e.g. `NoSuchFileException`, whose own message is often just the bare file path)
+  propagate straight into the error dialog, with no indication of which failure mode occurred. Each
+  now catches and rewrites into an explicit Spanish reason (installer not found on the share vs.
+  network/copy failure vs. local temp-file preparation vs. process launch failure), still appending
+  the original message after "Detalle:" for a technician who wants the raw error too. Test:
+  `NetworkShareUpdateServiceTest.copyAndVerifyInstallerGivesAClearReasonWhenTheInstallerFileIsMissing()`.
+  Full suite: 517 tests passing (516 pre-existing + 1 new).
+
+---
+
 ## Services — current implementations
 
 | Interface | Active implementation | Future |
@@ -1421,6 +1527,7 @@ rather than free text) rather than assuming the deleted code is still relevant.
 | `IEmailService` | `GmailEmailService` (Jakarta Mail, STARTTLS port 587) | — |
 | `IUserRoleService` | `SqliteUserRoleService` (local + remote, via `CachingUserRoleService`) | — |
 | `IAuditService` | `SqliteAuditService` (local-only, no remote write-through yet) | Remote write-through (`CachingAuditService`) if a real usage pattern needs it — see [Audit trail](#audit-trail-schema-first-pass-2026-08-06) |
+| `IUpdateService` | `NetworkShareUpdateService` (reads a UNC network-share manifest, no DB/API) | `ApiUpdateService` once a real update-distribution API exists — see [Auto-update system](#auto-update-system-2026-08-07) |
 
 ---
 
@@ -1440,6 +1547,7 @@ rather than free text) rather than assuming the deleted code is still relevant.
 - `defaults` (optional): pre-encrypted (`AppKeyEncryptionService`) default values for `smtpPassword`, `glpiApiKey`, `dbUsername`, `dbPassword`, `adApiToken` — copied into `APP_SETTINGS` on first startup only if that key isn't already set, so a fresh install can ship pre-configured with zero technician/admin setup. Generate values via `utils.AppKeyEncryptionGenerator`, never paste plaintext here. `dbUsername` added 2026-07-13 alongside `remoteDatabase` — before that, there was no way to pre-provision a remote DB connection at all, since host/port/dbName had no config field and username (like password) needs encryption, not a plaintext one.
 - **To fully pre-configure a remote DB before first startup**: set `remoteDatabase.host`/`port`/`dbName` (plaintext) plus `defaults.dbUsername`/`defaults.dbPassword` (both pre-encrypted via `utils.AppKeyEncryptionGenerator`). All five are one-shot — provisioned only on first run, only into currently-empty `APP_SETTINGS` keys; an admin's later edit via Base de Datos → Editar always takes precedence and is never overwritten by these.
 - `noteItemLimit`: max items before warning
+- `updates.manifestPath` (added 2026-08-07): UNC path to the `latest.json` auto-update manifest — plain text, not a secret. Blank means auto-update is unconfigured. See [Auto-update system](#auto-update-system-2026-08-07).
 
 **Jackson config**: `AppConfig` and all inner classes are annotated `@JsonIgnoreProperties(ignoreUnknown = true)` — unknown keys in the JSON file do not crash the app.
 

@@ -36,6 +36,9 @@
   "catalog" : {
     "genericLabel" : "Genérico / Otro"
   },
+  "updates" : {
+    "manifestPath" : ""
+  },
   "defaults" : {
     "smtpPassword" : "",
     "glpiApiKey" : "",

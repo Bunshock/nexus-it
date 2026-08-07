@@ -17,6 +17,7 @@ public class ServiceLocator {
     private IHistoryService historyService;
     private IUserRoleService userRoleService;
     private IAuditService auditService;
+    private IUpdateService updateService;
 
     private boolean remoteConnected = false;
 
@@ -84,6 +85,10 @@ public class ServiceLocator {
 
         String encryptedPassword = loadSmtpPassword();
         emailService = new GmailEmailService(config.smtp, encryptedPassword);
+
+        NetworkShareUpdateService realUpdate = NetworkShareUpdateService.getInstance();
+        realUpdate.configure(config.updates != null ? config.updates.manifestPath : null);
+        updateService = realUpdate;
     }
 
     /**
@@ -155,6 +160,7 @@ public class ServiceLocator {
     public IHistoryService   getHistoryService()    { return historyService; }
     public IUserRoleService  getUserRoleService()   { return userRoleService; }
     public IAuditService     getAuditService()      { return auditService; }
+    public IUpdateService    getUpdateService()     { return updateService; }
     public boolean           isRemoteConnected()    { return remoteConnected; }
 
     public void setEquipmentService(IEquipmentService s) { equipmentService = s; }
@@ -162,4 +168,5 @@ public class ServiceLocator {
     public void setUserRoleService(IUserRoleService s)   { userRoleService = s; }
     public void setHistoryService(IHistoryService s)     { historyService = s; }
     public void setAuditService(IAuditService s)         { auditService = s; }
+    public void setUpdateService(IUpdateService s)       { updateService = s; }
 }

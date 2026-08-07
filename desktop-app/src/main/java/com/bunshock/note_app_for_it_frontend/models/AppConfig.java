@@ -25,6 +25,7 @@ public class AppConfig {
     public DefaultSecrets defaults;
     public CatalogConfig catalog = new CatalogConfig();
     public AdAccessConfig adAccess = new AdAccessConfig();
+    public UpdatesConfig updates;
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class AfFormat {
@@ -103,5 +104,16 @@ public class AppConfig {
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class CatalogConfig {
         public String genericLabel = "Genérico / Otro";
+    }
+
+    /**
+     * Auto-update source — a UNC network-share folder, not an API (see CLAUDE.md's "Auto-update
+     * system" section). manifestPath is not a secret, just an internal network path. Null/blank
+     * means the feature is unconfigured — NetworkShareUpdateService.isConfigured() reports this
+     * and every update check fails safe rather than erroring.
+     */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class UpdatesConfig {
+        public String manifestPath;
     }
 }

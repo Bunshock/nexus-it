@@ -61,6 +61,7 @@ Two JSON files in `desktop-app/config/` control runtime behavior. **Do not commi
 | `remoteDatabase.port` | Remote SQL Server port (defaults to `1433`) |
 | `remoteDatabase.dbName` | Remote SQL Server database name |
 | `noteItemLimit` | Max items per note before showing a warning |
+| `updates.manifestPath` | UNC path to the auto-update manifest (`latest.json`) — not a secret. Leave `""` to disable the feature. See [Auto-Updates](#auto-updates) below. |
 
 SMTP password and GLPI API key are stored encrypted in the local SQLite database (`AppKeyEncryptionService`, AES-256/GCM) — never in this file. Same for the remote database's username/password — see below.
 
@@ -141,6 +142,69 @@ The app runs fully on local SQLite by default. To point it at a shared Microsoft
 The app creates its own schema automatically on first connect (`RemoteDatabaseService.ensureSchema()`) — a fresh, empty SQL Server database is all that's required. **`desktop-app/database/sqlserver/`** has ready-to-run scripts for setting one up, including starting data for the equipment catalog (Type/Brand/Model) and the provider catalog (Nota de Proveedor's dropdown), and a full remote-server setup walkthrough (installing Express, enabling TCP/IP with a static port, creating the DB/login, running the scripts) — see that folder's `README.md`. The seed script is a **template** with placeholder rows only, not real data (same pattern as `app-config.json.example`) — copy it and fill in your organization's actual catalog before running it; never commit the real, filled-in file (already gitignored). S/N validation rules are configured through the app's own UI, not a SQL script — same README explains why.
 
 **Already built up a real catalog locally before setting up a remote server?** `CatalogMigrationTool` (`mvn exec:java -Dexec.mainClass="com.bunshock.note_app_for_it_frontend.utils.CatalogMigrationTool"` from `desktop-app/`) copies the equipment catalog — Type, Brand, Brand-Type links, Model, S/N validation rules, Provider — from the local `data/noteapp.db` into a SQL Server database, correctly remapping autoincrement ids instead of copying them as-is. It creates the schema itself and prompts interactively for the connection details; safe to re-run as more local data is added. See `desktop-app/database/sqlserver/README.md` for details. History isn't migrated by this tool — only the equipment catalog.
+
+### Auto-Updates
+
+The app can check a shared network folder for a newer version and install it without a manual
+reinstall on each machine — see **Acerca de** → "Buscar actualizaciones" / "Historial de
+cambios". No database or backend API is involved; it's a plain manifest file on a network share.
+
+**1. Pick a network folder** every technician machine can already reach, e.g.
+`\\servidor\notas-it\releases\`.
+
+Ready-to-copy templates for the two JSON files below live in
+[`desktop-app/updates/`](desktop-app/updates/) (`latest.json.example`/`changelog.json.example`) —
+copy them onto the share and fill in real values rather than retyping the examples here by hand.
+
+**2. Put three things in it:**
+
+- **`latest.json`** — what the newest available version is:
+  ```json
+  {
+    "version": "1.2.0",
+    "installerFileName": "GeneradorDeNotasIT-1.2.0.exe",
+    "fileSizeBytes": 87654321,
+    "notes": "Corrige el ícono de maximizar y agrega la leyenda A/C en Historial."
+  }
+  ```
+- **`changelog.json`** (sibling file, same folder) — full release history, newest first. Read
+  independently by the "Historial de cambios" button, whether or not an update is currently
+  pending:
+  ```json
+  [
+    { "version": "1.2.0", "date": "2026-08-01", "notes": "Corrige el ícono de maximizar..." },
+    { "version": "1.1.0", "date": "2026-07-01", "notes": "Agrega el filtro de Sede." }
+  ]
+  ```
+- The installer itself — same file name as `latest.json`'s `installerFileName`.
+
+**3. Point every installation at `latest.json`** (the file, not the folder) via
+`updates.manifestPath`:
+
+```json
+"updates": {
+  "manifestPath": "\\\\servidor\\notas-it\\releases\\latest.json"
+}
+```
+
+**Watch the backslashes** — each single `\` in the real UNC path has to be written as `\\` in
+JSON, since `\` is JSON's escape character: `\\servidor\notas-it\releases\latest.json` becomes
+`\\\\servidor\\notas-it\\releases\\latest.json`.
+
+**4. Publishing a new release later** is just: build the new installer, drop it in that same
+folder, overwrite `latest.json`, and prepend an entry to `changelog.json`. Nothing needs to
+change on any already-installed machine — each one already knows where to look.
+
+The app's own "current version" comes from `pom.xml`'s `<version>` at build time (`AppVersion`,
+read from a Maven-filtered `version.properties` resource) — bump it before building a release, as
+a plain `X.Y.Z` (not the default `-SNAPSHOT` suffix, which the numeric version-compare logic
+can't meaningfully parse).
+
+**Current limitation**: there's no `jpackage` installer pipeline in this project yet (no real
+`.exe` exists to distribute) — the check/compare/changelog logic already works today if
+`manifestPath` points at a real file, but "Actualizar ahora" has nothing real to download until
+packaging is set up. See `CLAUDE.md`'s "Auto-update system" section for the full design and what
+still needs verifying against a real packaged build.
 
 ### `config/mock-equipment.json`
 
@@ -310,6 +374,12 @@ mvn test
 - Name, Username, DNI, and Email resolved from Active Directory at login time (see [Login](#login) above), refreshable on demand via "Actualizar Perfil desde AD" (a lookup, not a re-login) — read-only, editable only for a session holding the profile-override permission, never persisted to disk
 - **Nombre para mostrar**: a separate, always-editable field (no admin mode required, max 20 characters) controlling only the sidebar welcome greeting ("Hola, ...!"). Pre-filled with a suggested default (the last word of the AD full name); persisted locally per technician username so it survives restarts and AD refreshes. Clearing it and saving reverts to the suggested default — or use the square ↺ reset button next to the field to do both in one click
 - Sidebar welcome message updates immediately on any change (AD refresh, admin override, or a saved display-name preference) — no restart needed
+
+### Auto-Updates
+
+- **Acerca de** → "Buscar actualizaciones" checks a configured network-share manifest against the app's own build version and offers a one-click, self-closing install when a newer one exists
+- "Historial de cambios" shows the full release-note history independently, whether or not an update is currently pending
+- Configured via `updates.manifestPath` — see [Auto-Updates](#auto-updates) under Configuration; silently inactive (not an error) when unconfigured
 
 ### Security
 
