@@ -37,7 +37,7 @@ Project-level instructions for Claude Code. These override defaults and apply to
 - Every implemented feature must have tests. Write test files **and run them** before marking a task done.
 - Desktop app: **JUnit 5 + TestFX** (`src/test/java/...`)
 - Run: `mvn test` from `desktop-app/`
-- Current test count: 351 tests, all passing.
+- Current test count: 489 tests, all passing.
 - Test classes: `TemplateEngineTest`, `PrestamoHistoryControllerTest`, `ProviderNoteViewFxmlTest`, `MockADServiceTest`, `AdApiServiceTest`, `AppKeyEncryptionServiceTest`, `MockEquipmentServiceTest`, `CachingServiceTest`, `GlpiStatusTest`, `ReturnStatusTest`, `NoteGenerationServiceTest`, `AdminSessionTest`, `RemoteDatabaseServiceTest`, `SqliteHistoryServiceTest`, `DatabaseServiceMigrationTest`, `HistoryControllerTest`, `InputValidationTest`, `TechnicianSessionServiceTest`, `SettingsControllerTest`, `SqliteEquipmentServiceTest`, `ServiceLocatorProvisionTest`, `UserNoteFallaPersistenceTest`, `UserNoteViewFxmlTest`, `SettingsControllerSnFilterTest`, `SettingsViewFxmlTest`, `ProfileControllerDisplayNameTest`, `ProfileViewFxmlTest`, `CatalogMigrationToolTest`, `DemoSeedSqlTest`, `StarterTemplateSqlTest`, `SqlServerSeedSqlSnValidationTest`, `NotePreviewViewFxmlTest`, `NoteDetailViewFxmlTest`, `PrestamosViewFxmlTest`, `PrestamoNewLoanViewFxmlTest`, `PrestamoDetailViewFxmlTest`, `NotePreviewControllerGlpiStatusTest`, `PendingCountsServiceTest`, `NoteGeneratorViewFxmlTest`, `SqliteUserRoleServiceTest`, `LoginControllerTest`, `LoginViewFxmlTest`, `DatabaseSectionViewFxmlTest`
 
 ---
@@ -181,6 +181,151 @@ and `IUserRoleService.ROLE_SUPERADMIN` — was deleted, not just hidden behind a
 (`ADMIN`/`USER` only now) and the rest of [Login screen and role-based admin mode](#login-screen-and-role-based-admin-mode)
 above are unaffected. This may be reintroduced in a future release; if so, re-derive the design
 rather than assuming the deleted code is still relevant.
+
+### Audit trail — schema-first pass (2026-08-06)
+
+Reintroduced per direct user request, ahead of an external DBA schema review deadline — a
+from-scratch redesign, per this file's own instruction above, not a revival of the deleted
+2026-07-24 `LOGIN_AUDIT`/`ACTION_AUDIT` design. Built in two passes the same day: a schema-first
+pass (tables + login rate-limiting only), then a same-day follow-up that wired every remaining
+write point and renamed the tables to an `AUDIT_*` prefix (see below) — both passes are described
+together here rather than as separate sections.
+
+- **Four tables, not one generic table** — `AUDIT_LOGIN`, `AUDIT_STOCK`, `AUDIT_ITEM_STATUS`,
+  `AUDIT_ADMIN_ACTION`. Three of the four have one clear, single FK target worth keeping typed
+  (`AUDIT_STOCK` → `BRAND_TYPE_LINK`/`MODEL`/`SEDE` with real `INTEGER`/`INT` `old_stock`/
+  `new_stock` columns; `AUDIT_ITEM_STATUS` → `NOTE_ITEM`, with a `status_kind` discriminator
+  covering both GLPI and Préstamo/Provider return-status transitions in one table, since both are
+  the exact same "item's status moved from A to B" shape — `NOTE_ITEM_GLPI_TRACKING`/
+  `NOTE_ITEM_RETURN_TRACKING` only ever keep the *latest* status, never prior transitions, so this
+  is genuinely new information, not a duplicate). `AUDIT_ADMIN_ACTION` is the deliberate
+  exception — a generic `action`/`target_type`/`target_id`/`old_value`/`new_value` shape (`target_id`
+  is `TEXT`/`NVARCHAR`, not a typed FK, since it sometimes holds a settings key like
+  `"glpi_api_key"` rather than a numeric row id), meant to cover catalog CRUD, note
+  approval/rejection, S/N validation edits, and config changes — a genuinely heterogeneous set of
+  admin actions with no single shared FK target. (Admin-editable "profile override" fields were
+  considered too, but confirmed removed from `ProfileController` in an earlier session — there's
+  nothing left there to audit.) This is the same
+  `object_id`-as-text shape most real-world audit logs use for exactly this reason (Django's
+  `LogEntry`, Rails' PaperTrail) — flagged explicitly here since it's a deliberate exception to
+  this schema's usual typed-FK-over-generic-text preference, not an inconsistency.
+- **Secrets are never written to `old_value`/`new_value`, full stop.** SMTP password, GLPI API
+  key, AD token, and DB credentials must never appear in `AUDIT_ADMIN_ACTION`, even encrypted —
+  that would just create a second place for secrets to leak from. Only "this config was changed"
+  gets recorded for those fields, never the value itself. This is enforced by whoever calls
+  `IAuditService.recordAdminAction()` once `EDIT_SMTP_CONFIG`/`EDIT_GLPI_CONFIG`/`EDIT_AD_CONFIG`
+  get wired in — not something the schema itself can enforce — so it's called out here to not be
+  missed later.
+- **A real, accepted gap**: `APP_USER`/`ROLE_PERMISSION` changes (role, Sede, and permission
+  grants) are made via direct SQL, not through the app (see
+  [Role-based permissions (RBAC)](#role-based-permissions-rbac-a-superadmin-tier-and-sede-scoped-admin-actions-2026-07-30)) —
+  an app-level audit table structurally cannot see those writes. Auditing that would need a DB
+  trigger, not an application-level insert; not built here.
+- **`AUDIT_STOCK.reason` is `NOT NULL`** — both Base de Datos stock dialogs ("Stock" and "Editar
+  modelo") now require a reason before saving *whenever the stock value actually changes* (a
+  no-op save that leaves stock unchanged needs no reason and writes no audit row at all). A new
+  "MOTIVO DEL CAMBIO" field, capped at 500 chars matching the column bound
+  (`DatabaseSectionController.stockReasonFormatter()`), blocks the save with an inline error via
+  the same `triggerFieldError()` pattern already used for every other validation in that dialog.
+- **`IAuditService.recordStockChange()` takes `brandId`/`typeId`, not `brandTypeId` directly** —
+  every real caller already has those two on hand (same as `IEquipmentService.setModelStock()`
+  itself), so `SqliteAuditService` resolves the `BRAND_TYPE_LINK` row internally
+  (`findBrandTypeLinkId()`) rather than pushing that lookup onto every call site.
+- **All four write methods are now wired to real call sites, not just designed.**
+  `recordStockChange()` — the two Base de Datos stock dialogs above. `recordItemStatusChange()` —
+  `NoteDetailController.handleSync()`/`handleReject()` (GLPI), `handleProviderReceived()`/
+  `handleProviderNotReceived()` (Provider return), and `PrestamoDetailController.handleReturn()`/
+  `handleLost()` (Préstamo return) — six call sites total, each capturing the item's status
+  *before* it's overwritten as `old_status`.
+  **A second, separate write path was missed in the first pass, caught by direct user report the
+  same day**: a *countable* (quantity-based) item's return/loss goes through a completely
+  different `IHistoryService` method, `allocateCountableReturn()` (supports partial batches —
+  e.g. 5 loaned cables, 3 returned now, 1 lost later, 1 still pending — see
+  [Per-item return status](#per-item-return-status-returnstatus)), not `updateItemReturnStatus()`.
+  Fixed in 4 more call sites: `PrestamoDetailController.handleCountableReturn()`/
+  `handleCountableLost()`, `NoteDetailController.handleProviderCountableReceived()`/
+  `handleProviderCountableNotReceived()`. Since a partial allocation has no single clean
+  before/after status the way a whole-item transition does, `old_status` is always
+  `ReturnStatus.PENDING.toDbString()` (the only state a pending quantity can be allocated from).
+  **`AUDIT_ITEM_STATUS.quantity`** (`INTEGER`/`INT NOT NULL DEFAULT 1`, added same day, direct
+  user follow-up): how many units this row concerns — `1` for every whole-item transition (GLPI
+  sync/reject, whole-asset Préstamo/Provider return — a single serialized asset, or a GLPI sync,
+  is always exactly one unit; never `NULL`, since the fact is genuinely always "exactly one," not
+  "not applicable"), or the real allocated quantity for the 4 partial-batch call sites above.
+  Deliberately not left as embedded text inside `reason` (an earlier draft did exactly that —
+  `"Cantidad: 3"` — before this column existed) specifically so a plain `SUM(quantity)` works
+  uniformly across every row in the table, whole-item or partial, without text-parsing.
+  **`reason` semantics, made consistent by the same fix**: `NULL` whenever no admin-typed
+  justification applies (a plain sync, a normal whole-item or partial return) — populated only
+  for the actions that actually require one (GLPI reject, Préstamo/Provider "lost"/"not received",
+  whole-item or partial alike). `old_status`/`new_status` stay real `ReturnStatus`/`GlpiStatus`
+  values on every row, whole-item or partial. `recordAdminAction()` — Type/Brand/Model add/rename/
+  remove in `DatabaseSectionController` (9 call sites; Provider/Sede have no in-app CRUD at all
+  anymore, so nothing to wire there), `SettingsController.handleSave()`'s four config groups (AF
+  format/SMTP/GLPI/AD — old values captured before mutation, secrets never logged, only whether
+  they changed), `SettingsController`'s S/N validation edit dialog, and
+  `NoteDetailController`/`PrestamoDetailController`'s `handleApprove()`/`handleRejectNote()` (4
+  call sites). `IAuditService` is local-only for now (writes go straight to the local SQLite
+  database, same as `APP_SETTINGS`) — no remote-first `CachingAuditService` wrapper yet; revisit
+  once a real usage pattern (an admin reviewing audit history across a shared remote database)
+  actually needs one.
+- **Login attempt rate-limiting.**
+  `LoginController.handleLogin()` now checks `IAuditService.countRecentFailedLoginAttempts(username,
+  15)` (a 15-minute rolling window) *before* calling AD at all; at 5 or more recent failures for
+  that username, the attempt is rejected immediately ("Demasiados intentos fallidos...") with
+  **no AD call and no new `AUDIT_LOGIN` row** — that's what actually bounds the table's growth
+  (the whole point of adding this), not just a UI-level annoyance. Every real, non-blocked outcome
+  (wrong credentials, denied by AD group, profile not found, not registered, success) writes one
+  `AUDIT_LOGIN` row. **One deliberate exception**: an AD-unreachable exception is not recorded and
+  does not count toward the rate limit — that's a connectivity failure, not evidence of the
+  technician guessing credentials, and penalizing them for it would be unfair.
+- **Tests**: `DatabaseServiceMigrationTest.createAuditTablesCreatesAllFourAuditTables()` (table
+  existence only — no live SQL Server instance exists anywhere in this project's test
+  infrastructure to validate `RemoteDatabaseService`'s mirror against, same limitation already
+  documented repeatedly elsewhere in this file). New `MockAuditService` (test-only, mirrors
+  `MockADService`/`MockUserRoleService`'s precedent of being a genuinely functional stand-in, not
+  an empty stub — its `countRecentFailedLoginAttempts()` does real time-window filtering, not just
+  a recorded-call count) wired into `LoginControllerTest`, plus
+  `tooManyFailedAttemptsBlocksFurtherLoginsWithoutHittingAdOrLoggingMore()` (seeds 5 failed
+  attempts, then asserts a 6th attempt — even with *correct* credentials — is blocked, that AD is
+  never reached, and that no new audit row is inserted). Full suite: 491 tests passing.
+- **`RemoteDatabaseService.ensureSchema()`/`01-schema.sql` ordering note**: `AUDIT_ITEM_STATUS`
+  (references `NOTE_ITEM`) had to be created later in the script than the other three audit
+  tables, right after `NOTE_ITEM_STOCK_EXCEPTION` — SQL Server validates FK targets at `CREATE
+  TABLE` time (unlike SQLite, which doesn't), so it can't be declared before `NOTE_ITEM` exists.
+  `DatabaseService.java`'s SQLite version has no such constraint and keeps all four together in
+  one `createAuditTables()` method, called after `createHistoryTables()` (which already creates
+  `NOTE_ITEM`) in `initialize()`.
+- **Renamed to an `AUDIT_*` prefix same day** — `LOGIN_AUDIT`/`STOCK_AUDIT`/`ITEM_STATUS_AUDIT`/
+  `ADMIN_ACTION_AUDIT` → `AUDIT_LOGIN`/`AUDIT_STOCK`/`AUDIT_ITEM_STATUS`/`AUDIT_ADMIN_ACTION`,
+  explicit user request so they group together in a DB browser next to each other and follow the
+  same `NOTE_*`-style prefix convention already used elsewhere in this schema. Safe as a plain
+  rename with no migration path — these tables were created and renamed within the same,
+  never-shipped session, so nothing had written to the old names yet.
+- **Not built here, and not currently planned**: `APP_USER`/`ROLE_PERMISSION` changes still can't
+  be audited (see above — direct-SQL-only by design). No dedicated tests were added for the new
+  `AUDIT_ADMIN_ACTION`/`AUDIT_ITEM_STATUS`/`AUDIT_STOCK` call sites themselves — same
+  "`Stage.show()`-driven dialogs aren't left in this suite's permanent run" and "`initialize()`
+  reaches `ServiceLocator` directly" gaps already accepted elsewhere in this file for
+  `DatabaseSectionController`'s other dialog-driven behavior; verified via the full suite staying
+  green and direct code review instead.
+- **A real crash caught by the user, same day**: `AUDIT_ITEM_STATUS.quantity` (added alongside the
+  design discussion above) was only added to the `CREATE TABLE` block at first — missing the
+  `addColumnIfMissing()`/`columnExists()`-guarded migration path this file's own "Schema migration
+  pattern" note (under [SQLite tables](#sqlite-tables)) explicitly warns about. `CREATE TABLE IF
+  NOT EXISTS` silently no-ops on a database that already created the table earlier the same
+  session (before `quantity` existed), so `PrestamoDetailController.handleLost()` crashed with
+  `SQLITE_ERROR: table AUDIT_ITEM_STATUS has no column named quantity` the moment a real return
+  was rejected. Fixed in all three places: `DatabaseService.migrateSchema()` gained
+  `addColumnIfMissing(stmt, "AUDIT_ITEM_STATUS", "quantity", "INTEGER NOT NULL DEFAULT 1")`,
+  `RemoteDatabaseService.ensureSchema()` gained the matching `columnExists()`-guarded `ALTER
+  TABLE`, and `01-schema.sql` gained the matching `information_schema.columns`-guarded block.
+  `DEFAULT 1` is load-bearing, not cosmetic — SQLite rejects `ADD COLUMN ... NOT NULL` on a table
+  with existing rows unless a default is supplied. Test:
+  `DatabaseServiceMigrationTest.migrateSchemaAddsQuantityColumnToAPreExistingAuditItemStatusTable()`
+  reproduces the old (pre-`quantity`) table shape directly, runs the real migration, and does a
+  real `INSERT` omitting `quantity` to confirm the column doesn't just exist but actually accepts
+  a normal insert via its default. Full suite: 492 tests passing (491 + 1 new).
 
 ### Remote SQL Server (write-through cache)
 `RemoteDatabaseService` manages the SQL Server connection (`com.microsoft.sqlserver:mssql-jdbc`). When `db_host` is set in `APP_SETTINGS`, `ServiceLocator.initialize()` calls `RemoteDatabaseService.configure(...)`, runs `ensureSchema()` (T-SQL DDL), then wraps both remote and local `SqliteEquipmentService`/`SqliteHistoryService` instances in `CachingEquipmentService`/`CachingHistoryService`. Reads try remote first, fall back to local SQLite on error. Writes go to remote first (fail loudly), then local SQLite best-effort. If remote is unreachable at startup, the app runs fully local. `APP_SETTINGS` and `SMTP` config are always local SQLite regardless of remote config.
@@ -710,6 +855,198 @@ correction) — see `project_stock_approval_af_design.md` in memory for the full
   `DatabaseServiceMigrationTest` (column-exists assertions), `NoteDetailViewFxmlTest`/
   `PrestamoDetailViewFxmlTest` (extended to assert the new `vboxApproval` `fx:id` loads).
 
+### `approval_status`'s rejected value renamed RECHAZADO → REJECTED (2026-08-06)
+
+Caught by direct user review of the schema diagram — `PENDING`/`APPROVED` are English (this
+project's code-in-English convention), but the rejected value was left as the Spanish
+`RECHAZADO`, stored and compared in code exactly like the other two. Renamed to `REJECTED`
+everywhere it's used as a stored/compared value (`HistoryController`, `NoteDetailController`,
+`PrestamoDetailController`, `PrestamoHistoryController`, `RemitoHistoryController`, and their
+tests) — the Spanish **display** text ("Rechazada"/"Rechazar", already correctly Spanish per the
+UI-text convention) is untouched; only the internal value changed.
+
+- **A real, existing-data migration was required, not just a code rename** — unlike a purely
+  cosmetic rename, `approval_status = 'RECHAZADO'` was already sitting in real rows. Without a
+  migration, an old rejected note would stop matching every `switch`/`if` branch entirely, falling
+  through to a "Pendiente" display — while still being stuck, since none of those branches ever
+  re-show the Aprobar/Rechazar buttons for a status that isn't literally `"PENDING"`. Added
+  `UPDATE NOTE_REPORT SET approval_status = 'REJECTED' WHERE approval_status = 'RECHAZADO'` to
+  `DatabaseService.migrateSchema()`, `RemoteDatabaseService.ensureSchema()`, and `01-schema.sql`.
+- **A real regression this caused, caught by the existing test suite, not shipped**: the SQLite
+  migration statement first ran unconditionally, but several pre-existing
+  `DatabaseServiceMigrationTest` cases hand-build a minimal `NOTE_REPORT` fixture from before
+  `approval_status` existed at all — `UPDATE ... SET approval_status = ...` against a table with
+  no such column threw immediately, breaking 6 unrelated tests. Fixed by guarding it behind
+  `columnExists(conn, "NOTE_REPORT", "approval_status")`, same convention as every other
+  column-dependent migration statement in this file. `RemoteDatabaseService`/`01-schema.sql` never
+  had this problem — both already run their own `addColumnIfMissing()`/`ALTER TABLE ADD` for
+  `approval_status` earlier in the same migration sequence, guaranteeing the column exists by the
+  time the `UPDATE` runs.
+- **While reviewing this, the same review also caught `profile_type`'s Provider-note value,
+  `"Entrega - Proveedor"`, was mixed-case** — inconsistent with the other three literal values
+  (`"ENTREGA"`, `"DEVOLUCIÓN"`, `"PRÉSTAMO"`, `"ENTREGA PERMANENTE"`), all ALL-CAPS. Renamed to
+  `"ENTREGA - PROVEEDOR"` at its one real write site, `NoteGeneratorController.handleGenerateNote()`.
+  Every `toDisplayName()` duplicate (`NoteGenerationService`/`HistoryController`/
+  `NoteDetailController`) already had a dedicated switch case expecting exactly this value
+  (`case "ENTREGA - PROVEEDOR" -> "Entrega - Proveedor"`) — it had simply never been reachable
+  before, silently falling through to the `default -> profileType` branch instead (which
+  happened to look correct anyway, since the raw mixed-case value already read fine as-is,
+  masking the inconsistency). `HistoryController.PROFILE_TYPE_LABEL_TO_RAW` already tolerated both
+  casings as legacy variants, and the two `isProviderReturnable()`/`isProviderReturnableNote()`
+  checks already used `equalsIgnoreCase()` — so, unlike the `RECHAZADO` case, no existing row was
+  ever actually at risk of breaking here; the matching `UPDATE NOTE_REPORT SET profile_type =
+  'ENTREGA - PROVEEDOR' WHERE profile_type = 'Entrega - Proveedor'` migration (added in the same
+  three places) is a data-consistency cleanup, not a regression fix.
+- **`approval_status` can only ever reach `RECHAZADO`/`REJECTED` through the in-app UI in one
+  direction** — confirmed by reading the actual gating code, not assumed: `NoteDetailController`/
+  `PrestamoDetailController`'s Aprobar/Rechazar buttons are both gated behind
+  `"PENDING".equals(status)`, and `updateNoteApprovalStatus()` has no other caller anywhere in the
+  app. So `PENDING → APPROVED` and `PENDING → REJECTED` are each a one-shot, terminal transition
+  through the UI — never reversible, and a `PENDING → APPROVED → REJECTED → APPROVED` cycle is
+  **not reachable through the app at all**. The only way it could happen is a superadmin manually
+  resetting `approval_status` back to `'PENDING'` via direct SQL (same "no in-app UI, direct SQL
+  only" precedent as `APP_USER`/`ROLE_PERMISSION`), which would re-enable the Aprobar button and
+  let a real second approval go through normally — exactly the scenario `NOTE_REPORT.stock_applied`
+  guards against, so that guard is not dead code even though the in-app UI alone can never trigger
+  the case it protects.
+- **Tests**: `DatabaseServiceMigrationTest.migrateSchemaUpdatesLegacyApprovalStatusAndProfileTypeValues()`
+  seeds a real `NOTE_REPORT` row with both old values, runs the real migration, and asserts both
+  land on the new values. `HistoryControllerTest.toDisplayNameMapsRawStoredValuesToLabels()`'s
+  Provider assertion was flipped to pass the ALL-CAPS raw value as input (matching every other
+  assertion in the same test) instead of the mixed-case value, so it actually exercises the
+  previously-dead switch case instead of the `default` fallback. Full suite: 493 tests passing
+  (492 + 1 new).
+
+## Per-item "Modifica stock" exception (2026-08-05)
+
+Explicit user request: a mechanism for the rare case where a note is generated to *formalize*
+equipment the recipient already physically has (no delivery actually happens at approval time),
+so that specific item must not move stock even though its note type normally would.
+
+- **`ItemDialogController`** gained `chkModifiesStock` ("Modifica stock", `ItemDialogView.fxml`,
+  in the fixed-footer Observaciones block so it's visible for both asset and countable items),
+  **selected by default**. Unchecking it opens a self-contained orange/warning confirmation
+  popup (`confirmDisableStockModification()` — its own small `Stage`/`Scene`, not a reused
+  dialog-builder helper, since no existing one fit a plain Yes/No confirm) explaining the
+  exceptional cases this is for; cancelling reverts the checkbox back to checked. Re-checking
+  needs no confirmation — only turning the exception *on* is the risky direction. Applies
+  identically to every `ItemDialogHost` flow (`NoteGeneratorController` — both User and Provider
+  notes, `PrestamoNewLoanController`, `RemitoNoteController`), since all three share this same
+  popup.
+- **DB modeling**: a plain `NOTE_ITEM.modifies_stock` (`INTEGER`/`INT NOT NULL DEFAULT 1`) — not a
+  subtype table, since (unlike GLPI/return tracking) this is a genuinely always-applicable
+  attribute of every item, not a "sometimes doesn't apply" dimension; a boolean column is the
+  correct normalized shape here, not row-absence. Added to `DatabaseService.java` (`CREATE TABLE`
+  + `migrateSchema()`'s `addColumnIfMissing`, `DEFAULT 1` preserving existing items' current
+  behavior), `RemoteDatabaseService.java`, and `database/sqlserver/01-schema.sql` (both the
+  `CREATE TABLE` and its own idempotent `information_schema.columns`-guarded `ALTER TABLE`).
+- **Model layer**: `EquipmentItem`/`AssetItem`/`CountableItem`/`NoteReportItem` each gained a
+  `modifiesStock` field defaulting to `true` — via a new constructor overload (the original
+  9-arg constructors now delegate to a 10-arg one taking the flag), so every pre-existing call
+  site across the app and test suite kept compiling unchanged.
+- **Effect on approval (egress/ingress stock move)**: `SqliteHistoryService.aggregateItemQuantities()`
+  skips any item with `modifiesStock == false` entirely before it ever reaches
+  `applyDirectionalStock()`/`applyRemitoStock()` — the item is simply left out of the aggregated
+  `Map`, so it neither decrements nor increments stock at approval, while every other item on the
+  same note still moves normally.
+- **Effect on return/receipt credit — a second, independent site, per explicit user confirmation
+  this had to be blocked too.** `resolveItemStockInfo()`'s `ItemStockInfo` record gained a
+  `modifiesStock` field (read straight off `NOTE_ITEM.modifies_stock`); both
+  `updateItemReturnStatus()` (Préstamo/Provider whole-item RETURNED credit) and
+  `allocateCountableReturn()` (partial-quantity credit) now check `info.modifiesStock()` before
+  calling `adjustModelStock(...)` — an item that never decremented stock on the way out must never
+  credit it back in on the way back.
+- **Effect on the pre-generation stock-shortage warning** — per explicit user confirmation, a
+  flagged item shouldn't count toward "you're requesting more than your Sede has." Each of the 3
+  host controllers' own `computeStockShortages()` (duplicated per this codebase's
+  no-shared-abstraction convention) now skips `!isModifiesStock()` items in both its asset and
+  countable loops, before aggregating requested quantities.
+- **Display: admin approval popup only, unconditionally — not the note preview or printed
+  template**, per explicit user direction. `NoteDetailController`/`PrestamoDetailController`'s
+  `buildItemCard()` (both, duplicated per convention) render an orange `statusBadge("⚠ No
+  modifica stock", "#f97316")` for any item with the flag off — shown regardless of the note's
+  approval status (not gated behind `"APPROVED".equals(...)` like the GLPI/return-status rows
+  are), since this is exactly the information an admin needs *before* deciding whether to
+  approve, not after.
+- **Tests**: `SqliteHistoryServiceTest` — `getByIdPersistsAndReturnsModifiesStock`,
+  `itemsDefaultToModifyingStockWhenNotExplicitlySet`,
+  `approvingEntregaSkipsStockForItemsFlaggedAsNotModifyingStock` (mixed one flagged + one normal
+  item on the same note, asserting only the normal one moves),
+  `approvingDevolucionSkipsStockForItemFlaggedAsNotModifyingStock`,
+  `returningItemFlaggedAsNotModifyingStockDoesNotCreditStockBack`,
+  `allocatingCountableReturnForItemFlaggedAsNotModifyingStockDoesNotCreditStock`. This file's own
+  duplicated `NOTE_ITEM` schema copy gained the column too, same "every new column needs its test
+  schema copies updated" precedent already established elsewhere in this file. **No dedicated test
+  for `ItemDialogController`'s checkbox/confirmation-dialog wiring itself** — same
+  "`initialize()` calls `ServiceLocator` directly" gap already accepted elsewhere in this file for
+  this exact controller (`txtObs`'s own length cap), and the confirmation popup opens a real
+  `Stage`, which this suite has a standing rule against leaving in the permanent run (see the
+  Falla-persistence investigation elsewhere in this file). Verified via `mvn compile`/`mvn test`
+  (full suite green, 487 pre-existing + 6 new) and direct code review instead.
+
+**Follow-up, same day — mandatory audit reason.** Explicit user request: capture *why* the
+exception was invoked, not just that it was, so admins have a real audit trail.
+
+- **`confirmDisableStockModification()` gained a required `TextArea`** ("MOTIVO *", 300-char
+  `TextFormatter` cap matching the new DB column below) inside the same confirmation popup — the
+  method's return type changed from `boolean` to `String` (the entered reason, or `null` if
+  cancelled), so the caller (`handleModifiesStockToggle()`) can no longer distinguish "cancelled"
+  from "confirmed" by a bare boolean alone. The "Confirmar" button starts disabled and only
+  enables once the reason field is non-blank — mandatory by construction, not just by convention.
+  Re-checking the checkbox clears `stockExceptionReason` (the controller's holding field for the
+  as-yet-unsaved reason), since a discarded exception has no reason to keep.
+- **DB modeling — a subtype table, not a nullable column, per direct user pushback.** A first
+  version added `modifies_stock_reason` directly as a nullable column on `NOTE_ITEM` — flagged by
+  the user before it shipped as inconsistent with this schema's own standing normalization rule
+  (a reason column sitting `NULL` on the overwhelming majority of rows, since only a small
+  minority of items ever use this exception). Corrected to the same shape `NOTE_REPORT_REJECTION`
+  already established for the identical problem (`rejection_reason`, also only meaningful for a
+  minority of notes): a new `NOTE_ITEM_STOCK_EXCEPTION` (`item_id` PK/FK → `NOTE_ITEM`, `reason`
+  `NOT NULL`) — a row exists only for an item actually flagged `modifies_stock = 0`. `NOTE_ITEM`
+  itself only ever carries the boolean `modifies_stock` column (always applicable to every item,
+  correctly a plain column — unlike the reason, which isn't). Added to `DatabaseService.java`
+  (`createHistoryTables()`), `RemoteDatabaseService.java` (`createTableIfMissing`), and
+  `database/sqlserver/01-schema.sql`.
+- **A real pre-existing gap caught while working on this, not introduced by it**: `modifies_stock`
+  itself had only ever been declared on `RemoteDatabaseService`'s `createTableIfMissing()` path
+  (the brand-new-install `CREATE TABLE`) — since that call is a no-op once `NOTE_ITEM` already
+  exists, **an already-running remote SQL Server installation never actually got the
+  `modifies_stock` column added at all**. Fixed by adding the missing
+  `addColumnIfMissing(stmt, c, "NOTE_ITEM", "modifies_stock", ...)` migration call.
+- **Migration for the brief nullable-column shape**: since the flawed design was caught before
+  being committed but *after* this local dev database had already run through it once
+  (`data/noteapp.db` genuinely had the column), both `DatabaseService.migrateStockExceptionReasonSchema()`
+  and `RemoteDatabaseService`'s mirror check `columnExists(..., "modifies_stock_reason")`,
+  backfill any non-blank values into `NOTE_ITEM_STOCK_EXCEPTION`, then `DROP COLUMN` — same
+  backfill-then-drop shape as `migrateRejectionReasonSchema()`. A no-op on any install that never
+  saw the old shape (i.e. every real deployment, since this was never released).
+- **Model layer**: `EquipmentItem`/`NoteReportItem` gained a plain `modifiesStockReason` field +
+  getter/setter (no constructor-overload ripple, unlike `modifiesStock` itself — the reason is
+  always set via a setter, after construction, from `ItemDialogController`'s held
+  `stockExceptionReason`, mirroring how every other optional reason field in this codebase — e.g.
+  `NoteReportItem.glpiRejectionReason` — is populated). This part of the design needed **zero**
+  changes when the DB shape was corrected — same "normalization is a DB-layer concern" outcome
+  already observed repeatedly elsewhere in this file.
+- **Persisted via a conditional insert, not a plain column write**: `SqliteHistoryService.insertItems()`
+  gained a `stockExceptionPs` batch — one row into `NOTE_ITEM_STOCK_EXCEPTION` only when
+  `!item.isModifiesStock()` and a non-blank reason is present, same "row absence means not
+  applicable" pattern `glpiPs`/`returnPs` already use in that method. `loadItems()` gained a
+  `LEFT JOIN NOTE_ITEM_STOCK_EXCEPTION se ON se.item_id = b.id`, reading `se.reason AS
+  modifies_stock_reason` — the row-mapping Java code (`item.setModifiesStockReason(...)`) needed
+  no change, since the joined column name is unchanged from the earlier (reverted) design.
+  `NotePreviewController.buildReportWithItems()` and `PrestamoNewLoanController`'s equivalent both
+  copy `getModifiesStockReason()` across the same way they already copy `isModifiesStock()`.
+- **Display**: appended to the same unconditional orange badge from the original entry above —
+  `"⚠ No modifica stock: {reason}"` instead of the bare label — in both
+  `NoteDetailController`/`PrestamoDetailController`. `statusBadge()`'s existing `-fx-wrap-text:
+  true` already handles a long reason wrapping within the card, no layout change needed.
+- **Tests**: `getByIdPersistsAndReturnsModifiesStock` extended to also assert the reason round-trips;
+  `getByIdReturnsNullModifiesStockReasonWhenItemModifiesStockNormally`;
+  `DatabaseServiceMigrationTest.migrateSchemaBackfillsStockExceptionReasonIntoOwnTableAndDropsColumn`
+  (seeds a pre-existing database with the brief nullable-column shape, including one item with a
+  reason and one without, and asserts the backfill/drop is correct and doesn't false-positive on
+  the second item). Full suite: 489 tests passing.
+
 ## Provider conditional return tracking (2026-07-29)
 
 Reuses `ReturnStatus`/`NOTE_ITEM_RETURN_TRACKING` exactly as Préstamo already has it (see
@@ -1083,6 +1420,7 @@ rather than free text) rather than assuming the deleted code is still relevant.
 | `IGLPIService` | `GLPIServiceStub` (no-op) | GLPI REST API (out of scope v1) |
 | `IEmailService` | `GmailEmailService` (Jakarta Mail, STARTTLS port 587) | — |
 | `IUserRoleService` | `SqliteUserRoleService` (local + remote, via `CachingUserRoleService`) | — |
+| `IAuditService` | `SqliteAuditService` (local-only, no remote write-through yet) | Remote write-through (`CachingAuditService`) if a real usage pattern needs it — see [Audit trail](#audit-trail-schema-first-pass-2026-08-06) |
 
 ---
 
@@ -1112,7 +1450,7 @@ Types, brands, `typeBrands` junction entries, models, `snValidations`. Loaded by
 
 ## SQLite tables
 
-`TYPE`, `BRAND`, `BRAND_TYPE_LINK`, `MODEL`, `MODEL_STOCK`, `SN_VALIDATION`, `PROVIDER`, `SEDE`, `APP_USER`, `ROLE_PERMISSION`, `NOTE_REPORT`, `NOTE_REPORT_REJECTION`, `NOTE_ENTREGA_DEVOLUCION`, `NOTE_DEVOLUCION_FALLA`, `NOTE_PRESTAMO_AREA_EVENTO`, `NOTE_PROVEEDOR`, `NOTE_ITEM`, `NOTE_ITEM_ASSET`, `NOTE_ITEM_COUNTABLE`, `NOTE_ITEM_GLPI_TRACKING`, `NOTE_ITEM_RETURN_TRACKING`, `APP_SETTINGS`
+`TYPE`, `BRAND`, `BRAND_TYPE_LINK`, `MODEL`, `MODEL_STOCK`, `SN_VALIDATION`, `PROVIDER`, `SEDE`, `APP_USER`, `ROLE_PERMISSION`, `NOTE_REPORT`, `NOTE_REPORT_REJECTION`, `NOTE_ENTREGA_DEVOLUCION`, `NOTE_DEVOLUCION_FALLA`, `NOTE_PRESTAMO_AREA_EVENTO`, `NOTE_PROVEEDOR`, `NOTE_ITEM`, `NOTE_ITEM_ASSET`, `NOTE_ITEM_COUNTABLE`, `NOTE_ITEM_GLPI_TRACKING`, `NOTE_ITEM_RETURN_TRACKING`, `NOTE_ITEM_STOCK_EXCEPTION`, `AUDIT_LOGIN`, `AUDIT_STOCK`, `AUDIT_ITEM_STATUS`, `AUDIT_ADMIN_ACTION`, `APP_SETTINGS`
 
 `APP_USER` (`id` surrogate PK, `username UNIQUE`, `role` — `"ADMIN"`/`"USER"`/`"SUPERADMIN"`, `sede_id` FK→`SEDE`, nullable) is a username→role/Sede mapping, unrelated to AD group membership (which gates app access at login, checked live against the AD API, not stored here) — see [Login screen and role-based admin mode](#login-screen-and-role-based-admin-mode). Renamed from `USER_ROLE` (which had no `sede_id` and no `SUPERADMIN` tier) on 2026-07-30 — see [Role-based permissions (RBAC)](#role-based-permissions-rbac-a-superadmin-tier-and-sede-scoped-admin-actions-2026-07-30). `ROLE_PERMISSION` (`role`, `permission`, PK on both) is the deny-by-default permission grant table the same feature added — a permission is denied unless a matching row exists.
 
@@ -1759,6 +2097,33 @@ Added 2026-07-14, replacing the panel's previous single free-text filter (`txtSn
 - **Filtering is instant/local, no "Buscar" button** — `applySnFilter()` just rebuilds `filteredSnRows`'s `Predicate` directly from the four selection `Set`s on every checkbox change, unlike History which re-queries the DB on `autoSearch()`.
 - **Filter selections survive a same-session data reload** (e.g. after editing a row's regex/active toggle via `openEditDialog()`, which calls `loadSnValidationData()` again) — `refreshSnFilterMenus()` rebuilds all four menus' *options* from the fresh `allSnRows` without touching the selection `Set`s, so an admin's active filter isn't wiped out by editing the very row they filtered to find. Only `handleClearSnFilters()` and the cascade-triggered `onSnTypeChanged()`/`onSnBrandChanged()` (changing Tipo/Marca deliberately resets the narrower downstream selections) clear a `Set`.
 - **Tests**: `SettingsControllerSnFilterTest.java` — exercises the cascade and Activo predicate directly against `MockEquipmentService`'s real `mock-equipment.json` data (Notebook/Monitor asset types) via reflection-injected fields, without needing a live `Skin` (same rationale as `UserNoteFallaPersistenceTest`'s reflection-seeding approach). `SettingsViewFxmlTest.java` loads `SettingsView.fxml` through a real `FXMLLoader` to catch `fx:id`/`onAction` typos in the new `mnuSnType`/`mnuSnBrand`/`mnuSnModel`/`mnuSnActive` MenuButtons.
+
+### S/N Validation "Editar" button — disabled, not hidden, for non-admins; stale error dialog removed (2026-08-06)
+
+Direct user report: `handleEditRow()`'s permission check showed "Activa el modo administrador
+desde Configuración para editar la validación S/N." when clicked without `EDIT_SN_VALIDATION` —
+stale, since the self-service "Activar modo administrador" toggle it pointed at was removed
+in the RBAC redesign (see [Role-based permissions (RBAC)](#role-based-permissions-rbac-a-superadmin-tier-and-sede-scoped-admin-actions-2026-07-30)).
+Explicit user direction: disable the button (visible but unusable), don't hide it — different
+from `DatabaseSectionController`'s CRUD buttons, which hide entirely (`updateCrudButtonVisibility()`).
+
+- `colSnEdit`'s cell factory now sets `btn.setDisable(!AdminSession.hasPermission(EDIT_SN_VALIDATION))`
+  on every `updateItem()`; `onAdminStateChanged()` (already wired to `AdminSession`'s activate/
+  deactivate listeners for `updateFieldEditability()`) now also calls `tblSnValidation.refresh()`,
+  so the disabled state updates immediately on an admin login/logout instead of only on the next
+  scroll or data reload.
+- **The permission check inside `handleEditRow()` itself was deleted outright, not just
+  re-worded** — caught by direct user question ("the button is disabled so it's unclickable,
+  right? Shouldn't you just remove the whole popup?"). Confirmed via grep: `handleEditRow()` is
+  `private` with exactly one caller (the button's own `onAction`), which cannot fire while the
+  button is disabled — genuinely unreachable, not just redundant. This is a different situation
+  from `DatabaseSectionController.requirePermission()`, which stays necessary even with its
+  buttons hidden, because it's a *shared* gate with a password-fallback path reused across many
+  call sites — a hidden button there doesn't guarantee every path into it is covered the way this
+  method's single caller does here. Removing the check also left `showErrorDialog()` with zero
+  remaining callers in this file, so it was deleted too rather than left unused.
+- No test changes — no test exercised the removed error path or asserted the button's `disable`
+  property; full suite: 493 tests passing, unchanged count.
 
 ### AD user-selection PopOver hover delay
 

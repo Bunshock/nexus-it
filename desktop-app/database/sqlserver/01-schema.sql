@@ -181,6 +181,59 @@ BEGIN
     );
 END
 
+-- Append-only audit trail. AUDIT_ADMIN_ACTION is deliberately generic (target_id NVARCHAR, not
+-- a typed FK) since it has to cover a heterogeneous set of admin actions (catalog CRUD, note
+-- approval/rejection, config changes, S/N validation edits, profile overrides) that don't share
+-- one FK target — the same "object_id as text" shape most real-world audit logs use (Django's
+-- LogEntry, Rails' PaperTrail). AUDIT_STOCK/AUDIT_ITEM_STATUS stay typed since each has one clear,
+-- single FK target worth keeping precise. old_value/new_value must NEVER hold an actual secret
+-- value (SMTP password, GLPI API key, AD token, DB credentials) — only that a change happened;
+-- enforced by the caller, not this schema. APP_USER/ROLE_PERMISSION changes are made via direct
+-- SQL, not through the app, so they are structurally outside what an app-level audit table can
+-- ever see — that would need a DB trigger, not an application-level insert.
+IF OBJECT_ID('dbo.AUDIT_LOGIN', 'U') IS NULL
+BEGIN
+    CREATE TABLE AUDIT_LOGIN (
+        id             INT IDENTITY(1,1) PRIMARY KEY,
+        username       NVARCHAR(100) NOT NULL,
+        success        INT NOT NULL,
+        failure_reason NVARCHAR(255),
+        attempted_at   DATETIME2 NOT NULL
+    );
+END
+
+IF OBJECT_ID('dbo.AUDIT_STOCK', 'U') IS NULL
+BEGIN
+    CREATE TABLE AUDIT_STOCK (
+        id            INT IDENTITY(1,1) PRIMARY KEY,
+        brand_type_id INT NOT NULL REFERENCES BRAND_TYPE_LINK(id),
+        model_id      INT NOT NULL REFERENCES MODEL(id),
+        sede_id       INT NOT NULL REFERENCES SEDE(id),
+        username      NVARCHAR(100) NOT NULL,
+        old_stock     INT NOT NULL,
+        new_stock     INT NOT NULL,
+        reason        NVARCHAR(500) NOT NULL,
+        changed_at    DATETIME2 NOT NULL
+    );
+END
+
+-- AUDIT_ADMIN_ACTION itself has no FK dependency on NOTE_ITEM/etc. so it's created here; see
+-- AUDIT_ITEM_STATUS further below, right after NOTE_ITEM and its subtype tables exist.
+IF OBJECT_ID('dbo.AUDIT_ADMIN_ACTION', 'U') IS NULL
+BEGIN
+    CREATE TABLE AUDIT_ADMIN_ACTION (
+        id           INT IDENTITY(1,1) PRIMARY KEY,
+        username     NVARCHAR(100) NOT NULL,
+        action       NVARCHAR(100) NOT NULL,
+        target_type  NVARCHAR(100) NOT NULL,
+        target_id    NVARCHAR(255),
+        old_value    NVARCHAR(1000),
+        new_value    NVARCHAR(1000),
+        reason       NVARCHAR(500),
+        performed_at DATETIME2 NOT NULL
+    );
+END
+
 -- glpi_synced/sede are deliberately absent here — both were confirmed dead (no reader/writer
 -- anywhere in the app) and are actively dropped from an existing database further down
 -- (dropDeadNoteReportColumns), never re-created for a fresh install. stock_applied guards
@@ -286,7 +339,8 @@ BEGIN
         type_id      INT NOT NULL REFERENCES TYPE(id),
         brand_id     INT NOT NULL REFERENCES BRAND(id),
         model_id     INT NOT NULL REFERENCES MODEL(id),
-        observations NVARCHAR(200)
+        observations NVARCHAR(200),
+        modifies_stock INT NOT NULL DEFAULT 1
     );
 END
 
@@ -330,6 +384,38 @@ BEGIN
     );
 END
 
+-- Row exists only for an item flagged "no modifica stock" — the overwhelming majority of items
+-- never use this exception, so the reason lives here rather than as an always-present-but-usually
+-- NULL column on NOTE_ITEM itself, same "row-absence means not applicable" precedent as every
+-- other conditional-reason table in this schema.
+IF OBJECT_ID('dbo.NOTE_ITEM_STOCK_EXCEPTION', 'U') IS NULL
+BEGIN
+    CREATE TABLE NOTE_ITEM_STOCK_EXCEPTION (
+        item_id INT PRIMARY KEY REFERENCES NOTE_ITEM(id),
+        reason  NVARCHAR(300) NOT NULL
+    );
+END
+
+-- Covers both GLPI and Préstamo/Provider return-status transitions in one table via a
+-- status_kind discriminator (both are the same "item's status moved from A to B" shape) —
+-- NOTE_ITEM_GLPI_TRACKING/NOTE_ITEM_RETURN_TRACKING only ever keep the latest status, never
+-- prior transitions. Created here, not alongside the other audit tables above, because it
+-- references NOTE_ITEM, which doesn't exist until this point in the script.
+IF OBJECT_ID('dbo.AUDIT_ITEM_STATUS', 'U') IS NULL
+BEGIN
+    CREATE TABLE AUDIT_ITEM_STATUS (
+        id          INT IDENTITY(1,1) PRIMARY KEY,
+        item_id     INT NOT NULL REFERENCES NOTE_ITEM(id),
+        status_kind NVARCHAR(20) NOT NULL CHECK (status_kind IN ('GLPI', 'RETURN')),
+        old_status  NVARCHAR(50) NOT NULL,
+        new_status  NVARCHAR(50) NOT NULL,
+        reason      NVARCHAR(500),
+        quantity    INT NOT NULL DEFAULT 1,
+        username    NVARCHAR(100) NOT NULL,
+        changed_at  DATETIME2 NOT NULL
+    );
+END
+
 -- ============================================================================
 -- Migrations for an already-running installation — CREATE TABLE-if-missing above silently
 -- no-ops on a database that already has the table from an older schema version, so every column
@@ -337,6 +423,13 @@ END
 -- block, kept in sync with RemoteDatabaseService.ensureSchema()'s own migration block, in the
 -- same order.
 -- ============================================================================
+
+-- quantity — how many units an AUDIT_ITEM_STATUS row concerns (1 for a whole-item transition,
+-- the real allocated amount for a partial countable batch). Added after AUDIT_ITEM_STATUS's own
+-- CREATE TABLE already shipped once — see the requires_serial migration below for why this can't
+-- just live in the CREATE TABLE block alone.
+IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE lower(table_name) = 'audit_item_status' AND lower(column_name) = 'quantity')
+    ALTER TABLE AUDIT_ITEM_STATUS ADD quantity INT NOT NULL DEFAULT 1;
 
 -- requires_serial replaces ItemDialogController's old hardcoded "Notebook".equals(type.getName())
 -- check. Only backfill requires_serial=1 for the existing Notebook-named type on the run that
@@ -540,6 +633,37 @@ END
 
 IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE lower(table_name) = 'note_report' AND lower(column_name) = 'stock_applied')
     ALTER TABLE NOTE_REPORT ADD stock_applied INT NOT NULL DEFAULT 0;
+
+-- approval_status's rejected value was originally the Spanish "RECHAZADO" — inconsistent with its
+-- siblings PENDING/APPROVED (English). Renamed to REJECTED in the app; any row already written
+-- under the old value must be updated too, or it silently stops matching the app's own code.
+UPDATE NOTE_REPORT SET approval_status = 'REJECTED' WHERE approval_status = 'RECHAZADO';
+
+-- profile_type's Provider-note value was originally mixed-case "Entrega - Proveedor" —
+-- inconsistent with the other ALL-CAPS literal values ("ENTREGA", "DEVOLUCIÓN", "PRÉSTAMO",
+-- "ENTREGA PERMANENTE"). Renamed to "ENTREGA - PROVEEDOR" in the app.
+UPDATE NOTE_REPORT SET profile_type = 'ENTREGA - PROVEEDOR' WHERE profile_type = 'Entrega - Proveedor';
+
+-- DEFAULT 1 preserves existing items' current behavior (stock already applies normally) — only a
+-- newly-created item can opt out, via ItemDialogController's "Modifica stock" checkbox.
+IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE lower(table_name) = 'note_item' AND lower(column_name) = 'modifies_stock')
+    ALTER TABLE NOTE_ITEM ADD modifies_stock INT NOT NULL DEFAULT 1;
+
+-- Technician-supplied justification for the exception above, captured by ItemDialogController's
+-- confirmation popup — kept for admin audit purposes, in its own row (NOTE_ITEM_STOCK_EXCEPTION
+-- above), not a nullable column here, since only a small minority of items ever use this
+-- exception. Only relevant if this script was ever run against a database that briefly had
+-- modifies_stock_reason as a NOTE_ITEM column during development — a brand-new install never
+-- creates it there at all.
+IF EXISTS (SELECT 1 FROM information_schema.columns WHERE lower(table_name) = 'note_item' AND lower(column_name) = 'modifies_stock_reason')
+BEGIN
+    INSERT INTO NOTE_ITEM_STOCK_EXCEPTION (item_id, reason)
+    SELECT i.id, i.modifies_stock_reason FROM NOTE_ITEM i
+    WHERE i.modifies_stock_reason IS NOT NULL AND LTRIM(RTRIM(i.modifies_stock_reason)) <> ''
+    AND NOT EXISTS (SELECT 1 FROM NOTE_ITEM_STOCK_EXCEPTION WHERE item_id = i.id);
+
+    ALTER TABLE NOTE_ITEM DROP COLUMN modifies_stock_reason;
+END
 
 -- NOTE_REMITO.stock_applied used to be its own idempotency flag, only for Remito notes. Once
 -- every note type started moving stock on approval, "has this note's stock effect already been

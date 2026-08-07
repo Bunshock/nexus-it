@@ -178,6 +178,59 @@ class DatabaseServiceMigrationTest {
         }
     }
 
+    // modifies_stock_reason briefly existed as a nullable column directly on NOTE_ITEM, during
+    // development of the "Modifica stock" exception checkbox — reverted before ever shipping once
+    // that shape was flagged as inconsistent with this schema's own standing normalization rule
+    // (a reason column that's NULL on the overwhelming majority of rows). Reproduces a database
+    // that ran through that brief window (this local dev database included) to confirm
+    // migrateSchema() backfills it into NOTE_ITEM_STOCK_EXCEPTION and drops the column, not just
+    // skips re-adding it on a fresh install.
+    @Test
+    void migrateSchemaBackfillsStockExceptionReasonIntoOwnTableAndDropsColumn() throws Exception {
+        String url = "jdbc:sqlite:" + tempDir.resolve("dead-stock-exception-reason.db").toAbsolutePath();
+
+        try (Connection c = DriverManager.getConnection(url); Statement stmt = c.createStatement()) {
+            invokeCreateEquipmentTables(stmt);
+            stmt.executeUpdate("""
+                CREATE TABLE NOTE_REPORT (
+                    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                    created_at   TEXT NOT NULL,
+                    profile_type TEXT NOT NULL
+                )""");
+            stmt.executeUpdate("INSERT INTO NOTE_REPORT (id, created_at, profile_type) VALUES (1, '2026-01-01T10:00', 'ENTREGA')");
+            stmt.executeUpdate("INSERT INTO TYPE (id, name) VALUES (1, 'NOTEBOOK')");
+            stmt.executeUpdate("INSERT INTO BRAND (id, name) VALUES (1, 'DELL')");
+            stmt.executeUpdate("INSERT INTO BRAND_TYPE_LINK (id, type_id, brand_id) VALUES (1, 1, 1)");
+            stmt.executeUpdate("INSERT INTO MODEL (id, brand_type_id, name) VALUES (1, 1, 'LATITUDE')");
+
+            stmt.executeUpdate("""
+                CREATE TABLE NOTE_ITEM (
+                    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                    note_id        INTEGER NOT NULL REFERENCES NOTE_REPORT(id),
+                    type_id        INTEGER NOT NULL REFERENCES TYPE(id),
+                    brand_id       INTEGER NOT NULL REFERENCES BRAND(id),
+                    model_id       INTEGER NOT NULL REFERENCES MODEL(id),
+                    observations   TEXT,
+                    modifies_stock INTEGER NOT NULL DEFAULT 1,
+                    modifies_stock_reason TEXT
+                )""");
+            stmt.executeUpdate("""
+                INSERT INTO NOTE_ITEM (id, note_id, type_id, brand_id, model_id, modifies_stock, modifies_stock_reason)
+                VALUES (1, 1, 1, 1, 1, 0, 'Equipo ya entregado informalmente, se formaliza la nota')""");
+            stmt.executeUpdate("""
+                INSERT INTO NOTE_ITEM (id, note_id, type_id, brand_id, model_id, modifies_stock, modifies_stock_reason)
+                VALUES (2, 1, 1, 1, 1, 1, NULL)""");
+
+            invokeCreateHistoryTables(stmt);
+            invokeMigrateSchema(c, stmt);
+
+            assertFalse(hasColumn(c, "NOTE_ITEM", "modifies_stock_reason"));
+            assertEquals("Equipo ya entregado informalmente, se formaliza la nota",
+                singleString(c, "SELECT reason FROM NOTE_ITEM_STOCK_EXCEPTION WHERE item_id = 1"));
+            assertFalse(rowExists(c, "SELECT 1 FROM NOTE_ITEM_STOCK_EXCEPTION WHERE item_id = 2"));
+        }
+    }
+
     // failure_cause/failure_details/area_evento used to sit
     // inline on NOTE_ENTREGA_DEVOLUCION, nullable on every row regardless of profile type/motivo.
     // Reproduces an installation with one Devolución+Falla note and one Préstamo note with an
@@ -530,6 +583,84 @@ class DatabaseServiceMigrationTest {
     }
 
     @Test
+    void createAuditTablesCreatesAllFourAuditTables() throws Exception {
+        String url = "jdbc:sqlite:" + tempDir.resolve("audit-tables.db").toAbsolutePath();
+        try (Connection c = DriverManager.getConnection(url); Statement stmt = c.createStatement()) {
+            invokeCreateEquipmentTables(stmt);
+            invokeCreateHistoryTables(stmt);
+            invokeCreateAuditTables(stmt);
+
+            assertTrue(tableExists(c, "AUDIT_LOGIN"));
+            assertTrue(tableExists(c, "AUDIT_STOCK"));
+            assertTrue(tableExists(c, "AUDIT_ITEM_STATUS"));
+            assertTrue(tableExists(c, "AUDIT_ADMIN_ACTION"));
+        }
+    }
+
+    // Reproduces a real crash: CREATE TABLE IF NOT EXISTS is a no-op on a database that already
+    // created AUDIT_ITEM_STATUS before the quantity column existed (exactly what happened to an
+    // install that had already run createAuditTables() once this session) — migrateSchema() must
+    // still backfill it via addColumnIfMissing(), not just the CREATE TABLE block.
+    @Test
+    void migrateSchemaAddsQuantityColumnToAPreExistingAuditItemStatusTable() throws Exception {
+        String url = "jdbc:sqlite:" + tempDir.resolve("audit-item-status-migration.db").toAbsolutePath();
+        try (Connection c = DriverManager.getConnection(url); Statement stmt = c.createStatement()) {
+            invokeCreateEquipmentTables(stmt);
+            invokeCreateHistoryTables(stmt);
+            // Reproduce the old (pre-quantity) shape directly, same as a real pre-existing install.
+            stmt.executeUpdate("""
+                CREATE TABLE AUDIT_ITEM_STATUS (
+                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                    item_id     INTEGER NOT NULL REFERENCES NOTE_ITEM(id),
+                    status_kind TEXT NOT NULL,
+                    old_status  TEXT NOT NULL,
+                    new_status  TEXT NOT NULL,
+                    reason      TEXT,
+                    username    TEXT NOT NULL,
+                    changed_at  TEXT NOT NULL
+                )""");
+            assertFalse(hasColumn(c, "AUDIT_ITEM_STATUS", "quantity"));
+
+            invokeMigrateSchema(c, stmt);
+
+            assertTrue(hasColumn(c, "AUDIT_ITEM_STATUS", "quantity"));
+            // Real insert omitting quantity — confirms the migration didn't just add the column
+            // but added it with a DEFAULT that actually satisfies NOT NULL on a normal insert
+            // (this is exactly what SqliteAuditService's real INSERT does for an installation
+            // that already had rows before this column existed).
+            stmt.executeUpdate("""
+                INSERT INTO AUDIT_ITEM_STATUS (item_id, status_kind, old_status, new_status, username, changed_at)
+                VALUES (1, 'GLPI', 'PENDING', 'SYNCED', 'jperez', '2026-08-06T00:00:00')
+                """);
+            assertEquals(1, singleInt(c, "SELECT quantity FROM AUDIT_ITEM_STATUS WHERE item_id = 1"));
+        }
+    }
+
+    // approval_status's rejected value and profile_type's Provider-note value were both renamed
+    // to match this project's English-code/ALL-CAPS-literal conventions (RECHAZADO -> REJECTED,
+    // "Entrega - Proveedor" -> "ENTREGA - PROVEEDOR") — both need existing rows migrated, not
+    // just new writes fixed. Also guards against the real regression this exact change caused:
+    // the RECHAZADO migration originally ran unconditionally and crashed every other test in this
+    // file that hand-builds a NOTE_REPORT without an approval_status column at all.
+    @Test
+    void migrateSchemaUpdatesLegacyApprovalStatusAndProfileTypeValues() throws Exception {
+        String url = "jdbc:sqlite:" + tempDir.resolve("legacy-status-values.db").toAbsolutePath();
+        try (Connection c = DriverManager.getConnection(url); Statement stmt = c.createStatement()) {
+            invokeCreateEquipmentTables(stmt);
+            invokeCreateHistoryTables(stmt);
+            stmt.executeUpdate("""
+                INSERT INTO NOTE_REPORT (created_at, profile_type, approval_status)
+                VALUES ('2026-08-06T00:00:00', 'Entrega - Proveedor', 'RECHAZADO')
+                """);
+
+            invokeMigrateSchema(c, stmt);
+
+            assertEquals("REJECTED", singleString(c, "SELECT approval_status FROM NOTE_REPORT"));
+            assertEquals("ENTREGA - PROVEEDOR", singleString(c, "SELECT profile_type FROM NOTE_REPORT"));
+        }
+    }
+
+    @Test
     void createHistoryTablesCreatesNoteRemitoTable() throws Exception {
         String url = "jdbc:sqlite:" + tempDir.resolve("note-remito-table.db").toAbsolutePath();
         try (Connection c = DriverManager.getConnection(url); Statement stmt = c.createStatement()) {
@@ -733,6 +864,12 @@ class DatabaseServiceMigrationTest {
         Method createEquipmentTables = DatabaseService.class.getDeclaredMethod("createEquipmentTables", Statement.class);
         createEquipmentTables.setAccessible(true);
         createEquipmentTables.invoke(DatabaseService.getInstance(), stmt);
+    }
+
+    private void invokeCreateAuditTables(Statement stmt) throws Exception {
+        Method m = DatabaseService.class.getDeclaredMethod("createAuditTables", Statement.class);
+        m.setAccessible(true);
+        m.invoke(DatabaseService.getInstance(), stmt);
     }
 
     private boolean hasColumn(Connection c, String table, String column) throws SQLException {

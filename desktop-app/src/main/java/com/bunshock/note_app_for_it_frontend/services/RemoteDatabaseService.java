@@ -202,6 +202,48 @@ public class RemoteDatabaseService {
                     CONSTRAINT pk_role_permission PRIMARY KEY (role, permission)
                 )""");
             if (!rolePermissionExisted) seedDefaultRolePermissions(stmt);
+
+            // Append-only audit trail — see DatabaseService's identical SQLite copy for the full
+            // rationale on why AUDIT_ADMIN_ACTION is generic (target_id TEXT) while
+            // AUDIT_STOCK/AUDIT_ITEM_STATUS stay typed, and why old_value/new_value must never
+            // hold an actual secret value, and why APP_USER/ROLE_PERMISSION changes (direct-SQL
+            // only) are structurally outside what an app-level audit table can ever see.
+            createTableIfMissing(stmt, "AUDIT_LOGIN", """
+                CREATE TABLE AUDIT_LOGIN (
+                    id             INT IDENTITY(1,1) PRIMARY KEY,
+                    username       NVARCHAR(100) NOT NULL,
+                    success        INT NOT NULL,
+                    failure_reason NVARCHAR(255),
+                    attempted_at   DATETIME2 NOT NULL
+                )""");
+            createTableIfMissing(stmt, "AUDIT_STOCK", """
+                CREATE TABLE AUDIT_STOCK (
+                    id            INT IDENTITY(1,1) PRIMARY KEY,
+                    brand_type_id INT NOT NULL REFERENCES BRAND_TYPE_LINK(id),
+                    model_id      INT NOT NULL REFERENCES MODEL(id),
+                    sede_id       INT NOT NULL REFERENCES SEDE(id),
+                    username      NVARCHAR(100) NOT NULL,
+                    old_stock     INT NOT NULL,
+                    new_stock     INT NOT NULL,
+                    reason        NVARCHAR(500) NOT NULL,
+                    changed_at    DATETIME2 NOT NULL
+                )""");
+            // AUDIT_ITEM_STATUS (references NOTE_ITEM) is created further down, right after
+            // NOTE_ITEM and its subtype tables exist — SQL Server validates FK targets at
+            // CREATE TABLE time, unlike SQLite, so it can't be declared this early.
+            createTableIfMissing(stmt, "AUDIT_ADMIN_ACTION", """
+                CREATE TABLE AUDIT_ADMIN_ACTION (
+                    id           INT IDENTITY(1,1) PRIMARY KEY,
+                    username     NVARCHAR(100) NOT NULL,
+                    action       NVARCHAR(100) NOT NULL,
+                    target_type  NVARCHAR(100) NOT NULL,
+                    target_id    NVARCHAR(255),
+                    old_value    NVARCHAR(1000),
+                    new_value    NVARCHAR(1000),
+                    reason       NVARCHAR(500),
+                    performed_at DATETIME2 NOT NULL
+                )""");
+
             // created_at is a real DATETIME2 — see dropDeadNoteReportColumns()/
             // migrateTimestampColumnsToDatetime2() below for the migration path on an
             // already-running installation). SqliteHistoryService writes it via plain
@@ -294,7 +336,8 @@ public class RemoteDatabaseService {
                     type_id      INT NOT NULL REFERENCES TYPE(id),
                     brand_id     INT NOT NULL REFERENCES BRAND(id),
                     model_id     INT NOT NULL REFERENCES MODEL(id),
-                    observations NVARCHAR(200)
+                    observations NVARCHAR(200),
+                    modifies_stock INT NOT NULL DEFAULT 1
                 )""");
             createTableIfMissing(stmt, "NOTE_ITEM_ASSET", """
                 CREATE TABLE NOTE_ITEM_ASSET (
@@ -337,6 +380,36 @@ public class RemoteDatabaseService {
                     rejection_reason  NVARCHAR(300),
                     status_updated_at DATETIME2
                 )""");
+            // Row exists only for an item flagged "no modifica stock" — the overwhelming majority
+            // of items never use this exception, so the reason lives here rather than as an
+            // always-present-but-usually-NULL column on NOTE_ITEM itself, same "row-absence means
+            // not applicable" precedent as every other conditional-reason table in this schema.
+            createTableIfMissing(stmt, "NOTE_ITEM_STOCK_EXCEPTION", """
+                CREATE TABLE NOTE_ITEM_STOCK_EXCEPTION (
+                    item_id INT PRIMARY KEY REFERENCES NOTE_ITEM(id),
+                    reason  NVARCHAR(300) NOT NULL
+                )""");
+            // Covers both GLPI and Préstamo/Provider return-status transitions in one table via
+            // a status_kind discriminator — see DatabaseService's identical SQLite copy for the
+            // full rationale (both are the same "item's status moved from A to B" shape, and
+            // NOTE_ITEM_GLPI_TRACKING/NOTE_ITEM_RETURN_TRACKING only ever keep the latest status,
+            // never prior transitions).
+            createTableIfMissing(stmt, "AUDIT_ITEM_STATUS", """
+                CREATE TABLE AUDIT_ITEM_STATUS (
+                    id          INT IDENTITY(1,1) PRIMARY KEY,
+                    item_id     INT NOT NULL REFERENCES NOTE_ITEM(id),
+                    status_kind NVARCHAR(20) NOT NULL CHECK (status_kind IN ('GLPI', 'RETURN')),
+                    old_status  NVARCHAR(50) NOT NULL,
+                    new_status  NVARCHAR(50) NOT NULL,
+                    reason      NVARCHAR(500),
+                    quantity    INT NOT NULL DEFAULT 1,
+                    username    NVARCHAR(100) NOT NULL,
+                    changed_at  DATETIME2 NOT NULL
+                )""");
+            // Added after AUDIT_ITEM_STATUS's own CREATE TABLE already shipped once — see
+            // DatabaseService's identical SQLite migration for why this can't just live in the
+            // CREATE TABLE block alone.
+            addColumnIfMissing(stmt, c, "AUDIT_ITEM_STATUS", "quantity", "INT NOT NULL DEFAULT 1");
             // Countable items can be resolved in partial batches over time (e.g. 5 loaned
             // headsets: 3 returned now, 1 lost later, 1 still pending) — a single status column
             // can't express that, so each partial action gets its own append-only row here
@@ -407,6 +480,16 @@ public class RemoteDatabaseService {
             migrateTimestampColumnsToDatetime2(stmt, c);
             addColumnIfMissing(stmt, c, "NOTE_REPORT", "stock_applied", "INT NOT NULL DEFAULT 0");
             migrateStockAppliedSchema(stmt, c);
+            // approval_status's rejected value was originally the Spanish "RECHAZADO" —
+            // inconsistent with its siblings PENDING/APPROVED (English). Renamed to REJECTED in
+            // code; any row already written under the old value must be updated too, or it
+            // silently stops matching any switch/if branch. Safe on every run — a no-op once no
+            // row has the old value left.
+            stmt.executeUpdate("UPDATE NOTE_REPORT SET approval_status = 'REJECTED' WHERE approval_status = 'RECHAZADO'");
+            // profile_type's Provider-note value was originally mixed-case "Entrega - Proveedor"
+            // — inconsistent with the other ALL-CAPS literal values. See DatabaseService's
+            // identical SQLite migration for the full rationale.
+            stmt.executeUpdate("UPDATE NOTE_REPORT SET profile_type = 'ENTREGA - PROVEEDOR' WHERE profile_type = 'Entrega - Proveedor'");
 
             if (noteItemStillWide) {
                 migrateNoteItemSchema(stmt, c);
@@ -424,6 +507,13 @@ public class RemoteDatabaseService {
             migrateCatalogFkSchema(stmt, c);
             migrateGenericModelSchema(stmt, c);
             cleanupStrayGenericBrandLinks(c);
+
+            // DEFAULT 1 preserves existing items' current behavior. modifies_stock itself was
+            // previously only declared on the CREATE TABLE path — createTableIfMissing() is a
+            // no-op once NOTE_ITEM already exists, so an already-running installation never
+            // actually got this column added until now.
+            addColumnIfMissing(stmt, c, "NOTE_ITEM", "modifies_stock", "INT NOT NULL DEFAULT 1");
+            migrateStockExceptionReasonSchema(stmt, c);
 
             // Narrow any of the above columns that a pre-existing installation already created as
             // NVARCHAR(MAX) (either via an older CREATE TABLE or an older ADD COLUMN call above,
@@ -1079,6 +1169,28 @@ public class RemoteDatabaseService {
     // Javadoc for the full rationale. T-SQL has no INSERT OR IGNORE, so a NOT EXISTS guard makes
     // the backfill safely re-runnable if the DROP COLUMN below fails partway and this method
     // retries on next startup with the column still present.
+    // A first attempt at this feature added modifies_stock_reason directly as a nullable column
+    // on NOTE_ITEM — reverted before shipping once a nullable-on-every-row shape was flagged as
+    // inconsistent with this schema's own standing normalization rule (see
+    // migrateRejectionReasonSchema()'s identical split, just below, for the established
+    // precedent). No live SQL Server instance in this project's test infrastructure ever ran the
+    // old shape, so this is defensive/no-op on every real remote installation — kept only for
+    // parity with DatabaseService's own migration, which a local SQLite database genuinely needed.
+    private void migrateStockExceptionReasonSchema(Statement stmt, Connection c) throws SQLException {
+        if (!columnExists(c, "NOTE_ITEM", "modifies_stock_reason")) return;
+        stmt.executeUpdate("""
+            INSERT INTO NOTE_ITEM_STOCK_EXCEPTION (item_id, reason)
+            SELECT i.id, i.modifies_stock_reason FROM NOTE_ITEM i
+            WHERE i.modifies_stock_reason IS NOT NULL AND LTRIM(RTRIM(i.modifies_stock_reason)) <> ''
+            AND NOT EXISTS (SELECT 1 FROM NOTE_ITEM_STOCK_EXCEPTION WHERE item_id = i.id)
+            """);
+        try {
+            stmt.executeUpdate("ALTER TABLE NOTE_ITEM DROP COLUMN modifies_stock_reason");
+        } catch (SQLException ignored) {
+            // leave it for next startup to retry
+        }
+    }
+
     private void migrateRejectionReasonSchema(Statement stmt, Connection c) throws SQLException {
         if (!columnExists(c, "NOTE_REPORT", "rejection_reason")) return;
         stmt.executeUpdate("""

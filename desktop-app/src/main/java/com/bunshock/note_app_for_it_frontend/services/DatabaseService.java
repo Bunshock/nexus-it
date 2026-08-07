@@ -39,6 +39,7 @@ public class DatabaseService {
             createHistoryTables(stmt);
             createSettingsTable(stmt);
             createUserRoleTable(stmt);
+            createAuditTables(stmt);
             migrateSchema(conn, stmt);
             insertDefaultData(stmt);
         }
@@ -48,6 +49,36 @@ public class DatabaseService {
     // table from an older schema version, so newly added columns never land on disk —
     // each column added after the initial release must be migrated in here too.
     private void migrateSchema(Connection conn, Statement stmt) throws SQLException {
+        // approval_status's rejected value was originally the Spanish "RECHAZADO" — inconsistent
+        // with its siblings PENDING/APPROVED (English, per this project's code-in-English
+        // convention; only UI-facing display text stays Spanish). Renamed to REJECTED in code;
+        // any row already written under the old value must be updated too, or it silently stops
+        // matching any switch/if branch and misdisplays as "Pendiente" while staying stuck
+        // (nothing re-shows the Aprobar/Rechazar buttons for a status that isn't literally
+        // "PENDING"). Safe to run on every startup — a no-op once no row has the old value left.
+        // Guarded on columnExists() — a database from before the approval workflow existed (or
+        // this file's own minimal test fixtures reproducing that shape) has no approval_status
+        // column at all yet.
+        if (columnExists(conn, "NOTE_REPORT", "approval_status")) {
+            stmt.executeUpdate("UPDATE NOTE_REPORT SET approval_status = 'REJECTED' WHERE approval_status = 'RECHAZADO'");
+        }
+        // profile_type's Provider-note value was originally the mixed-case "Entrega - Proveedor"
+        // — inconsistent with the other three literal values ("ENTREGA", "DEVOLUCIÓN", "PRÉSTAMO",
+        // "ENTREGA PERMANENTE"), all ALL-CAPS. Renamed to "ENTREGA - PROVEEDOR" in
+        // NoteGeneratorController; every toDisplayName() duplicate already had a dedicated,
+        // previously-dead switch case expecting exactly this value (case "ENTREGA - PROVEEDOR" ->
+        // "Entrega - Proveedor"), so this also makes that case finally get exercised instead of
+        // silently falling through to the default branch. Not strictly required for correctness —
+        // every read site either uses equalsIgnoreCase() or the same graceful default fallback, so
+        // an old mixed-case row was never actually broken by this — but kept consistent with every
+        // other raw-value column in this schema rather than leaving one exception in place.
+        stmt.executeUpdate("UPDATE NOTE_REPORT SET profile_type = 'ENTREGA - PROVEEDOR' WHERE profile_type = 'Entrega - Proveedor'");
+        // Added after AUDIT_ITEM_STATUS's own CREATE TABLE already shipped once this session —
+        // CREATE TABLE IF NOT EXISTS is a no-op on a database that already has the table, so an
+        // install that created it before this column existed would otherwise never get it.
+        // DEFAULT 1 is required here, not optional — SQLite rejects ADD COLUMN ... NOT NULL on a
+        // table with existing rows unless a default is supplied.
+        addColumnIfMissing(stmt, "AUDIT_ITEM_STATUS", "quantity", "INTEGER NOT NULL DEFAULT 1");
         // failure_cause/failure_details/area_evento (the old, already-released columns) are
         // deliberately NOT re-added here — they're dead going forward, split into
         // NOTE_DEVOLUCION_FALLA/NOTE_PRESTAMO_AREA_EVENTO instead (see
@@ -115,6 +146,29 @@ public class DatabaseService {
         migrateGenericModelSchema(conn, stmt);
         migrateModelStockSedeSchema(conn, stmt);
         cleanupStrayGenericBrandLinks(conn);
+
+        // Added after every NOTE_ITEM-rebuilding migration above, so it lands correctly
+        // regardless of which shape an existing database's NOTE_ITEM table was migrated through.
+        // DEFAULT 1 preserves today's behavior for every existing item (stock already applied
+        // normally) — only newly-created items can opt out via the dialog checkbox.
+        addColumnIfMissing(stmt, "NOTE_ITEM", "modifies_stock", "INTEGER NOT NULL DEFAULT 1");
+        migrateStockExceptionReasonSchema(conn, stmt);
+    }
+
+    // A first attempt at this feature added modifies_stock_reason directly as a nullable column
+    // on NOTE_ITEM — reverted before ever being committed once a nullable-on-every-row shape was
+    // flagged as inconsistent with this schema's own standing normalization rule (see
+    // NOTE_REPORT_REJECTION's identical split). Only matters for a database that happened to run
+    // through the brief window where that column existed (this local dev database included) —
+    // a brand-new install never creates the column at all, so this is a no-op there.
+    private void migrateStockExceptionReasonSchema(Connection conn, Statement stmt) throws SQLException {
+        if (!columnExists(conn, "NOTE_ITEM", "modifies_stock_reason")) return;
+        stmt.executeUpdate("""
+            INSERT INTO NOTE_ITEM_STOCK_EXCEPTION (item_id, reason)
+            SELECT id, modifies_stock_reason FROM NOTE_ITEM
+            WHERE modifies_stock_reason IS NOT NULL AND modifies_stock_reason <> ''
+            """);
+        stmt.executeUpdate("ALTER TABLE NOTE_ITEM DROP COLUMN modifies_stock_reason");
     }
 
     // MODEL_STOCK gained sede_id as part of its primary key — stock is now tracked per Sede,
@@ -1081,7 +1135,8 @@ public class DatabaseService {
                 type_id      INTEGER NOT NULL REFERENCES TYPE(id),
                 brand_id     INTEGER NOT NULL REFERENCES BRAND(id),
                 model_id     INTEGER NOT NULL REFERENCES MODEL(id),
-                observations TEXT
+                observations TEXT,
+                modifies_stock INTEGER NOT NULL DEFAULT 1
             )""");
 
         stmt.executeUpdate("""
@@ -1114,6 +1169,17 @@ public class DatabaseService {
                 status            TEXT NOT NULL,
                 rejection_reason  TEXT,
                 status_updated_at TEXT
+            )""");
+
+        // Row exists only for an item flagged "no modifica stock" (NOTE_ITEM.modifies_stock = 0)
+        // — the overwhelming majority of items never use this exception, so the reason lives here
+        // rather than as an always-present-but-usually-NULL column on NOTE_ITEM itself, same
+        // "row-absence means not applicable" precedent as every other conditional-reason table in
+        // this schema (NOTE_REPORT_REJECTION, NOTE_ITEM_GLPI_TRACKING.rejection_reason's own row).
+        stmt.executeUpdate("""
+            CREATE TABLE IF NOT EXISTS NOTE_ITEM_STOCK_EXCEPTION (
+                item_id INTEGER PRIMARY KEY REFERENCES NOTE_ITEM(id),
+                reason  TEXT NOT NULL
             )""");
 
         // A second, independent GLPI dimension for a returnable Provider note's asset items only
@@ -1217,6 +1283,88 @@ public class DatabaseService {
             }
             stmt.executeUpdate("INSERT INTO ROLE_PERMISSION (role, permission) VALUES ('SUPERADMIN', '" + p.name() + "')");
         }
+    }
+
+    // Append-only audit trail — 4 tables, one per concern rather than a single fully generic
+    // table, since 3 of the 4 have enough real structure (typed FKs, typed old/new columns) to
+    // be worth keeping precise. AUDIT_ADMIN_ACTION is the deliberate exception: a generic
+    // action/target_type/target_id/old_value/new_value shape, since it has to cover a genuinely
+    // heterogeneous set of admin actions (catalog CRUD, note approval/rejection, config changes,
+    // S/N validation edits, profile overrides) that don't share one FK target — the same
+    // "object_id as text" shape most real-world audit logs use (Django's LogEntry, Rails'
+    // PaperTrail) for exactly this reason. target_id is TEXT, not INTEGER, since it sometimes
+    // holds a settings key (e.g. "glpi_api_key") rather than a numeric row id.
+    //
+    // Deliberately excluded: old_value/new_value must NEVER hold an actual secret value (SMTP
+    // password, GLPI API key, AD token, DB credentials) — only that a change happened. This is
+    // enforced by whoever calls IAuditService.recordAdminAction(), not by this schema; flagged
+    // here so it isn't missed when EDIT_SMTP_CONFIG/EDIT_GLPI_CONFIG/EDIT_AD_CONFIG get wired in.
+    //
+    // Also deliberately out of reach of this table entirely: APP_USER/ROLE_PERMISSION changes
+    // (role, Sede, permission grants) are made via direct SQL, not through the app (see
+    // IUserRoleService's own Javadoc) — an app-level audit table structurally cannot see those
+    // writes. Auditing that would need a DB trigger, not an application-level insert.
+    private void createAuditTables(Statement stmt) throws SQLException {
+        // No FK to APP_USER — a failed login attempt's username may not be a registered account
+        // at all (a typo, or someone probing), and APP_USER only has rows for accounts a
+        // superadmin has actually registered/promoted.
+        stmt.executeUpdate("""
+            CREATE TABLE IF NOT EXISTS AUDIT_LOGIN (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                username       TEXT NOT NULL,
+                success        INTEGER NOT NULL,
+                failure_reason TEXT,
+                attempted_at   TEXT NOT NULL
+            )""");
+
+        // reason is NOT NULL — the Base de Datos "Stock"/"Editar modelo" dialogs both require a
+        // reason before saving (see DatabaseSectionController.promptStockChangeReason()).
+        // old_stock/new_stock stay real INTEGER columns rather than folding into
+        // AUDIT_ADMIN_ACTION's generic TEXT old_value/new_value, since these are genuinely
+        // numeric and worth precise typing for a DBA running aggregate queries later.
+        stmt.executeUpdate("""
+            CREATE TABLE IF NOT EXISTS AUDIT_STOCK (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                brand_type_id INTEGER NOT NULL REFERENCES BRAND_TYPE_LINK(id),
+                model_id      INTEGER NOT NULL REFERENCES MODEL(id),
+                sede_id       INTEGER NOT NULL REFERENCES SEDE(id),
+                username      TEXT NOT NULL,
+                old_stock     INTEGER NOT NULL,
+                new_stock     INTEGER NOT NULL,
+                reason        TEXT NOT NULL,
+                changed_at    TEXT NOT NULL
+            )""");
+
+        // Covers both GLPI and Préstamo/Provider return-status transitions in one table via a
+        // status_kind discriminator, rather than two near-identical tables — both are the exact
+        // same shape (an item's status moved from A to B, by whom, when, optionally why). This
+        // is a genuine current-state history NOTE_ITEM_GLPI_TRACKING/NOTE_ITEM_RETURN_TRACKING
+        // don't provide today — those only ever keep the latest status, never prior transitions.
+        stmt.executeUpdate("""
+            CREATE TABLE IF NOT EXISTS AUDIT_ITEM_STATUS (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                item_id     INTEGER NOT NULL REFERENCES NOTE_ITEM(id),
+                status_kind TEXT NOT NULL CHECK (status_kind IN ('GLPI', 'RETURN')),
+                old_status  TEXT NOT NULL,
+                new_status  TEXT NOT NULL,
+                reason      TEXT,
+                quantity    INTEGER NOT NULL DEFAULT 1,
+                username    TEXT NOT NULL,
+                changed_at  TEXT NOT NULL
+            )""");
+
+        stmt.executeUpdate("""
+            CREATE TABLE IF NOT EXISTS AUDIT_ADMIN_ACTION (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                username     TEXT NOT NULL,
+                action       TEXT NOT NULL,
+                target_type  TEXT NOT NULL,
+                target_id    TEXT,
+                old_value    TEXT,
+                new_value    TEXT,
+                reason       TEXT,
+                performed_at TEXT NOT NULL
+            )""");
     }
 
     private void insertDefaultData(Statement stmt) throws SQLException {
