@@ -68,7 +68,7 @@ class PrestamoHistoryControllerTest {
     @Test
     void approvalStatusColorRechazadoIsRed() throws Exception {
         NoteReport r = reportWith(1, 0, 0);
-        r.setApprovalStatus("RECHAZADO");
+        r.setApprovalStatus("REJECTED");
         assertEquals("#ef4444", approvalStatusColor(r));
     }
 
@@ -262,7 +262,7 @@ class PrestamoHistoryControllerTest {
         NoteReport stillAwaitingApproval = reportWith(1, 0, 0);
         stillAwaitingApproval.setApprovalStatus("PENDING");
         NoteReport rejected = reportWith(1, 0, 0);
-        rejected.setApprovalStatus("RECHAZADO");
+        rejected.setApprovalStatus("REJECTED");
 
         javafx.scene.control.Label lbl = invokeUpdatePendingReturnsLabel(
             List.of(approvedPending, stillAwaitingApproval, rejected));
@@ -289,7 +289,7 @@ class PrestamoHistoryControllerTest {
     void updatePendingApprovalLabelHiddenWhenNothingIsPending() throws Exception {
         NoteReport approved = reportWith(1, 0, 0);
         NoteReport rejected = reportWith(0, 1, 0);
-        rejected.setApprovalStatus("RECHAZADO");
+        rejected.setApprovalStatus("REJECTED");
 
         javafx.scene.control.Label lbl = invokeUpdatePendingApprovalLabel(List.of(approved, rejected));
         assertFalse(lbl.isVisible());

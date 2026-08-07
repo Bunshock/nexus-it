@@ -250,7 +250,7 @@ class HistoryControllerTest {
         assertEquals("Devolución", toDisplayName("DEVOLUCIÓN"));
         assertEquals("Préstamo", toDisplayName("PRÉSTAMO"));
         assertEquals("Entrega Permanente", toDisplayName("ENTREGA PERMANENTE"));
-        assertEquals("Entrega - Proveedor", toDisplayName("Entrega - Proveedor"));
+        assertEquals("Entrega - Proveedor", toDisplayName("ENTREGA - PROVEEDOR"));
         assertEquals("Remito de Envío", toDisplayName("REMITO DE ENVÍO"));
     }
 
@@ -413,7 +413,7 @@ class HistoryControllerTest {
         HistoryController c = controllerWithFilterFieldsSeeded();
         selApprovalStatusesField(c).add("Rechazada");
         HistoryFilter f = buildFilter(c);
-        assertEquals(List.of("RECHAZADO"), f.getApprovalStatuses());
+        assertEquals(List.of("REJECTED"), f.getApprovalStatuses());
     }
 
     // ── approvalStatusColor (dedicated status column, colGApproval) ──────────
@@ -434,7 +434,7 @@ class HistoryControllerTest {
     @Test
     void approvalStatusColorRechazadoIsRed() throws Exception {
         NoteReport r = reportWith(0, 0, 0, 0);
-        r.setApprovalStatus("RECHAZADO");
+        r.setApprovalStatus("REJECTED");
         assertEquals("#ef4444", approvalStatusColor(r));
     }
 
@@ -456,7 +456,7 @@ class HistoryControllerTest {
     void approvalStatusDisplayMapsKnownValues() throws Exception {
         assertEquals("Pendiente", approvalStatusDisplay("PENDING"));
         assertEquals("Aprobada", approvalStatusDisplay("APPROVED"));
-        assertEquals("Rechazada", approvalStatusDisplay("RECHAZADO"));
+        assertEquals("Rechazada", approvalStatusDisplay("REJECTED"));
     }
 
     @Test
@@ -546,7 +546,7 @@ class HistoryControllerTest {
     void updatePendingApprovalLabelHiddenWhenNothingIsPending() throws Exception {
         NoteReport approved = reportWith(1, 1, 0, 0);
         NoteReport rejected = reportWith(1, 0, 0, 1);
-        rejected.setApprovalStatus("RECHAZADO");
+        rejected.setApprovalStatus("REJECTED");
 
         javafx.scene.control.Label lbl = invokePendingLabelUpdater(
             "updatePendingApprovalLabel", "lblPendingApproval", List.of(approved, rejected));
@@ -589,7 +589,7 @@ class HistoryControllerTest {
         NoteReport stillAwaitingApproval = reportWith(1, 1, 0, 0);
         stillAwaitingApproval.setApprovalStatus("PENDING");
         NoteReport rejected = reportWith(1, 1, 0, 0);
-        rejected.setApprovalStatus("RECHAZADO");
+        rejected.setApprovalStatus("REJECTED");
 
         javafx.scene.control.Label lbl = invokePendingLabelUpdater("updatePendingGlpiLabel",
             "lblPendingGlpi", List.of(approvedPending, stillAwaitingApproval, rejected));

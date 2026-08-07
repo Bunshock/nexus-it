@@ -303,7 +303,7 @@ class NoteGenerationServiceTest {
     @Test
     void generateFromStoredReportRendersProviderReport() throws Exception {
         NoteReport report = new NoteReport();
-        report.setProfileType("Entrega - Proveedor");
+        report.setProfileType("ENTREGA - PROVEEDOR");
         report.setCreatedAt(LocalDateTime.of(2026, 2, 1, 9, 0));
         report.setProviderName("Proveedor SA");
         report.setCuit("30-12345678-9");

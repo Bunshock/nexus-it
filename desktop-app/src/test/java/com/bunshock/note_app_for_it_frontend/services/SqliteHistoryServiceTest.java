@@ -158,7 +158,8 @@ class SqliteHistoryServiceTest {
                     type_id      INTEGER NOT NULL REFERENCES TYPE(id),
                     brand_id     INTEGER NOT NULL REFERENCES BRAND(id),
                     model_id     INTEGER NOT NULL REFERENCES MODEL(id),
-                    observations TEXT
+                    observations TEXT,
+                    modifies_stock INTEGER NOT NULL DEFAULT 1
                 )""");
             stmt.executeUpdate("""
                 CREATE TABLE NOTE_ITEM_ASSET (
@@ -184,6 +185,11 @@ class SqliteHistoryServiceTest {
                     status            TEXT NOT NULL,
                     rejection_reason  TEXT,
                     status_updated_at TEXT
+                )""");
+            stmt.executeUpdate("""
+                CREATE TABLE NOTE_ITEM_STOCK_EXCEPTION (
+                    item_id INTEGER PRIMARY KEY REFERENCES NOTE_ITEM(id),
+                    reason  TEXT NOT NULL
                 )""");
             stmt.executeUpdate("""
                 CREATE TABLE NOTE_ITEM_GLPI_RETURN_TRACKING (
@@ -330,7 +336,7 @@ class SqliteHistoryServiceTest {
 
     private NoteReport providerReport(LocalDateTime createdAt, String providerName, List<NoteReportItem> items) {
         NoteReport r = new NoteReport();
-        r.setProfileType("Entrega - Proveedor");
+        r.setProfileType("ENTREGA - PROVEEDOR");
         r.setCreatedAt(createdAt);
         r.setProviderName(providerName);
         try {
@@ -861,7 +867,7 @@ class SqliteHistoryServiceTest {
         service.save(userReport("Entrega", LocalDateTime.now(), "A", List.of()));
         NoteReport rejected = userReport("Entrega", LocalDateTime.now(), "B", List.of());
         int rejectedId = service.save(rejected);
-        service.updateNoteApprovalStatus(rejectedId, "RECHAZADO", "Nota creada por error");
+        service.updateNoteApprovalStatus(rejectedId, "REJECTED", "Nota creada por error");
 
         assertEquals(2, service.getFiltered(new HistoryFilter()).size());
     }
@@ -872,7 +878,7 @@ class SqliteHistoryServiceTest {
         int approvedId = service.save(userReport("Entrega", LocalDateTime.now(), "B", List.of()));
         service.updateNoteApprovalStatus(approvedId, "APPROVED", null);
         int rejectedId = service.save(userReport("Entrega", LocalDateTime.now(), "C", List.of()));
-        service.updateNoteApprovalStatus(rejectedId, "RECHAZADO", "Error de carga");
+        service.updateNoteApprovalStatus(rejectedId, "REJECTED", "Error de carga");
 
         HistoryFilter f = new HistoryFilter();
         f.setApprovalStatuses(List.of("PENDING", "APPROVED"));
@@ -887,10 +893,10 @@ class SqliteHistoryServiceTest {
     void updateNoteApprovalStatusPersists() {
         int id = service.save(userReport("Entrega", LocalDateTime.now(), "Juan Perez", List.of()));
 
-        service.updateNoteApprovalStatus(id, "RECHAZADO", "Tipo de nota incorrecto");
+        service.updateNoteApprovalStatus(id, "REJECTED", "Tipo de nota incorrecto");
 
         NoteReport full = service.getById(id);
-        assertEquals("RECHAZADO", full.getApprovalStatus());
+        assertEquals("REJECTED", full.getApprovalStatus());
         assertEquals("Tipo de nota incorrecto", full.getRejectionReason());
     }
 
@@ -1466,5 +1472,117 @@ class SqliteHistoryServiceTest {
 
         service.allocateCountableReturn(itemId, ReturnStatus.LOST, 2, "Perdido");
         assertEquals(3, equipment.getModelStock(item.getModelId(), item.getBrandId(), item.getTypeId(), sedeId));
+    }
+
+    // ── modifies_stock: ItemDialogController's "Modifica stock" exception checkbox ─────────────
+
+    @Test
+    void getByIdPersistsAndReturnsModifiesStock() throws SQLException {
+        int sedeId = resolveOrCreate("SEDE", "Campus Test");
+        NoteReportItem item = assetItem("NOTEBOOK", "DELL", "LATITUDE", "SN1", "AF1", GlpiStatus.PENDING);
+        item.setModifiesStock(false);
+        item.setModifiesStockReason("Equipo ya estaba en poder del usuario, se formaliza la entrega.");
+
+        NoteReport r = userReport("ENTREGA", LocalDateTime.now(), "Juan Perez", List.of(item));
+        r.setSedeId(sedeId);
+        int id = service.save(r);
+
+        NoteReportItem loaded = service.getById(id).getItems().get(0);
+        assertFalse(loaded.isModifiesStock());
+        assertEquals("Equipo ya estaba en poder del usuario, se formaliza la entrega.", loaded.getModifiesStockReason());
+    }
+
+    @Test
+    void getByIdReturnsNullModifiesStockReasonWhenItemModifiesStockNormally() throws SQLException {
+        int sedeId = resolveOrCreate("SEDE", "Campus Test");
+        NoteReportItem item = assetItem("NOTEBOOK", "DELL", "LATITUDE", "SN1", "AF1", GlpiStatus.PENDING);
+
+        NoteReport r = userReport("ENTREGA", LocalDateTime.now(), "Juan Perez", List.of(item));
+        r.setSedeId(sedeId);
+        int id = service.save(r);
+
+        NoteReportItem loaded = service.getById(id).getItems().get(0);
+        assertNull(loaded.getModifiesStockReason());
+    }
+
+    @Test
+    void itemsDefaultToModifyingStockWhenNotExplicitlySet() throws SQLException {
+        int sedeId = resolveOrCreate("SEDE", "Campus Test");
+        NoteReportItem item = assetItem("NOTEBOOK", "DELL", "LATITUDE", "SN1", "AF1", GlpiStatus.PENDING);
+
+        NoteReport r = userReport("ENTREGA", LocalDateTime.now(), "Juan Perez", List.of(item));
+        r.setSedeId(sedeId);
+        int id = service.save(r);
+
+        assertTrue(service.getById(id).getItems().get(0).isModifiesStock());
+    }
+
+    @Test
+    void approvingEntregaSkipsStockForItemsFlaggedAsNotModifyingStock() throws SQLException {
+        int sedeId = resolveOrCreate("SEDE", "Campus Test");
+        NoteReportItem normal = assetItem("NOTEBOOK", "DELL", "LATITUDE", "SN1", "AF1", GlpiStatus.PENDING);
+        NoteReportItem exempt = assetItem("MOUSE", "LOGITECH", "M100", "SN2", "AF2", GlpiStatus.PENDING);
+        exempt.setModifiesStock(false);
+        IEquipmentService equipment = ServiceLocator.getInstance().getEquipmentService();
+        equipment.setModelStock(normal.getModelId(), normal.getBrandId(), normal.getTypeId(), sedeId, 5);
+        equipment.setModelStock(exempt.getModelId(), exempt.getBrandId(), exempt.getTypeId(), sedeId, 5);
+
+        NoteReport r = userReport("ENTREGA", LocalDateTime.now(), "Juan Perez", List.of(normal, exempt));
+        r.setSedeId(sedeId);
+        int id = service.save(r);
+        service.updateNoteApprovalStatus(id, "APPROVED", null);
+
+        assertEquals(4, equipment.getModelStock(normal.getModelId(), normal.getBrandId(), normal.getTypeId(), sedeId));
+        assertEquals(5, equipment.getModelStock(exempt.getModelId(), exempt.getBrandId(), exempt.getTypeId(), sedeId));
+    }
+
+    @Test
+    void approvingDevolucionSkipsStockForItemFlaggedAsNotModifyingStock() throws SQLException {
+        int sedeId = resolveOrCreate("SEDE", "Campus Test");
+        NoteReportItem item = countableItem("HEADSET", "LOGITECH", "H390", 2);
+        item.setModifiesStock(false);
+        IEquipmentService equipment = ServiceLocator.getInstance().getEquipmentService();
+        equipment.setModelStock(item.getModelId(), item.getBrandId(), item.getTypeId(), sedeId, 3);
+
+        NoteReport r = userReport("DEVOLUCIÓN", LocalDateTime.now(), "Juan Perez", List.of(item));
+        r.setSedeId(sedeId);
+        int id = service.save(r);
+        service.updateNoteApprovalStatus(id, "APPROVED", null);
+
+        assertEquals(3, equipment.getModelStock(item.getModelId(), item.getBrandId(), item.getTypeId(), sedeId));
+    }
+
+    @Test
+    void returningItemFlaggedAsNotModifyingStockDoesNotCreditStockBack() throws SQLException {
+        int sedeId = resolveOrCreate("SEDE", "Campus Test");
+        NoteReportItem item = assetItem("NOTEBOOK", "DELL", "LATITUDE", "SN1", "AF1", GlpiStatus.N_A);
+        item.setModifiesStock(false);
+        IEquipmentService equipment = ServiceLocator.getInstance().getEquipmentService();
+        equipment.setModelStock(item.getModelId(), item.getBrandId(), item.getTypeId(), sedeId, 3);
+
+        NoteReport r = userReport("PRÉSTAMO", LocalDateTime.now(), "Juan Perez", List.of(item));
+        r.setSedeId(sedeId);
+        int reportId = service.save(r);
+        int itemId = service.getById(reportId).getItems().get(0).getId();
+
+        service.updateItemReturnStatus(itemId, ReturnStatus.RETURNED, null);
+        assertEquals(3, equipment.getModelStock(item.getModelId(), item.getBrandId(), item.getTypeId(), sedeId));
+    }
+
+    @Test
+    void allocatingCountableReturnForItemFlaggedAsNotModifyingStockDoesNotCreditStock() throws SQLException {
+        int sedeId = resolveOrCreate("SEDE", "Campus Test");
+        NoteReportItem item = countableItem("HEADSET", "LOGITECH", "H390", 5);
+        item.setModifiesStock(false);
+        IEquipmentService equipment = ServiceLocator.getInstance().getEquipmentService();
+        equipment.setModelStock(item.getModelId(), item.getBrandId(), item.getTypeId(), sedeId, 0);
+
+        NoteReport r = userReport("PRÉSTAMO", LocalDateTime.now(), "Juan Perez", List.of(item));
+        r.setSedeId(sedeId);
+        int reportId = service.save(r);
+        int itemId = service.getById(reportId).getItems().get(0).getId();
+
+        service.allocateCountableReturn(itemId, ReturnStatus.RETURNED, 3, null);
+        assertEquals(0, equipment.getModelStock(item.getModelId(), item.getBrandId(), item.getTypeId(), sedeId));
     }
 }

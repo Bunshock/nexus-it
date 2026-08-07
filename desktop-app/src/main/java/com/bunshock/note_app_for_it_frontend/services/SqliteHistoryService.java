@@ -32,7 +32,7 @@ public class SqliteHistoryService implements IHistoryService {
     // reasoning: renaming a motivoOptions.proveedor value in app-config.json shouldn't require a
     // code change to keep return tracking correctly gated.
     private static boolean isProviderReturnable(String profileType, String motivo) {
-        if (!"Entrega - Proveedor".equalsIgnoreCase(profileType) || motivo == null) return false;
+        if (!"ENTREGA - PROVEEDOR".equalsIgnoreCase(profileType) || motivo == null) return false;
         try {
             List<String> returnable = ConfigService.getInstance().getConfig().returnableMotivosProveedor;
             return returnable != null && returnable.stream().anyMatch(motivo::equalsIgnoreCase);
@@ -248,8 +248,8 @@ public class SqliteHistoryService implements IHistoryService {
     private void insertItems(Connection c, int reportId, List<NoteReportItem> items, boolean needsReturnTracking) throws SQLException {
         if (items == null) return;
         PreparedStatement itemPs = c.prepareStatement("""
-            INSERT INTO NOTE_ITEM (note_id, type_id, brand_id, model_id, observations)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO NOTE_ITEM (note_id, type_id, brand_id, model_id, observations, modifies_stock)
+            VALUES (?, ?, ?, ?, ?, ?)
             """, PreparedStatement.RETURN_GENERATED_KEYS);
         PreparedStatement assetPs = c.prepareStatement(
             "INSERT INTO NOTE_ITEM_ASSET (item_id, serial_number, a_f) VALUES (?, ?, ?)");
@@ -263,6 +263,10 @@ public class SqliteHistoryService implements IHistoryService {
             INSERT INTO NOTE_ITEM_RETURN_TRACKING (item_id, status, rejection_reason, status_updated_at)
             VALUES (?, ?, ?, ?)
             """);
+        // Row only inserted for an item flagged "no modifica stock" with a real reason — row
+        // absence means the exception doesn't apply, same pattern as glpiPs/returnPs above.
+        PreparedStatement stockExceptionPs = c.prepareStatement(
+            "INSERT INTO NOTE_ITEM_STOCK_EXCEPTION (item_id, reason) VALUES (?, ?)");
 
         // Every item on a Préstamo note (asset or countable alike) needs its own return tracked;
         // same for a Provider note whose Motivo is in the config-driven returnable list (e.g.
@@ -275,6 +279,7 @@ public class SqliteHistoryService implements IHistoryService {
             itemPs.setInt(3, item.getBrandId());
             itemPs.setInt(4, item.getModelId());
             itemPs.setString(5, item.getObservations());
+            itemPs.setInt(6, item.isModifiesStock() ? 1 : 0);
             itemPs.executeUpdate();
             int itemId = itemPs.getGeneratedKeys().getInt(1);
 
@@ -303,11 +308,18 @@ public class SqliteHistoryService implements IHistoryService {
                 returnPs.setString(4, null);
                 returnPs.addBatch();
             }
+            if (!item.isModifiesStock() && item.getModifiesStockReason() != null
+                    && !item.getModifiesStockReason().isBlank()) {
+                stockExceptionPs.setInt(1, itemId);
+                stockExceptionPs.setString(2, item.getModifiesStockReason());
+                stockExceptionPs.addBatch();
+            }
         }
         assetPs.executeBatch();
         countablePs.executeBatch();
         glpiPs.executeBatch();
         returnPs.executeBatch();
+        stockExceptionPs.executeBatch();
     }
 
     // ── Read ──────────────────────────────────────────────────────────────────
@@ -610,6 +622,10 @@ public class SqliteHistoryService implements IHistoryService {
     private java.util.Map<StockItemKey, Integer> aggregateItemQuantities(Connection c, int reportId) throws SQLException {
         java.util.Map<StockItemKey, Integer> quantities = new java.util.LinkedHashMap<>();
         for (NoteReportItem item : loadItems(c, reportId)) {
+            // An item marked "no modifica stock" (ItemDialogController's exceptional-case
+            // checkbox) is excluded entirely — it must never move stock on approval, regardless
+            // of note direction (egress or ingress).
+            if (!item.isModifiesStock()) continue;
             StockItemKey key = new StockItemKey(item.getModelId(), item.getBrandId(), item.getTypeId());
             int qty = item.isAsset() ? 1 : item.getQuantity();
             quantities.merge(key, qty, Integer::sum);
@@ -825,7 +841,7 @@ public class SqliteHistoryService implements IHistoryService {
         PreparedStatement ps = c.prepareStatement("""
             SELECT b.id, b.type_id, b.brand_id, b.model_id,
                    t.name AS type_name, br.name AS brand_name, m.name AS model_name,
-                   b.observations,
+                   b.observations, b.modifies_stock, se.reason AS modifies_stock_reason,
                    CASE WHEN a.item_id IS NOT NULL THEN 1 ELSE 0 END AS is_asset,
                    a.serial_number, a.a_f,
                    COALESCE(ct.quantity, 1) AS quantity,
@@ -849,6 +865,7 @@ public class SqliteHistoryService implements IHistoryService {
             LEFT JOIN NOTE_ITEM_GLPI_TRACKING   g  ON g.item_id  = b.id
             LEFT JOIN NOTE_ITEM_GLPI_RETURN_TRACKING gr ON gr.item_id = b.id
             LEFT JOIN NOTE_ITEM_RETURN_TRACKING rt ON rt.item_id = b.id
+            LEFT JOIN NOTE_ITEM_STOCK_EXCEPTION se ON se.item_id = b.id
             LEFT JOIN (
                 SELECT item_id,
                        SUM(CASE WHEN status = 'RETURNED' THEN quantity ELSE 0 END) AS returned_qty,
@@ -873,6 +890,8 @@ public class SqliteHistoryService implements IHistoryService {
             item.setAf(rs.getString("a_f"));
             item.setQuantity(rs.getInt("quantity"));
             item.setObservations(rs.getString("observations"));
+            item.setModifiesStock(rs.getInt("modifies_stock") == 1);
+            item.setModifiesStockReason(rs.getString("modifies_stock_reason"));
             item.setAsset(rs.getInt("is_asset") == 1);
             item.setGlpiStatus(GlpiStatus.fromString(rs.getString("glpi_status")));
             item.setGlpiRejectionReason(rs.getString("glpi_rejection_reason"));
@@ -1109,7 +1128,7 @@ public class SqliteHistoryService implements IHistoryService {
             // credit). Whole-item, so always +1 regardless of asset vs. countable-as-a-whole-unit.
             if (status == ReturnStatus.RETURNED && !"RETURNED".equals(previousStatus)) {
                 ItemStockInfo info = resolveItemStockInfo(c, itemId);
-                if (info != null) {
+                if (info != null && info.modifiesStock()) {
                     ServiceLocator.getInstance().getEquipmentService()
                         .adjustModelStock(info.modelId(), info.brandId(), info.typeId(), info.sedeId(), 1);
                 }
@@ -1128,21 +1147,24 @@ public class SqliteHistoryService implements IHistoryService {
         }
     }
 
-    private record ItemStockInfo(int modelId, int brandId, int typeId, int sedeId) {}
+    private record ItemStockInfo(int modelId, int brandId, int typeId, int sedeId, boolean modifiesStock) {}
 
     // Resolves what a NOTE_ITEM's return actually credits back — its own catalog ids plus the
     // Sede it was loaned/shipped from (the note's own sede_id; Préstamo/Provider have no separate
     // "destination Sede" the way Remito does, equipment always returns to where it left from).
+    // modifiesStock mirrors the same exceptional-item flag applyDirectionalStock() already
+    // respects on the way out — an item that never decremented stock must never credit it back in.
     private ItemStockInfo resolveItemStockInfo(Connection c, int itemId) throws SQLException {
         try (PreparedStatement ps = c.prepareStatement("""
-                SELECT i.model_id, i.brand_id, i.type_id, r.sede_id
+                SELECT i.model_id, i.brand_id, i.type_id, r.sede_id, i.modifies_stock
                 FROM NOTE_ITEM i JOIN NOTE_REPORT r ON r.id = i.note_id
                 WHERE i.id = ?
                 """)) {
             ps.setInt(1, itemId);
             ResultSet rs = ps.executeQuery();
             if (!rs.next()) return null;
-            return new ItemStockInfo(rs.getInt("model_id"), rs.getInt("brand_id"), rs.getInt("type_id"), rs.getInt("sede_id"));
+            return new ItemStockInfo(rs.getInt("model_id"), rs.getInt("brand_id"), rs.getInt("type_id"),
+                rs.getInt("sede_id"), rs.getInt("modifies_stock") == 1);
         }
     }
 
@@ -1180,7 +1202,7 @@ public class SqliteHistoryService implements IHistoryService {
             // no "was it already Returned" check needed. Never credit Lost.
             if (status == ReturnStatus.RETURNED) {
                 ItemStockInfo info = resolveItemStockInfo(c, itemId);
-                if (info != null) {
+                if (info != null && info.modifiesStock()) {
                     ServiceLocator.getInstance().getEquipmentService()
                         .adjustModelStock(info.modelId(), info.brandId(), info.typeId(), info.sedeId(), quantity);
                 }

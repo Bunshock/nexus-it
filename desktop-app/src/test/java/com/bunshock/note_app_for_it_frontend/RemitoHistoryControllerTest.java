@@ -60,7 +60,7 @@ class RemitoHistoryControllerTest {
 
     @Test
     void approvalStatusColorRechazadoIsRed() throws Exception {
-        assertEquals("#ef4444", approvalStatusColor(reportWithStatus("RECHAZADO")));
+        assertEquals("#ef4444", approvalStatusColor(reportWithStatus("REJECTED")));
     }
 
     @Test
@@ -72,7 +72,7 @@ class RemitoHistoryControllerTest {
     void approvalStatusLabelMapsKnownValues() throws Exception {
         assertEquals("Pendiente", approvalStatusLabel(reportWithStatus("PENDING")));
         assertEquals("Aprobada", approvalStatusLabel(reportWithStatus("APPROVED")));
-        assertEquals("Rechazada", approvalStatusLabel(reportWithStatus("RECHAZADO")));
+        assertEquals("Rechazada", approvalStatusLabel(reportWithStatus("REJECTED")));
     }
 
     // ── Sede filter defaults to the technician's own assigned Sede ───────────────
@@ -150,7 +150,7 @@ class RemitoHistoryControllerTest {
         m.setAccessible(true);
         assertEquals("PENDING", m.invoke(controller, "Pendiente"));
         assertEquals("APPROVED", m.invoke(controller, "Aprobada"));
-        assertEquals("RECHAZADO", m.invoke(controller, "Rechazada"));
+        assertEquals("REJECTED", m.invoke(controller, "Rechazada"));
     }
 
     // Unified with History/PrestamoHistoryController: APROBACIÓN now defaults to Pendiente+Aprobada
@@ -188,7 +188,7 @@ class RemitoHistoryControllerTest {
     @Test
     void updatePendingApprovalLabelHiddenWhenNothingIsPending() throws Exception {
         javafx.scene.control.Label lbl =
-            invokeUpdatePendingApprovalLabel(List.of(reportWithStatus("APPROVED"), reportWithStatus("RECHAZADO")));
+            invokeUpdatePendingApprovalLabel(List.of(reportWithStatus("APPROVED"), reportWithStatus("REJECTED")));
         assertFalse(lbl.isVisible());
         assertFalse(lbl.isManaged());
     }

@@ -154,7 +154,7 @@ public class HistoryController {
     private String approvalStatusToRaw(String label) {
         return switch (label) {
             case "Aprobada" -> "APPROVED";
-            case "Rechazada" -> "RECHAZADO";
+            case "Rechazada" -> "REJECTED";
             default -> "PENDING";
         };
     }
@@ -549,7 +549,7 @@ public class HistoryController {
     private String approvalStatusColor(NoteReport r) {
         String status = r.getApprovalStatus();
         if (status == null || "PENDING".equals(status)) return "#f97316";
-        if ("RECHAZADO".equals(status)) return "#ef4444";
+        if ("REJECTED".equals(status)) return "#ef4444";
         return "#22c55e";
     }
 
@@ -665,7 +665,7 @@ public class HistoryController {
     private String approvalStatusDisplay(String approvalStatus) {
         if ("PENDING".equals(approvalStatus)) return "Pendiente";
         if ("APPROVED".equals(approvalStatus)) return "Aprobada";
-        if ("RECHAZADO".equals(approvalStatus)) return "Rechazada";
+        if ("REJECTED".equals(approvalStatus)) return "Rechazada";
         return orEmpty(approvalStatus);
     }
 
