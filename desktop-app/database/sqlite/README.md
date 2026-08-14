@@ -8,6 +8,7 @@ The local database (`data/noteapp.db`) is created empty — schema only, no rows
 |------|---------|
 | `demo-seed.sql` | **Optional, on-demand, illustrative demo data.** A realistic example equipment catalog (132 type/brand/model combinations) and 8 fictional history notes covering every GLPI status and note type. Not run automatically — load it yourself when you actually want demo data (e.g. before a demo, or as a starting example dataset). Not something you'd edit — the rows are fixed, fictional data. |
 | `starter-template.sql.example` | **Template, not real data** — same pattern as `config/app-config.json.example` and `database/sqlserver/02-seed-equipment.sql.example`. Covers the equipment catalog, **S/N validation rules**, and providers, with a few example rows illustrating the syntax. Copy it to `starter-template.sql` (gitignored) and replace the example rows with your organization's real data before running it. |
+| `provisioning/` | **Feature-by-feature version of the same starting-data idea**, covering Sede, Users, and Permissions in addition to the equipment catalog — a SQLite mirror of `database/sqlserver/provisioning/`, useful while seeding real organizational data locally before a remote SQL Server database exists. See `provisioning/README.md`. |
 
 ## Running either one
 

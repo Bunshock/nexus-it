@@ -74,7 +74,7 @@
                             </children>
                         </HBox>
 
-                        <!-- Asset items table: grows to fill available height -->
+                        <!-- Asset items table -->
                         <VBox spacing="5" VBox.vgrow="ALWAYS">
                             <children>
                                 <Label text="EQUIPOS CON S/N (NOTEBOOKS, MONITORES, ETC.)" styleClass="input-label-small"/>
@@ -98,7 +98,7 @@
                             </children>
                         </VBox>
 
-                        <!-- Countable items table: grows to fill available height -->
+                        <!-- Countable items table -->
                         <VBox spacing="5" VBox.vgrow="ALWAYS">
                             <children>
                                 <Label text="PERIFÉRICOS Y OTROS (POR CANTIDAD)" styleClass="input-label-small"/>

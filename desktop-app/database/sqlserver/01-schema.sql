@@ -25,7 +25,7 @@ BEGIN
     CREATE TABLE TYPE (
         id              INT IDENTITY(1,1) PRIMARY KEY,
         name            NVARCHAR(255) NOT NULL UNIQUE,
-        is_asset        INT NOT NULL DEFAULT 1,
+        is_asset        INT NOT NULL DEFAULT 0,
         requires_serial INT NOT NULL DEFAULT 0,
         deprecated      INT NOT NULL DEFAULT 0
     );
@@ -173,10 +173,11 @@ END
 IF OBJECT_ID('dbo.APP_USER', 'U') IS NULL
 BEGIN
     CREATE TABLE APP_USER (
-        id       INT IDENTITY(1,1) PRIMARY KEY,
-        username NVARCHAR(100) NOT NULL UNIQUE,
-        role     NVARCHAR(20) NOT NULL CHECK (role IN ('USER', 'ADMIN', 'SUPERADMIN')),
-        sede_id  INT REFERENCES SEDE(id)
+        id                 INT IDENTITY(1,1) PRIMARY KEY,
+        username           NVARCHAR(100) NOT NULL UNIQUE,
+        role               NVARCHAR(20) NOT NULL CHECK (role IN ('USER', 'ADMIN', 'SUPERADMIN')),
+        sede_id            INT REFERENCES SEDE(id),
+        bypass_group_check INT NOT NULL DEFAULT 0
     );
 END
 
@@ -403,6 +404,22 @@ BEGIN
     );
 END
 
+-- A second, independent GLPI dimension for a returnable Provider note's asset items only
+-- (Provider assets, unlike Préstamo's, get real GLPI tracking on the way out). GLPI sync is
+-- one-way/no-revert, so the original sync-out (NOTE_ITEM_GLPI_TRACKING above) can never be
+-- "undone" to reflect an item coming back — this table tracks the separate "synced back into
+-- GLPI" event instead. Row absence means not applicable yet; a row is only created once the
+-- item's return is actually validated (RETURNED), seeded PENDING at that moment.
+IF OBJECT_ID('dbo.NOTE_ITEM_GLPI_RETURN_TRACKING', 'U') IS NULL
+BEGIN
+    CREATE TABLE NOTE_ITEM_GLPI_RETURN_TRACKING (
+        item_id           INT PRIMARY KEY REFERENCES NOTE_ITEM(id),
+        status            NVARCHAR(50) NOT NULL,
+        rejection_reason  NVARCHAR(300),
+        status_updated_at DATETIME2
+    );
+END
+
 -- Row exists only for an item flagged "no modifica stock" — the overwhelming majority of items
 -- never use this exception, so the reason lives here rather than as an always-present-but-usually
 -- NULL column on NOTE_ITEM itself, same "row-absence means not applicable" precedent as every
@@ -432,6 +449,25 @@ BEGIN
         quantity    INT NOT NULL DEFAULT 1,
         username    NVARCHAR(100) NOT NULL,
         changed_at  DATETIME2 NOT NULL
+    );
+END
+
+-- Countable items can be resolved in partial batches over time (e.g. 5 loaned headsets: 3
+-- returned now, 1 lost later, 1 still pending) — a single status column on
+-- NOTE_ITEM_RETURN_TRACKING can't express that, so each partial action gets its own append-only
+-- row here instead. PENDING is never stored — the remaining pending quantity is always
+-- NOTE_ITEM_COUNTABLE.quantity minus the sum of allocations for that item, same "row absence is
+-- the state" convention as every other tracking table in this schema. Asset items never get a
+-- row here (a physical unit isn't divisible) — they stay on NOTE_ITEM_RETURN_TRACKING.status.
+IF OBJECT_ID('dbo.NOTE_ITEM_RETURN_ALLOCATION', 'U') IS NULL
+BEGIN
+    CREATE TABLE NOTE_ITEM_RETURN_ALLOCATION (
+        id         INT IDENTITY(1,1) PRIMARY KEY,
+        item_id    INT NOT NULL REFERENCES NOTE_ITEM(id),
+        status     NVARCHAR(50) NOT NULL,
+        quantity   INT NOT NULL,
+        reason     NVARCHAR(300),
+        updated_at DATETIME2 NOT NULL
     );
 END
 
@@ -875,7 +911,8 @@ BEGIN
         SELECT @niTypeId = id FROM TYPE WHERE LOWER(name) = LOWER(@niTypeName);
         IF @niTypeId IS NULL
         BEGIN
-            INSERT INTO TYPE (name, is_asset, requires_serial, deprecated) VALUES (@niTypeName, @niIsAsset, 0, 1);
+            INSERT INTO TYPE (name, is_asset, deprecated)
+                VALUES (@niTypeName, @niIsAsset, 1);
             SET @niTypeId = SCOPE_IDENTITY();
         END
 
@@ -1004,6 +1041,12 @@ BEGIN
       AND NOT EXISTS (SELECT 1 FROM MODEL WHERE brand_type_id = BRAND_TYPE_LINK.id)
       AND NOT EXISTS (SELECT 1 FROM MODEL_STOCK WHERE brand_type_id = BRAND_TYPE_LINK.id);
 END
+
+-- Lets a specific account skip the AD-group login gate (see LoginController) without needing an
+-- AD group of its own — e.g. intern technicians. DEFAULT 0 preserves today's behavior for every
+-- existing account (still must be in the allowed group).
+IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE lower(table_name) = 'app_user' AND lower(column_name) = 'bypass_group_check')
+    ALTER TABLE APP_USER ADD bypass_group_check INT NOT NULL DEFAULT 0;
 
 -- Narrow any of the above columns that a pre-existing installation already created as
 -- NVARCHAR(MAX) (either via an older CREATE TABLE or an older ADD COLUMN call above, before these

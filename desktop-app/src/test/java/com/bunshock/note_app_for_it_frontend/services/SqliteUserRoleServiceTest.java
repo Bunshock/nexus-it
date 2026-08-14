@@ -32,10 +32,11 @@ class SqliteUserRoleServiceTest {
         try (Connection c = DriverManager.getConnection(url); Statement stmt = c.createStatement()) {
             stmt.executeUpdate("""
                 CREATE TABLE APP_USER (
-                    id       INTEGER PRIMARY KEY AUTOINCREMENT,
-                    username TEXT NOT NULL UNIQUE,
-                    role     TEXT NOT NULL CHECK (role IN ('USER', 'ADMIN', 'SUPERADMIN')),
-                    sede_id  INTEGER
+                    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username           TEXT NOT NULL UNIQUE,
+                    role               TEXT NOT NULL CHECK (role IN ('USER', 'ADMIN', 'SUPERADMIN')),
+                    sede_id            INTEGER,
+                    bypass_group_check INTEGER NOT NULL DEFAULT 0
                 )""");
             stmt.executeUpdate("""
                 CREATE TABLE ROLE_PERMISSION (
@@ -51,12 +52,17 @@ class SqliteUserRoleServiceTest {
     }
 
     private void insertUser(String username, String role, Integer sedeId) throws SQLException {
+        insertUser(username, role, sedeId, false);
+    }
+
+    private void insertUser(String username, String role, Integer sedeId, boolean bypassGroupCheck) throws SQLException {
         try (Connection c = DriverManager.getConnection(url);
              PreparedStatement ps = c.prepareStatement(
-                 "INSERT INTO APP_USER (username, role, sede_id) VALUES (?, ?, ?)")) {
+                 "INSERT INTO APP_USER (username, role, sede_id, bypass_group_check) VALUES (?, ?, ?, ?)")) {
             ps.setString(1, username);
             ps.setString(2, role);
             if (sedeId == null) ps.setNull(3, java.sql.Types.INTEGER); else ps.setInt(3, sedeId);
+            ps.setInt(4, bypassGroupCheck ? 1 : 0);
             ps.executeUpdate();
         }
     }
@@ -139,5 +145,22 @@ class SqliteUserRoleServiceTest {
 
         assertEquals(java.util.Set.of(Permission.MANAGE_TYPES),
             service.getPermissionsForRole(IUserRoleService.ROLE_ADMIN));
+    }
+
+    @Test
+    void hasGroupCheckBypassFalseWhenNoRowExists() {
+        assertFalse(service.hasGroupCheckBypass("nobody"));
+    }
+
+    @Test
+    void hasGroupCheckBypassFalseWhenRowExistsWithFlagUnset() throws SQLException {
+        insertUser("intern1", IUserRoleService.ROLE_USER, null);
+        assertFalse(service.hasGroupCheckBypass("intern1"));
+    }
+
+    @Test
+    void hasGroupCheckBypassTrueWhenExplicitlySetViaSql() throws SQLException {
+        insertUser("intern1", IUserRoleService.ROLE_USER, null, true);
+        assertTrue(service.hasGroupCheckBypass("intern1"));
     }
 }

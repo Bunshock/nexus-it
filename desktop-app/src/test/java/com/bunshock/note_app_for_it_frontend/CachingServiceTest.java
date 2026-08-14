@@ -239,6 +239,25 @@ class CachingServiceTest {
         assertEquals(java.util.Set.of(Permission.MANAGE_STOCK), cachingU.getPermissionsForRole(IUserRoleService.ROLE_ADMIN));
     }
 
+    @Test
+    void hasGroupCheckBypassReadsReturnPrimaryData() {
+        MockUserRoleService primaryU = new MockUserRoleService();
+        MockUserRoleService localU   = new MockUserRoleService();
+        primaryU.setGroupCheckBypass("intern1", true);
+        CachingUserRoleService cachingU = new CachingUserRoleService(primaryU, localU);
+
+        assertTrue(cachingU.hasGroupCheckBypass("intern1"));
+    }
+
+    @Test
+    void hasGroupCheckBypassFallsBackToLocalWhenPrimaryThrows() {
+        MockUserRoleService localU = new MockUserRoleService();
+        localU.setGroupCheckBypass("intern1", true);
+        CachingUserRoleService cachingU = new CachingUserRoleService(new FailingUserRoleService(), localU);
+
+        assertTrue(cachingU.hasGroupCheckBypass("intern1"));
+    }
+
     // ── Minimal failing stubs ────────────────────────────────────────
 
     private static class FailingUserRoleService implements IUserRoleService {
@@ -246,6 +265,7 @@ class CachingServiceTest {
         @Override public boolean isRegistered(String username) { throw new RuntimeException("primary down"); }
         @Override public Integer getSedeId(String username) { throw new RuntimeException("primary down"); }
         @Override public java.util.Set<Permission> getPermissionsForRole(String role) { throw new RuntimeException("primary down"); }
+        @Override public boolean hasGroupCheckBypass(String username) { throw new RuntimeException("primary down"); }
     }
 
     private static class FailingEquipmentService extends MockEquipmentService {

@@ -44,19 +44,22 @@ Two JSON files in `desktop-app/config/` control runtime behavior. **Do not commi
 | Key | Description |
 |-----|-------------|
 | `afFormat.prefix` | A/F number prefix (e.g. `"IT"`) |
-| `afFormat.separator` | Separator character (e.g. `"-"`) |
-| `afFormat.length` | Significant-part length in characters (e.g. `8`) |
-| `afFormat.filler` | Left-padding character (e.g. `"0"`) |
-| `afFormat.inputPattern` | Single-character regex restricting what the user can type in the A/F field (e.g. `"\\d"` for digits only, `"[A-Z0-9]"` for alphanumeric). Defaults to `"\\d"` if omitted. |
+| `afFormat.separator` | Separator character (e.g. `"-"`) — A/F is fully derived as `prefix + separator + serial number`, recomputed live as the technician types the S/N; there's no separate A/F input or padding to configure (see [Equipment Management](#equipment-management) below) |
 | `motivoOptions.entrega` | List of Motivo values for Entrega notes |
+| `motivoOptions.finDeContrato` | List of Motivo values for Fin de Contrato notes — its own independent list, not shared with `entrega` |
 | `motivoOptions.devolucion` | List of Motivo values for Devolución notes |
 | `motivoOptions.proveedor` | List of Motivo values for Provider notes |
 | `fallaOptions` | Failure-cause combobox values shown by the Falla detail popup (Devolución only) |
+| `failureTriggerMotivo` | Which `motivoOptions.devolucion` value opens the Falla detail popup (default `"Falla"`) — if you rename that option, update this key to match instead of relying on the label itself |
+| `returnableMotivosProveedor` | Which `motivoOptions.proveedor` values expect the equipment to come back — i.e. show return tracking on the note — vs. a permanent departure (default `["Garantía", "Reparación"]`) |
+| `catalog.genericLabel` | Seeds the name of the global "no specific brand/model" fallback catalog row **the first time it's created only**, not live-synced afterward — rename it later through the ordinary catalog UI, same as any other Brand/Model (default `"Genérico / Otro"`) |
 | `smtp.host` | SMTP server host |
 | `smtp.port` | SMTP port (587 for Gmail STARTTLS) |
 | `smtp.senderAddress` | Sender email address |
 | `adApi.baseUrl` | REST API URL for AD lookups |
 | `glpiApi.baseUrl` | GLPI REST API URL |
+| `adAccess.allowedGroupName` | AD group a technician must belong to in order to log in at all — checked against the group list returned by the credentials-validation call (see [Login](#login) below). Leave `""` to skip this check entirely while it's not yet configured. |
+| `adAccess.mockCredentialValidation` | **Dev-only escape hatch**, default `false` — see [Login](#login) below. Accepts any password once a real username is confirmed via AD search; never leave `true` in a real deployment. |
 | `remoteDatabase.host` | Remote SQL Server host — not a secret; leave `""` to keep the app on local SQLite |
 | `remoteDatabase.port` | Remote SQL Server port (defaults to `1433`) |
 | `remoteDatabase.dbName` | Remote SQL Server database name |
@@ -133,6 +136,34 @@ Saving tests the connection in the background (using the currently resolved tech
 - **Any of the 5 fields above can come back as a JSON array instead of a plain string** for some accounts (a multi-valued directory attribute — confirmed on both `dni` and `mail` in practice). The app always uses the first value in that case (empty array → empty string).
 - **`dni` and `displayName` are normalized before display**: dots are stripped from `dni` (`"00.000.000"` → `"00000000"`) and the comma is stripped from `displayName` (`"Apellido, Nombre"` → `"Apellido Nombre"`, order kept as-is), since the destination fields only accept digits and letters/spaces respectively.
 
+**Credential validation (login)** — a second endpoint, separate from the search above, used only by the login screen: `POST <baseUrl>/api/v1/ad/validate-credentials`, header `Authorization: Bearer <token>` (same service-account token as the search endpoint), body:
+
+```json
+{ "username": "example.username", "password": "the-users-actual-password" }
+```
+
+Expected response, HTTP `200`:
+
+```json
+{ "valid": true, "groups": ["AdminLocalSoportes", "Example-Other-Group"] }
+```
+
+- `valid: false` means a genuine bad-credentials rejection — the app shows "Usuario o contraseña incorrectos." and records a failed login attempt (counts toward the rate limit below).
+- `groups` is only read when `valid: true` — it's checked against `adAccess.allowedGroupName` (see the config table above) to decide whether this account may use the app at all, independent of whether the password was correct.
+- Any non-`200` response (or a connection failure) is treated as "AD unreachable", not a credential failure — shown as "No se pudo conectar con Active Directory." and, deliberately, **not** recorded as a failed attempt or counted toward the rate limit (an outage isn't evidence of credential guessing).
+
+**Full login flow, in order** (`LoginController.handleLogin()`):
+
+1. Reject immediately if username or password is blank.
+2. **Rate limit**: 5+ failed attempts for this username in the last 15 minutes blocks the attempt outright — "Demasiados intentos fallidos..." — with no AD call made and no new attempt recorded, so a lockout can't itself grow the log unboundedly.
+3. **Password check** via `validate-credentials` above.
+4. **AD group check**: the `groups` list returned in step 3 must contain `adAccess.allowedGroupName`, *or* the account must have `bypass_group_check = 1` on its own `APP_USER` row (see [Role-based permissions](#role-based-permissions) below) — otherwise "No tiene permisos para usar esta aplicación."
+5. **Profile resolution**: a `search()` lookup by username, requiring an **exact** username match (not the partial/substring match the recipient-search feature uses elsewhere) — otherwise "No se pudo obtener el perfil desde Active Directory."
+6. **Registration check**: the account must already have a row in `APP_USER` (see below) — otherwise "Usuario no registrado en la aplicación. Solicite acceso a un administrador." A valid AD account with no `APP_USER` row is never let in, regardless of password or group membership.
+7. Role (`USER`/`ADMIN`/`SUPERADMIN`) and Sede are read from that same `APP_USER` row and the session is established.
+
+Every real outcome above (steps 3, 4, 6, and success) writes one login-attempt record used by the rate limit in step 2 — only the "AD unreachable" case at any step is excluded, as noted above.
+
 ### Remote database (SQL Server)
 
 The app runs fully on local SQLite by default. To point it at a shared Microsoft SQL Server (Express or full edition) instance instead, go to **Base de Datos** → **✏ Editar** (admin mode required) and enter host, port, database name, username, and password — stored in `data/noteapp.db`'s `APP_SETTINGS` table (host/port/name in plaintext, username/password encrypted via `AppKeyEncryptionService`). Saving tests the connection before persisting, same confirm-on-failure flow as the AD API above. Alternatively, pre-configure all five in `app-config.json` before the very first launch (see [Pre-configuring default secrets](#pre-configuring-default-secrets-zero-touch-first-run) above) so a fresh install connects with zero manual setup. The **Probar conexión** button re-checks connectivity on demand without opening the edit dialog, and reports the remote and local databases independently: "ESTADO REMOTO" shows orange ("no configurada") if no remote database is set up at all, red if one is configured but unreachable, or green if it connects successfully; "ESTADO LOCAL" always tests and reports the local SQLite database separately. If the remote database is unreachable, the app automatically falls back to local SQLite (write-through cache: writes go to remote first, then local; reads try remote first, fall back to local).
@@ -142,6 +173,8 @@ The app runs fully on local SQLite by default. To point it at a shared Microsoft
 The app creates its own schema automatically on first connect (`RemoteDatabaseService.ensureSchema()`) — a fresh, empty SQL Server database is all that's required. **`desktop-app/database/sqlserver/`** has ready-to-run scripts for setting one up, including starting data for the equipment catalog (Type/Brand/Model) and the provider catalog (Nota de Proveedor's dropdown), and a full remote-server setup walkthrough (installing Express, enabling TCP/IP with a static port, creating the DB/login, running the scripts) — see that folder's `README.md`. The seed script is a **template** with placeholder rows only, not real data (same pattern as `app-config.json.example`) — copy it and fill in your organization's actual catalog before running it; never commit the real, filled-in file (already gitignored). S/N validation rules are configured through the app's own UI, not a SQL script — same README explains why.
 
 **Already built up a real catalog locally before setting up a remote server?** `CatalogMigrationTool` (`mvn exec:java -Dexec.mainClass="com.bunshock.note_app_for_it_frontend.utils.CatalogMigrationTool"` from `desktop-app/`) copies the equipment catalog — Type, Brand, Brand-Type links, Model, S/N validation rules, Provider — from the local `data/noteapp.db` into a SQL Server database, correctly remapping autoincrement ids instead of copying them as-is. It creates the schema itself and prompts interactively for the connection details; safe to re-run as more local data is added. See `desktop-app/database/sqlserver/README.md` for details. History isn't migrated by this tool — only the equipment catalog.
+
+**Handing the database off to a DBA/DB team, or provisioning Sede/Users/Permissions by hand?** `desktop-app/database/sqlserver/provisioning/` splits the full schema into 6 reviewable feature files (Sede, Equipment catalog, Users, Permissions, Notes, Audit trail) alongside matching starting-data `.sql.example` templates — a cleaner, feature-by-feature alternative to reading `01-schema.sql` end to end, meant for exactly this handoff. This is also where `APP_USER` (role/Sede/AD-group-bypass assignment) and `ROLE_PERMISSION` (which role can do what) actually get populated — both tables are managed by direct SQL only, with no in-app screen at all (see [Role-based permissions](#role-based-permissions) below). `desktop-app/database/sqlite/provisioning/` mirrors the same six files for the **local** SQLite database — useful while a remote SQL Server database isn't set up yet, since `APP_USER`/`ROLE_PERMISSION` still need to be populated by hand even when running fully local. Its schema files are reference copies only (local SQLite's schema is always app-managed automatically); only the data scripts are meant to actually be run.
 
 ### Auto-Updates
 
@@ -264,7 +297,7 @@ cd desktop-app
 mvn test
 ```
 
-182 unit tests covering: template engine, A/F formatting, AD search (mock and real REST client), equipment cascade logic, caching service fallback behavior, remote DB connection handling, and more — see `CLAUDE.md`'s Testing requirements section for the full class list.
+524 unit tests covering: template engine, A/F derivation, AD search and credential validation (mock and real REST client), equipment cascade logic, caching service fallback behavior, remote DB connection handling, role-based permissions, and more — see `CLAUDE.md`'s Testing requirements section for the full class list.
 
 ---
 
@@ -287,18 +320,16 @@ mvn test
 
 **Serial number (S/N)**
 - Auto-uppercased by default (per-item toggle to disable)
-- Per-model regex validation configured in `mock-equipment.json → snValidations`
+- Per-model regex validation, admin-managed via **Configuración → Validación de S/N por modelo** (backed by the `SN_VALIDATION` database table — `config/mock-equipment.json`'s `snValidations` array is a test-only fixture, not the production source)
 - Expected length derived automatically from fixed-length regex quantifiers (e.g. `{11}`)
 - Two live hints below the field while typing: length check and pattern check
 - Pattern hint rendered with fixed characters in bold and variable placeholders in italic (e.g. **`PW0`***`XXXXX`*)
-- Save blocked until both length and pattern pass; "Sin S/N" checkbox bypasses validation for exceptional cases (disabled for Notebooks)
+- Save blocked until both length and pattern pass; "Sin S/N" checkbox bypasses validation for exceptional cases (disabled whenever the equipment type's own `requires_serial` flag is set — Notebook by default)
 
 **Activo Fijo (A/F)**
-- User types only the significant part (e.g. `435`); field auto-formats to full A/F on focus-out (e.g. `IT-00000435`)
-- Live preview of the formatted result shown while typing
-- Input restricted by `afFormat.inputPattern` — invalid characters and overflow are silently rejected
-- Pattern hint shows the expected format with prefix bold and digit/char positions in italic (e.g. **`IT-`***`00000000`*)
-- Field is required when the A/F checkbox is enabled
+- Fully derived, not typed — `{prefix}{separator}{serial number}` (e.g. `IT-00000435`), recomputed live every time the S/N field changes
+- "Incluir A/F" checkbox defaults to checked; automatically disabled and unchecked whenever "Sin S/N" is checked, since there's nothing to derive A/F from without a serial number
+- The A/F field itself is read-only — there's no separate value to type, pad, or restrict by pattern
 
 ### AD Integration
 
@@ -306,7 +337,7 @@ mvn test
 - DNI dot format normalized automatically — queried both as `"35123456"` and `"35.123.456"`. Note: a *partial* DNI search against a record whose DNI is stored dotted in AD may not find it unless the typed length happens to land on a dot boundary — this is how Active Directory itself indexes that data, confirmed in the native Windows AD tool too, not something the app's query can work around
 - Name accepts "Nombre Apellido", "Apellido Nombre", and incomplete words in either position (e.g. "Rodriguez Joa", "Joaquin Rodrig", or just "Rodrig" alone) — queried as typed plus both comma-insertion guesses; if that finds nothing, each word is automatically retried alone and the results are narrowed back down to only people matching every typed word
 - Multi-result picker dialog when search returns more than one user, showing DNI/email/OU on hover
-- Credential validation at login (`POST /api/v1/ad/validate-credentials` on the AD API — a bind-as-user password check, plus the caller's AD group memberships for the app-access gate) — see [Login](#login) above
+- Credential validation at login (`POST /api/v1/ad/validate-credentials` on the AD API — a bind-as-user password check, plus the caller's AD group memberships for the app-access gate; full request/response shape and login flow documented under [Active Directory (AD) API](#active-directory-ad-api) above) — see [Login](#login) below
 - Technician profile populated by the same lookup used for searches, once login succeeds
 - Sidebar status dot reflects real AD API reachability (a background check using the already-logged-in username, not a re-lookup) — see [Configure Application Settings](docs/use-cases.md) / `CLAUDE.md` for the status-check design
 
@@ -397,11 +428,11 @@ notes-app-for-it/
 │   ├── config/            — Runtime config files (not compiled into JAR)
 │   ├── data/              — SQLite database (created at first run, gitignored)
 │   ├── database/sqlserver/ — Remote DB setup: schema + starting equipment/provider catalog SQL scripts (example template, not real data)
+│   ├── database/sqlite/   — Optional local starting data + a SQLite mirror of the provisioning scripts below
 │   └── src/
 │       ├── main/java/     — Application source
 │       ├── main/resources/— FXML views, CSS, HTML note templates
 │       └── test/java/     — JUnit 5 unit tests
-├── backend-api/           — Spring Boot REST API (planned)
 └── docs/                  — Architecture, requirements, database schema, use cases
 ```
 

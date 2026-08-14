@@ -20,6 +20,7 @@ public class MockUserRoleService implements IUserRoleService {
     private final Map<String, String> roles = new LinkedHashMap<>();
     private final Map<String, Integer> sedeIds = new LinkedHashMap<>();
     private final Map<String, Set<Permission>> rolePermissions = new LinkedHashMap<>();
+    private final Map<String, Boolean> groupCheckBypass = new LinkedHashMap<>();
 
     public MockUserRoleService() {
         rolePermissions.put(ROLE_ADMIN, EnumSet.complementOf(EnumSet.of(Permission.EDIT_SMTP_CONFIG)));
@@ -47,6 +48,11 @@ public class MockUserRoleService implements IUserRoleService {
         return rolePermissions.getOrDefault(role, EnumSet.noneOf(Permission.class));
     }
 
+    @Override
+    public boolean hasGroupCheckBypass(String username) {
+        return groupCheckBypass.getOrDefault(username, false);
+    }
+
     /** Test-only seeding — not part of IUserRoleService, since nothing in the app sets a role. */
     public void setRole(String username, String role) {
         roles.put(username, role);
@@ -60,5 +66,10 @@ public class MockUserRoleService implements IUserRoleService {
     /** Test-only seeding — overrides this mock's default permission set for a role. */
     public void setPermissionsForRole(String role, Set<Permission> permissions) {
         rolePermissions.put(role, permissions);
+    }
+
+    /** Test-only seeding. */
+    public void setGroupCheckBypass(String username, boolean bypass) {
+        groupCheckBypass.put(username, bypass);
     }
 }

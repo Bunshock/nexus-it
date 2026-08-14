@@ -124,6 +124,7 @@ public class DatabaseService {
                 // no TYPE rows yet on a brand-new database — nothing to backfill
             }
         }
+        migrateItemKindRevertSchema(conn, stmt);
 
         migrateNoteItemSchema(conn, stmt);
 
@@ -157,6 +158,12 @@ public class DatabaseService {
         // normally) — only newly-created items can opt out via the dialog checkbox.
         addColumnIfMissing(stmt, "NOTE_ITEM", "modifies_stock", "INTEGER NOT NULL DEFAULT 1");
         migrateStockExceptionReasonSchema(conn, stmt);
+
+        // Lets a specific account skip the AD-group login gate (see LoginController) without
+        // needing an AD group of its own — e.g. intern technicians, who aren't in the org's IT
+        // support group but should still be able to log in. DEFAULT 0 preserves today's behavior
+        // for every existing account (still must be in the allowed group).
+        addColumnIfMissing(stmt, "APP_USER", "bypass_group_check", "INTEGER NOT NULL DEFAULT 0");
     }
 
     // A first attempt at this feature added modifies_stock_reason directly as a nullable column
@@ -747,7 +754,8 @@ public class DatabaseService {
                 String modelName = blankToFallback(rs.getString("model_name"), "Genérico / Otro");
 
                 int typeId = resolveOrCreateCatalogRow(conn, typeCache, "TYPE", typeName,
-                    "INSERT INTO TYPE (name, is_asset, requires_serial, deprecated) VALUES (?, " + (isAssetItem ? 1 : 0) + ", 0, 1)");
+                    "INSERT INTO TYPE (name, is_asset, deprecated) VALUES (?, "
+                        + (isAssetItem ? "1" : "0") + ", 1)");
                 int brandId = resolveOrCreateCatalogRow(conn, brandCache, "BRAND", brandName,
                     "INSERT INTO BRAND (name, deprecated) VALUES (?, 1)");
                 int linkId = resolveOrCreateBrandTypeLink(conn, linkCache, typeId, brandId);
@@ -916,6 +924,38 @@ public class DatabaseService {
     // safely re-runnable if the DROP COLUMN below fails partway and this method retries next
     // startup with the column still present. No-ops once already migrated (column gone) —
     // including on a brand-new install, which never gets the column at all.
+    // A same-session, never-shipped design detour: TYPE.is_asset/requires_serial were briefly
+    // replaced with item_kind (ASSET_SERIAL/ASSET_IMEI/NUMBERED/COUNTABLE)/requires_identifier
+    // to model mobile phones (IMEI) and corporate chips as distinct item kinds. Reverted the same
+    // day, back to plain is_asset/requires_serial — phones are just assets (IMEI typed into the
+    // existing serial_number field) and chips are just countables, so no new TYPE shape was
+    // actually needed. This reverses item_kind/requires_identifier back on any local database
+    // that already ran the (also never-shipped) forward migration. No-op once already reverted
+    // (item_kind no longer exists) — including on a brand-new install, which never sees it at all.
+    private void migrateItemKindRevertSchema(Connection conn, Statement stmt) throws SQLException {
+        if (columnExists(conn, "TYPE", "requires_identifier")) {
+            try {
+                stmt.executeUpdate("ALTER TABLE TYPE RENAME COLUMN requires_identifier TO requires_serial");
+            } catch (SQLException ignored) {
+                // leave it for next startup to retry — not worth blocking initialize() over
+            }
+        }
+        if (!columnExists(conn, "TYPE", "item_kind")) return;
+        addColumnIfMissing(stmt, "TYPE", "is_asset", "INTEGER NOT NULL DEFAULT 0");
+        stmt.executeUpdate(
+            "UPDATE TYPE SET is_asset = CASE WHEN item_kind IN ('ASSET_SERIAL', 'ASSET_IMEI') THEN 1 ELSE 0 END");
+        try {
+            stmt.executeUpdate("ALTER TABLE TYPE DROP COLUMN item_kind");
+        } catch (SQLException ignored) {
+            // leave it for next startup to retry — not worth blocking initialize() over
+        }
+        // Both subtype tables were only ever reachable on a local dev database that ran this
+        // same never-shipped feature — safe to drop outright rather than leave unused, unlike a
+        // real released table this codebase would otherwise keep in place for old data.
+        stmt.executeUpdate("DROP TABLE IF EXISTS NOTE_ITEM_PHONE");
+        stmt.executeUpdate("DROP TABLE IF EXISTS NOTE_ITEM_SIM");
+    }
+
     private void migrateRejectionReasonSchema(Connection conn, Statement stmt) throws SQLException {
         if (!columnExists(conn, "NOTE_REPORT", "rejection_reason")) return;
         stmt.executeUpdate("""
@@ -1087,7 +1127,7 @@ public class DatabaseService {
             CREATE TABLE IF NOT EXISTS TYPE (
                 id   INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL UNIQUE,
-                is_asset INTEGER NOT NULL DEFAULT 1,
+                is_asset INTEGER NOT NULL DEFAULT 0,
                 requires_serial INTEGER NOT NULL DEFAULT 0,
                 deprecated INTEGER NOT NULL DEFAULT 0
             )""");
@@ -1425,10 +1465,11 @@ public class DatabaseService {
         boolean appUserExisted = tableExists(stmt.getConnection(), "APP_USER");
         stmt.executeUpdate("""
             CREATE TABLE IF NOT EXISTS APP_USER (
-                id       INTEGER PRIMARY KEY AUTOINCREMENT,
-                username TEXT NOT NULL UNIQUE,
-                role     TEXT NOT NULL CHECK (role IN ('USER', 'ADMIN', 'SUPERADMIN')),
-                sede_id  INTEGER REFERENCES SEDE(id)
+                id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+                username           TEXT NOT NULL UNIQUE,
+                role               TEXT NOT NULL CHECK (role IN ('USER', 'ADMIN', 'SUPERADMIN')),
+                sede_id            INTEGER REFERENCES SEDE(id),
+                bypass_group_check INTEGER NOT NULL DEFAULT 0
             )""");
         if (!appUserExisted) {
             migrateUserRoleIntoAppUser(stmt);

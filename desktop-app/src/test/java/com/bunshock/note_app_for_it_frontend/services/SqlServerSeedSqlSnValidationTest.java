@@ -44,8 +44,8 @@ class SqlServerSeedSqlSnValidationTest {
                 CREATE TABLE TYPE (
                     id   INTEGER PRIMARY KEY AUTOINCREMENT,
                     name TEXT NOT NULL UNIQUE,
-                    is_asset INTEGER NOT NULL DEFAULT 1,
-                    requires_serial INTEGER NOT NULL DEFAULT 0
+                    item_kind TEXT NOT NULL DEFAULT 'COUNTABLE',
+                    requires_identifier INTEGER NOT NULL DEFAULT 0
                 )""");
             s.executeUpdate("""
                 CREATE TABLE BRAND (
@@ -76,8 +76,8 @@ class SqlServerSeedSqlSnValidationTest {
             // Mirrors the seed file's own example catalog rows relevant to the S/N section
             // (NOTEBOOK / Marca Ejemplo A / "Modelo Ejemplo 14" and "15") plus an unrelated
             // model (MOUSE) to prove the resolution doesn't accidentally match the wrong one.
-            s.executeUpdate("INSERT INTO TYPE (name, is_asset, requires_serial) VALUES ('NOTEBOOK', 1, 1)");
-            s.executeUpdate("INSERT INTO TYPE (name, is_asset, requires_serial) VALUES ('MOUSE', 0, 0)");
+            s.executeUpdate("INSERT INTO TYPE (name, item_kind, requires_identifier) VALUES ('NOTEBOOK', 'ASSET_SERIAL', 1)");
+            s.executeUpdate("INSERT INTO TYPE (name, item_kind, requires_identifier) VALUES ('MOUSE', 'COUNTABLE', 0)");
             s.executeUpdate("INSERT INTO BRAND (name) VALUES ('Marca Ejemplo A')");
             s.executeUpdate("INSERT INTO BRAND_TYPE_LINK (type_id, brand_id) SELECT (SELECT id FROM TYPE WHERE name='NOTEBOOK'), (SELECT id FROM BRAND WHERE name='Marca Ejemplo A')");
             s.executeUpdate("INSERT INTO BRAND_TYPE_LINK (type_id, brand_id) SELECT (SELECT id FROM TYPE WHERE name='MOUSE'), (SELECT id FROM BRAND WHERE name='Marca Ejemplo A')");

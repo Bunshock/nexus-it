@@ -435,7 +435,11 @@ public class MainController {
         fadeOut.setOnFinished(e -> {
             loadingStage.close();
             rootPane.setEffect(null);
-            warnIfSedeUnassigned();
+            // showAndWait() is not allowed while still inside an animation's finished handler
+            // (JavaFX throws IllegalStateException: "not allowed during animation or layout
+            // processing") — defer to the next pulse, same Platform.runLater precedent already
+            // used elsewhere in this class for post-initialize() UI work.
+            Platform.runLater(this::warnIfSedeUnassigned);
         });
         fadeOut.play();
     }

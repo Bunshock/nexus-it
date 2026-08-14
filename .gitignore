@@ -10,6 +10,10 @@ desktop-app/database/sqlserver/02-seed-equipment.sql
 # Real equipment catalog + S/N validation rules for local SQLite — copy from starter-template.sql.example
 desktop-app/database/sqlite/starter-template.sql
 
+# DB-team provisioning scripts (schema + seed data) — not tracked in this repo.
+desktop-app/database/sqlite/provisioning/
+desktop-app/database/sqlserver/provisioning/
+
 target/
 pom.xml.tag
 pom.xml.releaseBackup

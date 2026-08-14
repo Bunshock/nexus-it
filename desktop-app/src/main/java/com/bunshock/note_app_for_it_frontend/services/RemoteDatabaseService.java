@@ -76,7 +76,7 @@ public class RemoteDatabaseService {
                 CREATE TABLE TYPE (
                     id              INT IDENTITY(1,1) PRIMARY KEY,
                     name            NVARCHAR(255) NOT NULL UNIQUE,
-                    is_asset        INT NOT NULL DEFAULT 1,
+                    is_asset        INT NOT NULL DEFAULT 0,
                     requires_serial INT NOT NULL DEFAULT 0,
                     deprecated      INT NOT NULL DEFAULT 0
                 )""");
@@ -189,10 +189,11 @@ public class RemoteDatabaseService {
             boolean appUserExisted = tableExists(c, "APP_USER");
             createTableIfMissing(stmt, "APP_USER", """
                 CREATE TABLE APP_USER (
-                    id       INT IDENTITY(1,1) PRIMARY KEY,
-                    username NVARCHAR(100) NOT NULL UNIQUE,
-                    role     NVARCHAR(20) NOT NULL CHECK (role IN ('USER', 'ADMIN', 'SUPERADMIN')),
-                    sede_id  INT REFERENCES SEDE(id)
+                    id                 INT IDENTITY(1,1) PRIMARY KEY,
+                    username           NVARCHAR(100) NOT NULL UNIQUE,
+                    role               NVARCHAR(20) NOT NULL CHECK (role IN ('USER', 'ADMIN', 'SUPERADMIN')),
+                    sede_id            INT REFERENCES SEDE(id),
+                    bypass_group_check INT NOT NULL DEFAULT 0
                 )""");
             if (!appUserExisted) migrateUserRoleIntoAppUser(stmt, c);
 
@@ -450,6 +451,7 @@ public class RemoteDatabaseService {
                 // databases keep today's behavior instead of silently losing the rule.
                 stmt.executeUpdate("UPDATE TYPE SET requires_serial = 1 WHERE LOWER(name) = 'notebook'");
             }
+            migrateItemKindRevertSchema(stmt, c);
             // failure_cause/failure_details (the old, already-released columns) are deliberately
             // NOT re-added here — they're dead going forward, split into
             // NOTE_DEVOLUCION_FALLA/NOTE_PRESTAMO_AREA_EVENTO instead (see
@@ -544,6 +546,11 @@ public class RemoteDatabaseService {
             // NOTE_DEVOLUCION_FALLA/NOTE_PRESTAMO_AREA_EVENTO/NOTE_REPORT_REJECTION) — each new
             // table is only ever created with its bounded NVARCHAR(n) type from the start, so
             // there's nothing pre-existing on it to narrow.
+
+            // Lets a specific account skip the AD-group login gate (see LoginController) without
+            // needing an AD group of its own — e.g. intern technicians. DEFAULT 0 preserves
+            // today's behavior for every existing account (still must be in the allowed group).
+            addColumnIfMissing(stmt, c, "APP_USER", "bypass_group_check", "INT NOT NULL DEFAULT 0");
         }
     }
 
@@ -970,8 +977,8 @@ public class RemoteDatabaseService {
                 String modelName = blankToFallback(rs.getString("model_name"), "Genérico / Otro");
 
                 int typeId = resolveOrCreateCatalogRow(c, typeCache, "TYPE", typeName,
-                    "INSERT INTO TYPE (name, is_asset, requires_serial, deprecated) VALUES (?, "
-                        + (isAssetItem ? 1 : 0) + ", 0, 1)");
+                    "INSERT INTO TYPE (name, is_asset, deprecated) VALUES (?, "
+                        + (isAssetItem ? "1" : "0") + ", 1)");
                 int brandId = resolveOrCreateCatalogRow(c, brandCache, "BRAND", brandName,
                     "INSERT INTO BRAND (name, deprecated) VALUES (?, 1)");
                 int linkId = resolveOrCreateBrandTypeLink(c, linkCache, typeId, brandId);
@@ -1237,6 +1244,35 @@ public class RemoteDatabaseService {
                 return rs.next();
             }
         }
+    }
+
+    // SQL Server mirror of DatabaseService.migrateItemKindRevertSchema() — see that method's
+    // Javadoc for the full rationale (a same-session, never-shipped detour into a 4-kind
+    // item_kind/requires_identifier shape, reverted back to plain is_asset/requires_serial the
+    // same day). sp_rename is T-SQL's only column-rename mechanism; DROP COLUMN on item_kind
+    // needs its inline DEFAULT/CHECK constraints dropped first, same precedent as
+    // dropDeadNoteReportColumns()'s glpi_synced handling. Both steps no-op once already reverted
+    // (item_kind no longer exists on TYPE) — including on a brand-new install.
+    private void migrateItemKindRevertSchema(Statement stmt, Connection c) throws SQLException {
+        if (columnExists(c, "TYPE", "requires_identifier")) {
+            try {
+                stmt.executeUpdate("EXEC sp_rename 'TYPE.requires_identifier', 'requires_serial', 'COLUMN'");
+            } catch (SQLException ignored) {
+                // leave it for next startup to retry — not worth blocking startup over
+            }
+        }
+        if (!columnExists(c, "TYPE", "item_kind")) return;
+        addColumnIfMissing(stmt, c, "TYPE", "is_asset", "INT NOT NULL DEFAULT 0");
+        stmt.executeUpdate(
+            "UPDATE TYPE SET is_asset = CASE WHEN item_kind IN ('ASSET_SERIAL', 'ASSET_IMEI') THEN 1 ELSE 0 END");
+        try {
+            dropDefaultConstraintIfAny(stmt, c, "TYPE", "item_kind");
+            stmt.executeUpdate("ALTER TABLE TYPE DROP COLUMN item_kind");
+        } catch (SQLException ignored) {
+            // leave it for next startup to retry — not worth blocking startup over
+        }
+        stmt.executeUpdate("IF OBJECT_ID('NOTE_ITEM_PHONE', 'U') IS NOT NULL DROP TABLE NOTE_ITEM_PHONE");
+        stmt.executeUpdate("IF OBJECT_ID('NOTE_ITEM_SIM', 'U') IS NOT NULL DROP TABLE NOTE_ITEM_SIM");
     }
 
     private void addColumnIfMissing(Statement stmt, Connection c, String table, String column, String type)

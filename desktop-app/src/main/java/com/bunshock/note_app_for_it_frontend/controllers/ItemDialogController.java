@@ -144,11 +144,7 @@ public class ItemDialogController {
             return null;
         }));
 
-        List<String> mostUsedTypes = historyService.getMostUsedTypeNames(
-            MOST_USED_WINDOW_DAYS, MOST_USED_MIN_USES, MOST_USED_LIMIT);
-        cmbType.setItems(FXCollections.observableArrayList(reorderWithPinned(
-            equipmentService.getAllTypes(), mostUsedTypes, EquipmentType::getName,
-            count -> pinnedTypeCount = count)));
+        populateTypeCombo();
         applyGenericCellFactory(cmbType, () -> pinnedTypeCount);
         applyGenericCellFactory(cmbBrand, () -> pinnedBrandCount);
         applyGenericCellFactory(cmbModel, () -> pinnedModelCount);
@@ -165,6 +161,14 @@ public class ItemDialogController {
             validateSnLength();
             recomputeAf();
         });
+    }
+
+    private void populateTypeCombo() {
+        List<String> mostUsedTypes = historyService.getMostUsedTypeNames(
+            MOST_USED_WINDOW_DAYS, MOST_USED_MIN_USES, MOST_USED_LIMIT);
+        List<EquipmentType> types = equipmentService.getAllTypes();
+        cmbType.setItems(FXCollections.observableArrayList(reorderWithPinned(
+            types, mostUsedTypes, EquipmentType::getName, count -> pinnedTypeCount = count)));
     }
 
     private static final String DIVIDER_STYLE =
@@ -270,6 +274,8 @@ public class ItemDialogController {
         btnSave.setDisable(false);
     }
 
+    // Generalized (2026-07-13) from a hardcoded "Notebook".equals(type.getName()) check to
+    // TYPE.requires_serial — renaming the Notebook type no longer silently breaks the rule.
     private void updateSinSnForType(EquipmentType type) {
         if (type == null || !type.isAsset()) return;
         boolean requiresSerial = type.isRequiresSerial();
@@ -277,7 +283,6 @@ public class ItemDialogController {
         if (requiresSerial) {
             chkSinSN.setSelected(false);
             txtSerial.setDisable(false);
-            txtSerial.setPromptText("Ingrese S/N...");
             chkSinSN.setTooltip(new Tooltip("Este tipo de equipo siempre requiere número de serie"));
         } else {
             chkSinSN.setTooltip(new Tooltip("Marcar solo en casos excepcionales"));
@@ -684,7 +689,9 @@ public class ItemDialogController {
             cmbModel.setStyle("-fx-padding: 5 8;");
         }
 
-        if (type != null && type.isAsset() && !chkSinSN.isSelected()) {
+        boolean isAssetSerial = type != null && type.isAsset();
+
+        if (isAssetSerial && !chkSinSN.isSelected()) {
             if (txtSerial.getText().trim().isEmpty()) {
                 txtSerial.setStyle("-fx-border-color: #ef4444; -fx-border-width: 1.5; -fx-border-radius: 4; -fx-background-radius: 4;");
                 valid = false;
@@ -693,7 +700,7 @@ public class ItemDialogController {
             }
         }
 
-        if (type != null && type.isAsset() && chkEnableAF.isSelected()) {
+        if (isAssetSerial && chkEnableAF.isSelected()) {
             if (txtAF.getText().trim().isEmpty()) {
                 txtAF.setStyle("-fx-border-color: #ef4444; -fx-border-width: 1.5; -fx-border-radius: 4; -fx-background-radius: 4;");
                 valid = false;
@@ -804,7 +811,7 @@ public class ItemDialogController {
                 parentController.addAsset(newAsset);
             }
         } else {
-                String qtyText = txtQty.getText().trim();
+            String qtyText = txtQty.getText().trim();
             int qty = qtyText.isEmpty() ? 1 : Integer.parseInt(qtyText);
             if (editingCountable != null) {
                 editingCountable.getType().set(typeName);

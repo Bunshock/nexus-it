@@ -331,6 +331,7 @@ class TechnicianSessionServiceTest {
             @Override public Integer getSedeId(String username) { throw new RuntimeException("unreachable"); }
             @Override public java.util.Set<com.bunshock.note_app_for_it_frontend.models.Permission>
                 getPermissionsForRole(String role) { throw new RuntimeException("unreachable"); }
+            @Override public boolean hasGroupCheckBypass(String username) { throw new RuntimeException("unreachable"); }
         });
         session.applyManualOverride("Rodriguez Joaquin", "test-tss-sede-4", "x@x.com", "45933368");
         assertNull(session.getSede());

@@ -11,10 +11,20 @@
 -- or run this after the app has created data/noteapp.db on its own):
 --   sqlite3 data/noteapp.db < database/sqlite/demo-seed.sql
 --
--- Safe to re-run: every insert is either OR IGNORE (equipment catalog) or guarded by an
--- existing-row check (history notes) below, so running this twice does not duplicate rows.
+-- Safe to re-run: every insert is either OR IGNORE (equipment catalog / provider) or guarded by
+-- an existing-row check (history notes) below, so running this twice does not duplicate rows.
+--
+-- Rewritten to match the current schema (NOTE_ITEM/NOTE_PROVEEDOR reference the catalog by
+-- type_id/brand_id/model_id/provider_id foreign keys, not free text — see CLAUDE.md's
+-- "Catalog-FK redesign" section). The original version of this file predated that redesign and
+-- would fail with "no such column: type_name" against a real, current data/noteapp.db; this
+-- version resolves every item's catalog ids by name via subquery instead, same pattern used by
+-- database/sqlite/starter-template.sql.example.
 
--- ── Equipment catalog (132 curated type/brand/model combinations) ──────────────────────────
+-- ── Equipment catalog (132 curated type/brand/model combinations, plus one item-only entry —
+--    CABLE HDMI/Genérico / Otro/1.5 MTS — added below so the history notes further down have a
+--    real catalog row to resolve against; the original file referenced it without ever adding it
+--    to the catalog, which worked under the old free-text NOTE_ITEM shape but can't under FKs) ──
 
 CREATE TEMP TABLE _seed_rows (
     type_name  TEXT NOT NULL,
@@ -29,6 +39,7 @@ INSERT INTO _seed_rows (type_name, is_asset, brand_name, model_name) VALUES
 ('ARO DE LUZ',            0, 'DX260',              'DX260'),
 ('BARRA DE SONIDO',       1, 'LENOVO',             'THINKSMART BAR (L10TSS2M)'),
 ('BRAZO ROBOT',           1, 'ARDUINO',            'SPLR002'),
+('CABLE HDMI',            0, 'Genérico / Otro',    '1.5 MTS'),
 ('CAMARA',                1, 'LOGITECH',           'C270'),
 ('CAMARA',                1, 'POLYCOM',            'POLY P009'),
 ('CARGADOR NOTEBOOK',     0, 'LENOVO',             '65W'),
@@ -158,7 +169,9 @@ INSERT INTO _seed_rows (type_name, is_asset, brand_name, model_name) VALUES
 ('WEBCAM',                0, 'VIDLOK',             'W77');
 
 INSERT OR IGNORE INTO TYPE (name, is_asset, requires_serial)
-SELECT DISTINCT type_name, is_asset, CASE WHEN UPPER(type_name) = 'NOTEBOOK' THEN 1 ELSE 0 END
+SELECT DISTINCT type_name,
+       is_asset,
+       CASE WHEN UPPER(type_name) = 'NOTEBOOK' THEN 1 ELSE 0 END
 FROM _seed_rows;
 
 INSERT OR IGNORE INTO BRAND (name)
@@ -181,6 +194,13 @@ WHERE r.model_name IS NOT NULL;
 
 DROP TABLE _seed_rows;
 
+-- ── Providers referenced by the two "Entrega - Proveedor" demo notes below (2 rows) ────────────
+-- Not part of the 132-row equipment catalog above — a separate, flat catalog with no
+-- type/brand/model structure (see CLAUDE.md's "Provider catalog" section).
+INSERT OR IGNORE INTO PROVIDER (name) VALUES
+('TechCorp S.A.'),
+('Distribuidora IT Sur');
+
 -- ── Demo history notes (8 fictional notes, illustrating every GLPI status and note type) ───
 -- Guarded as a whole: skip entirely if NOTE_REPORT already has rows, so re-running this script
 -- (or running it against a database that already has real notes) never mixes in fake ones.
@@ -191,6 +211,11 @@ DROP TABLE _seed_rows;
 -- ran, note 1 correctly gets skipped, but notes 2-8 would then find that note 1's own timestamp
 -- genuinely doesn't exist yet and incorrectly insert anyway. A single flag computed before any
 -- insert happens avoids that entirely.
+--
+-- Every NOTE_ITEM insert below resolves type_id/brand_id/model_id by name via subquery against
+-- the catalog seeded above, instead of storing type_name/brand_name/model_name text directly —
+-- NOTE_ITEM has had real foreign keys here since the 2026-07-22 catalog-FK redesign (see
+-- CLAUDE.md). Every NOTE_PROVEEDOR insert resolves provider_id the same way against PROVIDER.
 CREATE TEMP TABLE _should_seed_history AS
 SELECT (SELECT COUNT(*) FROM NOTE_REPORT) = 0 AS should_seed;
 
@@ -203,8 +228,15 @@ SELECT id, 'María López', '28471923', 'mlopez@ues21.edu.ar', 'Incorporación'
 FROM NOTE_REPORT WHERE created_at = '2026-06-10T09:15:00'
   AND NOT EXISTS (SELECT 1 FROM NOTE_ENTREGA_DEVOLUCION WHERE note_report_id = NOTE_REPORT.id);
 
-INSERT INTO NOTE_ITEM (note_id, type_name, brand_name, model_name, observations)
-SELECT id, 'NOTEBOOK', 'LENOVO', 'E14 GEN 5', NULL
+INSERT INTO NOTE_ITEM (note_id, type_id, brand_id, model_id, observations)
+SELECT id,
+    (SELECT id FROM TYPE WHERE name = 'NOTEBOOK'),
+    (SELECT id FROM BRAND WHERE name = 'LENOVO'),
+    (SELECT m.id FROM MODEL m JOIN BRAND_TYPE_LINK l ON l.id = m.brand_type_id
+       JOIN TYPE t ON t.id = l.type_id AND t.name = 'NOTEBOOK'
+       JOIN BRAND b ON b.id = l.brand_id AND b.name = 'LENOVO'
+       WHERE m.name = 'E14 GEN 5'),
+    NULL
 FROM NOTE_REPORT WHERE created_at = '2026-06-10T09:15:00'
   AND NOT EXISTS (SELECT 1 FROM NOTE_ITEM WHERE note_id = NOTE_REPORT.id);
 INSERT INTO NOTE_ITEM_ASSET (item_id, serial_number, a_f)
@@ -212,14 +244,28 @@ SELECT last_insert_rowid(), 'R9XK2048', '0001' WHERE changes() = 1;
 INSERT INTO NOTE_ITEM_GLPI_TRACKING (item_id, status, rejection_reason, status_updated_at)
 SELECT last_insert_rowid(), 'PENDING', NULL, NULL WHERE changes() = 1;
 
-INSERT INTO NOTE_ITEM (note_id, type_name, brand_name, model_name, observations)
-SELECT id, 'MOUSE', 'GENIUS', 'NX-7000', NULL
+INSERT INTO NOTE_ITEM (note_id, type_id, brand_id, model_id, observations)
+SELECT id,
+    (SELECT id FROM TYPE WHERE name = 'MOUSE'),
+    (SELECT id FROM BRAND WHERE name = 'GENIUS'),
+    (SELECT m.id FROM MODEL m JOIN BRAND_TYPE_LINK l ON l.id = m.brand_type_id
+       JOIN TYPE t ON t.id = l.type_id AND t.name = 'MOUSE'
+       JOIN BRAND b ON b.id = l.brand_id AND b.name = 'GENIUS'
+       WHERE m.name = 'NX-7000'),
+    NULL
 FROM NOTE_REPORT WHERE created_at = '2026-06-10T09:15:00';
 INSERT INTO NOTE_ITEM_COUNTABLE (item_id, quantity)
 SELECT last_insert_rowid(), 1 WHERE changes() = 1;
 
-INSERT INTO NOTE_ITEM (note_id, type_name, brand_name, model_name, observations)
-SELECT id, 'HEADSET', 'TRUST', 'AYDA', NULL
+INSERT INTO NOTE_ITEM (note_id, type_id, brand_id, model_id, observations)
+SELECT id,
+    (SELECT id FROM TYPE WHERE name = 'HEADSET'),
+    (SELECT id FROM BRAND WHERE name = 'TRUST'),
+    (SELECT m.id FROM MODEL m JOIN BRAND_TYPE_LINK l ON l.id = m.brand_type_id
+       JOIN TYPE t ON t.id = l.type_id AND t.name = 'HEADSET'
+       JOIN BRAND b ON b.id = l.brand_id AND b.name = 'TRUST'
+       WHERE m.name = 'AYDA'),
+    NULL
 FROM NOTE_REPORT WHERE created_at = '2026-06-10T09:15:00';
 INSERT INTO NOTE_ITEM_COUNTABLE (item_id, quantity)
 SELECT last_insert_rowid(), 1 WHERE changes() = 1;
@@ -231,8 +277,15 @@ INSERT INTO NOTE_ENTREGA_DEVOLUCION (note_report_id, user_name, user_dni, user_e
 SELECT id, 'Juan Pérez', '35102847', 'jperez@ues21.edu.ar', NULL
 FROM NOTE_REPORT WHERE created_at = '2026-06-12T14:30:00'
   AND NOT EXISTS (SELECT 1 FROM NOTE_ENTREGA_DEVOLUCION WHERE note_report_id = NOTE_REPORT.id);
-INSERT INTO NOTE_ITEM (note_id, type_name, brand_name, model_name, observations)
-SELECT id, 'NOTEBOOK', 'LENOVO', 'X1 CARBON', NULL
+INSERT INTO NOTE_ITEM (note_id, type_id, brand_id, model_id, observations)
+SELECT id,
+    (SELECT id FROM TYPE WHERE name = 'NOTEBOOK'),
+    (SELECT id FROM BRAND WHERE name = 'LENOVO'),
+    (SELECT m.id FROM MODEL m JOIN BRAND_TYPE_LINK l ON l.id = m.brand_type_id
+       JOIN TYPE t ON t.id = l.type_id AND t.name = 'NOTEBOOK'
+       JOIN BRAND b ON b.id = l.brand_id AND b.name = 'LENOVO'
+       WHERE m.name = 'X1 CARBON'),
+    NULL
 FROM NOTE_REPORT WHERE created_at = '2026-06-12T14:30:00'
   AND NOT EXISTS (SELECT 1 FROM NOTE_ITEM WHERE note_id = NOTE_REPORT.id);
 INSERT INTO NOTE_ITEM_ASSET (item_id, serial_number, a_f)
@@ -240,16 +293,30 @@ SELECT last_insert_rowid(), 'PF3G9012', '0084' WHERE changes() = 1;
 INSERT INTO NOTE_ITEM_GLPI_TRACKING (item_id, status, rejection_reason, status_updated_at)
 SELECT last_insert_rowid(), 'SYNCED', NULL, '2026-06-13T10:00:00' WHERE changes() = 1;
 
-INSERT INTO NOTE_ITEM (note_id, type_name, brand_name, model_name, observations)
-SELECT id, 'MONITOR', 'SAMSUNG', 'S22F350FHL (22")', NULL
+INSERT INTO NOTE_ITEM (note_id, type_id, brand_id, model_id, observations)
+SELECT id,
+    (SELECT id FROM TYPE WHERE name = 'MONITOR'),
+    (SELECT id FROM BRAND WHERE name = 'SAMSUNG'),
+    (SELECT m.id FROM MODEL m JOIN BRAND_TYPE_LINK l ON l.id = m.brand_type_id
+       JOIN TYPE t ON t.id = l.type_id AND t.name = 'MONITOR'
+       JOIN BRAND b ON b.id = l.brand_id AND b.name = 'SAMSUNG'
+       WHERE m.name = 'S22F350FHL (22")'),
+    NULL
 FROM NOTE_REPORT WHERE created_at = '2026-06-12T14:30:00';
 INSERT INTO NOTE_ITEM_ASSET (item_id, serial_number, a_f)
 SELECT last_insert_rowid(), 'M22FE001', '0201' WHERE changes() = 1;
 INSERT INTO NOTE_ITEM_GLPI_TRACKING (item_id, status, rejection_reason, status_updated_at)
 SELECT last_insert_rowid(), 'SYNCED', NULL, '2026-06-13T10:00:00' WHERE changes() = 1;
 
-INSERT INTO NOTE_ITEM (note_id, type_name, brand_name, model_name, observations)
-SELECT id, 'MOUSE', 'LENOVO', 'AB1AS3Z', NULL
+INSERT INTO NOTE_ITEM (note_id, type_id, brand_id, model_id, observations)
+SELECT id,
+    (SELECT id FROM TYPE WHERE name = 'MOUSE'),
+    (SELECT id FROM BRAND WHERE name = 'LENOVO'),
+    (SELECT m.id FROM MODEL m JOIN BRAND_TYPE_LINK l ON l.id = m.brand_type_id
+       JOIN TYPE t ON t.id = l.type_id AND t.name = 'MOUSE'
+       JOIN BRAND b ON b.id = l.brand_id AND b.name = 'LENOVO'
+       WHERE m.name = 'AB1AS3Z'),
+    NULL
 FROM NOTE_REPORT WHERE created_at = '2026-06-12T14:30:00';
 INSERT INTO NOTE_ITEM_COUNTABLE (item_id, quantity)
 SELECT last_insert_rowid(), 1 WHERE changes() = 1;
@@ -261,8 +328,15 @@ INSERT INTO NOTE_ENTREGA_DEVOLUCION (note_report_id, user_name, user_dni, user_e
 SELECT id, 'Carlos Gómez', '20384756', 'cgomez@ues21.edu.ar', NULL
 FROM NOTE_REPORT WHERE created_at = '2026-06-18T11:00:00'
   AND NOT EXISTS (SELECT 1 FROM NOTE_ENTREGA_DEVOLUCION WHERE note_report_id = NOTE_REPORT.id);
-INSERT INTO NOTE_ITEM (note_id, type_name, brand_name, model_name, observations)
-SELECT id, 'NOTEBOOK', 'LENOVO', 'V330-15IKB', NULL
+INSERT INTO NOTE_ITEM (note_id, type_id, brand_id, model_id, observations)
+SELECT id,
+    (SELECT id FROM TYPE WHERE name = 'NOTEBOOK'),
+    (SELECT id FROM BRAND WHERE name = 'LENOVO'),
+    (SELECT m.id FROM MODEL m JOIN BRAND_TYPE_LINK l ON l.id = m.brand_type_id
+       JOIN TYPE t ON t.id = l.type_id AND t.name = 'NOTEBOOK'
+       JOIN BRAND b ON b.id = l.brand_id AND b.name = 'LENOVO'
+       WHERE m.name = 'V330-15IKB'),
+    NULL
 FROM NOTE_REPORT WHERE created_at = '2026-06-18T11:00:00'
   AND NOT EXISTS (SELECT 1 FROM NOTE_ITEM WHERE note_id = NOTE_REPORT.id);
 INSERT INTO NOTE_ITEM_ASSET (item_id, serial_number, a_f)
@@ -270,16 +344,30 @@ SELECT last_insert_rowid(), 'MP4R1199', '0037' WHERE changes() = 1;
 INSERT INTO NOTE_ITEM_GLPI_TRACKING (item_id, status, rejection_reason, status_updated_at)
 SELECT last_insert_rowid(), 'SYNCED', NULL, '2026-06-19T08:30:00' WHERE changes() = 1;
 
-INSERT INTO NOTE_ITEM (note_id, type_name, brand_name, model_name, observations)
-SELECT id, 'CELULAR', 'SAMSUNG', 'GALAXY A54', NULL
+INSERT INTO NOTE_ITEM (note_id, type_id, brand_id, model_id, observations)
+SELECT id,
+    (SELECT id FROM TYPE WHERE name = 'CELULAR'),
+    (SELECT id FROM BRAND WHERE name = 'SAMSUNG'),
+    (SELECT m.id FROM MODEL m JOIN BRAND_TYPE_LINK l ON l.id = m.brand_type_id
+       JOIN TYPE t ON t.id = l.type_id AND t.name = 'CELULAR'
+       JOIN BRAND b ON b.id = l.brand_id AND b.name = 'SAMSUNG'
+       WHERE m.name = 'GALAXY A54'),
+    NULL
 FROM NOTE_REPORT WHERE created_at = '2026-06-18T11:00:00';
 INSERT INTO NOTE_ITEM_ASSET (item_id, serial_number, a_f)
 SELECT last_insert_rowid(), 'RF8N4400', '0112' WHERE changes() = 1;
 INSERT INTO NOTE_ITEM_GLPI_TRACKING (item_id, status, rejection_reason, status_updated_at)
 SELECT last_insert_rowid(), 'REJECTED', 'Número de serie inválido en GLPI', '2026-06-19T08:35:00' WHERE changes() = 1;
 
-INSERT INTO NOTE_ITEM (note_id, type_name, brand_name, model_name, observations)
-SELECT id, 'HEADSET', 'LOGITECH', 'H390', NULL
+INSERT INTO NOTE_ITEM (note_id, type_id, brand_id, model_id, observations)
+SELECT id,
+    (SELECT id FROM TYPE WHERE name = 'HEADSET'),
+    (SELECT id FROM BRAND WHERE name = 'LOGITECH'),
+    (SELECT m.id FROM MODEL m JOIN BRAND_TYPE_LINK l ON l.id = m.brand_type_id
+       JOIN TYPE t ON t.id = l.type_id AND t.name = 'HEADSET'
+       JOIN BRAND b ON b.id = l.brand_id AND b.name = 'LOGITECH'
+       WHERE m.name = 'H390'),
+    NULL
 FROM NOTE_REPORT WHERE created_at = '2026-06-18T11:00:00';
 INSERT INTO NOTE_ITEM_COUNTABLE (item_id, quantity)
 SELECT last_insert_rowid(), 1 WHERE changes() = 1;
@@ -287,12 +375,19 @@ SELECT last_insert_rowid(), 1 WHERE changes() = 1;
 INSERT INTO NOTE_REPORT (created_at, profile_type)
 SELECT '2026-06-20T10:00:00', 'Entrega - Proveedor'
 WHERE (SELECT should_seed FROM _should_seed_history);
-INSERT INTO NOTE_PROVEEDOR (note_report_id, provider_name, cuit, motivo)
-SELECT id, 'TechCorp S.A.', '30-71234567-8', 'Garantía'
+INSERT INTO NOTE_PROVEEDOR (note_report_id, provider_id, cuit, motivo)
+SELECT id, (SELECT id FROM PROVIDER WHERE name = 'TechCorp S.A.'), '30-71234567-8', 'Garantía'
 FROM NOTE_REPORT WHERE created_at = '2026-06-20T10:00:00'
   AND NOT EXISTS (SELECT 1 FROM NOTE_PROVEEDOR WHERE note_report_id = NOTE_REPORT.id);
-INSERT INTO NOTE_ITEM (note_id, type_name, brand_name, model_name, observations)
-SELECT id, 'NOTEBOOK', 'LENOVO', 'E14 GEN 6', NULL
+INSERT INTO NOTE_ITEM (note_id, type_id, brand_id, model_id, observations)
+SELECT id,
+    (SELECT id FROM TYPE WHERE name = 'NOTEBOOK'),
+    (SELECT id FROM BRAND WHERE name = 'LENOVO'),
+    (SELECT m.id FROM MODEL m JOIN BRAND_TYPE_LINK l ON l.id = m.brand_type_id
+       JOIN TYPE t ON t.id = l.type_id AND t.name = 'NOTEBOOK'
+       JOIN BRAND b ON b.id = l.brand_id AND b.name = 'LENOVO'
+       WHERE m.name = 'E14 GEN 6'),
+    NULL
 FROM NOTE_REPORT WHERE created_at = '2026-06-20T10:00:00'
   AND NOT EXISTS (SELECT 1 FROM NOTE_ITEM WHERE note_id = NOTE_REPORT.id);
 INSERT INTO NOTE_ITEM_ASSET (item_id, serial_number, a_f)
@@ -300,8 +395,15 @@ SELECT last_insert_rowid(), 'PF4A0011', '0210' WHERE changes() = 1;
 INSERT INTO NOTE_ITEM_GLPI_TRACKING (item_id, status, rejection_reason, status_updated_at)
 SELECT last_insert_rowid(), 'PENDING', NULL, NULL WHERE changes() = 1;
 
-INSERT INTO NOTE_ITEM (note_id, type_name, brand_name, model_name, observations)
-SELECT id, 'NOTEBOOK', 'LENOVO', 'E14 GEN 6', NULL
+INSERT INTO NOTE_ITEM (note_id, type_id, brand_id, model_id, observations)
+SELECT id,
+    (SELECT id FROM TYPE WHERE name = 'NOTEBOOK'),
+    (SELECT id FROM BRAND WHERE name = 'LENOVO'),
+    (SELECT m.id FROM MODEL m JOIN BRAND_TYPE_LINK l ON l.id = m.brand_type_id
+       JOIN TYPE t ON t.id = l.type_id AND t.name = 'NOTEBOOK'
+       JOIN BRAND b ON b.id = l.brand_id AND b.name = 'LENOVO'
+       WHERE m.name = 'E14 GEN 6'),
+    NULL
 FROM NOTE_REPORT WHERE created_at = '2026-06-20T10:00:00';
 INSERT INTO NOTE_ITEM_ASSET (item_id, serial_number, a_f)
 SELECT last_insert_rowid(), 'PF4A0012', '0211' WHERE changes() = 1;
@@ -315,8 +417,15 @@ INSERT INTO NOTE_ENTREGA_DEVOLUCION (note_report_id, user_name, user_dni, user_e
 SELECT id, 'Ana García', '41829374', 'agarcia@ues21.edu.ar', 'Incorporación'
 FROM NOTE_REPORT WHERE created_at = '2026-06-22T16:45:00'
   AND NOT EXISTS (SELECT 1 FROM NOTE_ENTREGA_DEVOLUCION WHERE note_report_id = NOTE_REPORT.id);
-INSERT INTO NOTE_ITEM (note_id, type_name, brand_name, model_name, observations)
-SELECT id, 'CELULAR', 'SAMSUNG', 'GALAXY A13', NULL
+INSERT INTO NOTE_ITEM (note_id, type_id, brand_id, model_id, observations)
+SELECT id,
+    (SELECT id FROM TYPE WHERE name = 'CELULAR'),
+    (SELECT id FROM BRAND WHERE name = 'SAMSUNG'),
+    (SELECT m.id FROM MODEL m JOIN BRAND_TYPE_LINK l ON l.id = m.brand_type_id
+       JOIN TYPE t ON t.id = l.type_id AND t.name = 'CELULAR'
+       JOIN BRAND b ON b.id = l.brand_id AND b.name = 'SAMSUNG'
+       WHERE m.name = 'GALAXY A13'),
+    NULL
 FROM NOTE_REPORT WHERE created_at = '2026-06-22T16:45:00'
   AND NOT EXISTS (SELECT 1 FROM NOTE_ITEM WHERE note_id = NOTE_REPORT.id);
 INSERT INTO NOTE_ITEM_ASSET (item_id, serial_number, a_f)
@@ -324,8 +433,15 @@ SELECT last_insert_rowid(), 'RZ9K3301', '0155' WHERE changes() = 1;
 INSERT INTO NOTE_ITEM_GLPI_TRACKING (item_id, status, rejection_reason, status_updated_at)
 SELECT last_insert_rowid(), 'REJECTED', 'Activo ya registrado en GLPI con otro usuario', '2026-06-23T09:00:00' WHERE changes() = 1;
 
-INSERT INTO NOTE_ITEM (note_id, type_name, brand_name, model_name, observations)
-SELECT id, 'CELULAR', 'SAMSUNG', 'GALAXY A14', NULL
+INSERT INTO NOTE_ITEM (note_id, type_id, brand_id, model_id, observations)
+SELECT id,
+    (SELECT id FROM TYPE WHERE name = 'CELULAR'),
+    (SELECT id FROM BRAND WHERE name = 'SAMSUNG'),
+    (SELECT m.id FROM MODEL m JOIN BRAND_TYPE_LINK l ON l.id = m.brand_type_id
+       JOIN TYPE t ON t.id = l.type_id AND t.name = 'CELULAR'
+       JOIN BRAND b ON b.id = l.brand_id AND b.name = 'SAMSUNG'
+       WHERE m.name = 'GALAXY A14'),
+    NULL
 FROM NOTE_REPORT WHERE created_at = '2026-06-22T16:45:00';
 INSERT INTO NOTE_ITEM_ASSET (item_id, serial_number, a_f)
 SELECT last_insert_rowid(), 'RZ9K4402', '0156' WHERE changes() = 1;
@@ -339,21 +455,42 @@ INSERT INTO NOTE_ENTREGA_DEVOLUCION (note_report_id, user_name, user_dni, user_e
 SELECT id, 'Pedro Silva', '29384756', 'psilva@ues21.edu.ar', NULL
 FROM NOTE_REPORT WHERE created_at = '2026-06-25T09:30:00'
   AND NOT EXISTS (SELECT 1 FROM NOTE_ENTREGA_DEVOLUCION WHERE note_report_id = NOTE_REPORT.id);
-INSERT INTO NOTE_ITEM (note_id, type_name, brand_name, model_name, observations)
-SELECT id, 'HEADSET', 'TRUST', 'CARUS GXT493', NULL
+INSERT INTO NOTE_ITEM (note_id, type_id, brand_id, model_id, observations)
+SELECT id,
+    (SELECT id FROM TYPE WHERE name = 'HEADSET'),
+    (SELECT id FROM BRAND WHERE name = 'TRUST'),
+    (SELECT m.id FROM MODEL m JOIN BRAND_TYPE_LINK l ON l.id = m.brand_type_id
+       JOIN TYPE t ON t.id = l.type_id AND t.name = 'HEADSET'
+       JOIN BRAND b ON b.id = l.brand_id AND b.name = 'TRUST'
+       WHERE m.name = 'CARUS GXT493'),
+    NULL
 FROM NOTE_REPORT WHERE created_at = '2026-06-25T09:30:00'
   AND NOT EXISTS (SELECT 1 FROM NOTE_ITEM WHERE note_id = NOTE_REPORT.id);
 INSERT INTO NOTE_ITEM_COUNTABLE (item_id, quantity)
 SELECT last_insert_rowid(), 2 WHERE changes() = 1;
 
-INSERT INTO NOTE_ITEM (note_id, type_name, brand_name, model_name, observations)
-SELECT id, 'MOUSE', 'GENIUS', 'DX-120', NULL
+INSERT INTO NOTE_ITEM (note_id, type_id, brand_id, model_id, observations)
+SELECT id,
+    (SELECT id FROM TYPE WHERE name = 'MOUSE'),
+    (SELECT id FROM BRAND WHERE name = 'GENIUS'),
+    (SELECT m.id FROM MODEL m JOIN BRAND_TYPE_LINK l ON l.id = m.brand_type_id
+       JOIN TYPE t ON t.id = l.type_id AND t.name = 'MOUSE'
+       JOIN BRAND b ON b.id = l.brand_id AND b.name = 'GENIUS'
+       WHERE m.name = 'DX-120'),
+    NULL
 FROM NOTE_REPORT WHERE created_at = '2026-06-25T09:30:00';
 INSERT INTO NOTE_ITEM_COUNTABLE (item_id, quantity)
 SELECT last_insert_rowid(), 1 WHERE changes() = 1;
 
-INSERT INTO NOTE_ITEM (note_id, type_name, brand_name, model_name, observations)
-SELECT id, 'CABLE HDMI', 'Genérico', '1.5 MTS', NULL
+INSERT INTO NOTE_ITEM (note_id, type_id, brand_id, model_id, observations)
+SELECT id,
+    (SELECT id FROM TYPE WHERE name = 'CABLE HDMI'),
+    (SELECT id FROM BRAND WHERE name = 'Genérico / Otro'),
+    (SELECT m.id FROM MODEL m JOIN BRAND_TYPE_LINK l ON l.id = m.brand_type_id
+       JOIN TYPE t ON t.id = l.type_id AND t.name = 'CABLE HDMI'
+       JOIN BRAND b ON b.id = l.brand_id AND b.name = 'Genérico / Otro'
+       WHERE m.name = '1.5 MTS'),
+    NULL
 FROM NOTE_REPORT WHERE created_at = '2026-06-25T09:30:00';
 INSERT INTO NOTE_ITEM_COUNTABLE (item_id, quantity)
 SELECT last_insert_rowid(), 1 WHERE changes() = 1;
@@ -371,8 +508,15 @@ FROM NOTE_REPORT WHERE created_at = '2026-06-28T13:00:00'
 -- instead gets a NOTE_ITEM_RETURN_TRACKING row (return_status = PENDING), matching what the real
 -- app writes for every item on a Préstamo note. The original pre-normalization version of this
 -- seed file never set return_status at all (a latent gap, fixed here while touching this file).
-INSERT INTO NOTE_ITEM (note_id, type_name, brand_name, model_name, observations)
-SELECT id, 'TABLET', 'LENOVO', 'TAB M8', 'Uso temporal sala de capacitación'
+INSERT INTO NOTE_ITEM (note_id, type_id, brand_id, model_id, observations)
+SELECT id,
+    (SELECT id FROM TYPE WHERE name = 'TABLET'),
+    (SELECT id FROM BRAND WHERE name = 'LENOVO'),
+    (SELECT m.id FROM MODEL m JOIN BRAND_TYPE_LINK l ON l.id = m.brand_type_id
+       JOIN TYPE t ON t.id = l.type_id AND t.name = 'TABLET'
+       JOIN BRAND b ON b.id = l.brand_id AND b.name = 'LENOVO'
+       WHERE m.name = 'TAB M8'),
+    'Uso temporal sala de capacitación'
 FROM NOTE_REPORT WHERE created_at = '2026-06-28T13:00:00'
   AND NOT EXISTS (SELECT 1 FROM NOTE_ITEM WHERE note_id = NOTE_REPORT.id);
 INSERT INTO NOTE_ITEM_ASSET (item_id, serial_number, a_f)
@@ -383,12 +527,19 @@ SELECT last_insert_rowid(), 'PENDING', NULL, NULL WHERE changes() = 1;
 INSERT INTO NOTE_REPORT (created_at, profile_type)
 SELECT '2026-07-01T08:00:00', 'Entrega - Proveedor'
 WHERE (SELECT should_seed FROM _should_seed_history);
-INSERT INTO NOTE_PROVEEDOR (note_report_id, provider_name, cuit, motivo)
-SELECT id, 'Distribuidora IT Sur', '20-98765432-1', 'Reposición'
+INSERT INTO NOTE_PROVEEDOR (note_report_id, provider_id, cuit, motivo)
+SELECT id, (SELECT id FROM PROVIDER WHERE name = 'Distribuidora IT Sur'), '20-98765432-1', 'Reposición'
 FROM NOTE_REPORT WHERE created_at = '2026-07-01T08:00:00'
   AND NOT EXISTS (SELECT 1 FROM NOTE_PROVEEDOR WHERE note_report_id = NOTE_REPORT.id);
-INSERT INTO NOTE_ITEM (note_id, type_name, brand_name, model_name, observations)
-SELECT id, 'MONITOR', 'SAMSUNG', 'ESSENTIAL MONITOR', NULL
+INSERT INTO NOTE_ITEM (note_id, type_id, brand_id, model_id, observations)
+SELECT id,
+    (SELECT id FROM TYPE WHERE name = 'MONITOR'),
+    (SELECT id FROM BRAND WHERE name = 'SAMSUNG'),
+    (SELECT m.id FROM MODEL m JOIN BRAND_TYPE_LINK l ON l.id = m.brand_type_id
+       JOIN TYPE t ON t.id = l.type_id AND t.name = 'MONITOR'
+       JOIN BRAND b ON b.id = l.brand_id AND b.name = 'SAMSUNG'
+       WHERE m.name = 'ESSENTIAL MONITOR'),
+    NULL
 FROM NOTE_REPORT WHERE created_at = '2026-07-01T08:00:00'
   AND NOT EXISTS (SELECT 1 FROM NOTE_ITEM WHERE note_id = NOTE_REPORT.id);
 INSERT INTO NOTE_ITEM_ASSET (item_id, serial_number, a_f)
@@ -396,8 +547,15 @@ SELECT last_insert_rowid(), 'LSEM2200', '0312' WHERE changes() = 1;
 INSERT INTO NOTE_ITEM_GLPI_TRACKING (item_id, status, rejection_reason, status_updated_at)
 SELECT last_insert_rowid(), 'SYNCED', NULL, '2026-07-01T12:00:00' WHERE changes() = 1;
 
-INSERT INTO NOTE_ITEM (note_id, type_name, brand_name, model_name, observations)
-SELECT id, 'TECLADO', 'ACER', 'PR1101V', NULL
+INSERT INTO NOTE_ITEM (note_id, type_id, brand_id, model_id, observations)
+SELECT id,
+    (SELECT id FROM TYPE WHERE name = 'TECLADO'),
+    (SELECT id FROM BRAND WHERE name = 'ACER'),
+    (SELECT m.id FROM MODEL m JOIN BRAND_TYPE_LINK l ON l.id = m.brand_type_id
+       JOIN TYPE t ON t.id = l.type_id AND t.name = 'TECLADO'
+       JOIN BRAND b ON b.id = l.brand_id AND b.name = 'ACER'
+       WHERE m.name = 'PR1101V'),
+    NULL
 FROM NOTE_REPORT WHERE created_at = '2026-07-01T08:00:00';
 INSERT INTO NOTE_ITEM_COUNTABLE (item_id, quantity)
 SELECT last_insert_rowid(), 2 WHERE changes() = 1;

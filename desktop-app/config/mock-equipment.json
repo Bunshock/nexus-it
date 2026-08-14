@@ -1,11 +1,13 @@
 {
   "types": [
-    { "id": 1, "name": "Notebook",   "isAsset": true,  "requiresSerial": true },
-    { "id": 2, "name": "Monitor",    "isAsset": true  },
-    { "id": 3, "name": "Teclado",    "isAsset": false },
-    { "id": 4, "name": "Mouse",      "isAsset": false },
-    { "id": 5, "name": "Headset",    "isAsset": false },
-    { "id": 6, "name": "Cable",      "isAsset": false }
+    { "id": 1, "name": "Notebook",          "isAsset": true,  "requiresSerial": true },
+    { "id": 2, "name": "Monitor",           "isAsset": true },
+    { "id": 3, "name": "Teclado",           "isAsset": false },
+    { "id": 4, "name": "Mouse",             "isAsset": false },
+    { "id": 5, "name": "Headset",           "isAsset": false },
+    { "id": 6, "name": "Cable",             "isAsset": false },
+    { "id": 7, "name": "Celular",           "isAsset": true,  "requiresSerial": true },
+    { "id": 8, "name": "Línea Corporativa", "isAsset": false }
   ],
   "brands": [
     { "id": 1,  "name": "Dell"     },
@@ -13,6 +15,7 @@
     { "id": 3,  "name": "Lenovo"   },
     { "id": 4,  "name": "Samsung"  },
     { "id": 5,  "name": "LG"       },
+    { "id": 6,  "name": "Motorola" },
     { "id": 99, "name": "Generic"  }
   ],
   "typeBrands": [
@@ -25,7 +28,10 @@
     { "id": 7,  "typeId": 3, "brandId": 99 },
     { "id": 8,  "typeId": 4, "brandId": 99 },
     { "id": 9,  "typeId": 5, "brandId": 99 },
-    { "id": 10, "typeId": 6, "brandId": 99 }
+    { "id": 10, "typeId": 6, "brandId": 99 },
+    { "id": 11, "typeId": 7, "brandId": 4  },
+    { "id": 12, "typeId": 7, "brandId": 6  },
+    { "id": 13, "typeId": 8, "brandId": 99 }
   ],
   "models": [
     { "id": 1,  "brandTypeId": 1, "name": "Latitude 5420"  },
@@ -39,7 +45,10 @@
     { "id": 9,  "brandTypeId": 8, "name": "Estándar"       },
     { "id": 10, "brandTypeId": 9, "name": "Estándar"       },
     { "id": 11, "brandTypeId": 10,"name": "UTP CAT6"            },
-    { "id": 12, "brandTypeId": 3, "name": "ThinkBook 16 G7 ARP" }
+    { "id": 12, "brandTypeId": 3, "name": "ThinkBook 16 G7 ARP" },
+    { "id": 13, "brandTypeId": 11,"name": "Galaxy A54"          },
+    { "id": 14, "brandTypeId": 12,"name": "Moto G84"             },
+    { "id": 15, "brandTypeId": 13,"name": "Estándar"             }
   ],
   "snValidations": [
     { "modelId": 1, "regexPattern": "^[A-Z0-9]{11}$", "isActive": true },

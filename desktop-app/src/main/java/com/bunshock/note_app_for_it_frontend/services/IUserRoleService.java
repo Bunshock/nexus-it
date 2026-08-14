@@ -37,4 +37,11 @@ public interface IUserRoleService {
     /** Every permission granted to this role — a permission not in this set is denied, not
      * merely unset; there is no separate "explicitly denied" state. */
     Set<Permission> getPermissionsForRole(String role);
+
+    /** Whether this specific account skips the AD-group membership check at login (see
+     * LoginController) — e.g. an intern technician who isn't in the org's IT support AD group
+     * but should still be able to log in. Defaults to false when the username has no row, or has
+     * a row with the flag unset; registration in APP_USER is still separately required either
+     * way, this only overrides the group-membership gate specifically. */
+    boolean hasGroupCheckBypass(String username);
 }

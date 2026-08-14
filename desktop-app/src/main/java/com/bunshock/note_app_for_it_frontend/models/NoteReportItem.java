@@ -82,7 +82,7 @@ public class NoteReportItem {
     public void setObservations(String observations) { this.observations = observations; }
 
     public boolean isAsset() { return isAsset; }
-    public void setAsset(boolean asset) { isAsset = asset; }
+    public void setAsset(boolean asset) { this.isAsset = asset; }
 
     public boolean isModifiesStock() { return modifiesStock; }
     public void setModifiesStock(boolean modifiesStock) { this.modifiesStock = modifiesStock; }

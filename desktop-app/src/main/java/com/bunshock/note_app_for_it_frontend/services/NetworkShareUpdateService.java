@@ -98,9 +98,14 @@ public class NetworkShareUpdateService implements IUpdateService {
      * Every failure branch below rewrites the raw IOException into an explicit, Spanish "why" —
      * direct user feedback that the original bare message (often just the file path, e.g. what
      * NoSuchFileException.getMessage() returns) left them unable to tell a missing installer file
-     * apart from an unreachable network share or a genuinely failed copy. The original message is
-     * still appended after "Detalle:" in each case, for a technician who wants to see the raw
-     * underlying error. */
+     * apart from an unreachable network share or a genuinely failed copy. Deliberately no path is
+     * ever included in the rewritten message, and the raw underlying exception message is dropped
+     * rather than appended — for a path-related IOException (NoSuchFileException, a failed
+     * Files.copy, a failed ProcessBuilder.start()) that raw message typically *is* the file path,
+     * so appending it would defeat the point. The share path is itself effectively public — it
+     * sits in every technician's own app-config.json — but a popup is far more likely to be
+     * screenshotted/shared than a config file, so keeping it out of the popup still cuts down
+     * exposure even though it isn't a real access-control boundary. */
     Path copyAndVerifyInstaller(UpdateInfo info) throws IOException {
         if (!isConfigured()) {
             throw new IOException("Auto-actualización no configurada (updates.manifestPath vacío)");
@@ -116,12 +121,11 @@ public class NetworkShareUpdateService implements IUpdateService {
             // On a UNC path this also covers "the whole share/server is unreachable" — Windows'
             // own path resolution can't distinguish that from "file genuinely missing" at this
             // API level, so the message covers both rather than falsely claiming certainty.
-            throw new IOException("No se encontró el instalador en el servidor de actualizaciones "
-                + "(" + sourcePath + "). Verifique que el archivo exista y que el servidor esté "
-                + "accesible. Detalle: " + e.getMessage(), e);
+            throw new IOException("No se encontró el instalador en el servidor de actualizaciones. "
+                + "Verifique que el archivo exista y que el servidor esté accesible.", e);
         } catch (IOException e) {
             throw new IOException("No se pudo copiar el instalador desde el servidor de "
-                + "actualizaciones — verifique la conexión de red. Detalle: " + e.getMessage(), e);
+                + "actualizaciones — verifique la conexión de red.", e);
         }
 
         long actualSize = Files.size(destPath);
@@ -144,9 +148,8 @@ public class NetworkShareUpdateService implements IUpdateService {
             }
             Files.copy(in, destPath, StandardCopyOption.REPLACE_EXISTING);
         } catch (IOException e) {
-            throw new IOException("No se pudo preparar el instalador en el equipo local "
-                + "(" + destPath + "). Verifique espacio en disco y permisos. Detalle: "
-                + e.getMessage(), e);
+            throw new IOException("No se pudo preparar el instalador en el equipo local. "
+                + "Verifique espacio en disco y permisos.", e);
         }
         return destPath;
     }
@@ -166,8 +169,7 @@ public class NetworkShareUpdateService implements IUpdateService {
         try {
             pb.start();
         } catch (IOException e) {
-            throw new IOException("No se pudo iniciar el proceso de instalación. Detalle: "
-                + e.getMessage(), e);
+            throw new IOException("No se pudo iniciar el proceso de instalación.", e);
         }
     }
 

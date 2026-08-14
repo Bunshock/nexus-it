@@ -53,8 +53,9 @@ public class MockEquipmentService implements IEquipmentService {
 
         for (JsonNode n : root.get("types")) {
             int id = n.get("id").asInt();
+            boolean isAsset = n.has("isAsset") && n.get("isAsset").asBoolean();
             boolean requiresSerial = n.has("requiresSerial") && n.get("requiresSerial").asBoolean();
-            types.add(new EquipmentType(id, n.get("name").asText(), n.get("isAsset").asBoolean(), requiresSerial));
+            types.add(new EquipmentType(id, n.get("name").asText(), isAsset, requiresSerial));
             if (id >= nextTypeId) nextTypeId = id + 1;
         }
 

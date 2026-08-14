@@ -37,7 +37,7 @@ Project-level instructions for Claude Code. These override defaults and apply to
 - Every implemented feature must have tests. Write test files **and run them** before marking a task done.
 - Desktop app: **JUnit 5 + TestFX** (`src/test/java/...`)
 - Run: `mvn test` from `desktop-app/`
-- Current test count: 489 tests, all passing.
+- Current test count: 524 tests, all passing.
 - Test classes: `TemplateEngineTest`, `PrestamoHistoryControllerTest`, `ProviderNoteViewFxmlTest`, `MockADServiceTest`, `AdApiServiceTest`, `AppKeyEncryptionServiceTest`, `MockEquipmentServiceTest`, `CachingServiceTest`, `GlpiStatusTest`, `ReturnStatusTest`, `NoteGenerationServiceTest`, `AdminSessionTest`, `RemoteDatabaseServiceTest`, `SqliteHistoryServiceTest`, `DatabaseServiceMigrationTest`, `HistoryControllerTest`, `InputValidationTest`, `TechnicianSessionServiceTest`, `SettingsControllerTest`, `SqliteEquipmentServiceTest`, `ServiceLocatorProvisionTest`, `UserNoteFallaPersistenceTest`, `UserNoteViewFxmlTest`, `SettingsControllerSnFilterTest`, `SettingsViewFxmlTest`, `ProfileControllerDisplayNameTest`, `ProfileViewFxmlTest`, `CatalogMigrationToolTest`, `DemoSeedSqlTest`, `StarterTemplateSqlTest`, `SqlServerSeedSqlSnValidationTest`, `NotePreviewViewFxmlTest`, `NoteDetailViewFxmlTest`, `PrestamosViewFxmlTest`, `PrestamoNewLoanViewFxmlTest`, `PrestamoDetailViewFxmlTest`, `NotePreviewControllerGlpiStatusTest`, `PendingCountsServiceTest`, `NoteGeneratorViewFxmlTest`, `SqliteUserRoleServiceTest`, `LoginControllerTest`, `LoginViewFxmlTest`, `DatabaseSectionViewFxmlTest`
 
 ---
@@ -1393,6 +1393,76 @@ the RBAC/permission layer built earlier the same day:
   convention as this file's other small `AdApiService` helpers. Full suite: 383 tests passing
   (378 pre-existing + 5 new).
 
+## Real AD credential validation deployed; AD-group login gate + per-account bypass (2026-08-11)
+
+The AD API's `POST /api/v1/ad/validate-credentials` endpoint (designed but not yet built as of the
+[Login screen and role-based admin mode](#login-screen-and-role-based-admin-mode) section above)
+was built, deployed to the org's AD API server, and verified end-to-end against real Active
+Directory (both a wrong-password rejection and a correct-password success returning the account's
+real AD group list, confirmed live via Postman) — `AppConfig.AdAccessConfig.mockCredentialValidation`
+is now `false` in the real `config/app-config.json`; `AdApiService.mockValidateCredentials()` and
+its `[MOCK]` stdout warning are unchanged in code (still there for local/offline dev) but no longer
+exercised in production.
+
+- **Deployed on a new port, not the existing production AD API instance** — the app hits the AD
+  API's raw host:port directly with no IIS reverse proxy in front of it (confirmed by reading the
+  live config, correcting an earlier assumption in this file's own history that IIS was involved).
+  The new endpoint's code was deployed as a second Windows service instance on port 8099 (8086 was
+  tried first but hit a Windows-administered excluded TCP port range —
+  `netsh interface ipv4 show excludedportrange protocol=tcp` — not a permissions or code bug,
+  diagnosed from `EACCES: permission denied` in the service's own error log) rather than folding
+  the new route into the existing production instance — explicit choice to keep the
+  already-working production path completely untouched while this endpoint was brought up and
+  verified. `app-config.json`'s `adApi.baseUrl` now permanently points at the 8099 instance.
+- **`adAccess.allowedGroupName` is now set to `"AdminLocalSoportes"`** — the org's real IT-support
+  AD group, confirmed directly by the user. The access gate described in
+  [Login screen and role-based admin mode](#login-screen-and-role-based-admin-mode) (blank =
+  check skipped) is therefore now actually enforced: a technician must both pass the AD password
+  check and be a member of this group to log in at all, on top of the pre-existing `APP_USER`
+  registration requirement.
+- **`APP_USER.bypass_group_check`** (`INTEGER`/`INT NOT NULL DEFAULT 0`, both engines + `01-schema.sql`,
+  migrated via the standard `addColumnIfMissing()`/`columnExists()`-guarded-`ALTER TABLE` pattern
+  this file documents repeatedly elsewhere) — added because intern technicians are real users who
+  need app access but aren't members of `AdminLocalSoportes` and have no AD group of their own to
+  be gated on instead. Same "deny-by-default, explicit per-account grant via direct SQL only"
+  convention as `role`/`sede_id` on the same table (no in-app UI to set it) — a superadmin flips
+  this flag for a specific intern's row to let them through the group check without weakening the
+  check for anyone else. **Registration in `APP_USER` is still separately and unconditionally
+  required either way** — this flag only overrides the group-membership gate specifically, not the
+  registration gate from [Login: unregistered-account bugs fixed](#login-unregistered-account-and-username-substring-match-bugs-fixed-2026-07-30)
+  directly above.
+- **`IUserRoleService.hasGroupCheckBypass(username)`** — new interface method, `default false`-style
+  semantics (no row, or a row with the flag unset, both read as `false`), implemented in
+  `SqliteUserRoleService` (plain `SELECT`), `CachingUserRoleService` (remote-first, local-fallback,
+  same try/catch shape as every other method on that class), and `MockUserRoleService` (in-memory
+  `Map<String, Boolean>`, test-only `setGroupCheckBypass()` setter mirroring `setRole()`/
+  `setSedeId()`'s existing precedent).
+- **`LoginController.handleLogin()`**'s group-check block now reads: reject only when the account
+  is *both* not in the allowed group *and* doesn't have the bypass flag set — an account with the
+  bypass flag skips the group check entirely and falls through to the existing (unchanged)
+  registration/role/session-assignment steps below it.
+- **Considered and rejected**: auto-assigning `ROLE_USER` to any AD-authenticated account not yet
+  present in `APP_USER` (raised directly by the user as an alternative to today's hard
+  registration-required gate) — rejected in the same conversation, since it has no answer for Sede
+  assignment (mandatory for note generation) and would reintroduce exactly the kind of
+  implicit-access gap the [unregistered-account fix](#login-unregistered-account-and-username-substring-match-bugs-fixed-2026-07-30)
+  deliberately closed. The existing explicit-registration-required model was kept as-is.
+- **Tests**: `SqliteUserRoleServiceTest` gained `hasGroupCheckBypassFalseWhenNoRowExists`/
+  `...FalseWhenRowExistsWithFlagUnset`/`...TrueWhenExplicitlySetViaSql`. `CachingServiceTest` gained
+  `hasGroupCheckBypassReadsReturnPrimaryData`/`...FallsBackToLocalWhenPrimaryThrows`.
+  `LoginControllerTest` gained `accountWithGroupCheckBypassLogsInDespiteNotBeingInTheAllowedGroup`
+  (a different allowed group configured, account not a member, bypass flag set — login still
+  succeeds). `DatabaseServiceMigrationTest` gained
+  `migrateSchemaAddsBypassGroupCheckColumnToAPreExistingAppUserTable`. Full suite: 524 tests passing
+  (517 pre-existing + 7 new).
+- **Still open, flagged as a real pre-release blocker, not yet actionable**: the remote SQL Server
+  database this app is meant to run against in production does not exist yet — every deployment
+  today runs fully local (see [Remote SQL Server](#remote-sql-server-write-through-cache)'s
+  degrade-to-local-on-unreachable behavior). Explicit user statement: the app must not ship without
+  this properly configured. Until it exists, `APP_USER`/role/Sede/permission assignment is done by
+  hand, per machine, via a local SQLite browser against each installation's own `data/noteapp.db` —
+  a real, accepted interim gap, not a design decision.
+
 ## Remito de Envío — built, then removed before the first release
 
 A third top-level note type in Generar Nota ("REMITO DE ENVÍO," documenting equipment shipped
@@ -1612,6 +1682,56 @@ screen already uses.
 
 ---
 
+## Mobile phones and corporate chips/lines — needed no schema changes at all (2026-08-13/14)
+
+A same-day design detour, worth documenting precisely because of what it concluded: the first
+attempt modeled phones and chips as two brand-new `TYPE.item_kind` values (`ASSET_IMEI`/
+`NUMBERED`) with their own `NOTE_ITEM_PHONE`/`NOTE_ITEM_SIM` subtype tables, a 4-table item split,
+a 4th/5th item table per host screen, an `ItemDialogHost.allowedItemKinds()` filtering mechanism,
+and new template loops — fully built and tested (537 tests) before being **reverted the same day,
+in full**, after showing it to the user. Direct feedback: no note type has ever restricted which
+items can be added to it (every host screen reuses the same `ItemDialogController` against the
+full catalog), so `allowedItemKinds()` was an invented restriction with no precedent; and visually,
+"I HATE" a 4th/5th table appearing at all — the two-table Asset/Countable layout every screen
+already had was correct and shouldn't grow a 3rd or 4th regardless of what's being modeled.
+
+The corrected, final design: **phones and chips are not new kinds — they're just the two kinds
+this schema already had, described differently to a technician.**
+
+- **A mobile phone is an ordinary asset-table item.** Add a `TYPE` row for it (e.g. "Celular",
+  `is_asset = 1`, `requires_serial = 1` recommended) exactly like Notebook or Monitor. The phone's
+  IMEI is typed directly into the existing N° de Serie field, raw digits, no prefix (obtained via
+  `*#06#` or Ajustes → Acerca del teléfono on the device) — A/F still derives from it normally
+  (`prefijo + separador + IMEI`), since nothing about A/F's own formula changes. If the phone has
+  an assigned company phone number, that goes in the item's own Observaciones/Detalles field —
+  there's no dedicated field for it, and none was added.
+- **A corporate chip/line is an ordinary countable-table item.** Add a `TYPE` row for it (e.g.
+  "Línea Corporativa", `is_asset = 0`) exactly like Mouse or Cable. Because a countable's quantity
+  has no per-unit identity, a batch of chips can't be logged as one row with quantity > 1 — each
+  distinct line/number needs its own item row (quantity 1), with the number itself noted in that
+  item's Detalles. This is a real, accepted gotcha (a technician's natural instinct is to bump the
+  quantity instead), documented in the app's own manual (`AboutView.fxml`, section 5.2) rather than
+  enforced in code — explicitly accepted as low-risk by the user, since delivering a chip on its
+  own is rare in practice.
+- **Zero new schema, zero new model classes, zero new controller branches.** `TYPE.is_asset`/
+  `requires_serial`, `NOTE_ITEM_ASSET`/`NOTE_ITEM_COUNTABLE`, `ItemDialogController`, every host
+  screen's existing two-table layout, and all 6 HTML templates are all completely unchanged — the
+  entire "feature" is two new catalog rows plus a documented typing convention. The reverted
+  attempt's `ItemKind` enum, `PhoneItem`/`SimItem` models, `NOTE_ITEM_PHONE`/`NOTE_ITEM_SIM`
+  tables, `ItemDialogHost.allowedItemKinds()`, and the phone/chip template loops were all deleted
+  outright, not left disabled behind a flag — full suite back to exactly 524 tests passing (the
+  same count as before the detour began), confirming nothing about the prior shape survived.
+- **The generic-model/A-F/stock/GLPI machinery all keeps working unmodified**, precisely because
+  nothing new was introduced for it to special-case: a phone is GLPI-eligible and return-trackable
+  the same way any other asset already was (no exclusion needed — `NUMBERED`'s GLPI exclusion was
+  a reverted-attempt-only concept); a chip is display-bucketed as a countable in History's
+  "Equipos" column the same way any other countable already was.
+- **Manual updated** (`AboutView.fxml`, section 5.2 "Número de serie (S/N)") with two new bullets
+  documenting the IMEI-goes-in-S/N convention and the one-chip-per-row rule — the only user-facing
+  trace of this feature, since there is no new UI to describe.
+
+---
+
 ## Services — current implementations
 
 | Interface | Active implementation | Future |
@@ -1654,7 +1774,19 @@ Types, brands, `typeBrands` junction entries, models, `snValidations`. Loaded by
 
 ## SQLite tables
 
-`TYPE`, `BRAND`, `BRAND_TYPE_LINK`, `MODEL`, `MODEL_STOCK`, `SN_VALIDATION`, `PROVIDER`, `SEDE`, `SEDE_SHIPPING_INFO`, `APP_USER`, `ROLE_PERMISSION`, `NOTE_REPORT`, `NOTE_REPORT_REJECTION`, `NOTE_ENTREGA_DEVOLUCION`, `NOTE_DEVOLUCION_FALLA`, `NOTE_PRESTAMO_AREA_EVENTO`, `NOTE_PROVEEDOR`, `NOTE_REMITO_SEDE`, `NOTE_REMITO_OTHER`, `NOTE_ITEM`, `NOTE_ITEM_ASSET`, `NOTE_ITEM_COUNTABLE`, `NOTE_ITEM_GLPI_TRACKING`, `NOTE_ITEM_RETURN_TRACKING`, `NOTE_ITEM_STOCK_EXCEPTION`, `AUDIT_LOGIN`, `AUDIT_STOCK`, `AUDIT_ITEM_STATUS`, `AUDIT_ADMIN_ACTION`, `APP_SETTINGS`
+`TYPE`, `BRAND`, `BRAND_TYPE_LINK`, `MODEL`, `MODEL_STOCK`, `SN_VALIDATION`, `PROVIDER`, `SEDE`, `SEDE_SHIPPING_INFO`, `APP_USER`, `ROLE_PERMISSION`, `NOTE_REPORT`, `NOTE_REPORT_REJECTION`, `NOTE_ENTREGA_DEVOLUCION`, `NOTE_DEVOLUCION_FALLA`, `NOTE_PRESTAMO_AREA_EVENTO`, `NOTE_PROVEEDOR`, `NOTE_REMITO_SEDE`, `NOTE_REMITO_OTHER`, `NOTE_ITEM`, `NOTE_ITEM_ASSET`, `NOTE_ITEM_COUNTABLE`, `NOTE_ITEM_GLPI_TRACKING`, `NOTE_ITEM_RETURN_TRACKING`, `NOTE_ITEM_GLPI_RETURN_TRACKING`, `NOTE_ITEM_STOCK_EXCEPTION`, `NOTE_ITEM_RETURN_ALLOCATION`, `AUDIT_LOGIN`, `AUDIT_STOCK`, `AUDIT_ITEM_STATUS`, `AUDIT_ADMIN_ACTION`, `APP_SETTINGS`
+
+`NOTE_ITEM_GLPI_RETURN_TRACKING` tracks the separate "synced back into GLPI" event for a
+returnable Provider note's asset once its return is validated — independent from
+`NOTE_ITEM_GLPI_TRACKING`'s original sync-out, since GLPI sync is one-way/no-revert and can't be
+"undone" to reflect the item coming back. `NOTE_ITEM_RETURN_ALLOCATION` is an append-only table of
+partial-quantity return/loss actions on a countable item (e.g. 5 loaned headsets resolved as 3
+returned now, 1 lost later, 1 still pending) — a single `NOTE_ITEM_RETURN_TRACKING.status` column
+can't express that; remaining pending quantity is always `NOTE_ITEM_COUNTABLE.quantity` minus the
+sum of that item's allocation rows, same row-absence-means-pending convention as every other
+tracking table here. Both were missing from this list and from `database/sqlserver/01-schema.sql`
+until caught by direct user review — added to both in the same pass that built
+`database/sqlserver/provisioning/`.
 
 `APP_USER` (`id` surrogate PK, `username UNIQUE`, `role` — `"ADMIN"`/`"USER"`/`"SUPERADMIN"`, `sede_id` FK→`SEDE`, nullable) is a username→role/Sede mapping, unrelated to AD group membership (which gates app access at login, checked live against the AD API, not stored here) — see [Login screen and role-based admin mode](#login-screen-and-role-based-admin-mode). Renamed from `USER_ROLE` (which had no `sede_id` and no `SUPERADMIN` tier) on 2026-07-30 — see [Role-based permissions (RBAC)](#role-based-permissions-rbac-a-superadmin-tier-and-sede-scoped-admin-actions-2026-07-30). `ROLE_PERMISSION` (`role`, `permission`, PK on both) is the deny-by-default permission grant table the same feature added — a permission is denied unless a matching row exists.
 

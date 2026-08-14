@@ -8,8 +8,9 @@ Scripts to provision a remote SQL Server database for Generador de Notas IT. See
 |------|---------|
 | `01-schema.sql` | Creates every table. Contains no organization data (pure structure), so it's committed as-is. **Optional to run** — the app creates this automatically the first time it connects to a configured, empty database (`RemoteDatabaseService.ensureSchema()`). Run it by hand only if you want the database provisioned before ever launching the app, or want the DDL under change review. |
 | `02-seed-equipment.sql.example` | **Template**, not real data — same pattern as `config/app-config.json.example`. Has a handful of placeholder Type/Brand/Model rows, S/N validation rules, and provider rows illustrating the format. Copy it to `02-seed-equipment.sql` (gitignored — see repo root `.gitignore`) and replace the example rows with your organization's actual equipment catalog, S/N patterns, and provider list before running it. Never commit the real, filled-in file. |
+| `provisioning/` | The same schema as `01-schema.sql`, split into 6 small feature-scoped scripts (Sede, Equipment, Users, Permissions, Notes, Audit) plus matching starting-data templates — meant for handing to a DB team reviewing/provisioning a brand-new database feature-by-feature, rather than one large file. See `provisioning/README.md` for the full breakdown, execution order, and an explicit answer to "is there anything beyond plain CREATE TABLE / data" (constraints/indexes: yes; triggers/stored procedures/views: none exist anywhere in this schema). |
 
-Both scripts are idempotent — safe to re-run; they only insert rows that don't already exist.
+Both scripts are idempotent — safe to re-run; they only insert rows that don't already exist. (The scripts under `provisioning/` are the one exception — see that folder's own README for why.)
 
 ## Setting up SQL Server Express
 

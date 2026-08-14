@@ -46,14 +46,14 @@ CREATE TABLE #_seed_rows (
 -- EXAMPLE ROWS ONLY — replace with your organization's real catalog. A few illustrate the
 -- pattern: an asset type with two brands and specific models that always requires S/N (NOTEBOOK),
 -- an asset type with a model-less brand where the app supplies the fallback model option
--- (MONITOR/Genérico), and a countable (non-asset) type (MOUSE).
+-- (MONITOR/Genérico / Otro), and a countable (non-asset) type (MOUSE).
 INSERT INTO #_seed_rows (type_name, is_asset, requires_serial, brand_name, model_name) VALUES
 ('NOTEBOOK', 1, 1, N'Marca Ejemplo A', N'Modelo Ejemplo 14'),
 ('NOTEBOOK', 1, 1, N'Marca Ejemplo A', N'Modelo Ejemplo 15'),
 ('NOTEBOOK', 1, 1, N'Marca Ejemplo B', N'Modelo Ejemplo Pro'),
-('MONITOR', 1, 0, N'Genérico', NULL),
+('MONITOR', 1, 0, N'Genérico / Otro', NULL),
 ('MOUSE', 0, 0, N'Marca Ejemplo A', N'Modelo Ejemplo Inalámbrico'),
-('HEADSET', 0, 0, N'Genérico', NULL);
+('HEADSET', 0, 0, N'Genérico / Otro', NULL);
 
 -- Types
 INSERT INTO TYPE (name, is_asset, requires_serial)

@@ -81,6 +81,15 @@ public class DatabaseSectionController {
     // permissions (AdminSession.hasPermission(Permission, Integer)).
     private Integer currentStockSedeId;
 
+    // true only for a non-SUPERADMIN with no Sede assigned at all — currentStockSedeId is null in
+    // that case too (same value a SUPERADMIN's "Todas" selection uses), but the two must not be
+    // treated the same: "Todas" is a SUPERADMIN's deliberate choice to see every Sede combined;
+    // "no Sede assigned" means this technician has no valid scope at all and must see nothing,
+    // not silently fall back to the same combined-everything total. See stockTotalsByType()/
+    // ByBrandForType()/ByModelForBrandAndType() below, which are the only methods allowed to read
+    // currentStockSedeId for a display query — they check this flag first.
+    private boolean stockSedeUnassigned;
+
     // Guards listTypes'/listBrands' own selectedItemProperty listeners (below) while
     // refreshStockRollupsOnly() re-selects a Type/Brand by id after resorting — that re-selection
     // targets a freshly-queried object (a different instance than whatever was selected before,
@@ -386,8 +395,24 @@ public class DatabaseSectionController {
         refresh();
     }
 
+    // The only three places allowed to read currentStockSedeId for a display query — each checks
+    // stockSedeUnassigned first (see that field's own comment for why null alone can't
+    // distinguish a SUPERADMIN's "Todas" from a technician with no Sede at all).
+    private Map<Integer, Integer> stockTotalsByType() {
+        return stockSedeUnassigned ? Map.of() : equipmentService.getStockTotalsByType(currentStockSedeId);
+    }
+
+    private Map<Integer, Integer> stockTotalsByBrandForType(int typeId) {
+        return stockSedeUnassigned ? Map.of() : equipmentService.getStockTotalsByBrandForType(typeId, currentStockSedeId);
+    }
+
+    private Map<Integer, Integer> stockTotalsByModelForBrandAndType(int brandId, int typeId) {
+        return stockSedeUnassigned ? Map.of()
+            : equipmentService.getStockTotalsByModelForBrandAndType(brandId, typeId, currentStockSedeId);
+    }
+
     private void refreshTypes() {
-        Map<Integer, Integer> stockByType = equipmentService.getStockTotalsByType(currentStockSedeId);
+        Map<Integer, Integer> stockByType = stockTotalsByType();
         List<EquipmentType> types = sortStockFirstThenAlphabetical(
             equipmentService.getAllTypes(), t -> stockByType.getOrDefault(t.getId(), 0), EquipmentType::getName);
         listTypes.setItems(FXCollections.observableArrayList(types));
@@ -411,7 +436,7 @@ public class DatabaseSectionController {
                 .findFirst()
                 .ifPresent(brands::add);
         }
-        Map<Integer, Integer> stockByBrand = equipmentService.getStockTotalsByBrandForType(typeId, currentStockSedeId);
+        Map<Integer, Integer> stockByBrand = stockTotalsByBrandForType(typeId);
         List<EquipmentBrand> sorted = sortStockFirstThenAlphabetical(
             brands, b -> stockByBrand.getOrDefault(b.getId(), 0), EquipmentBrand::getName);
         listBrands.setItems(FXCollections.observableArrayList(sorted));
@@ -439,8 +464,7 @@ public class DatabaseSectionController {
     // sortStockFirstThenAlphabetical() below, same as the Brand list above.
     private void refreshModelsForBrandType(int brandId, int typeId) {
         List<EquipmentModel> models = equipmentService.getModelsForBrandAndType(brandId, typeId);
-        Map<Integer, Integer> stockByModel =
-            equipmentService.getStockTotalsByModelForBrandAndType(brandId, typeId, currentStockSedeId);
+        Map<Integer, Integer> stockByModel = stockTotalsByModelForBrandAndType(brandId, typeId);
         List<EquipmentModel> sorted = sortStockFirstThenAlphabetical(
             models, m -> stockByModel.getOrDefault(m.getId(), 0), EquipmentModel::getName);
         listModels.setItems(FXCollections.observableArrayList(sorted));
@@ -496,7 +520,7 @@ public class DatabaseSectionController {
 
         suppressSelectionListeners = true;
         try {
-            Map<Integer, Integer> stockByType = equipmentService.getStockTotalsByType(currentStockSedeId);
+            Map<Integer, Integer> stockByType = stockTotalsByType();
             List<EquipmentType> sortedTypes = sortStockFirstThenAlphabetical(
                 equipmentService.getAllTypes(), t -> stockByType.getOrDefault(t.getId(), 0), EquipmentType::getName);
             listTypes.setItems(FXCollections.observableArrayList(sortedTypes));
@@ -512,7 +536,7 @@ public class DatabaseSectionController {
                     .filter(b -> genericLabel().equals(b.getName()))
                     .findFirst().ifPresent(brands::add);
             }
-            Map<Integer, Integer> stockByBrand = equipmentService.getStockTotalsByBrandForType(typeId, currentStockSedeId);
+            Map<Integer, Integer> stockByBrand = stockTotalsByBrandForType(typeId);
             List<EquipmentBrand> sortedBrands = sortStockFirstThenAlphabetical(
                 brands, b -> stockByBrand.getOrDefault(b.getId(), 0), EquipmentBrand::getName);
             listBrands.setItems(FXCollections.observableArrayList(sortedBrands));
@@ -623,10 +647,12 @@ public class DatabaseSectionController {
             cmbStockSede.setItems(FXCollections.observableArrayList(items));
             cmbStockSede.getSelectionModel().selectFirst();
             currentStockSedeId = null;
+            stockSedeUnassigned = false;
             cmbStockSede.setVisible(true);
         } else {
             Integer mySedeId = TechnicianSessionService.getInstance().getSedeId();
             currentStockSedeId = mySedeId;
+            stockSedeUnassigned = mySedeId == null;
             if (mySedeId != null) {
                 equipmentService.getAllSedes().stream()
                     .filter(s -> s.getId() == mySedeId)
@@ -667,11 +693,21 @@ public class DatabaseSectionController {
     // Editing a stock number always requires one concrete Sede — a combined "Todas" number has
     // no single row to write to. Called at the top of every stock-writing dialog (Add/Edit
     // Model, Modify Stock) so a SUPERADMIN viewing "Todas" is asked to pick a specific Sede from
-    // cmbStockSede first, rather than silently writing to an arbitrary one.
+    // cmbStockSede first, rather than silently writing to an arbitrary one. A non-SUPERADMIN with
+    // no Sede assigned hits this same guard (currentStockSedeId is null there too — see
+    // stockSedeUnassigned's own comment) but gets a different message, since they have no
+    // cmbStockSede selector to pick from at all — the fix is an admin assigning them a Sede, not
+    // an action they can take themselves.
     private boolean requireConcreteStockSede() {
         if (currentStockSedeId != null) return true;
-        showErrorDialog("Seleccione una sede",
-            "Seleccione una sede específica (no \"Todas\") en el selector de Stock — Sede para modificar el stock.");
+        if (stockSedeUnassigned) {
+            showErrorDialog("Sede no asignada",
+                "Todavía no tiene una Sede asignada. Solicite a un administrador que le asigne una "
+                    + "para poder modificar el stock.");
+        } else {
+            showErrorDialog("Seleccione una sede",
+                "Seleccione una sede específica (no \"Todas\") en el selector de Stock — Sede para modificar el stock.");
+        }
         return false;
     }
 
@@ -774,6 +810,9 @@ public class DatabaseSectionController {
 
     // ── Equipment dialogs ────────────────────────────────────────────
 
+    // Only the word "Siempre" is bold — a plain CheckBox.setText(...) can't mix font weights
+    // within one label, so this builds a small HBox of two Labels (one bold) and sets it as the
+    // checkbox's graphic instead.
     private CheckBox buildRequiresSerialCheckbox(boolean selected) {
         Label bold = new Label("  Siempre");
         bold.setStyle("-fx-font-weight: bold; -fx-font-size: 12px;");
@@ -868,11 +907,12 @@ public class DatabaseSectionController {
 
         CheckBox chkAsset = new CheckBox("Es un activo (tiene número de serie)");
         chkAsset.setSelected(true);
-        chkAsset.setStyle("-fx-font-size: 12px;");
 
         CheckBox chkRequiresSerial = buildRequiresSerialCheckbox(false);
         chkAsset.selectedProperty().addListener((obs, old, isAsset) -> {
             chkRequiresSerial.setDisable(!isAsset);
+            chkRequiresSerial.setVisible(isAsset);
+            chkRequiresSerial.setManaged(isAsset);
             if (!isAsset) chkRequiresSerial.setSelected(false);
         });
 
@@ -910,7 +950,8 @@ public class DatabaseSectionController {
         buttons.setAlignment(Pos.CENTER_RIGHT);
 
         VBox root = buildDialogRoot(380);
-        root.getChildren().addAll(lblTitle, new VBox(2, buildFieldHeaderRow(lblN, lblError), tfName), chkAsset, chkRequiresSerial, buttons);
+        root.getChildren().addAll(lblTitle, new VBox(2, buildFieldHeaderRow(lblN, lblError), tfName),
+            chkAsset, chkRequiresSerial, buttons);
 
         buildAndShow(stage, root, tfName);
     }

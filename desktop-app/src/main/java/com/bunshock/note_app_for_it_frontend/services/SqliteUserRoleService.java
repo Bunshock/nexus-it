@@ -67,6 +67,19 @@ public class SqliteUserRoleService implements IUserRoleService {
     }
 
     @Override
+    public boolean hasGroupCheckBypass(String username) {
+        try (Connection c = connector.get();
+             PreparedStatement ps = c.prepareStatement("SELECT bypass_group_check FROM APP_USER WHERE username = ?")) {
+            ps.setString(1, username);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() && rs.getInt("bypass_group_check") != 0;
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to look up group-check bypass for " + username, e);
+        }
+    }
+
+    @Override
     public Set<Permission> getPermissionsForRole(String role) {
         Set<Permission> permissions = new HashSet<>();
         try (Connection c = connector.get();

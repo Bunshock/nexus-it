@@ -51,11 +51,11 @@ class SqliteHistoryServiceTest {
         try (Connection c = DriverManager.getConnection(url); Statement stmt = c.createStatement()) {
             stmt.executeUpdate("""
                 CREATE TABLE TYPE (
-                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-                    name            TEXT NOT NULL UNIQUE,
-                    is_asset        INTEGER NOT NULL DEFAULT 1,
-                    requires_serial INTEGER NOT NULL DEFAULT 0,
-                    deprecated      INTEGER NOT NULL DEFAULT 0
+                    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name                TEXT NOT NULL UNIQUE,
+                    is_asset            INTEGER NOT NULL DEFAULT 0,
+                    requires_serial     INTEGER NOT NULL DEFAULT 0,
+                    deprecated          INTEGER NOT NULL DEFAULT 0
                 )""");
             stmt.executeUpdate("""
                 CREATE TABLE BRAND (

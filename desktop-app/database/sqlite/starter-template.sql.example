@@ -33,7 +33,7 @@
 -- EXAMPLE ROWS ONLY — delete these and add your organization's real catalog. They illustrate
 -- the pattern: an asset type with two brands and specific models that always requires S/N
 -- (NOTEBOOK), an asset type with a model-less brand where the app supplies the fallback option
--- (MONITOR/Genérico), and a countable (non-asset) type (MOUSE).
+-- (MONITOR/Genérico / Otro), and a countable (non-asset) type (MOUSE).
 CREATE TEMP TABLE _seed_rows (
     type_name       TEXT NOT NULL,
     is_asset        INTEGER NOT NULL,
@@ -46,9 +46,9 @@ INSERT INTO _seed_rows (type_name, is_asset, requires_serial, brand_name, model_
 ('NOTEBOOK', 1, 1, 'Marca Ejemplo A', 'Modelo Ejemplo 14'),
 ('NOTEBOOK', 1, 1, 'Marca Ejemplo A', 'Modelo Ejemplo 15'),
 ('NOTEBOOK', 1, 1, 'Marca Ejemplo B', 'Modelo Ejemplo Pro'),
-('MONITOR',  1, 0, 'Genérico',        NULL),
+('MONITOR',  1, 0, 'Genérico / Otro', NULL),
 ('MOUSE',    0, 0, 'Marca Ejemplo A', 'Modelo Ejemplo Inalámbrico'),
-('HEADSET',  0, 0, 'Genérico',        NULL);
+('HEADSET',  0, 0, 'Genérico / Otro', NULL);
 
 INSERT OR IGNORE INTO TYPE (name, is_asset, requires_serial)
 SELECT DISTINCT type_name, is_asset, requires_serial

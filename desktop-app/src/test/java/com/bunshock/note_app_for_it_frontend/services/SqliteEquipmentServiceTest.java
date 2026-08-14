@@ -41,7 +41,7 @@ class SqliteEquipmentServiceTest {
                 CREATE TABLE TYPE (
                     id   INTEGER PRIMARY KEY AUTOINCREMENT,
                     name TEXT NOT NULL UNIQUE,
-                    is_asset INTEGER NOT NULL DEFAULT 1,
+                    is_asset INTEGER NOT NULL DEFAULT 0,
                     requires_serial INTEGER NOT NULL DEFAULT 0,
                     deprecated INTEGER NOT NULL DEFAULT 0
                 )""");

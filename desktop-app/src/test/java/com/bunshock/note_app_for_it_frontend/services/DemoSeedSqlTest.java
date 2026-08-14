@@ -37,7 +37,7 @@ class DemoSeedSqlTest {
                 CREATE TABLE TYPE (
                     id   INTEGER PRIMARY KEY AUTOINCREMENT,
                     name TEXT NOT NULL UNIQUE,
-                    is_asset INTEGER NOT NULL DEFAULT 1,
+                    is_asset INTEGER NOT NULL DEFAULT 0,
                     requires_serial INTEGER NOT NULL DEFAULT 0
                 )""");
             s.executeUpdate("""
@@ -85,7 +85,7 @@ class DemoSeedSqlTest {
             s.executeUpdate("""
                 CREATE TABLE NOTE_PROVEEDOR (
                     note_report_id   INTEGER PRIMARY KEY REFERENCES NOTE_REPORT(id),
-                    provider_name    TEXT,
+                    provider_id      INTEGER NOT NULL REFERENCES PROVIDER(id),
                     cuit             TEXT,
                     motivo           TEXT,
                     responsible_name TEXT,
@@ -95,9 +95,9 @@ class DemoSeedSqlTest {
                 CREATE TABLE NOTE_ITEM (
                     id           INTEGER PRIMARY KEY AUTOINCREMENT,
                     note_id      INTEGER NOT NULL REFERENCES NOTE_REPORT(id),
-                    type_name    TEXT NOT NULL,
-                    brand_name   TEXT,
-                    model_name   TEXT,
+                    type_id      INTEGER NOT NULL REFERENCES TYPE(id),
+                    brand_id     INTEGER NOT NULL REFERENCES BRAND(id),
+                    model_id     INTEGER NOT NULL REFERENCES MODEL(id),
                     observations TEXT
                 )""");
             s.executeUpdate("""
@@ -178,8 +178,10 @@ class DemoSeedSqlTest {
         // Three rows in the source data intentionally have a NULL model name (types/brand
         // combos with no specific model — LINEA CORPORATIVA/PERSONAL, MICROFONO/K9,
         // MOUSE/DELL) — those contribute a TYPE/BRAND/BRAND_TYPE_LINK row but no MODEL row, so
-        // 132 source rows -> 129 MODEL rows.
-        assertEquals(129, count("MODEL"));
+        // 133 source rows (132 original + CABLE HDMI/Genérico / Otro/1.5 MTS, added so the demo
+        // history notes below have a real catalog row to resolve their type_id/brand_id/model_id
+        // against) -> 130 MODEL rows.
+        assertEquals(130, count("MODEL"));
 
         assertEquals(8, count("NOTE_REPORT"), "8 fictional demo history notes");
         assertTrue(count("NOTE_ENTREGA_DEVOLUCION") > 0);

@@ -117,7 +117,13 @@ public class LoginController {
                 }
 
                 String allowedGroup = allowedGroupName();
-                if (allowedGroup != null && !credentials.getGroups().contains(allowedGroup)) {
+                boolean inAllowedGroup = allowedGroup == null || credentials.getGroups().contains(allowedGroup);
+                // A specific account (e.g. an intern technician) can be excepted from the group
+                // requirement via APP_USER.bypass_group_check — set only by a superadmin via
+                // direct SQL, same "explicit per-account grant" convention as role/sede_id.
+                // Registration in APP_USER is still separately and unconditionally required below
+                // either way; this only overrides the group-membership gate specifically.
+                if (!inAllowedGroup && !ServiceLocator.getInstance().getUserRoleService().hasGroupCheckBypass(username)) {
                     audit.recordLoginAttempt(username, false, "No pertenece al grupo permitido");
                     Platform.runLater(() -> {
                         setBusy(false);

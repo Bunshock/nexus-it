@@ -33,4 +33,9 @@ public class CachingUserRoleService implements IUserRoleService {
     public Set<Permission> getPermissionsForRole(String role) {
         try { return primary.getPermissionsForRole(role); } catch (Exception e) { return local.getPermissionsForRole(role); }
     }
+
+    @Override
+    public boolean hasGroupCheckBypass(String username) {
+        try { return primary.hasGroupCheckBypass(username); } catch (Exception e) { return local.hasGroupCheckBypass(username); }
+    }
 }

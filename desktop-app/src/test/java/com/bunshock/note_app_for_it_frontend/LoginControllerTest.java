@@ -239,6 +239,28 @@ class LoginControllerTest {
     }
 
     @Test
+    void accountWithGroupCheckBypassLogsInDespiteNotBeingInTheAllowedGroup() throws Exception {
+        // Models an intern technician: not in the org's IT-support AD group, but explicitly
+        // excepted via APP_USER.bypass_group_check (set by a superadmin via direct SQL in
+        // production; MockUserRoleService.setGroupCheckBypass() here is the test-only equivalent).
+        // Still must be registered like anyone else — setRole() below covers that.
+        ConfigService.getInstance().getConfig().adAccess.allowedGroupName = "SomeOtherGroup";
+        mockUserRoleService.setRole("jperez", IUserRoleService.ROLE_USER);
+        mockUserRoleService.setGroupCheckBypass("jperez", true);
+        CountDownLatch latch = new CountDownLatch(1);
+
+        runOnFx(() -> {
+            txtUsername.setText("jperez");
+            pfPassword.setText(MOCK_PASSWORD);
+            controller.setOnLoginSuccess(latch::countDown);
+            invoke("handleLogin");
+        });
+
+        assertTrue(latch.await(5, TimeUnit.SECONDS), "login did not complete in time");
+        assertEquals("jperez", TechnicianSessionService.getInstance().getUsername());
+    }
+
+    @Test
     void profileLookupFailureShowsError() throws Exception {
         // A custom IADService double whose validateCredentials() always passes but search()
         // always comes back empty — reproduces the "credentials fine, but AD has no matching

@@ -29,6 +29,7 @@ import javafx.stage.StageStyle;
 public class AboutController {
 
     @FXML private Label lblVersion;
+    @FXML private Label lblManualVersion;
     @FXML private VBox panelAbout;
     @FXML private VBox panelManual;
 
@@ -37,6 +38,10 @@ public class AboutController {
 
     public void initialize() {
         lblVersion.setText("Versión " + AppVersion.getCurrentVersion());
+        // The manual's own portada used to hardcode a version string independent of lblVersion
+        // above — silently drifted out of sync with the real build version. Both must read from
+        // the same source now so they can't diverge again.
+        lblManualVersion.setText("Versión:            " + AppVersion.getCurrentVersion());
     }
 
     @FXML

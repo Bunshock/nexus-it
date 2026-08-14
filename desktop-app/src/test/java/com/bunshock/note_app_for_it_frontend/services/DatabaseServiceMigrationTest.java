@@ -564,6 +564,33 @@ class DatabaseServiceMigrationTest {
         }
     }
 
+    // bypass_group_check lets a specific account (e.g. an intern technician) skip the AD-group
+    // login gate — see LoginController. Reproduces the old (pre-bypass_group_check) APP_USER
+    // shape directly, same as a real pre-existing install, and confirms migrateSchema() (not just
+    // the CREATE TABLE block) backfills it with a DEFAULT that satisfies existing rows.
+    @Test
+    void migrateSchemaAddsBypassGroupCheckColumnToAPreExistingAppUserTable() throws Exception {
+        String url = "jdbc:sqlite:" + tempDir.resolve("app-user-bypass-migration.db").toAbsolutePath();
+        try (Connection c = DriverManager.getConnection(url); Statement stmt = c.createStatement()) {
+            invokeCreateEquipmentTables(stmt);
+            invokeCreateHistoryTables(stmt);
+            stmt.executeUpdate("""
+                CREATE TABLE APP_USER (
+                    id       INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username TEXT NOT NULL UNIQUE,
+                    role     TEXT NOT NULL CHECK (role IN ('USER', 'ADMIN', 'SUPERADMIN')),
+                    sede_id  INTEGER REFERENCES SEDE(id)
+                )""");
+            stmt.executeUpdate("INSERT INTO APP_USER (username, role, sede_id) VALUES ('jperez', 'USER', NULL)");
+            assertFalse(hasColumn(c, "APP_USER", "bypass_group_check"));
+
+            invokeMigrateSchema(c, stmt);
+
+            assertTrue(hasColumn(c, "APP_USER", "bypass_group_check"));
+            assertEquals(0, singleInt(c, "SELECT bypass_group_check FROM APP_USER WHERE username = 'jperez'"));
+        }
+    }
+
     @Test
     void createEquipmentTablesCreatesModelStockTable() throws Exception {
         String url = "jdbc:sqlite:" + tempDir.resolve("model-stock-table.db").toAbsolutePath();

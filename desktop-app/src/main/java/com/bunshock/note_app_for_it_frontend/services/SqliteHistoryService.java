@@ -77,7 +77,7 @@ public class SqliteHistoryService implements IHistoryService {
                SUM(CASE WHEN COALESCE(igr.status, ig.status) = 'SYNCED'   THEN 1 ELSE 0 END) AS synced_count,
                SUM(CASE WHEN COALESCE(igr.status, ig.status) = 'REJECTED' THEN 1 ELSE 0 END) AS rejected_count,
                SUM(CASE WHEN ia.item_id IS NOT NULL THEN 1 ELSE 0 END) AS asset_count,
-               SUM(CASE WHEN i.id IS NOT NULL AND ia.item_id IS NULL THEN 1 ELSE 0 END) AS countable_count,
+               SUM(CASE WHEN ia.item_id IS NULL THEN 1 ELSE 0 END) AS countable_count,
                SUM(
                    CASE WHEN ir.status IS NULL THEN 0
                         WHEN ia.item_id IS NOT NULL THEN CASE WHEN ir.status = 'PENDING' THEN 1 ELSE 0 END
@@ -279,11 +279,10 @@ public class SqliteHistoryService implements IHistoryService {
         PreparedStatement stockExceptionPs = c.prepareStatement(
             "INSERT INTO NOTE_ITEM_STOCK_EXCEPTION (item_id, reason) VALUES (?, ?)");
 
-        // Every item on a Préstamo note (asset or countable alike) needs its own return tracked;
-        // same for a Provider note whose Motivo is in the config-driven returnable list (e.g.
-        // Garantía, Reparación — see isProviderReturnable()). Every other note type's items are
-        // simply not applicable.
-        ReturnStatus returnStatus = needsReturnTracking ? ReturnStatus.PENDING : ReturnStatus.N_A;
+        // Every item on a Préstamo note (asset AND countable — return tracking isn't asset-only
+        // the way GLPI is) needs its own return tracked; same for a Provider note whose Motivo is
+        // in the config-driven returnable list (e.g. Garantía, Reparación — see
+        // isProviderReturnable()). Every other note type's items are simply not applicable.
         for (NoteReportItem item : items) {
             itemPs.setInt(1, reportId);
             itemPs.setInt(2, item.getTypeId());
@@ -312,6 +311,7 @@ public class SqliteHistoryService implements IHistoryService {
                 glpiPs.setString(4, null);
                 glpiPs.addBatch();
             }
+            ReturnStatus returnStatus = needsReturnTracking ? ReturnStatus.PENDING : ReturnStatus.N_A;
             if (returnStatus != ReturnStatus.N_A) {
                 returnPs.setInt(1, itemId);
                 returnPs.setString(2, returnStatus.toDbString());
