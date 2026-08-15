@@ -515,12 +515,44 @@ class DatabaseServiceMigrationTest {
             assertTrue(tableExists(c, "ROLE_PERMISSION"));
             assertFalse(tableExists(c, "USER_ROLE"), "the old table name must not exist on a brand-new install");
 
-            // Seeded once, on first creation: ADMIN gets everything except EDIT_SMTP_CONFIG,
+            // Seeded once, on first creation: ADMIN gets everything except EDIT_SMTP_CONFIG and
+            // EDIT_AF_FORMAT_CONFIG (both org-wide config permissions reserved for SUPERADMIN),
             // SUPERADMIN gets everything.
             assertTrue(rowExists(c, "SELECT 1 FROM ROLE_PERMISSION WHERE role = 'ADMIN' AND permission = 'MANAGE_TYPES'"));
             assertFalse(rowExists(c, "SELECT 1 FROM ROLE_PERMISSION WHERE role = 'ADMIN' AND permission = 'EDIT_SMTP_CONFIG'"),
                 "ADMIN must not be seeded with the SUPERADMIN-only SMTP permission");
+            assertFalse(rowExists(c, "SELECT 1 FROM ROLE_PERMISSION WHERE role = 'ADMIN' AND permission = 'EDIT_AF_FORMAT_CONFIG'"),
+                "ADMIN must not be seeded with the SUPERADMIN-only A/F format permission");
             assertTrue(rowExists(c, "SELECT 1 FROM ROLE_PERMISSION WHERE role = 'SUPERADMIN' AND permission = 'EDIT_SMTP_CONFIG'"));
+            assertTrue(rowExists(c, "SELECT 1 FROM ROLE_PERMISSION WHERE role = 'SUPERADMIN' AND permission = 'EDIT_AF_FORMAT_CONFIG'"));
+        }
+    }
+
+    // Migration must revoke ADMIN's stale AF-format grant without touching anything else.
+    @Test
+    void migrateSchemaRevokesAdminAfFormatPermissionOnAPreExistingDatabase() throws Exception {
+        String url = "jdbc:sqlite:" + tempDir.resolve("af-permission-migration.db").toAbsolutePath();
+        try (Connection c = DriverManager.getConnection(url); Statement stmt = c.createStatement()) {
+            invokeCreateEquipmentTables(stmt);
+            invokeCreateHistoryTables(stmt);
+            invokeCreateUserRoleTable(stmt);
+
+            // Reproduce a pre-existing installation that already ran the original seed, which
+            // granted ADMIN this permission before it was moved to SUPERADMIN-only.
+            stmt.executeUpdate("INSERT INTO ROLE_PERMISSION (role, permission) VALUES ('ADMIN', 'EDIT_AF_FORMAT_CONFIG')");
+
+            invokeMigrateSchema(c, stmt);
+
+            assertFalse(rowExists(c, "SELECT 1 FROM ROLE_PERMISSION WHERE role = 'ADMIN' AND permission = 'EDIT_AF_FORMAT_CONFIG'"),
+                "ADMIN's stale AF-format grant must be revoked by the migration");
+            assertTrue(rowExists(c, "SELECT 1 FROM ROLE_PERMISSION WHERE role = 'ADMIN' AND permission = 'MANAGE_TYPES'"),
+                "unrelated ADMIN permissions must be untouched");
+            assertTrue(rowExists(c, "SELECT 1 FROM ROLE_PERMISSION WHERE role = 'SUPERADMIN' AND permission = 'EDIT_AF_FORMAT_CONFIG'"),
+                "SUPERADMIN keeps the permission");
+
+            // Idempotent: re-running finds nothing left to revoke.
+            invokeMigrateSchema(c, stmt);
+            assertFalse(rowExists(c, "SELECT 1 FROM ROLE_PERMISSION WHERE role = 'ADMIN' AND permission = 'EDIT_AF_FORMAT_CONFIG'"));
         }
     }
 

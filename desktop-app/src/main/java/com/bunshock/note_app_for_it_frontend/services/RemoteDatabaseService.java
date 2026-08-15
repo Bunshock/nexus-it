@@ -551,6 +551,10 @@ public class RemoteDatabaseService {
             // needing an AD group of its own — e.g. intern technicians. DEFAULT 0 preserves
             // today's behavior for every existing account (still must be in the allowed group).
             addColumnIfMissing(stmt, c, "APP_USER", "bypass_group_check", "INT NOT NULL DEFAULT 0");
+
+            if (tableExists(c, "ROLE_PERMISSION")) {
+                revokeAdminAfFormatPermission(stmt);
+            }
         }
     }
 
@@ -1085,17 +1089,23 @@ public class RemoteDatabaseService {
         stmt.executeUpdate("DROP TABLE USER_ROLE");
     }
 
-    // Matches today's status quo: ADMIN could already do everything except the newly-introduced
-    // EDIT_SMTP_CONFIG; SUPERADMIN gets everything including that. Enumerated from the
+    // ADMIN gets everything except the org-wide config permissions reserved for SUPERADMIN
+    // (EDIT_SMTP_CONFIG, EDIT_AF_FORMAT_CONFIG); SUPERADMIN gets everything. Enumerated from the
     // Permission enum itself (not hand-typed strings) so this can't drift out of sync with it.
     private void seedDefaultRolePermissions(Statement stmt) throws SQLException {
         for (com.bunshock.note_app_for_it_frontend.models.Permission p
                 : com.bunshock.note_app_for_it_frontend.models.Permission.values()) {
-            if (p != com.bunshock.note_app_for_it_frontend.models.Permission.EDIT_SMTP_CONFIG) {
+            if (p != com.bunshock.note_app_for_it_frontend.models.Permission.EDIT_SMTP_CONFIG
+                    && p != com.bunshock.note_app_for_it_frontend.models.Permission.EDIT_AF_FORMAT_CONFIG) {
                 stmt.executeUpdate("INSERT INTO ROLE_PERMISSION (role, permission) VALUES ('ADMIN', '" + p.name() + "')");
             }
             stmt.executeUpdate("INSERT INTO ROLE_PERMISSION (role, permission) VALUES ('SUPERADMIN', '" + p.name() + "')");
         }
+    }
+
+    // SQL Server mirror of DatabaseService.revokeAdminAfFormatPermission().
+    private void revokeAdminAfFormatPermission(Statement stmt) throws SQLException {
+        stmt.executeUpdate("DELETE FROM ROLE_PERMISSION WHERE role = 'ADMIN' AND permission = 'EDIT_AF_FORMAT_CONFIG'");
     }
 
     private int resolveOrCreateCatalogRow(Connection c, Map<String, Integer> cache,

@@ -23,7 +23,8 @@ public class MockUserRoleService implements IUserRoleService {
     private final Map<String, Boolean> groupCheckBypass = new LinkedHashMap<>();
 
     public MockUserRoleService() {
-        rolePermissions.put(ROLE_ADMIN, EnumSet.complementOf(EnumSet.of(Permission.EDIT_SMTP_CONFIG)));
+        rolePermissions.put(ROLE_ADMIN, EnumSet.complementOf(
+            EnumSet.of(Permission.EDIT_SMTP_CONFIG, Permission.EDIT_AF_FORMAT_CONFIG)));
         rolePermissions.put(ROLE_SUPERADMIN, EnumSet.allOf(Permission.class));
         rolePermissions.put(ROLE_USER, EnumSet.noneOf(Permission.class));
     }

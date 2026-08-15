@@ -164,6 +164,11 @@ public class DatabaseService {
         // support group but should still be able to log in. DEFAULT 0 preserves today's behavior
         // for every existing account (still must be in the allowed group).
         addColumnIfMissing(stmt, "APP_USER", "bypass_group_check", "INTEGER NOT NULL DEFAULT 0");
+
+        // Guarded — some migration tests call migrateSchema() standalone, before ROLE_PERMISSION exists.
+        if (tableExists(conn, "ROLE_PERMISSION")) {
+            revokeAdminAfFormatPermission(stmt);
+        }
     }
 
     // A first attempt at this feature added modifies_stock_reason directly as a nullable column
@@ -1504,17 +1509,24 @@ public class DatabaseService {
         stmt.executeUpdate("DROP TABLE USER_ROLE");
     }
 
-    // Matches today's status quo: ADMIN could already do everything except the newly-introduced
-    // EDIT_SMTP_CONFIG; SUPERADMIN gets everything including that. Enumerated from the Permission
-    // enum itself (not hand-typed strings) so this can't drift out of sync with it.
+    // ADMIN gets everything except the org-wide config permissions reserved for SUPERADMIN
+    // (EDIT_SMTP_CONFIG, EDIT_AF_FORMAT_CONFIG); SUPERADMIN gets everything. Enumerated from the
+    // Permission enum itself (not hand-typed strings) so this can't drift out of sync with it.
     private void seedDefaultRolePermissions(Statement stmt) throws SQLException {
         for (com.bunshock.note_app_for_it_frontend.models.Permission p
                 : com.bunshock.note_app_for_it_frontend.models.Permission.values()) {
-            if (p != com.bunshock.note_app_for_it_frontend.models.Permission.EDIT_SMTP_CONFIG) {
+            if (p != com.bunshock.note_app_for_it_frontend.models.Permission.EDIT_SMTP_CONFIG
+                    && p != com.bunshock.note_app_for_it_frontend.models.Permission.EDIT_AF_FORMAT_CONFIG) {
                 stmt.executeUpdate("INSERT INTO ROLE_PERMISSION (role, permission) VALUES ('ADMIN', '" + p.name() + "')");
             }
             stmt.executeUpdate("INSERT INTO ROLE_PERMISSION (role, permission) VALUES ('SUPERADMIN', '" + p.name() + "')");
         }
+    }
+
+    // One-time default correction (ADMIN's original seed wrongly included this) — safe to run
+    // unconditionally every startup, same as the approval_status/profile_type corrections above.
+    private void revokeAdminAfFormatPermission(Statement stmt) throws SQLException {
+        stmt.executeUpdate("DELETE FROM ROLE_PERMISSION WHERE role = 'ADMIN' AND permission = 'EDIT_AF_FORMAT_CONFIG'");
     }
 
     // Append-only audit trail — 4 tables, one per concern rather than a single fully generic

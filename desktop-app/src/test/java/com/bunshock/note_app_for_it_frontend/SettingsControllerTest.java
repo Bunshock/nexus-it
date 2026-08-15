@@ -25,12 +25,15 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class SettingsControllerTest {
 
-    // EDIT_SMTP_CONFIG is deliberately SUPERADMIN-only (see MockUserRoleService's default grant
-    // set) — SMTP fields are excluded from this shared list and checked separately.
-    private static final String[] NON_SMTP_FIELD_NAMES = {
-        "txtAfPrefix", "txtAfSeparator", "txtGlpiUrl", "pfGlpiApiKey", "txtAdUrl", "pfAdApiToken"
+    // EDIT_SMTP_CONFIG and EDIT_AF_FORMAT_CONFIG are deliberately SUPERADMIN-only (see
+    // MockUserRoleService's default grant set) — their fields are excluded from the plain-ADMIN
+    // list and checked separately.
+    private static final String[] PLAIN_ADMIN_FIELD_NAMES = {
+        "txtGlpiUrl", "pfGlpiApiKey", "txtAdUrl", "pfAdApiToken"
     };
-    private static final String[] SMTP_FIELD_NAMES = { "txtSmtpSender", "pfSmtpPassword" };
+    private static final String[] SUPERADMIN_ONLY_FIELD_NAMES = {
+        "txtAfPrefix", "txtAfSeparator", "txtSmtpSender", "pfSmtpPassword"
+    };
 
     private final AdminSession session = AdminSession.getInstance();
     private SettingsController controller;
@@ -95,10 +98,10 @@ class SettingsControllerTest {
     @Test
     void fieldsAreDisabledWhenAdminModeInactive() throws Exception {
         updateFieldEditability();
-        for (String name : NON_SMTP_FIELD_NAMES) {
+        for (String name : PLAIN_ADMIN_FIELD_NAMES) {
             assertTrue(getField(name).isDisabled(), name + " should be disabled outside admin mode");
         }
-        for (String name : SMTP_FIELD_NAMES) {
+        for (String name : SUPERADMIN_ONLY_FIELD_NAMES) {
             assertTrue(getField(name).isDisabled(), name + " should be disabled outside admin mode");
         }
         // btnSave is never permission-gated itself — each field group is independently gated by
@@ -107,23 +110,23 @@ class SettingsControllerTest {
     }
 
     @Test
-    void nonSmtpFieldsAreEnabledForPlainAdmin() throws Exception {
+    void plainAdminFieldsAreEnabledForPlainAdmin() throws Exception {
         session.activatePermanently(IUserRoleService.ROLE_ADMIN);
         updateFieldEditability();
-        for (String name : NON_SMTP_FIELD_NAMES) {
+        for (String name : PLAIN_ADMIN_FIELD_NAMES) {
             assertFalse(getField(name).isDisabled(), name + " should be enabled for a plain ADMIN");
         }
         assertFalse(getField("btnSave").isDisabled(), "Save button should be enabled in admin mode");
     }
 
     @Test
-    void smtpFieldsStayDisabledForPlainAdmin() throws Exception {
-        // EDIT_SMTP_CONFIG is SUPERADMIN-only — this is the whole point of the "prohibit-all,
-        // grant per permission" redesign: a plain ADMIN (even via a real, non-fallback login)
-        // must never be able to edit SMTP credentials.
+    void superadminOnlyFieldsStayDisabledForPlainAdmin() throws Exception {
+        // EDIT_SMTP_CONFIG and EDIT_AF_FORMAT_CONFIG are SUPERADMIN-only — this is the whole
+        // point of the "prohibit-all, grant per permission" redesign: a plain ADMIN (even via a
+        // real, non-fallback login) must never be able to edit these org-wide config fields.
         session.activatePermanently(IUserRoleService.ROLE_ADMIN);
         updateFieldEditability();
-        for (String name : SMTP_FIELD_NAMES) {
+        for (String name : SUPERADMIN_ONLY_FIELD_NAMES) {
             assertTrue(getField(name).isDisabled(), name + " should stay disabled for a plain ADMIN");
         }
     }
@@ -132,10 +135,10 @@ class SettingsControllerTest {
     void allFieldsIncludingSmtpAreEnabledForSuperadmin() throws Exception {
         session.activatePermanently(IUserRoleService.ROLE_SUPERADMIN);
         updateFieldEditability();
-        for (String name : NON_SMTP_FIELD_NAMES) {
+        for (String name : PLAIN_ADMIN_FIELD_NAMES) {
             assertFalse(getField(name).isDisabled(), name + " should be enabled for SUPERADMIN");
         }
-        for (String name : SMTP_FIELD_NAMES) {
+        for (String name : SUPERADMIN_ONLY_FIELD_NAMES) {
             assertFalse(getField(name).isDisabled(), name + " should be enabled for SUPERADMIN");
         }
     }
@@ -147,10 +150,10 @@ class SettingsControllerTest {
         updateFieldEditability();
         session.deactivate();
         updateFieldEditability();
-        for (String name : NON_SMTP_FIELD_NAMES) {
+        for (String name : PLAIN_ADMIN_FIELD_NAMES) {
             assertTrue(getField(name).isDisabled(), name + " should be disabled again after admin mode ends");
         }
-        for (String name : SMTP_FIELD_NAMES) {
+        for (String name : SUPERADMIN_ONLY_FIELD_NAMES) {
             assertTrue(getField(name).isDisabled(), name + " should be disabled again after admin mode ends");
         }
         assertFalse(getField("btnSave").isDisabled(), "Save button should stay enabled after admin mode ends");
