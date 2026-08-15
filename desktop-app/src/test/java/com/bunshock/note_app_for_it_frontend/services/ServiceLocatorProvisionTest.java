@@ -129,6 +129,23 @@ class ServiceLocatorProvisionTest {
         assertEquals("already-set-ciphertext", readSetting("db_username"));
     }
 
+    // Same "unreachable host only" scope as RemoteDatabaseServiceTest — no live remote instance
+    // exists in this project's test infrastructure to exercise the actual promotion-to-Caching
+    // path. This just proves the retry doesn't throw or wrongly flip remoteConnected on failure.
+    @Test
+    void retryRemoteConnectionIfDownStaysDisconnectedAgainstAnUnreachableHost() throws Exception {
+        writeSetting("db_host", "unreachable-test-host.invalid");
+        writeSetting("db_port", "1433");
+        writeSetting("db_name", "doesnotexist");
+        locator.setEquipmentService(new SqliteEquipmentService());
+        locator.setHistoryService(new SqliteHistoryService());
+        locator.setUserRoleService(new SqliteUserRoleService());
+
+        assertFalse(locator.isRemoteConnected());
+        locator.retryRemoteConnectionIfDown();
+        assertFalse(locator.isRemoteConnected());
+    }
+
     @Test
     void provisionIfMissingIgnoresBlankOrNullValue() throws Exception {
         deleteSetting("db_name");

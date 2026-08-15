@@ -467,6 +467,9 @@ public class MainController {
                         boolean adUp   = checkAdReachable();
                         boolean glpiUp = ServiceLocator.getInstance().getGlpiService().isReachable();
                         boolean dbUp   = RemoteDatabaseService.getInstance().testConnection();
+                        // Promotes equipmentService/historyService/userRoleService off local-only
+                        // if remote was down at app startup and has since come back.
+                        if (dbUp) ServiceLocator.getInstance().retryRemoteConnectionIfDown();
                         return new boolean[]{adUp, glpiUp, dbUp};
                     }
                 };

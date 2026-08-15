@@ -10,16 +10,18 @@ public class ServiceLocator {
 
     private static ServiceLocator instance;
 
-    private IEquipmentService equipmentService;
+    // volatile: retryRemoteConnectionIfDown() can reassign these from the status-monitor's
+    // background thread while the FX thread reads them.
+    private volatile IEquipmentService equipmentService;
     private IADService adService;
     private IGLPIService glpiService;
     private IEmailService emailService;
-    private IHistoryService historyService;
-    private IUserRoleService userRoleService;
+    private volatile IHistoryService historyService;
+    private volatile IUserRoleService userRoleService;
     private IAuditService auditService;
     private IUpdateService updateService;
 
-    private boolean remoteConnected = false;
+    private volatile boolean remoteConnected = false;
 
     private ServiceLocator() {}
 
@@ -45,37 +47,7 @@ public class ServiceLocator {
         // IAuditService's Javadoc.
         auditService     = new SqliteAuditService();
 
-        String host = loadSetting("db_host");
-        if (host != null && !host.isBlank()) {
-            try {
-                String portStr  = loadSetting("db_port");
-                int    port     = (portStr != null && !portStr.isBlank()) ? Integer.parseInt(portStr) : 1433;
-                String dbName   = loadSetting("db_name");
-                String username = decryptSetting("db_username");
-                String password = decryptSetting("db_password");
-
-                RemoteDatabaseService remote = RemoteDatabaseService.getInstance();
-                remote.configure(host, port, dbName, username, password);
-                remote.ensureSchema();
-
-                IEquipmentService remoteEquipment = new SqliteEquipmentService(() -> {
-                    try { return remote.getConnection(); } catch (java.sql.SQLException e) { throw new RuntimeException(e); }
-                });
-                IHistoryService remoteHistory = new SqliteHistoryService(() -> {
-                    try { return remote.getConnection(); } catch (java.sql.SQLException e) { throw new RuntimeException(e); }
-                });
-                IUserRoleService remoteUserRole = new SqliteUserRoleService(() -> {
-                    try { return remote.getConnection(); } catch (java.sql.SQLException e) { throw new RuntimeException(e); }
-                });
-
-                equipmentService   = new CachingEquipmentService(remoteEquipment, localEquipment);
-                historyService     = new CachingHistoryService(remoteHistory, localHistory);
-                userRoleService    = new CachingUserRoleService(remoteUserRole, localUserRole);
-                remoteConnected    = true;
-            } catch (Exception e) {
-                remoteConnected = false;
-            }
-        }
+        connectRemote();
 
         AdApiService realAd = AdApiService.getInstance();
         realAd.configure(config.adApi != null ? config.adApi.baseUrl : null, decryptSetting("ad_api_token"));
@@ -89,6 +61,51 @@ public class ServiceLocator {
         NetworkShareUpdateService realUpdate = NetworkShareUpdateService.getInstance();
         realUpdate.configure(config.updates != null ? config.updates.manifestPath : null);
         updateService = realUpdate;
+    }
+
+    /**
+     * Called periodically by MainController's status monitor (not just at startup) — if remote
+     * was unreachable when initialize() ran, this is the only thing that can later promote
+     * equipmentService/historyService/userRoleService from local-only to the Caching wrapper
+     * once remote actually comes back. No-op if already connected or not configured at all.
+     */
+    public void retryRemoteConnectionIfDown() {
+        if (!remoteConnected) connectRemote();
+    }
+
+    private void connectRemote() {
+        String host = loadSetting("db_host");
+        if (host == null || host.isBlank()) return;
+        try {
+            String portStr  = loadSetting("db_port");
+            int    port     = (portStr != null && !portStr.isBlank()) ? Integer.parseInt(portStr) : 1433;
+            String dbName   = loadSetting("db_name");
+            String username = decryptSetting("db_username");
+            String password = decryptSetting("db_password");
+
+            RemoteDatabaseService remote = RemoteDatabaseService.getInstance();
+            remote.configure(host, port, dbName, username, password);
+            remote.ensureSchema();
+
+            IEquipmentService remoteEquipment = new SqliteEquipmentService(() -> {
+                try { return remote.getConnection(); } catch (java.sql.SQLException e) { throw new RuntimeException(e); }
+            });
+            IHistoryService remoteHistory = new SqliteHistoryService(() -> {
+                try { return remote.getConnection(); } catch (java.sql.SQLException e) { throw new RuntimeException(e); }
+            });
+            IUserRoleService remoteUserRole = new SqliteUserRoleService(() -> {
+                try { return remote.getConnection(); } catch (java.sql.SQLException e) { throw new RuntimeException(e); }
+            });
+
+            // Safe only because remoteConnected is still false here — these fields are guaranteed
+            // to still be the plain local instances, never an already-wrapped Caching*Service.
+            equipmentService = new CachingEquipmentService(remoteEquipment, equipmentService);
+            historyService   = new CachingHistoryService(remoteHistory, historyService);
+            userRoleService  = new CachingUserRoleService(remoteUserRole, userRoleService);
+            remoteConnected  = true;
+        } catch (Exception e) {
+            remoteConnected = false;
+        }
     }
 
     /**
