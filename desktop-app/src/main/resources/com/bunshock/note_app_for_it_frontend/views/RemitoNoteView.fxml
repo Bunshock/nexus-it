@@ -5,7 +5,7 @@
 
 <VBox fx:id="rootContainer" spacing="20" style="-fx-background-color: #f4f4f4;"
       xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1"
-      fx:controller="com.bunshock.note_app_for_it_frontend.controllers.RemitoNoteController">
+      fx:controller="com.bunshock.note_app_for_it_frontend.controllers.envio.RemitoNoteController">
 
     <children>
 

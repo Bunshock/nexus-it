@@ -2,7 +2,7 @@ package com.bunshock.note_app_for_it_frontend;
 
 import java.lang.reflect.Field;
 
-import com.bunshock.note_app_for_it_frontend.controllers.PrestamosController;
+import com.bunshock.note_app_for_it_frontend.controllers.prestamo.PrestamosController;
 
 import javafx.application.Platform;
 import javafx.scene.control.Label;

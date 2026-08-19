@@ -5,7 +5,7 @@ import java.lang.reflect.Method;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
-import com.bunshock.note_app_for_it_frontend.controllers.SettingsController;
+import com.bunshock.note_app_for_it_frontend.controllers.admin.SettingsController;
 import com.bunshock.note_app_for_it_frontend.services.auth.AdminSession;
 import com.bunshock.note_app_for_it_frontend.services.admin.IUserRoleService;
 import com.bunshock.note_app_for_it_frontend.services.admin.MockUserRoleService;

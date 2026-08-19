@@ -5,7 +5,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
-import com.bunshock.note_app_for_it_frontend.controllers.NoteDetailController;
+import com.bunshock.note_app_for_it_frontend.controllers.history.NoteDetailController;
 import com.bunshock.note_app_for_it_frontend.services.core.ConfigService;
 import javafx.application.Platform;
 import javafx.fxml.FXMLLoader;

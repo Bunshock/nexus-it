@@ -1,4 +1,6 @@
-package com.bunshock.note_app_for_it_frontend.controllers;
+package com.bunshock.note_app_for_it_frontend.controllers.note;
+import com.bunshock.note_app_for_it_frontend.controllers.auth.AdSearchHost;
+import com.bunshock.note_app_for_it_frontend.controllers.auth.ADUserSelectionController;
 
 import java.io.IOException;
 import java.time.DayOfWeek;

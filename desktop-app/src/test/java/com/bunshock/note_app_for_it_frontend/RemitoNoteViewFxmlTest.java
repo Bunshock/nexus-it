@@ -5,7 +5,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
-import com.bunshock.note_app_for_it_frontend.controllers.RemitoNoteController;
+import com.bunshock.note_app_for_it_frontend.controllers.envio.RemitoNoteController;
 import com.bunshock.note_app_for_it_frontend.services.core.ConfigService;
 import com.bunshock.note_app_for_it_frontend.services.catalog.MockEquipmentService;
 import com.bunshock.note_app_for_it_frontend.services.core.ServiceLocator;

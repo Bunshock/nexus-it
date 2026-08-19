@@ -5,7 +5,7 @@
 
 <VBox fx:id="rootContainer" spacing="0" prefWidth="1100" prefHeight="720"
       xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1"
-      fx:controller="com.bunshock.note_app_for_it_frontend.controllers.NotePreviewController">
+      fx:controller="com.bunshock.note_app_for_it_frontend.controllers.note.NotePreviewController">
     <children>
 
         <!-- Header -->

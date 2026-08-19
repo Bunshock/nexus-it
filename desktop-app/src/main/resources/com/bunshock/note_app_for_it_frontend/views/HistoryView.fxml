@@ -5,7 +5,7 @@
 
 <VBox spacing="20" style="-fx-padding: 30; -fx-background-color: #f4f4f4;"
       xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1"
-      fx:controller="com.bunshock.note_app_for_it_frontend.controllers.HistoryController">
+      fx:controller="com.bunshock.note_app_for_it_frontend.controllers.history.HistoryController">
     <children>
 
         <!-- Page title -->

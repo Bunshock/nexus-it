@@ -1,4 +1,5 @@
-package com.bunshock.note_app_for_it_frontend.controllers;
+package com.bunshock.note_app_for_it_frontend.controllers.prestamo;
+import com.bunshock.note_app_for_it_frontend.controllers.history.PrestamoDetailController;
 
 import java.io.IOException;
 import java.time.LocalDate;

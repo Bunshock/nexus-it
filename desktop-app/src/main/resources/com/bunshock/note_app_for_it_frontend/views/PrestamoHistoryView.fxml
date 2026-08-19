@@ -4,7 +4,7 @@
 
 <VBox spacing="20"
       xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1"
-      fx:controller="com.bunshock.note_app_for_it_frontend.controllers.PrestamoHistoryController">
+      fx:controller="com.bunshock.note_app_for_it_frontend.controllers.prestamo.PrestamoHistoryController">
     <children>
 
         <!-- Filter panel -->

@@ -1,4 +1,4 @@
-package com.bunshock.note_app_for_it_frontend.controllers;
+package com.bunshock.note_app_for_it_frontend.controllers.admin;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;

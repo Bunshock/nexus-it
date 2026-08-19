@@ -1,4 +1,8 @@
-package com.bunshock.note_app_for_it_frontend.controllers;
+package com.bunshock.note_app_for_it_frontend.controllers.prestamo;
+import com.bunshock.note_app_for_it_frontend.controllers.core.ItemDialogController;
+import com.bunshock.note_app_for_it_frontend.controllers.core.ItemDialogHost;
+import com.bunshock.note_app_for_it_frontend.controllers.auth.AdSearchHost;
+import com.bunshock.note_app_for_it_frontend.controllers.auth.ADUserSelectionController;
 
 import java.io.IOException;
 import java.time.DayOfWeek;

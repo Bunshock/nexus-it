@@ -1,4 +1,4 @@
-package com.bunshock.note_app_for_it_frontend.controllers;
+package com.bunshock.note_app_for_it_frontend.controllers.history;
 
 import java.io.File;
 import java.io.FileOutputStream;

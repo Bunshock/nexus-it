@@ -2,18 +2,18 @@ package com.bunshock.note_app_for_it_frontend.utils.core;
 
 import java.io.IOException;
 
-import com.bunshock.note_app_for_it_frontend.controllers.DatabaseSectionController;
-import com.bunshock.note_app_for_it_frontend.controllers.EnviosController;
-import com.bunshock.note_app_for_it_frontend.controllers.HistoryController;
-import com.bunshock.note_app_for_it_frontend.controllers.NoteGeneratorController;
-import com.bunshock.note_app_for_it_frontend.controllers.PrestamoHistoryController;
-import com.bunshock.note_app_for_it_frontend.controllers.PrestamoNewLoanController;
-import com.bunshock.note_app_for_it_frontend.controllers.PrestamosController;
-import com.bunshock.note_app_for_it_frontend.controllers.ProviderNoteController;
-import com.bunshock.note_app_for_it_frontend.controllers.RemitoHistoryController;
-import com.bunshock.note_app_for_it_frontend.controllers.RemitoNoteController;
-import com.bunshock.note_app_for_it_frontend.controllers.SettingsController;
-import com.bunshock.note_app_for_it_frontend.controllers.UserNoteController;
+import com.bunshock.note_app_for_it_frontend.controllers.admin.DatabaseSectionController;
+import com.bunshock.note_app_for_it_frontend.controllers.envio.EnviosController;
+import com.bunshock.note_app_for_it_frontend.controllers.history.HistoryController;
+import com.bunshock.note_app_for_it_frontend.controllers.note.NoteGeneratorController;
+import com.bunshock.note_app_for_it_frontend.controllers.prestamo.PrestamoHistoryController;
+import com.bunshock.note_app_for_it_frontend.controllers.prestamo.PrestamoNewLoanController;
+import com.bunshock.note_app_for_it_frontend.controllers.prestamo.PrestamosController;
+import com.bunshock.note_app_for_it_frontend.controllers.note.ProviderNoteController;
+import com.bunshock.note_app_for_it_frontend.controllers.envio.RemitoHistoryController;
+import com.bunshock.note_app_for_it_frontend.controllers.envio.RemitoNoteController;
+import com.bunshock.note_app_for_it_frontend.controllers.admin.SettingsController;
+import com.bunshock.note_app_for_it_frontend.controllers.note.UserNoteController;
 
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Parent;

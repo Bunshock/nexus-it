@@ -10,7 +10,7 @@
      recipe every dialog in this app already uses (see e.g. SettingsController.buildDialogRoot),
      since this isn't part of MainView's own window chrome. -->
 <StackPane xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1"
-           fx:controller="com.bunshock.note_app_for_it_frontend.controllers.LoginController"
+           fx:controller="com.bunshock.note_app_for_it_frontend.controllers.auth.LoginController"
            stylesheets="/com/bunshock/note_app_for_it_frontend/css/styles.css"
            style="-fx-background-color: transparent; -fx-padding: 20;">
     <children>

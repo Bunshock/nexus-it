@@ -7,7 +7,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Set;
 
-import com.bunshock.note_app_for_it_frontend.controllers.PrestamoHistoryController;
+import com.bunshock.note_app_for_it_frontend.controllers.prestamo.PrestamoHistoryController;
 import com.bunshock.note_app_for_it_frontend.models.history.HistoryFilter;
 import com.bunshock.note_app_for_it_frontend.models.history.NoteReport;
 import com.bunshock.note_app_for_it_frontend.services.catalog.MockEquipmentService;

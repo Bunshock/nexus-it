@@ -1,4 +1,5 @@
 package com.bunshock.note_app_for_it_frontend;
+import com.bunshock.note_app_for_it_frontend.controllers.auth.LoginController;
 
 import com.bunshock.note_app_for_it_frontend.services.core.ConfigService;
 import com.bunshock.note_app_for_it_frontend.services.core.DatabaseService;
@@ -94,7 +95,7 @@ public class App extends Application {
     private void showLoginScreen(Stage stage) throws Exception {
         FXMLLoader loader = new FXMLLoader(getClass().getResource("views/LoginView.fxml"));
         Parent loginRoot = loader.load();
-        com.bunshock.note_app_for_it_frontend.controllers.LoginController controller = loader.getController();
+        LoginController controller = loader.getController();
 
         // Reset whatever MainView's window chrome may have applied (maximized state, min size) —
         // a no-op on the very first call from start(), where none of this has been set yet; needed

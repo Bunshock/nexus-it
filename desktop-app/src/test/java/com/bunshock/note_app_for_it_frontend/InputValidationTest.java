@@ -3,9 +3,9 @@ package com.bunshock.note_app_for_it_frontend;
 import java.lang.reflect.Field;
 import java.util.regex.Pattern;
 
-import com.bunshock.note_app_for_it_frontend.controllers.ProfileController;
-import com.bunshock.note_app_for_it_frontend.controllers.ProviderNoteController;
-import com.bunshock.note_app_for_it_frontend.controllers.UserNoteController;
+import com.bunshock.note_app_for_it_frontend.controllers.core.ProfileController;
+import com.bunshock.note_app_for_it_frontend.controllers.note.ProviderNoteController;
+import com.bunshock.note_app_for_it_frontend.controllers.note.UserNoteController;
 
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;

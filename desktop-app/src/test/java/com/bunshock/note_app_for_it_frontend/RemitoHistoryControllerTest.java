@@ -5,7 +5,7 @@ import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Set;
 
-import com.bunshock.note_app_for_it_frontend.controllers.RemitoHistoryController;
+import com.bunshock.note_app_for_it_frontend.controllers.envio.RemitoHistoryController;
 import com.bunshock.note_app_for_it_frontend.models.history.NoteReport;
 import com.bunshock.note_app_for_it_frontend.services.catalog.MockEquipmentService;
 import com.bunshock.note_app_for_it_frontend.services.core.ServiceLocator;

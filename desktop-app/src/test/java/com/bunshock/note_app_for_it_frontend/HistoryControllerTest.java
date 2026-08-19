@@ -6,7 +6,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
-import com.bunshock.note_app_for_it_frontend.controllers.HistoryController;
+import com.bunshock.note_app_for_it_frontend.controllers.history.HistoryController;
 import com.bunshock.note_app_for_it_frontend.models.history.HistoryFilter;
 import com.bunshock.note_app_for_it_frontend.models.history.NoteReport;
 

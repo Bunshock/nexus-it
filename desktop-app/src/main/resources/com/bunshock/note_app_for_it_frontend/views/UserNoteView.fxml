@@ -6,7 +6,7 @@
 
 <VBox spacing="14" maxHeight="Infinity"
       xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1"
-      fx:controller="com.bunshock.note_app_for_it_frontend.controllers.UserNoteController">
+      fx:controller="com.bunshock.note_app_for_it_frontend.controllers.note.UserNoteController">
     <children>
 
         <!-- Motivo: note type is now selected externally, at the NoteGeneratorView level

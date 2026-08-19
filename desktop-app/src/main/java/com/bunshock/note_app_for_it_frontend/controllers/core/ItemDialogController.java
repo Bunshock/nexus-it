@@ -1,4 +1,4 @@
-package com.bunshock.note_app_for_it_frontend.controllers;
+package com.bunshock.note_app_for_it_frontend.controllers.core;
 
 import java.util.ArrayList;
 import java.util.List;

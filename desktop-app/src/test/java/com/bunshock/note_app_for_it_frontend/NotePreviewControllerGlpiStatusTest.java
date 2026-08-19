@@ -4,7 +4,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.List;
 
-import com.bunshock.note_app_for_it_frontend.controllers.NotePreviewController;
+import com.bunshock.note_app_for_it_frontend.controllers.note.NotePreviewController;
 import com.bunshock.note_app_for_it_frontend.models.catalog.AssetItem;
 import com.bunshock.note_app_for_it_frontend.models.catalog.CountableItem;
 import com.bunshock.note_app_for_it_frontend.models.history.GlpiStatus;

@@ -1,4 +1,4 @@
-package com.bunshock.note_app_for_it_frontend.controllers;
+package com.bunshock.note_app_for_it_frontend.controllers.envio;
 
 import com.bunshock.note_app_for_it_frontend.utils.core.ViewFactory;
 import javafx.fxml.FXML;

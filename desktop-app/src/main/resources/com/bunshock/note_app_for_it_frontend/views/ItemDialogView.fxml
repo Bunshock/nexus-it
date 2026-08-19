@@ -6,7 +6,7 @@
 
 <StackPane style="-fx-background-color: transparent; -fx-padding: 12;"
            xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1"
-           fx:controller="com.bunshock.note_app_for_it_frontend.controllers.ItemDialogController">
+           fx:controller="com.bunshock.note_app_for_it_frontend.controllers.core.ItemDialogController">
 
     <VBox prefWidth="520.0"
           style="-fx-background-color: #1a1a1a, white; -fx-background-radius: 12, 10; -fx-background-insets: 0, 2; -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.6), 20, 0, 0, 5);">

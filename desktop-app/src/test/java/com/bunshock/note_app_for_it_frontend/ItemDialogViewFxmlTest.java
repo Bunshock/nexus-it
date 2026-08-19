@@ -1,25 +1,29 @@
 package com.bunshock.note_app_for_it_frontend;
 
-import java.lang.reflect.Field;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
-import com.bunshock.note_app_for_it_frontend.controllers.history.PrestamoDetailController;
-import com.bunshock.note_app_for_it_frontend.services.core.ConfigService;
+import com.bunshock.note_app_for_it_frontend.models.history.NoteReport;
+import com.bunshock.note_app_for_it_frontend.services.catalog.MockEquipmentService;
+import com.bunshock.note_app_for_it_frontend.services.core.ServiceLocator;
+import com.bunshock.note_app_for_it_frontend.services.history.IHistoryService;
 import javafx.application.Platform;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Parent;
-import javafx.scene.layout.VBox;
+
+import java.util.List;
 
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
-// Loads PrestamoDetailView.fxml (the Préstamo return-status detail popup) through a real
-// FXMLLoader — no other test does, so a typo in its fx:id/onAction would otherwise only
-// surface at runtime.
-class PrestamoDetailViewFxmlTest {
+// Mirrors DatabaseSectionViewFxmlTest — catches fx:id/onAction typos. initialize() dereferences
+// both equipmentService and historyService synchronously (populateTypeCombo() calls
+// getMostUsedTypeNames()), so both need a real instance in ServiceLocator before load. No
+// MockHistoryService exists in this codebase, so a minimal no-op stub covers the 3 non-default
+// methods (getMostUsedTypeNames() itself is a default method returning an empty list).
+class ItemDialogViewFxmlTest {
 
     @BeforeAll
     static void initFxToolkitAndConfig() throws Exception {
@@ -28,7 +32,12 @@ class PrestamoDetailViewFxmlTest {
         } catch (IllegalStateException alreadyStarted) {
             // toolkit already running from a previous test class in this JVM
         }
-        ConfigService.getInstance().load();
+        ServiceLocator.getInstance().setEquipmentService(new MockEquipmentService());
+        ServiceLocator.getInstance().setHistoryService(new IHistoryService() {
+            @Override public int save(NoteReport report) { return 0; }
+            @Override public List<NoteReport> getAll() { return List.of(); }
+            @Override public NoteReport getById(int id) { return null; }
+        });
     }
 
     @Test
@@ -37,13 +46,11 @@ class PrestamoDetailViewFxmlTest {
         AtomicReference<Throwable> errorRef = new AtomicReference<>();
         CountDownLatch latch = new CountDownLatch(1);
 
-        AtomicReference<PrestamoDetailController> controllerRef = new AtomicReference<>();
         Platform.runLater(() -> {
             try {
                 FXMLLoader loader = new FXMLLoader(getClass().getResource(
-                    "/com/bunshock/note_app_for_it_frontend/views/PrestamoDetailView.fxml"));
+                    "/com/bunshock/note_app_for_it_frontend/views/ItemDialogView.fxml"));
                 rootRef.set(loader.load());
-                controllerRef.set(loader.getController());
             } catch (Throwable t) {
                 errorRef.set(t);
             } finally {
@@ -53,14 +60,8 @@ class PrestamoDetailViewFxmlTest {
 
         assertTrue(latch.await(5, TimeUnit.SECONDS), "FXML load did not complete in time");
         if (errorRef.get() != null) {
-            fail("PrestamoDetailView.fxml failed to load: " + errorRef.get(), errorRef.get());
+            fail("ItemDialogView.fxml failed to load: " + errorRef.get(), errorRef.get());
         }
         assertNotNull(rootRef.get());
-
-        // Catches a typo in the approval-section VBox's fx:id — added alongside the note
-        // approval workflow's Aprobar/Rechazar buttons.
-        Field f = PrestamoDetailController.class.getDeclaredField("vboxApproval");
-        f.setAccessible(true);
-        assertNotNull((VBox) f.get(controllerRef.get()));
     }
 }

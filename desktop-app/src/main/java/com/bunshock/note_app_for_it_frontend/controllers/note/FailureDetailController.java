@@ -1,4 +1,4 @@
-package com.bunshock.note_app_for_it_frontend.controllers;
+package com.bunshock.note_app_for_it_frontend.controllers.note;
 
 import com.bunshock.note_app_for_it_frontend.services.core.ConfigService;
 import javafx.collections.FXCollections;

@@ -4,7 +4,7 @@
 
 <StackPane style="-fx-background-color: #f4f4f4;"
            xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1"
-           fx:controller="com.bunshock.note_app_for_it_frontend.controllers.AboutController">
+           fx:controller="com.bunshock.note_app_for_it_frontend.controllers.core.AboutController">
 
     <!-- ── Panel: Acerca de ──────────────────────────────────────────── -->
     <VBox fx:id="panelAbout" spacing="20" alignment="CENTER" style="-fx-padding: 60;">

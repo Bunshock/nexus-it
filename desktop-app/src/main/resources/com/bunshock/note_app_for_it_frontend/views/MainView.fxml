@@ -8,7 +8,7 @@
 
 <BorderPane fx:id="rootPane" prefHeight="850" prefWidth="1275.0" styleClass="app-window-frame"
             xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1"
-            fx:controller="com.bunshock.note_app_for_it_frontend.controllers.MainController"
+            fx:controller="com.bunshock.note_app_for_it_frontend.controllers.core.MainController"
             stylesheets="/com/bunshock/note_app_for_it_frontend/css/styles.css">
    <fx:define>
       <ToggleGroup fx:id="flyoutMovimientosGroup" />
