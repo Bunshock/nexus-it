@@ -53,7 +53,7 @@ public class SqliteHistoryService implements IHistoryService {
     // which has no scalar MAX(x, y) — see "Remote SQL Server" in CLAUDE.md.
     //
     // pending_count/synced_count/rejected_count fold in the second GLPI dimension
-    // (NOTE_ITEM_GLPI_RETURN_TRACKING, "synced back in") via COALESCE(igr.status, ig.status): once
+    // (tracking_type = 'GLPI_RETURN', "synced back in") via COALESCE(igr.status, ig.status): once
     // an item's return has been validated and this second dimension has a row at all, IT becomes
     // the item's effective GLPI status for coloring purposes (the original sync-out is subsumed —
     // what matters after a return is whether GLPI now correctly reflects the item being back, not
@@ -109,9 +109,9 @@ public class SqliteHistoryService implements IHistoryService {
         LEFT JOIN NOTE_ITEM                 i  ON i.note_id         = r.id
         LEFT JOIN NOTE_ITEM_ASSET           ia ON ia.item_id        = i.id
         LEFT JOIN NOTE_ITEM_COUNTABLE       ic ON ic.item_id        = i.id
-        LEFT JOIN NOTE_ITEM_GLPI_TRACKING   ig ON ig.item_id         = i.id
-        LEFT JOIN NOTE_ITEM_GLPI_RETURN_TRACKING igr ON igr.item_id  = i.id
-        LEFT JOIN NOTE_ITEM_RETURN_TRACKING ir ON ir.item_id         = i.id
+        LEFT JOIN NOTE_ITEM_STATUS_TRACKING ig  ON ig.item_id  = i.id AND ig.tracking_type  = 'GLPI'
+        LEFT JOIN NOTE_ITEM_STATUS_TRACKING igr ON igr.item_id = i.id AND igr.tracking_type = 'GLPI_RETURN'
+        LEFT JOIN NOTE_ITEM_STATUS_TRACKING ir  ON ir.item_id  = i.id AND ir.tracking_type  = 'RETURN'
         LEFT JOIN (
             SELECT item_id,
                    SUM(CASE WHEN status = 'RETURNED' THEN quantity ELSE 0 END) AS returned_qty,
@@ -267,12 +267,12 @@ public class SqliteHistoryService implements IHistoryService {
         PreparedStatement countablePs = c.prepareStatement(
             "INSERT INTO NOTE_ITEM_COUNTABLE (item_id, quantity) VALUES (?, ?)");
         PreparedStatement glpiPs = c.prepareStatement("""
-            INSERT INTO NOTE_ITEM_GLPI_TRACKING (item_id, status, rejection_reason, status_updated_at)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO NOTE_ITEM_STATUS_TRACKING (item_id, tracking_type, status, rejection_reason, status_updated_at)
+            VALUES (?, 'GLPI', ?, ?, ?)
             """);
         PreparedStatement returnPs = c.prepareStatement("""
-            INSERT INTO NOTE_ITEM_RETURN_TRACKING (item_id, status, rejection_reason, status_updated_at)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO NOTE_ITEM_STATUS_TRACKING (item_id, tracking_type, status, rejection_reason, status_updated_at)
+            VALUES (?, 'RETURN', ?, ?, ?)
             """);
         // Row only inserted for an item flagged "no modifica stock" with a real reason — row
         // absence means the exception doesn't apply, same pattern as glpiPs/returnPs above.
@@ -880,9 +880,9 @@ public class SqliteHistoryService implements IHistoryService {
             JOIN MODEL m ON m.id = b.model_id
             LEFT JOIN NOTE_ITEM_ASSET           a  ON a.item_id  = b.id
             LEFT JOIN NOTE_ITEM_COUNTABLE       ct ON ct.item_id = b.id
-            LEFT JOIN NOTE_ITEM_GLPI_TRACKING   g  ON g.item_id  = b.id
-            LEFT JOIN NOTE_ITEM_GLPI_RETURN_TRACKING gr ON gr.item_id = b.id
-            LEFT JOIN NOTE_ITEM_RETURN_TRACKING rt ON rt.item_id = b.id
+            LEFT JOIN NOTE_ITEM_STATUS_TRACKING g  ON g.item_id  = b.id AND g.tracking_type  = 'GLPI'
+            LEFT JOIN NOTE_ITEM_STATUS_TRACKING gr ON gr.item_id = b.id AND gr.tracking_type = 'GLPI_RETURN'
+            LEFT JOIN NOTE_ITEM_STATUS_TRACKING rt ON rt.item_id = b.id AND rt.tracking_type = 'RETURN'
             LEFT JOIN NOTE_ITEM_STOCK_EXCEPTION se ON se.item_id = b.id
             LEFT JOIN (
                 SELECT item_id,
@@ -1040,14 +1040,14 @@ public class SqliteHistoryService implements IHistoryService {
         // connections). Mirrors the same shape already established for every other upsert in this
         // codebase — see "Remote SQL Server" / "Upserts rewritten as plain check-then-insert/update"
         // in CLAUDE.md. Defensive either way: every real caller only ever transitions an item that
-        // already has a NOTE_ITEM_GLPI_TRACKING row (PENDING), but the INSERT fallback is correct
+        // already has a GLPI-dimension tracking row (PENDING), but the INSERT fallback is correct
         // even if that assumption is ever wrong, at no extra cost.
         try (Connection c = connector.get()) {
             String updatedAt = LocalDateTime.now().toString();
             try (PreparedStatement up = c.prepareStatement("""
-                    UPDATE NOTE_ITEM_GLPI_TRACKING
+                    UPDATE NOTE_ITEM_STATUS_TRACKING
                     SET status = ?, rejection_reason = ?, status_updated_at = ?
-                    WHERE item_id = ?
+                    WHERE item_id = ? AND tracking_type = 'GLPI'
                     """)) {
                 up.setString(1, status.toDbString());
                 up.setString(2, reason);
@@ -1055,8 +1055,8 @@ public class SqliteHistoryService implements IHistoryService {
                 up.setInt(4, itemId);
                 if (up.executeUpdate() == 0) {
                     try (PreparedStatement ins = c.prepareStatement("""
-                            INSERT INTO NOTE_ITEM_GLPI_TRACKING (item_id, status, rejection_reason, status_updated_at)
-                            VALUES (?, ?, ?, ?)
+                            INSERT INTO NOTE_ITEM_STATUS_TRACKING (item_id, tracking_type, status, rejection_reason, status_updated_at)
+                            VALUES (?, 'GLPI', ?, ?, ?)
                             """)) {
                         ins.setInt(1, itemId);
                         ins.setString(2, status.toDbString());
@@ -1078,14 +1078,14 @@ public class SqliteHistoryService implements IHistoryService {
         // Same UPDATE-then-INSERT-if-missing shape as updateItemGlpiStatus() above. Unlike that
         // one, the very first call for a given item is expected to be an INSERT — this dimension
         // doesn't exist at all until NoteDetailController.handleProviderReceived() seeds a PENDING
-        // row the moment the item's return is validated (see NOTE_ITEM_GLPI_RETURN_TRACKING's own
+        // row the moment the item's return is validated (see the 'GLPI_RETURN' tracking_type's own
         // doc in DatabaseService).
         try (Connection c = connector.get()) {
             String updatedAt = LocalDateTime.now().toString();
             try (PreparedStatement up = c.prepareStatement("""
-                    UPDATE NOTE_ITEM_GLPI_RETURN_TRACKING
+                    UPDATE NOTE_ITEM_STATUS_TRACKING
                     SET status = ?, rejection_reason = ?, status_updated_at = ?
-                    WHERE item_id = ?
+                    WHERE item_id = ? AND tracking_type = 'GLPI_RETURN'
                     """)) {
                 up.setString(1, status.toDbString());
                 up.setString(2, reason);
@@ -1093,8 +1093,8 @@ public class SqliteHistoryService implements IHistoryService {
                 up.setInt(4, itemId);
                 if (up.executeUpdate() == 0) {
                     try (PreparedStatement ins = c.prepareStatement("""
-                            INSERT INTO NOTE_ITEM_GLPI_RETURN_TRACKING (item_id, status, rejection_reason, status_updated_at)
-                            VALUES (?, ?, ?, ?)
+                            INSERT INTO NOTE_ITEM_STATUS_TRACKING (item_id, tracking_type, status, rejection_reason, status_updated_at)
+                            VALUES (?, 'GLPI_RETURN', ?, ?, ?)
                             """)) {
                         ins.setInt(1, itemId);
                         ins.setString(2, status.toDbString());
@@ -1119,9 +1119,9 @@ public class SqliteHistoryService implements IHistoryService {
             String previousStatus = currentReturnStatus(c, itemId);
             String updatedAt = LocalDateTime.now().toString();
             try (PreparedStatement up = c.prepareStatement("""
-                    UPDATE NOTE_ITEM_RETURN_TRACKING
+                    UPDATE NOTE_ITEM_STATUS_TRACKING
                     SET status = ?, rejection_reason = ?, status_updated_at = ?
-                    WHERE item_id = ?
+                    WHERE item_id = ? AND tracking_type = 'RETURN'
                     """)) {
                 up.setString(1, status.toDbString());
                 up.setString(2, reason);
@@ -1129,8 +1129,8 @@ public class SqliteHistoryService implements IHistoryService {
                 up.setInt(4, itemId);
                 if (up.executeUpdate() == 0) {
                     try (PreparedStatement ins = c.prepareStatement("""
-                            INSERT INTO NOTE_ITEM_RETURN_TRACKING (item_id, status, rejection_reason, status_updated_at)
-                            VALUES (?, ?, ?, ?)
+                            INSERT INTO NOTE_ITEM_STATUS_TRACKING (item_id, tracking_type, status, rejection_reason, status_updated_at)
+                            VALUES (?, 'RETURN', ?, ?, ?)
                             """)) {
                         ins.setInt(1, itemId);
                         ins.setString(2, status.toDbString());
@@ -1158,7 +1158,7 @@ public class SqliteHistoryService implements IHistoryService {
 
     private String currentReturnStatus(Connection c, int itemId) throws SQLException {
         try (PreparedStatement ps = c.prepareStatement(
-                "SELECT status FROM NOTE_ITEM_RETURN_TRACKING WHERE item_id = ?")) {
+                "SELECT status FROM NOTE_ITEM_STATUS_TRACKING WHERE item_id = ? AND tracking_type = 'RETURN'")) {
             ps.setInt(1, itemId);
             ResultSet rs = ps.executeQuery();
             return rs.next() ? rs.getString("status") : null;

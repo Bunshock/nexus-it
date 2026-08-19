@@ -170,12 +170,25 @@ END
 -- access at all and is checked against the AD API at login time, not stored here. Renamed from
 -- USER_ROLE (2026-07-30) since USER is a reserved keyword/niladic function in T-SQL and the old
 -- table had no sede_id/SUPERADMIN tier.
+--
+-- ROLE is a plain lookup table for the 3 fixed role names — APP_USER.role_id and
+-- ROLE_PERMISSION.role_id both reference it, instead of each independently duplicating the same
+-- CHECK (role IN (...)) constraint with nothing enforcing the two stay in sync.
+IF OBJECT_ID('dbo.ROLE', 'U') IS NULL
+BEGIN
+    CREATE TABLE ROLE (
+        id   INT IDENTITY(1,1) PRIMARY KEY,
+        name NVARCHAR(20) NOT NULL UNIQUE
+    );
+    INSERT INTO ROLE (name) VALUES ('USER'), ('ADMIN'), ('SUPERADMIN');
+END
+
 IF OBJECT_ID('dbo.APP_USER', 'U') IS NULL
 BEGIN
     CREATE TABLE APP_USER (
         id                 INT IDENTITY(1,1) PRIMARY KEY,
         username           NVARCHAR(100) NOT NULL UNIQUE,
-        role               NVARCHAR(20) NOT NULL CHECK (role IN ('USER', 'ADMIN', 'SUPERADMIN')),
+        role_id            INT NOT NULL REFERENCES ROLE(id),
         sede_id            INT REFERENCES SEDE(id),
         bypass_group_check INT NOT NULL DEFAULT 0
     );
@@ -186,9 +199,10 @@ END
 IF OBJECT_ID('dbo.ROLE_PERMISSION', 'U') IS NULL
 BEGIN
     CREATE TABLE ROLE_PERMISSION (
-        role       NVARCHAR(20) NOT NULL CHECK (role IN ('USER', 'ADMIN', 'SUPERADMIN')),
+        id         INT IDENTITY(1,1) PRIMARY KEY,
+        role_id    INT NOT NULL REFERENCES ROLE(id),
         permission NVARCHAR(50) NOT NULL,
-        CONSTRAINT pk_role_permission PRIMARY KEY (role, permission)
+        CONSTRAINT uq_role_permission UNIQUE (role_id, permission)
     );
 END
 
@@ -381,42 +395,25 @@ BEGIN
     );
 END
 
--- No 'N_A' value/default here — a row simply doesn't exist for an item that isn't GLPI-tracked
--- (countable, or a Préstamo asset), instead of always existing with a sentinel value. Same
--- reasoning for NOTE_ITEM_RETURN_TRACKING below.
-IF OBJECT_ID('dbo.NOTE_ITEM_GLPI_TRACKING', 'U') IS NULL
+-- No 'N_A' value/default here — a row simply doesn't exist for a tracking dimension that doesn't
+-- apply to an item, instead of always existing with a sentinel value. One table for all 3
+-- tracking dimensions (GLPI sync-out, Préstamo/Provider return, GLPI sync-back after a return) —
+-- they're byte-identical in shape, differing only in which dimension a row belongs to, so
+-- tracking_type is the discriminator. UNIQUE(item_id, tracking_type) is what used to be each
+-- dimension's own item_id PK — an item can now legitimately hold up to 3 rows at once (a
+-- returnable Provider note's asset gets a GLPI row on sync-out, a RETURN row once returned, and a
+-- GLPI_RETURN row once re-synced afterward — GLPI sync is one-way/no-revert, so the original
+-- sync-out can never be "undone" to reflect an item coming back, hence the separate dimension).
+IF OBJECT_ID('dbo.NOTE_ITEM_STATUS_TRACKING', 'U') IS NULL
 BEGIN
-    CREATE TABLE NOTE_ITEM_GLPI_TRACKING (
-        item_id           INT PRIMARY KEY REFERENCES NOTE_ITEM(id),
+    CREATE TABLE NOTE_ITEM_STATUS_TRACKING (
+        id                INT IDENTITY(1,1) PRIMARY KEY,
+        item_id           INT NOT NULL REFERENCES NOTE_ITEM(id),
+        tracking_type     NVARCHAR(20) NOT NULL CHECK (tracking_type IN ('GLPI', 'RETURN', 'GLPI_RETURN')),
         status            NVARCHAR(50) NOT NULL,
         rejection_reason  NVARCHAR(300),
-        status_updated_at DATETIME2
-    );
-END
-
-IF OBJECT_ID('dbo.NOTE_ITEM_RETURN_TRACKING', 'U') IS NULL
-BEGIN
-    CREATE TABLE NOTE_ITEM_RETURN_TRACKING (
-        item_id           INT PRIMARY KEY REFERENCES NOTE_ITEM(id),
-        status            NVARCHAR(50) NOT NULL,
-        rejection_reason  NVARCHAR(300),
-        status_updated_at DATETIME2
-    );
-END
-
--- A second, independent GLPI dimension for a returnable Provider note's asset items only
--- (Provider assets, unlike Préstamo's, get real GLPI tracking on the way out). GLPI sync is
--- one-way/no-revert, so the original sync-out (NOTE_ITEM_GLPI_TRACKING above) can never be
--- "undone" to reflect an item coming back — this table tracks the separate "synced back into
--- GLPI" event instead. Row absence means not applicable yet; a row is only created once the
--- item's return is actually validated (RETURNED), seeded PENDING at that moment.
-IF OBJECT_ID('dbo.NOTE_ITEM_GLPI_RETURN_TRACKING', 'U') IS NULL
-BEGIN
-    CREATE TABLE NOTE_ITEM_GLPI_RETURN_TRACKING (
-        item_id           INT PRIMARY KEY REFERENCES NOTE_ITEM(id),
-        status            NVARCHAR(50) NOT NULL,
-        rejection_reason  NVARCHAR(300),
-        status_updated_at DATETIME2
+        status_updated_at DATETIME2,
+        CONSTRAINT uq_note_item_status_tracking UNIQUE (item_id, tracking_type)
     );
 END
 
@@ -434,9 +431,9 @@ END
 
 -- Covers both GLPI and Préstamo/Provider return-status transitions in one table via a
 -- status_kind discriminator (both are the same "item's status moved from A to B" shape) —
--- NOTE_ITEM_GLPI_TRACKING/NOTE_ITEM_RETURN_TRACKING only ever keep the latest status, never
--- prior transitions. Created here, not alongside the other audit tables above, because it
--- references NOTE_ITEM, which doesn't exist until this point in the script.
+-- NOTE_ITEM_STATUS_TRACKING only ever keeps the latest status per dimension, never prior
+-- transitions. Created here, not alongside the other audit tables above, because it references
+-- NOTE_ITEM, which doesn't exist until this point in the script.
 IF OBJECT_ID('dbo.AUDIT_ITEM_STATUS', 'U') IS NULL
 BEGIN
     CREATE TABLE AUDIT_ITEM_STATUS (
@@ -454,11 +451,12 @@ END
 
 -- Countable items can be resolved in partial batches over time (e.g. 5 loaned headsets: 3
 -- returned now, 1 lost later, 1 still pending) — a single status column on
--- NOTE_ITEM_RETURN_TRACKING can't express that, so each partial action gets its own append-only
--- row here instead. PENDING is never stored — the remaining pending quantity is always
--- NOTE_ITEM_COUNTABLE.quantity minus the sum of allocations for that item, same "row absence is
--- the state" convention as every other tracking table in this schema. Asset items never get a
--- row here (a physical unit isn't divisible) — they stay on NOTE_ITEM_RETURN_TRACKING.status.
+-- NOTE_ITEM_STATUS_TRACKING (tracking_type = 'RETURN') can't express that, so each partial action
+-- gets its own append-only row here instead. PENDING is never stored — the remaining pending
+-- quantity is always NOTE_ITEM_COUNTABLE.quantity minus the sum of allocations for that item,
+-- same "row absence is the state" convention as every other tracking table in this schema. Asset
+-- items never get a row here (a physical unit isn't divisible) — they stay on the existing
+-- whole-item RETURN-dimension status.
 IF OBJECT_ID('dbo.NOTE_ITEM_RETURN_ALLOCATION', 'U') IS NULL
 BEGIN
     CREATE TABLE NOTE_ITEM_RETURN_ALLOCATION (
@@ -667,24 +665,11 @@ BEGIN
         -- works against the old NVARCHAR(MAX) shape in the meantime
     END CATCH
 END
-IF EXISTS (SELECT 1 FROM information_schema.columns WHERE lower(table_name) = 'note_item_glpi_tracking' AND lower(column_name) = 'status_updated_at' AND lower(data_type) <> 'datetime2')
-BEGIN
-    BEGIN TRY
-        ALTER TABLE NOTE_ITEM_GLPI_TRACKING ALTER COLUMN status_updated_at DATETIME2;
-    END TRY
-    BEGIN CATCH
-        -- see comment above
-    END CATCH
-END
-IF EXISTS (SELECT 1 FROM information_schema.columns WHERE lower(table_name) = 'note_item_return_tracking' AND lower(column_name) = 'status_updated_at' AND lower(data_type) <> 'datetime2')
-BEGIN
-    BEGIN TRY
-        ALTER TABLE NOTE_ITEM_RETURN_TRACKING ALTER COLUMN status_updated_at DATETIME2;
-    END TRY
-    BEGIN CATCH
-        -- see comment above
-    END CATCH
-END
+-- No equivalent promotion block for NOTE_ITEM_STATUS_TRACKING.status_updated_at — unlike
+-- NOTE_REPORT.created_at, no real SQL Server database has ever been provisioned under the older,
+-- now-unified-away GLPI_TRACKING/RETURN_TRACKING shape (remote was never deployed before this
+-- table existed), so there's no NVARCHAR(MAX)-shaped column anywhere left to promote; every
+-- CREATE TABLE path above already declares it DATETIME2 directly.
 
 IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE lower(table_name) = 'note_report' AND lower(column_name) = 'stock_applied')
     ALTER TABLE NOTE_REPORT ADD stock_applied INT NOT NULL DEFAULT 0;
@@ -814,21 +799,22 @@ BEGIN
     DROP TABLE NOTE_REMITO;
 END
 
--- Backfills NOTE_ITEM_ASSET/COUNTABLE/GLPI_TRACKING/RETURN_TRACKING from the still-wide NOTE_ITEM
--- (only when @noteItemStillWide = 1, captured earlier — is_asset existed at the START of this
--- script, before the "walk up to full wide shape" block above added the rest), then drops the 10
--- now-redundant wide columns.
+-- Backfills NOTE_ITEM_ASSET/COUNTABLE/STATUS_TRACKING from the still-wide NOTE_ITEM (only when
+-- @noteItemStillWide = 1, captured earlier — is_asset existed at the START of this script, before
+-- the "walk up to full wide shape" block above added the rest), then drops the 10 now-redundant
+-- wide columns. Goes straight to the unified NOTE_ITEM_STATUS_TRACKING shape (tracking_type
+-- discriminator) rather than the old 2-table GLPI_TRACKING/RETURN_TRACKING intermediate.
 IF @noteItemStillWide = 1
 BEGIN
     INSERT INTO NOTE_ITEM_ASSET (item_id, serial_number, a_f)
         SELECT id, serial_number, a_f FROM NOTE_ITEM WHERE is_asset = 1;
     INSERT INTO NOTE_ITEM_COUNTABLE (item_id, quantity)
         SELECT id, quantity FROM NOTE_ITEM WHERE is_asset = 0;
-    INSERT INTO NOTE_ITEM_GLPI_TRACKING (item_id, status, rejection_reason, status_updated_at)
-        SELECT id, glpi_status, glpi_rejection_reason, glpi_status_updated_at
+    INSERT INTO NOTE_ITEM_STATUS_TRACKING (item_id, tracking_type, status, rejection_reason, status_updated_at)
+        SELECT id, 'GLPI', glpi_status, glpi_rejection_reason, glpi_status_updated_at
         FROM NOTE_ITEM WHERE glpi_status <> 'N_A';
-    INSERT INTO NOTE_ITEM_RETURN_TRACKING (item_id, status, rejection_reason, status_updated_at)
-        SELECT id, return_status, return_rejection_reason, return_status_updated_at
+    INSERT INTO NOTE_ITEM_STATUS_TRACKING (item_id, tracking_type, status, rejection_reason, status_updated_at)
+        SELECT id, 'RETURN', return_status, return_rejection_reason, return_status_updated_at
         FROM NOTE_ITEM WHERE return_status <> 'N_A';
 
     -- SQL Server's ALTER TABLE ... DROP COLUMN fails if the column still has a DEFAULT
@@ -1066,9 +1052,9 @@ BEGIN TRY ALTER TABLE NOTE_PROVEEDOR ALTER COLUMN motivo NVARCHAR(100); END TRY 
 IF EXISTS (SELECT 1 FROM information_schema.columns WHERE lower(table_name) = 'note_item' AND lower(column_name) = 'observations' AND (character_maximum_length <> 200 OR character_maximum_length IS NULL))
 BEGIN TRY ALTER TABLE NOTE_ITEM ALTER COLUMN observations NVARCHAR(200); END TRY BEGIN CATCH END CATCH
 -- glpi_rejection_reason/return_rejection_reason used to live on NOTE_ITEM itself and were
--- narrowed here; they now live on NOTE_ITEM_GLPI_TRACKING/NOTE_ITEM_RETURN_TRACKING, created with
--- the NVARCHAR(300) bound from the start — nothing left to narrow on this table for either
--- column. Same reasoning for failure_cause/failure_details/area_evento/rejection_reason (split
+-- narrowed here; they now live on NOTE_ITEM_STATUS_TRACKING, created with the NVARCHAR(300)
+-- bound from the start — nothing left to narrow on this table for either column. Same reasoning
+-- for failure_cause/failure_details/area_evento/rejection_reason (split
 -- into NOTE_DEVOLUCION_FALLA/NOTE_PRESTAMO_AREA_EVENTO/NOTE_REPORT_REJECTION) — each new table is
 -- only ever created with its bounded NVARCHAR(n) type from the start.
 

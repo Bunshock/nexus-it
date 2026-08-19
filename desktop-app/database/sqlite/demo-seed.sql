@@ -241,8 +241,8 @@ FROM NOTE_REPORT WHERE created_at = '2026-06-10T09:15:00'
   AND NOT EXISTS (SELECT 1 FROM NOTE_ITEM WHERE note_id = NOTE_REPORT.id);
 INSERT INTO NOTE_ITEM_ASSET (item_id, serial_number, a_f)
 SELECT last_insert_rowid(), 'R9XK2048', '0001' WHERE changes() = 1;
-INSERT INTO NOTE_ITEM_GLPI_TRACKING (item_id, status, rejection_reason, status_updated_at)
-SELECT last_insert_rowid(), 'PENDING', NULL, NULL WHERE changes() = 1;
+INSERT INTO NOTE_ITEM_STATUS_TRACKING (item_id, tracking_type, status, rejection_reason, status_updated_at)
+SELECT last_insert_rowid(), 'GLPI', 'PENDING', NULL, NULL WHERE changes() = 1;
 
 INSERT INTO NOTE_ITEM (note_id, type_id, brand_id, model_id, observations)
 SELECT id,
@@ -290,8 +290,8 @@ FROM NOTE_REPORT WHERE created_at = '2026-06-12T14:30:00'
   AND NOT EXISTS (SELECT 1 FROM NOTE_ITEM WHERE note_id = NOTE_REPORT.id);
 INSERT INTO NOTE_ITEM_ASSET (item_id, serial_number, a_f)
 SELECT last_insert_rowid(), 'PF3G9012', '0084' WHERE changes() = 1;
-INSERT INTO NOTE_ITEM_GLPI_TRACKING (item_id, status, rejection_reason, status_updated_at)
-SELECT last_insert_rowid(), 'SYNCED', NULL, '2026-06-13T10:00:00' WHERE changes() = 1;
+INSERT INTO NOTE_ITEM_STATUS_TRACKING (item_id, tracking_type, status, rejection_reason, status_updated_at)
+SELECT last_insert_rowid(), 'GLPI', 'SYNCED', NULL, '2026-06-13T10:00:00' WHERE changes() = 1;
 
 INSERT INTO NOTE_ITEM (note_id, type_id, brand_id, model_id, observations)
 SELECT id,
@@ -305,8 +305,8 @@ SELECT id,
 FROM NOTE_REPORT WHERE created_at = '2026-06-12T14:30:00';
 INSERT INTO NOTE_ITEM_ASSET (item_id, serial_number, a_f)
 SELECT last_insert_rowid(), 'M22FE001', '0201' WHERE changes() = 1;
-INSERT INTO NOTE_ITEM_GLPI_TRACKING (item_id, status, rejection_reason, status_updated_at)
-SELECT last_insert_rowid(), 'SYNCED', NULL, '2026-06-13T10:00:00' WHERE changes() = 1;
+INSERT INTO NOTE_ITEM_STATUS_TRACKING (item_id, tracking_type, status, rejection_reason, status_updated_at)
+SELECT last_insert_rowid(), 'GLPI', 'SYNCED', NULL, '2026-06-13T10:00:00' WHERE changes() = 1;
 
 INSERT INTO NOTE_ITEM (note_id, type_id, brand_id, model_id, observations)
 SELECT id,
@@ -341,8 +341,8 @@ FROM NOTE_REPORT WHERE created_at = '2026-06-18T11:00:00'
   AND NOT EXISTS (SELECT 1 FROM NOTE_ITEM WHERE note_id = NOTE_REPORT.id);
 INSERT INTO NOTE_ITEM_ASSET (item_id, serial_number, a_f)
 SELECT last_insert_rowid(), 'MP4R1199', '0037' WHERE changes() = 1;
-INSERT INTO NOTE_ITEM_GLPI_TRACKING (item_id, status, rejection_reason, status_updated_at)
-SELECT last_insert_rowid(), 'SYNCED', NULL, '2026-06-19T08:30:00' WHERE changes() = 1;
+INSERT INTO NOTE_ITEM_STATUS_TRACKING (item_id, tracking_type, status, rejection_reason, status_updated_at)
+SELECT last_insert_rowid(), 'GLPI', 'SYNCED', NULL, '2026-06-19T08:30:00' WHERE changes() = 1;
 
 INSERT INTO NOTE_ITEM (note_id, type_id, brand_id, model_id, observations)
 SELECT id,
@@ -356,8 +356,8 @@ SELECT id,
 FROM NOTE_REPORT WHERE created_at = '2026-06-18T11:00:00';
 INSERT INTO NOTE_ITEM_ASSET (item_id, serial_number, a_f)
 SELECT last_insert_rowid(), 'RF8N4400', '0112' WHERE changes() = 1;
-INSERT INTO NOTE_ITEM_GLPI_TRACKING (item_id, status, rejection_reason, status_updated_at)
-SELECT last_insert_rowid(), 'REJECTED', 'Número de serie inválido en GLPI', '2026-06-19T08:35:00' WHERE changes() = 1;
+INSERT INTO NOTE_ITEM_STATUS_TRACKING (item_id, tracking_type, status, rejection_reason, status_updated_at)
+SELECT last_insert_rowid(), 'GLPI', 'REJECTED', 'Número de serie inválido en GLPI', '2026-06-19T08:35:00' WHERE changes() = 1;
 
 INSERT INTO NOTE_ITEM (note_id, type_id, brand_id, model_id, observations)
 SELECT id,
@@ -392,8 +392,8 @@ FROM NOTE_REPORT WHERE created_at = '2026-06-20T10:00:00'
   AND NOT EXISTS (SELECT 1 FROM NOTE_ITEM WHERE note_id = NOTE_REPORT.id);
 INSERT INTO NOTE_ITEM_ASSET (item_id, serial_number, a_f)
 SELECT last_insert_rowid(), 'PF4A0011', '0210' WHERE changes() = 1;
-INSERT INTO NOTE_ITEM_GLPI_TRACKING (item_id, status, rejection_reason, status_updated_at)
-SELECT last_insert_rowid(), 'PENDING', NULL, NULL WHERE changes() = 1;
+INSERT INTO NOTE_ITEM_STATUS_TRACKING (item_id, tracking_type, status, rejection_reason, status_updated_at)
+SELECT last_insert_rowid(), 'GLPI', 'PENDING', NULL, NULL WHERE changes() = 1;
 
 INSERT INTO NOTE_ITEM (note_id, type_id, brand_id, model_id, observations)
 SELECT id,
@@ -407,8 +407,8 @@ SELECT id,
 FROM NOTE_REPORT WHERE created_at = '2026-06-20T10:00:00';
 INSERT INTO NOTE_ITEM_ASSET (item_id, serial_number, a_f)
 SELECT last_insert_rowid(), 'PF4A0012', '0211' WHERE changes() = 1;
-INSERT INTO NOTE_ITEM_GLPI_TRACKING (item_id, status, rejection_reason, status_updated_at)
-SELECT last_insert_rowid(), 'PENDING', NULL, NULL WHERE changes() = 1;
+INSERT INTO NOTE_ITEM_STATUS_TRACKING (item_id, tracking_type, status, rejection_reason, status_updated_at)
+SELECT last_insert_rowid(), 'GLPI', 'PENDING', NULL, NULL WHERE changes() = 1;
 
 INSERT INTO NOTE_REPORT (created_at, profile_type)
 SELECT '2026-06-22T16:45:00', 'Entrega'
@@ -430,8 +430,8 @@ FROM NOTE_REPORT WHERE created_at = '2026-06-22T16:45:00'
   AND NOT EXISTS (SELECT 1 FROM NOTE_ITEM WHERE note_id = NOTE_REPORT.id);
 INSERT INTO NOTE_ITEM_ASSET (item_id, serial_number, a_f)
 SELECT last_insert_rowid(), 'RZ9K3301', '0155' WHERE changes() = 1;
-INSERT INTO NOTE_ITEM_GLPI_TRACKING (item_id, status, rejection_reason, status_updated_at)
-SELECT last_insert_rowid(), 'REJECTED', 'Activo ya registrado en GLPI con otro usuario', '2026-06-23T09:00:00' WHERE changes() = 1;
+INSERT INTO NOTE_ITEM_STATUS_TRACKING (item_id, tracking_type, status, rejection_reason, status_updated_at)
+SELECT last_insert_rowid(), 'GLPI', 'REJECTED', 'Activo ya registrado en GLPI con otro usuario', '2026-06-23T09:00:00' WHERE changes() = 1;
 
 INSERT INTO NOTE_ITEM (note_id, type_id, brand_id, model_id, observations)
 SELECT id,
@@ -445,8 +445,8 @@ SELECT id,
 FROM NOTE_REPORT WHERE created_at = '2026-06-22T16:45:00';
 INSERT INTO NOTE_ITEM_ASSET (item_id, serial_number, a_f)
 SELECT last_insert_rowid(), 'RZ9K4402', '0156' WHERE changes() = 1;
-INSERT INTO NOTE_ITEM_GLPI_TRACKING (item_id, status, rejection_reason, status_updated_at)
-SELECT last_insert_rowid(), 'REJECTED', 'Activo ya registrado en GLPI con otro usuario', '2026-06-23T09:00:00' WHERE changes() = 1;
+INSERT INTO NOTE_ITEM_STATUS_TRACKING (item_id, tracking_type, status, rejection_reason, status_updated_at)
+SELECT last_insert_rowid(), 'GLPI', 'REJECTED', 'Activo ya registrado en GLPI con otro usuario', '2026-06-23T09:00:00' WHERE changes() = 1;
 
 INSERT INTO NOTE_REPORT (created_at, profile_type)
 SELECT '2026-06-25T09:30:00', 'Devolución'
@@ -504,10 +504,10 @@ FROM NOTE_REPORT WHERE created_at = '2026-06-28T13:00:00'
   AND NOT EXISTS (SELECT 1 FROM NOTE_ENTREGA_DEVOLUCION WHERE note_report_id = NOTE_REPORT.id);
 -- Préstamo note: this item's GLPI status is normally PENDING for any other note type, but a
 -- Préstamo asset is deliberately excluded from GLPI sync (see CLAUDE.md's "Préstamo assets are
--- deliberately excluded from GLPI sync") — so this one has no NOTE_ITEM_GLPI_TRACKING row, and
--- instead gets a NOTE_ITEM_RETURN_TRACKING row (return_status = PENDING), matching what the real
--- app writes for every item on a Préstamo note. The original pre-normalization version of this
--- seed file never set return_status at all (a latent gap, fixed here while touching this file).
+-- deliberately excluded from GLPI sync") — so this one has no tracking_type = 'GLPI' row, and
+-- instead gets a tracking_type = 'RETURN' row (status = PENDING), matching what the real app
+-- writes for every item on a Préstamo note. The original pre-normalization version of this seed
+-- file never set a return status at all (a latent gap, fixed here while touching this file).
 INSERT INTO NOTE_ITEM (note_id, type_id, brand_id, model_id, observations)
 SELECT id,
     (SELECT id FROM TYPE WHERE name = 'TABLET'),
@@ -521,8 +521,8 @@ FROM NOTE_REPORT WHERE created_at = '2026-06-28T13:00:00'
   AND NOT EXISTS (SELECT 1 FROM NOTE_ITEM WHERE note_id = NOTE_REPORT.id);
 INSERT INTO NOTE_ITEM_ASSET (item_id, serial_number, a_f)
 SELECT last_insert_rowid(), 'TP3A0011', '0099' WHERE changes() = 1;
-INSERT INTO NOTE_ITEM_RETURN_TRACKING (item_id, status, rejection_reason, status_updated_at)
-SELECT last_insert_rowid(), 'PENDING', NULL, NULL WHERE changes() = 1;
+INSERT INTO NOTE_ITEM_STATUS_TRACKING (item_id, tracking_type, status, rejection_reason, status_updated_at)
+SELECT last_insert_rowid(), 'RETURN', 'PENDING', NULL, NULL WHERE changes() = 1;
 
 INSERT INTO NOTE_REPORT (created_at, profile_type)
 SELECT '2026-07-01T08:00:00', 'Entrega - Proveedor'
@@ -544,8 +544,8 @@ FROM NOTE_REPORT WHERE created_at = '2026-07-01T08:00:00'
   AND NOT EXISTS (SELECT 1 FROM NOTE_ITEM WHERE note_id = NOTE_REPORT.id);
 INSERT INTO NOTE_ITEM_ASSET (item_id, serial_number, a_f)
 SELECT last_insert_rowid(), 'LSEM2200', '0312' WHERE changes() = 1;
-INSERT INTO NOTE_ITEM_GLPI_TRACKING (item_id, status, rejection_reason, status_updated_at)
-SELECT last_insert_rowid(), 'SYNCED', NULL, '2026-07-01T12:00:00' WHERE changes() = 1;
+INSERT INTO NOTE_ITEM_STATUS_TRACKING (item_id, tracking_type, status, rejection_reason, status_updated_at)
+SELECT last_insert_rowid(), 'GLPI', 'SYNCED', NULL, '2026-07-01T12:00:00' WHERE changes() = 1;
 
 INSERT INTO NOTE_ITEM (note_id, type_id, brand_id, model_id, observations)
 SELECT id,

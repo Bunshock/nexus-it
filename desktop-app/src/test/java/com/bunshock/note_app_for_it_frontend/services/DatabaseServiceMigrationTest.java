@@ -103,10 +103,11 @@ class DatabaseServiceMigrationTest {
             assertTrue(tableExists(c, "NOTE_REPORT_REJECTION"));
             // return_status/etc. landed on NOTE_ITEM only transiently — this fixture's NOTE_ITEM
             // already had is_asset, so migrateNoteItemSchema() (called at the end of
-            // migrateSchema()) immediately split it into the 5-table shape in the same run;
-            // see migrateNoteItemSchemaSplitsWideTableIntoFiveTables() below for that behavior.
+            // migrateSchema()) immediately split it into the unified-tracking-table shape in the
+            // same run; see migrateNoteItemSchemaSplitsWideTableIntoFiveTables() below for that
+            // behavior.
             assertFalse(hasColumn(c, "NOTE_ITEM", "return_status"));
-            assertTrue(tableExists(c, "NOTE_ITEM_RETURN_TRACKING"));
+            assertTrue(tableExists(c, "NOTE_ITEM_STATUS_TRACKING"));
         }
     }
 
@@ -346,34 +347,105 @@ class DatabaseServiceMigrationTest {
 
             assertEquals(2, count(c, "NOTE_ITEM_ASSET"));
             assertEquals(2, count(c, "NOTE_ITEM_COUNTABLE"));
-            assertEquals(1, count(c, "NOTE_ITEM_GLPI_TRACKING"));   // only item 1
-            assertEquals(2, count(c, "NOTE_ITEM_RETURN_TRACKING")); // items 2 and 4
+            assertEquals(1, singleInt(c,
+                "SELECT COUNT(*) FROM NOTE_ITEM_STATUS_TRACKING WHERE tracking_type = 'GLPI'"));   // only item 1
+            assertEquals(2, singleInt(c,
+                "SELECT COUNT(*) FROM NOTE_ITEM_STATUS_TRACKING WHERE tracking_type = 'RETURN'")); // items 2 and 4
 
             // Regression: createHistoryTables() (invoked above, matching initialize()'s real
-            // ordering) pre-creates these 4 tables before the rename runs, and SQLite's ALTER
+            // ordering) pre-creates these tables before the rename runs, and SQLite's ALTER
             // TABLE RENAME auto-rewrites other tables' REFERENCES clauses — without dropping and
             // recreating them fresh inside migrateNoteItemSchema(), their FK silently ends up
             // pointing at the renamed-then-dropped NOTE_ITEM_OLD_20260722 instead of NOTE_ITEM.
             for (String subtypeTable : new String[]{
-                    "NOTE_ITEM_ASSET", "NOTE_ITEM_COUNTABLE", "NOTE_ITEM_GLPI_TRACKING", "NOTE_ITEM_RETURN_TRACKING"}) {
+                    "NOTE_ITEM_ASSET", "NOTE_ITEM_COUNTABLE", "NOTE_ITEM_STATUS_TRACKING"}) {
                 assertEquals("NOTE_ITEM", foreignKeyTarget(c, subtypeTable),
                     subtypeTable + "'s FK must point at NOTE_ITEM, not a renamed/dropped table");
             }
 
             assertEquals("PENDING", singleString(c,
-                "SELECT status FROM NOTE_ITEM_GLPI_TRACKING WHERE item_id = 1"));
+                "SELECT status FROM NOTE_ITEM_STATUS_TRACKING WHERE item_id = 1 AND tracking_type = 'GLPI'"));
             assertEquals("SN1", singleString(c,
                 "SELECT serial_number FROM NOTE_ITEM_ASSET WHERE item_id = 1"));
             assertEquals(3, singleInt(c,
                 "SELECT quantity FROM NOTE_ITEM_COUNTABLE WHERE item_id = 3"));
             assertEquals("PENDING", singleString(c,
-                "SELECT status FROM NOTE_ITEM_RETURN_TRACKING WHERE item_id = 4"));
+                "SELECT status FROM NOTE_ITEM_STATUS_TRACKING WHERE item_id = 4 AND tracking_type = 'RETURN'"));
 
             // Idempotent: re-running against an already-migrated database is a no-op, not an error
             // or a second copy of the data.
             invokeMigrateSchema(c, stmt);
             assertEquals(2, count(c, "NOTE_ITEM_ASSET"));
             assertEquals(2, count(c, "NOTE_ITEM_COUNTABLE"));
+        }
+    }
+
+    // Reproduces a database that already went through the older 2-table GLPI_TRACKING/
+    // RETURN_TRACKING split but never went through the later unification into one
+    // NOTE_ITEM_STATUS_TRACKING table (discriminated by tracking_type) — a real, plausible shape
+    // for an already-running installation, unlike migrateNoteItemSchemaSplitsWideTableIntoFiveTables
+    // above (which starts from the much older wide-NOTE_ITEM shape).
+    @Test
+    void migrateNoteItemStatusTrackingSchemaConsolidatesThreeOldTablesIntoOne() throws Exception {
+        String url = "jdbc:sqlite:" + tempDir.resolve("tracking-consolidation.db").toAbsolutePath();
+
+        try (Connection c = DriverManager.getConnection(url); Statement stmt = c.createStatement()) {
+            invokeCreateEquipmentTables(stmt);
+            invokeCreateHistoryTables(stmt);
+
+            // createHistoryTables() already created the new unified table fresh (empty) — this is
+            // the real shape a genuinely old-2-table-split database is in by the time
+            // migrateSchema() runs (matching initialize()'s real ordering): the empty unified
+            // table already exists alongside the 3 still-populated old ones.
+            stmt.executeUpdate("""
+                CREATE TABLE NOTE_ITEM_GLPI_TRACKING (
+                    item_id           INTEGER PRIMARY KEY REFERENCES NOTE_ITEM(id),
+                    status            TEXT NOT NULL,
+                    rejection_reason  TEXT,
+                    status_updated_at TEXT
+                )""");
+            stmt.executeUpdate("""
+                CREATE TABLE NOTE_ITEM_RETURN_TRACKING (
+                    item_id           INTEGER PRIMARY KEY REFERENCES NOTE_ITEM(id),
+                    status            TEXT NOT NULL,
+                    rejection_reason  TEXT,
+                    status_updated_at TEXT
+                )""");
+            stmt.executeUpdate("""
+                CREATE TABLE NOTE_ITEM_GLPI_RETURN_TRACKING (
+                    item_id           INTEGER PRIMARY KEY REFERENCES NOTE_ITEM(id),
+                    status            TEXT NOT NULL,
+                    rejection_reason  TEXT,
+                    status_updated_at TEXT
+                )""");
+
+            stmt.executeUpdate("INSERT INTO NOTE_REPORT (id, created_at, profile_type) VALUES (1, '2026-01-01T10:00', 'ENTREGA - PROVEEDOR')");
+            stmt.executeUpdate("INSERT INTO NOTE_ITEM (id, note_id, type_id, brand_id, model_id) VALUES (1, 1, 1, 1, 1)");
+            // A returnable Provider note's asset can legitimately carry all 3 dimensions at once
+            // (see the CLAUDE.md discussion this table's design was based on) — exercised here to
+            // confirm the migration keeps them as 3 separate rows, not collapsed into one.
+            stmt.executeUpdate("INSERT INTO NOTE_ITEM_GLPI_TRACKING (item_id, status) VALUES (1, 'SYNCED')");
+            stmt.executeUpdate("INSERT INTO NOTE_ITEM_RETURN_TRACKING (item_id, status) VALUES (1, 'RETURNED')");
+            stmt.executeUpdate("INSERT INTO NOTE_ITEM_GLPI_RETURN_TRACKING (item_id, status) VALUES (1, 'PENDING')");
+
+            invokeMigrateSchema(c, stmt);
+
+            assertFalse(tableExists(c, "NOTE_ITEM_GLPI_TRACKING"));
+            assertFalse(tableExists(c, "NOTE_ITEM_RETURN_TRACKING"));
+            assertFalse(tableExists(c, "NOTE_ITEM_GLPI_RETURN_TRACKING"));
+            assertTrue(tableExists(c, "NOTE_ITEM_STATUS_TRACKING"));
+
+            assertEquals(3, singleInt(c, "SELECT COUNT(*) FROM NOTE_ITEM_STATUS_TRACKING WHERE item_id = 1"));
+            assertEquals("SYNCED", singleString(c,
+                "SELECT status FROM NOTE_ITEM_STATUS_TRACKING WHERE item_id = 1 AND tracking_type = 'GLPI'"));
+            assertEquals("RETURNED", singleString(c,
+                "SELECT status FROM NOTE_ITEM_STATUS_TRACKING WHERE item_id = 1 AND tracking_type = 'RETURN'"));
+            assertEquals("PENDING", singleString(c,
+                "SELECT status FROM NOTE_ITEM_STATUS_TRACKING WHERE item_id = 1 AND tracking_type = 'GLPI_RETURN'"));
+
+            // Idempotent: re-running finds nothing left to consolidate.
+            invokeMigrateSchema(c, stmt);
+            assertEquals(3, singleInt(c, "SELECT COUNT(*) FROM NOTE_ITEM_STATUS_TRACKING WHERE item_id = 1"));
         }
     }
 
@@ -511,6 +583,7 @@ class DatabaseServiceMigrationTest {
             invokeCreateEquipmentTables(stmt);
             invokeCreateUserRoleTable(stmt);
 
+            assertTrue(tableExists(c, "ROLE"));
             assertTrue(tableExists(c, "APP_USER"));
             assertTrue(tableExists(c, "ROLE_PERMISSION"));
             assertFalse(tableExists(c, "USER_ROLE"), "the old table name must not exist on a brand-new install");
@@ -518,13 +591,13 @@ class DatabaseServiceMigrationTest {
             // Seeded once, on first creation: ADMIN gets everything except EDIT_SMTP_CONFIG and
             // EDIT_AF_FORMAT_CONFIG (both org-wide config permissions reserved for SUPERADMIN),
             // SUPERADMIN gets everything.
-            assertTrue(rowExists(c, "SELECT 1 FROM ROLE_PERMISSION WHERE role = 'ADMIN' AND permission = 'MANAGE_TYPES'"));
-            assertFalse(rowExists(c, "SELECT 1 FROM ROLE_PERMISSION WHERE role = 'ADMIN' AND permission = 'EDIT_SMTP_CONFIG'"),
+            assertTrue(rowExists(c, rolePermissionSql("ADMIN", "MANAGE_TYPES")));
+            assertFalse(rowExists(c, rolePermissionSql("ADMIN", "EDIT_SMTP_CONFIG")),
                 "ADMIN must not be seeded with the SUPERADMIN-only SMTP permission");
-            assertFalse(rowExists(c, "SELECT 1 FROM ROLE_PERMISSION WHERE role = 'ADMIN' AND permission = 'EDIT_AF_FORMAT_CONFIG'"),
+            assertFalse(rowExists(c, rolePermissionSql("ADMIN", "EDIT_AF_FORMAT_CONFIG")),
                 "ADMIN must not be seeded with the SUPERADMIN-only A/F format permission");
-            assertTrue(rowExists(c, "SELECT 1 FROM ROLE_PERMISSION WHERE role = 'SUPERADMIN' AND permission = 'EDIT_SMTP_CONFIG'"));
-            assertTrue(rowExists(c, "SELECT 1 FROM ROLE_PERMISSION WHERE role = 'SUPERADMIN' AND permission = 'EDIT_AF_FORMAT_CONFIG'"));
+            assertTrue(rowExists(c, rolePermissionSql("SUPERADMIN", "EDIT_SMTP_CONFIG")));
+            assertTrue(rowExists(c, rolePermissionSql("SUPERADMIN", "EDIT_AF_FORMAT_CONFIG")));
         }
     }
 
@@ -539,20 +612,23 @@ class DatabaseServiceMigrationTest {
 
             // Reproduce a pre-existing installation that already ran the original seed, which
             // granted ADMIN this permission before it was moved to SUPERADMIN-only.
-            stmt.executeUpdate("INSERT INTO ROLE_PERMISSION (role, permission) VALUES ('ADMIN', 'EDIT_AF_FORMAT_CONFIG')");
+            stmt.executeUpdate("""
+                INSERT INTO ROLE_PERMISSION (role_id, permission)
+                VALUES ((SELECT id FROM ROLE WHERE name = 'ADMIN'), 'EDIT_AF_FORMAT_CONFIG')
+                """);
 
             invokeMigrateSchema(c, stmt);
 
-            assertFalse(rowExists(c, "SELECT 1 FROM ROLE_PERMISSION WHERE role = 'ADMIN' AND permission = 'EDIT_AF_FORMAT_CONFIG'"),
+            assertFalse(rowExists(c, rolePermissionSql("ADMIN", "EDIT_AF_FORMAT_CONFIG")),
                 "ADMIN's stale AF-format grant must be revoked by the migration");
-            assertTrue(rowExists(c, "SELECT 1 FROM ROLE_PERMISSION WHERE role = 'ADMIN' AND permission = 'MANAGE_TYPES'"),
+            assertTrue(rowExists(c, rolePermissionSql("ADMIN", "MANAGE_TYPES")),
                 "unrelated ADMIN permissions must be untouched");
-            assertTrue(rowExists(c, "SELECT 1 FROM ROLE_PERMISSION WHERE role = 'SUPERADMIN' AND permission = 'EDIT_AF_FORMAT_CONFIG'"),
+            assertTrue(rowExists(c, rolePermissionSql("SUPERADMIN", "EDIT_AF_FORMAT_CONFIG")),
                 "SUPERADMIN keeps the permission");
 
             // Idempotent: re-running finds nothing left to revoke.
             invokeMigrateSchema(c, stmt);
-            assertFalse(rowExists(c, "SELECT 1 FROM ROLE_PERMISSION WHERE role = 'ADMIN' AND permission = 'EDIT_AF_FORMAT_CONFIG'"));
+            assertFalse(rowExists(c, rolePermissionSql("ADMIN", "EDIT_AF_FORMAT_CONFIG")));
         }
     }
 
@@ -573,7 +649,9 @@ class DatabaseServiceMigrationTest {
             invokeCreateUserRoleTable(stmt);
 
             assertFalse(tableExists(c, "USER_ROLE"), "the old table must be dropped after migrating");
-            assertEquals("ADMIN", singleString(c, "SELECT role FROM APP_USER WHERE username = 'jperez'"));
+            assertEquals("ADMIN", singleString(c, """
+                SELECT r.name FROM APP_USER u JOIN ROLE r ON r.id = u.role_id WHERE u.username = 'jperez'
+                """));
             assertTrue(rowExists(c, "SELECT 1 FROM APP_USER WHERE username = 'jperez' AND sede_id IS NULL"),
                 "a migrated row starts with no Sede assigned — that's a new, separate concept a superadmin must set by hand");
         }
@@ -588,11 +666,69 @@ class DatabaseServiceMigrationTest {
 
             // Simulate a superadmin revoking a permission by hand, then simulate the next app
             // startup re-running this same method — the revocation must survive.
-            stmt.executeUpdate("DELETE FROM ROLE_PERMISSION WHERE role = 'ADMIN' AND permission = 'MANAGE_TYPES'");
+            stmt.executeUpdate("""
+                DELETE FROM ROLE_PERMISSION
+                WHERE role_id = (SELECT id FROM ROLE WHERE name = 'ADMIN') AND permission = 'MANAGE_TYPES'
+                """);
             invokeCreateUserRoleTable(stmt);
 
-            assertFalse(rowExists(c, "SELECT 1 FROM ROLE_PERMISSION WHERE role = 'ADMIN' AND permission = 'MANAGE_TYPES'"),
+            assertFalse(rowExists(c, rolePermissionSql("ADMIN", "MANAGE_TYPES")),
                 "re-running createUserRoleTable() must not silently re-seed a revoked permission");
+        }
+    }
+
+    // Reproduces a genuinely pre-existing installation on the old shape (APP_USER.role /
+    // ROLE_PERMISSION.role each independently TEXT with their own CHECK constraint, no FK
+    // relationship between the two) — confirms migrateRoleTableSchema() rebuilds both onto a real
+    // role_id FK into a new ROLE lookup table, preserving every existing value.
+    @Test
+    void migrateRoleTableSchemaConvertsAppUserAndRolePermissionToRoleIdFk() throws Exception {
+        String url = "jdbc:sqlite:" + tempDir.resolve("role-fk-migration.db").toAbsolutePath();
+
+        try (Connection c = DriverManager.getConnection(url); Statement stmt = c.createStatement()) {
+            invokeCreateEquipmentTables(stmt);
+            invokeCreateHistoryTables(stmt);
+            stmt.executeUpdate("""
+                CREATE TABLE APP_USER (
+                    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username           TEXT NOT NULL UNIQUE,
+                    role               TEXT NOT NULL CHECK (role IN ('USER', 'ADMIN', 'SUPERADMIN')),
+                    sede_id            INTEGER REFERENCES SEDE(id),
+                    bypass_group_check INTEGER NOT NULL DEFAULT 0
+                )""");
+            stmt.executeUpdate("""
+                CREATE TABLE ROLE_PERMISSION (
+                    role       TEXT NOT NULL CHECK (role IN ('USER', 'ADMIN', 'SUPERADMIN')),
+                    permission TEXT NOT NULL,
+                    PRIMARY KEY (role, permission)
+                )""");
+            stmt.executeUpdate("INSERT INTO APP_USER (username, role, sede_id, bypass_group_check) VALUES ('jperez', 'ADMIN', NULL, 1)");
+            stmt.executeUpdate("INSERT INTO ROLE_PERMISSION (role, permission) VALUES ('ADMIN', 'MANAGE_TYPES')");
+            stmt.executeUpdate("INSERT INTO ROLE_PERMISSION (role, permission) VALUES ('SUPERADMIN', 'EDIT_SMTP_CONFIG')");
+
+            invokeMigrateSchema(c, stmt);
+
+            assertTrue(tableExists(c, "ROLE"), "ROLE lookup table must be created for a migrating database too");
+            assertTrue(hasColumn(c, "APP_USER", "role_id"));
+            assertFalse(hasColumn(c, "APP_USER", "role"), "the old TEXT role column must not survive the rebuild");
+            assertTrue(hasColumn(c, "ROLE_PERMISSION", "role_id"));
+            assertFalse(hasColumn(c, "ROLE_PERMISSION", "role"));
+
+            assertEquals("ADMIN", singleString(c, """
+                SELECT r.name FROM APP_USER u JOIN ROLE r ON r.id = u.role_id WHERE u.username = 'jperez'
+                """));
+            assertEquals(1, singleInt(c, "SELECT bypass_group_check FROM APP_USER WHERE username = 'jperez'"),
+                "unrelated columns must survive the rebuild untouched");
+            assertTrue(rowExists(c, rolePermissionSql("ADMIN", "MANAGE_TYPES")));
+            assertTrue(rowExists(c, rolePermissionSql("SUPERADMIN", "EDIT_SMTP_CONFIG")));
+            assertFalse(rowExists(c, rolePermissionSql("ADMIN", "EDIT_SMTP_CONFIG")));
+
+            // Idempotent: re-running against an already-migrated database is a no-op.
+            invokeMigrateSchema(c, stmt);
+            assertEquals("ADMIN", singleString(c, """
+                SELECT r.name FROM APP_USER u JOIN ROLE r ON r.id = u.role_id WHERE u.username = 'jperez'
+                """));
+            assertEquals(1, singleInt(c, "SELECT COUNT(*) FROM APP_USER WHERE username = 'jperez'"));
         }
     }
 
@@ -1084,6 +1220,13 @@ class DatabaseServiceMigrationTest {
         try (Statement stmt = c.createStatement(); ResultSet rs = stmt.executeQuery(sql)) {
             return rs.next();
         }
+    }
+
+    // ROLE_PERMISSION.role_id is now a real FK into ROLE rather than a plain TEXT role column —
+    // this builds the join once so test assertions can keep expressing "role" as a name string.
+    private String rolePermissionSql(String role, String permission) {
+        return "SELECT 1 FROM ROLE_PERMISSION rp JOIN ROLE r ON r.id = rp.role_id "
+            + "WHERE r.name = '" + role + "' AND rp.permission = '" + permission + "'";
     }
 
     private int count(Connection c, String table) throws SQLException {

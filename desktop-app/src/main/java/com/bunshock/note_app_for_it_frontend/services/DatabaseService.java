@@ -158,6 +158,7 @@ public class DatabaseService {
         // normally) — only newly-created items can opt out via the dialog checkbox.
         addColumnIfMissing(stmt, "NOTE_ITEM", "modifies_stock", "INTEGER NOT NULL DEFAULT 1");
         migrateStockExceptionReasonSchema(conn, stmt);
+        migrateNoteItemStatusTrackingSchema(conn, stmt);
 
         // Lets a specific account skip the AD-group login gate (see LoginController) without
         // needing an AD group of its own — e.g. intern technicians, who aren't in the org's IT
@@ -165,9 +166,118 @@ public class DatabaseService {
         // for every existing account (still must be in the allowed group).
         addColumnIfMissing(stmt, "APP_USER", "bypass_group_check", "INTEGER NOT NULL DEFAULT 0");
 
+        migrateRoleTableSchema(conn, stmt);
+
         // Guarded — some migration tests call migrateSchema() standalone, before ROLE_PERMISSION exists.
         if (tableExists(conn, "ROLE_PERMISSION")) {
             revokeAdminAfFormatPermission(stmt);
+        }
+    }
+
+    // Collapses the 3 old byte-identical per-dimension tables (NOTE_ITEM_GLPI_TRACKING,
+    // NOTE_ITEM_RETURN_TRACKING, NOTE_ITEM_GLPI_RETURN_TRACKING) into one
+    // NOTE_ITEM_STATUS_TRACKING table, discriminated by tracking_type — see createHistoryTables()
+    // for the full reasoning. No FK anywhere else points into any of the 3 old tables, so this is
+    // a plain backfill + drop, not the rename-under-temp-name dance NOTE_ITEM's own subtype-table
+    // rebuild needed. No-ops once already migrated (the 3 old tables no longer exist) — including
+    // on a brand-new install, which gets the unified table straight from createHistoryTables().
+    private void migrateNoteItemStatusTrackingSchema(Connection conn, Statement stmt) throws SQLException {
+        if (tableExists(conn, "NOTE_ITEM_GLPI_TRACKING")) {
+            stmt.executeUpdate("""
+                INSERT OR IGNORE INTO NOTE_ITEM_STATUS_TRACKING (item_id, tracking_type, status, rejection_reason, status_updated_at)
+                SELECT item_id, 'GLPI', status, rejection_reason, status_updated_at FROM NOTE_ITEM_GLPI_TRACKING
+                """);
+            stmt.executeUpdate("DROP TABLE NOTE_ITEM_GLPI_TRACKING");
+        }
+        if (tableExists(conn, "NOTE_ITEM_RETURN_TRACKING")) {
+            stmt.executeUpdate("""
+                INSERT OR IGNORE INTO NOTE_ITEM_STATUS_TRACKING (item_id, tracking_type, status, rejection_reason, status_updated_at)
+                SELECT item_id, 'RETURN', status, rejection_reason, status_updated_at FROM NOTE_ITEM_RETURN_TRACKING
+                """);
+            stmt.executeUpdate("DROP TABLE NOTE_ITEM_RETURN_TRACKING");
+        }
+        if (tableExists(conn, "NOTE_ITEM_GLPI_RETURN_TRACKING")) {
+            stmt.executeUpdate("""
+                INSERT OR IGNORE INTO NOTE_ITEM_STATUS_TRACKING (item_id, tracking_type, status, rejection_reason, status_updated_at)
+                SELECT item_id, 'GLPI_RETURN', status, rejection_reason, status_updated_at FROM NOTE_ITEM_GLPI_RETURN_TRACKING
+                """);
+            stmt.executeUpdate("DROP TABLE NOTE_ITEM_GLPI_RETURN_TRACKING");
+        }
+    }
+
+    // Replaces APP_USER.role / ROLE_PERMISSION.role (each independently a TEXT column with its
+    // own CHECK (role IN (...)) constraint, no FK relationship between the two) with a real
+    // role_id FK into the ROLE lookup table — see createUserRoleTable() for the full reasoning.
+    // Both tables are rebuilt under a temporary name (SQLite can't alter a column out from under
+    // an inline CHECK constraint, and role_id must end up NOT NULL, which ALTER TABLE ADD COLUMN
+    // can't express for a per-row-varying backfill) — safe to do without the
+    // rename-silently-rewrites-other-tables'-FK gotcha NOTE_ITEM's own rebuild had to work around,
+    // since nothing else in this schema references APP_USER or ROLE_PERMISSION by FK. No-ops once
+    // already migrated (role_id already present) — including on a brand-new install, which gets
+    // the FK shape straight from createUserRoleTable(). Each half is also independently guarded on
+    // the old table actually existing, matching the "some migration tests call migrateSchema()
+    // standalone, against a minimal fixture" precedent already established elsewhere in this file.
+    private void migrateRoleTableSchema(Connection conn, Statement stmt) throws SQLException {
+        boolean appUserNeedsMigration = tableExists(conn, "APP_USER") && !columnExists(conn, "APP_USER", "role_id");
+        boolean rolePermissionNeedsMigration = tableExists(conn, "ROLE_PERMISSION") && !columnExists(conn, "ROLE_PERMISSION", "role_id");
+        if (!appUserNeedsMigration && !rolePermissionNeedsMigration) return;
+
+        // createUserRoleTable() normally creates and seeds ROLE before migrateSchema() ever runs,
+        // but a caller invoking migrateSchema() standalone (e.g. a migration test reproducing a
+        // pre-existing database directly) can't assume that already happened.
+        if (!tableExists(conn, "ROLE")) {
+            stmt.executeUpdate("""
+                CREATE TABLE ROLE (
+                    id   INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL UNIQUE
+                )""");
+            stmt.executeUpdate("INSERT INTO ROLE (name) VALUES ('USER'), ('ADMIN'), ('SUPERADMIN')");
+        }
+
+        stmt.executeUpdate("PRAGMA foreign_keys = OFF");
+        boolean originalAutoCommit = conn.getAutoCommit();
+        conn.setAutoCommit(false);
+        try {
+            if (appUserNeedsMigration) {
+                stmt.executeUpdate("ALTER TABLE APP_USER RENAME TO APP_USER_OLD_ROLE");
+                stmt.executeUpdate("""
+                    CREATE TABLE APP_USER (
+                        id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+                        username           TEXT NOT NULL UNIQUE,
+                        role_id            INTEGER NOT NULL REFERENCES ROLE(id),
+                        sede_id            INTEGER REFERENCES SEDE(id),
+                        bypass_group_check INTEGER NOT NULL DEFAULT 0
+                    )""");
+                stmt.executeUpdate("""
+                    INSERT INTO APP_USER (id, username, role_id, sede_id, bypass_group_check)
+                    SELECT o.id, o.username, r.id, o.sede_id, o.bypass_group_check
+                    FROM APP_USER_OLD_ROLE o JOIN ROLE r ON r.name = o.role
+                    """);
+                stmt.executeUpdate("DROP TABLE APP_USER_OLD_ROLE");
+            }
+            if (rolePermissionNeedsMigration) {
+                stmt.executeUpdate("ALTER TABLE ROLE_PERMISSION RENAME TO ROLE_PERMISSION_OLD_ROLE");
+                stmt.executeUpdate("""
+                    CREATE TABLE ROLE_PERMISSION (
+                        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                        role_id    INTEGER NOT NULL REFERENCES ROLE(id),
+                        permission TEXT NOT NULL,
+                        UNIQUE (role_id, permission)
+                    )""");
+                stmt.executeUpdate("""
+                    INSERT INTO ROLE_PERMISSION (role_id, permission)
+                    SELECT r.id, o.permission
+                    FROM ROLE_PERMISSION_OLD_ROLE o JOIN ROLE r ON r.name = o.role
+                    """);
+                stmt.executeUpdate("DROP TABLE ROLE_PERMISSION_OLD_ROLE");
+            }
+            conn.commit();
+        } catch (SQLException migrationFailed) {
+            conn.rollback();
+            throw migrationFailed;
+        } finally {
+            conn.setAutoCommit(originalAutoCommit);
+            stmt.executeUpdate("PRAGMA foreign_keys = ON");
         }
     }
 
@@ -604,21 +714,25 @@ public class DatabaseService {
 
             // SQLite's ALTER TABLE RENAME auto-rewrites the REFERENCES clause of any OTHER
             // table's schema that mentioned the renamed table by name. createHistoryTables()
-            // (which runs before migrateSchema() in initialize()) already created these 4
-            // subtype tables moments earlier — on this old-wide-shape database they never
-            // existed before, so its own CREATE TABLE IF NOT EXISTS for them was NOT a no-op —
-            // and their `REFERENCES NOTE_ITEM(id)` just got silently rewritten by the RENAME
-            // above to point at NOTE_ITEM_OLD_20260722, which is then DROPped a few statements
-            // down, leaving a dangling reference. Drop and recreate all 4 fresh here (they're
-            // guaranteed empty either way — this whole method only ever runs once, the first
-            // time a given database is migrated) so their FK unambiguously targets the new,
-            // just-renamed-free NOTE_ITEM created right below, not a table that's about to stop
-            // existing. Confirmed via PRAGMA foreign_key_list against the real data/noteapp.db —
-            // this was silent (no FK violation, since PRAGMA foreign_keys is OFF here) but left
-            // every one of the 4 tables with a broken/dangling reference, invisible until a tool
-            // like DBeaver tried to render the relationship.
+            // (which runs before migrateSchema() in initialize()) already created these subtype
+            // tables moments earlier — on this old-wide-shape database they never existed before,
+            // so its own CREATE TABLE IF NOT EXISTS for them was NOT a no-op — and their
+            // `REFERENCES NOTE_ITEM(id)` just got silently rewritten by the RENAME above to point
+            // at NOTE_ITEM_OLD_20260722, which is then DROPped a few statements down, leaving a
+            // dangling reference. Drop and recreate all of them fresh here (they're guaranteed
+            // empty either way — this whole method only ever runs once, the first time a given
+            // database is migrated) so their FK unambiguously targets the new, just-renamed-free
+            // NOTE_ITEM created right below, not a table that's about to stop existing. Confirmed
+            // via PRAGMA foreign_key_list against the real data/noteapp.db — this was silent (no
+            // FK violation, since PRAGMA foreign_keys is OFF here) but left every one of these
+            // tables with a broken/dangling reference, invisible until a tool like DBeaver tried
+            // to render the relationship. Goes straight to the unified NOTE_ITEM_STATUS_TRACKING
+            // shape rather than the old 2-table GLPI_TRACKING/RETURN_TRACKING intermediate — no
+            // reason to land on a shape that would just get consolidated again a few statements
+            // later in migrateSchema().
             stmt.executeUpdate("DROP TABLE IF EXISTS NOTE_ITEM_ASSET");
             stmt.executeUpdate("DROP TABLE IF EXISTS NOTE_ITEM_COUNTABLE");
+            stmt.executeUpdate("DROP TABLE IF EXISTS NOTE_ITEM_STATUS_TRACKING");
             stmt.executeUpdate("DROP TABLE IF EXISTS NOTE_ITEM_GLPI_TRACKING");
             stmt.executeUpdate("DROP TABLE IF EXISTS NOTE_ITEM_RETURN_TRACKING");
 
@@ -643,18 +757,14 @@ public class DatabaseService {
                     quantity INTEGER NOT NULL DEFAULT 1
                 )""");
             stmt.executeUpdate("""
-                CREATE TABLE NOTE_ITEM_GLPI_TRACKING (
-                    item_id           INTEGER PRIMARY KEY REFERENCES NOTE_ITEM(id),
+                CREATE TABLE NOTE_ITEM_STATUS_TRACKING (
+                    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                    item_id           INTEGER NOT NULL REFERENCES NOTE_ITEM(id),
+                    tracking_type     TEXT NOT NULL CHECK (tracking_type IN ('GLPI', 'RETURN', 'GLPI_RETURN')),
                     status            TEXT NOT NULL,
                     rejection_reason  TEXT,
-                    status_updated_at TEXT
-                )""");
-            stmt.executeUpdate("""
-                CREATE TABLE NOTE_ITEM_RETURN_TRACKING (
-                    item_id           INTEGER PRIMARY KEY REFERENCES NOTE_ITEM(id),
-                    status            TEXT NOT NULL,
-                    rejection_reason  TEXT,
-                    status_updated_at TEXT
+                    status_updated_at TEXT,
+                    UNIQUE (item_id, tracking_type)
                 )""");
 
             stmt.executeUpdate("""
@@ -668,12 +778,12 @@ public class DatabaseService {
                 INSERT INTO NOTE_ITEM_COUNTABLE (item_id, quantity)
                 SELECT id, quantity FROM NOTE_ITEM_OLD_20260722 WHERE is_asset = 0""");
             stmt.executeUpdate("""
-                INSERT INTO NOTE_ITEM_GLPI_TRACKING (item_id, status, rejection_reason, status_updated_at)
-                SELECT id, glpi_status, glpi_rejection_reason, glpi_status_updated_at
+                INSERT INTO NOTE_ITEM_STATUS_TRACKING (item_id, tracking_type, status, rejection_reason, status_updated_at)
+                SELECT id, 'GLPI', glpi_status, glpi_rejection_reason, glpi_status_updated_at
                 FROM NOTE_ITEM_OLD_20260722 WHERE glpi_status <> 'N_A'""");
             stmt.executeUpdate("""
-                INSERT INTO NOTE_ITEM_RETURN_TRACKING (item_id, status, rejection_reason, status_updated_at)
-                SELECT id, return_status, return_rejection_reason, return_status_updated_at
+                INSERT INTO NOTE_ITEM_STATUS_TRACKING (item_id, tracking_type, status, rejection_reason, status_updated_at)
+                SELECT id, 'RETURN', return_status, return_rejection_reason, return_status_updated_at
                 FROM NOTE_ITEM_OLD_20260722 WHERE return_status <> 'N_A'""");
 
             stmt.executeUpdate("DROP TABLE NOTE_ITEM_OLD_20260722");
@@ -1388,61 +1498,45 @@ public class DatabaseService {
                 quantity INTEGER NOT NULL DEFAULT 1
             )""");
 
-        // No 'N_A' value/default here — a row simply doesn't exist for an item that isn't
-        // GLPI-tracked (countable, or a Préstamo asset), instead of always existing with a
-        // sentinel value. Same reasoning for NOTE_ITEM_RETURN_TRACKING below.
+        // No 'N_A' value/default here — a row simply doesn't exist for a tracking dimension that
+        // doesn't apply to an item, instead of always existing with a sentinel value. One table
+        // for all 3 tracking dimensions (GLPI sync-out, Préstamo/Provider return, GLPI sync-back
+        // after a return) — they're byte-identical in shape, differing only in which dimension a
+        // row belongs to, so tracking_type is the discriminator. UNIQUE(item_id, tracking_type)
+        // is what used to be each dimension's own item_id PK — an item can now legitimately hold
+        // up to 3 rows at once (a returnable Provider note's asset gets a GLPI row on sync-out, a
+        // RETURN row once returned, and a GLPI_RETURN row once re-synced afterward).
         stmt.executeUpdate("""
-            CREATE TABLE IF NOT EXISTS NOTE_ITEM_GLPI_TRACKING (
-                item_id           INTEGER PRIMARY KEY REFERENCES NOTE_ITEM(id),
+            CREATE TABLE IF NOT EXISTS NOTE_ITEM_STATUS_TRACKING (
+                id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                item_id           INTEGER NOT NULL REFERENCES NOTE_ITEM(id),
+                tracking_type     TEXT NOT NULL CHECK (tracking_type IN ('GLPI', 'RETURN', 'GLPI_RETURN')),
                 status            TEXT NOT NULL,
                 rejection_reason  TEXT,
-                status_updated_at TEXT
-            )""");
-
-        stmt.executeUpdate("""
-            CREATE TABLE IF NOT EXISTS NOTE_ITEM_RETURN_TRACKING (
-                item_id           INTEGER PRIMARY KEY REFERENCES NOTE_ITEM(id),
-                status            TEXT NOT NULL,
-                rejection_reason  TEXT,
-                status_updated_at TEXT
+                status_updated_at TEXT,
+                UNIQUE (item_id, tracking_type)
             )""");
 
         // Row exists only for an item flagged "no modifica stock" (NOTE_ITEM.modifies_stock = 0)
         // — the overwhelming majority of items never use this exception, so the reason lives here
         // rather than as an always-present-but-usually-NULL column on NOTE_ITEM itself, same
         // "row-absence means not applicable" precedent as every other conditional-reason table in
-        // this schema (NOTE_REPORT_REJECTION, NOTE_ITEM_GLPI_TRACKING.rejection_reason's own row).
+        // this schema (NOTE_REPORT_REJECTION, NOTE_ITEM_STATUS_TRACKING.rejection_reason's own row).
         stmt.executeUpdate("""
             CREATE TABLE IF NOT EXISTS NOTE_ITEM_STOCK_EXCEPTION (
                 item_id INTEGER PRIMARY KEY REFERENCES NOTE_ITEM(id),
                 reason  TEXT NOT NULL
             )""");
 
-        // A second, independent GLPI dimension for a returnable Provider note's asset items only
-        // (Provider assets, unlike Préstamo's, get real GLPI tracking — see
-        // "Préstamo assets are deliberately excluded from GLPI sync" in CLAUDE.md for why Préstamo
-        // can't do this at all). GLPI sync is one-way/no-revert, so the original sync-out
-        // (NOTE_ITEM_GLPI_TRACKING) can never be "undone" to reflect an item coming back — this
-        // table tracks the separate "synced back into GLPI" event instead. Row absence means this
-        // dimension isn't applicable yet; a row is only ever created once the item's return is
-        // actually validated (RETURNED), seeded PENDING at that moment.
-        stmt.executeUpdate("""
-            CREATE TABLE IF NOT EXISTS NOTE_ITEM_GLPI_RETURN_TRACKING (
-                item_id           INTEGER PRIMARY KEY REFERENCES NOTE_ITEM(id),
-                status            TEXT NOT NULL,
-                rejection_reason  TEXT,
-                status_updated_at TEXT
-            )""");
-
         // Countable items (quantity > 1) can be resolved in partial batches over time — e.g. 5
         // loaned headsets coming back as 3 returned now, 1 lost later, 1 still pending. A single
-        // status column on NOTE_ITEM_RETURN_TRACKING can't express that, so each partial action
-        // gets its own append-only row here instead; PENDING is never stored — the remaining
-        // pending quantity is always NOTE_ITEM_COUNTABLE.quantity minus the sum of allocations
-        // for that item, same "row absence is the state" convention as every other tracking table
-        // in this schema. Asset items never get a row here at all (they stay on the existing
-        // whole-item NOTE_ITEM_RETURN_TRACKING.status, since a physical asset unit isn't
-        // divisible) — this table exists purely for the countable partial-quantity case.
+        // status column on NOTE_ITEM_STATUS_TRACKING (tracking_type = 'RETURN') can't express
+        // that, so each partial action gets its own append-only row here instead; PENDING is
+        // never stored — the remaining pending quantity is always NOTE_ITEM_COUNTABLE.quantity
+        // minus the sum of allocations for that item, same "row absence is the state" convention
+        // as every other tracking table in this schema. Asset items never get a row here at all
+        // (they stay on the existing whole-item RETURN-dimension status, since a physical asset
+        // unit isn't divisible) — this table exists purely for the countable partial-quantity case.
         stmt.executeUpdate("""
             CREATE TABLE IF NOT EXISTS NOTE_ITEM_RETURN_ALLOCATION (
                 id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1467,12 +1561,26 @@ public class DatabaseService {
     // this only distinguishes admin tiers among users who already got past that gate. Named
     // APP_USER, not USER — USER is a reserved keyword (a niladic function) in T-SQL.
     private void createUserRoleTable(Statement stmt) throws SQLException {
+        // Lookup table for the 3 fixed role names — APP_USER.role_id and ROLE_PERMISSION.role_id
+        // both reference this instead of each independently duplicating the same
+        // CHECK (role IN ('USER','ADMIN','SUPERADMIN')) constraint with nothing enforcing the two
+        // stay in sync.
+        boolean roleExisted = tableExists(stmt.getConnection(), "ROLE");
+        stmt.executeUpdate("""
+            CREATE TABLE IF NOT EXISTS ROLE (
+                id   INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE
+            )""");
+        if (!roleExisted) {
+            stmt.executeUpdate("INSERT INTO ROLE (name) VALUES ('USER'), ('ADMIN'), ('SUPERADMIN')");
+        }
+
         boolean appUserExisted = tableExists(stmt.getConnection(), "APP_USER");
         stmt.executeUpdate("""
             CREATE TABLE IF NOT EXISTS APP_USER (
                 id                 INTEGER PRIMARY KEY AUTOINCREMENT,
                 username           TEXT NOT NULL UNIQUE,
-                role               TEXT NOT NULL CHECK (role IN ('USER', 'ADMIN', 'SUPERADMIN')),
+                role_id            INTEGER NOT NULL REFERENCES ROLE(id),
                 sede_id            INTEGER REFERENCES SEDE(id),
                 bypass_group_check INTEGER NOT NULL DEFAULT 0
             )""");
@@ -1487,9 +1595,10 @@ public class DatabaseService {
         boolean rolePermissionExisted = tableExists(stmt.getConnection(), "ROLE_PERMISSION");
         stmt.executeUpdate("""
             CREATE TABLE IF NOT EXISTS ROLE_PERMISSION (
-                role       TEXT NOT NULL CHECK (role IN ('USER', 'ADMIN', 'SUPERADMIN')),
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                role_id    INTEGER NOT NULL REFERENCES ROLE(id),
                 permission TEXT NOT NULL,
-                PRIMARY KEY (role, permission)
+                UNIQUE (role_id, permission)
             )""");
         if (!rolePermissionExisted) {
             seedDefaultRolePermissions(stmt);
@@ -1502,9 +1611,9 @@ public class DatabaseService {
     private void migrateUserRoleIntoAppUser(Statement stmt) throws SQLException {
         if (!tableExists(stmt.getConnection(), "USER_ROLE")) return;
         stmt.executeUpdate("""
-            INSERT INTO APP_USER (username, role, sede_id)
-            SELECT username, role, NULL FROM USER_ROLE
-            WHERE NOT EXISTS (SELECT 1 FROM APP_USER WHERE APP_USER.username = USER_ROLE.username)
+            INSERT INTO APP_USER (username, role_id, sede_id)
+            SELECT u.username, r.id, NULL FROM USER_ROLE u JOIN ROLE r ON r.name = u.role
+            WHERE NOT EXISTS (SELECT 1 FROM APP_USER WHERE APP_USER.username = u.username)
             """);
         stmt.executeUpdate("DROP TABLE USER_ROLE");
     }
@@ -1513,20 +1622,33 @@ public class DatabaseService {
     // (EDIT_SMTP_CONFIG, EDIT_AF_FORMAT_CONFIG); SUPERADMIN gets everything. Enumerated from the
     // Permission enum itself (not hand-typed strings) so this can't drift out of sync with it.
     private void seedDefaultRolePermissions(Statement stmt) throws SQLException {
+        int adminRoleId = roleIdFor(stmt, "ADMIN");
+        int superadminRoleId = roleIdFor(stmt, "SUPERADMIN");
         for (com.bunshock.note_app_for_it_frontend.models.Permission p
                 : com.bunshock.note_app_for_it_frontend.models.Permission.values()) {
             if (p != com.bunshock.note_app_for_it_frontend.models.Permission.EDIT_SMTP_CONFIG
                     && p != com.bunshock.note_app_for_it_frontend.models.Permission.EDIT_AF_FORMAT_CONFIG) {
-                stmt.executeUpdate("INSERT INTO ROLE_PERMISSION (role, permission) VALUES ('ADMIN', '" + p.name() + "')");
+                stmt.executeUpdate("INSERT INTO ROLE_PERMISSION (role_id, permission) VALUES (" + adminRoleId + ", '" + p.name() + "')");
             }
-            stmt.executeUpdate("INSERT INTO ROLE_PERMISSION (role, permission) VALUES ('SUPERADMIN', '" + p.name() + "')");
+            stmt.executeUpdate("INSERT INTO ROLE_PERMISSION (role_id, permission) VALUES (" + superadminRoleId + ", '" + p.name() + "')");
+        }
+    }
+
+    private int roleIdFor(Statement stmt, String roleName) throws SQLException {
+        try (java.sql.ResultSet rs = stmt.executeQuery("SELECT id FROM ROLE WHERE name = '" + roleName + "'")) {
+            if (!rs.next()) throw new SQLException("ROLE row missing for '" + roleName + "'");
+            return rs.getInt("id");
         }
     }
 
     // One-time default correction (ADMIN's original seed wrongly included this) — safe to run
     // unconditionally every startup, same as the approval_status/profile_type corrections above.
     private void revokeAdminAfFormatPermission(Statement stmt) throws SQLException {
-        stmt.executeUpdate("DELETE FROM ROLE_PERMISSION WHERE role = 'ADMIN' AND permission = 'EDIT_AF_FORMAT_CONFIG'");
+        stmt.executeUpdate("""
+            DELETE FROM ROLE_PERMISSION
+            WHERE role_id = (SELECT id FROM ROLE WHERE name = 'ADMIN')
+            AND permission = 'EDIT_AF_FORMAT_CONFIG'
+            """);
     }
 
     // Append-only audit trail — 4 tables, one per concern rather than a single fully generic

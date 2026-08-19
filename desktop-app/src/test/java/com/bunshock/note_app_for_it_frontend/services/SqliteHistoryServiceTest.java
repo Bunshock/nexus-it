@@ -186,30 +186,19 @@ class SqliteHistoryServiceTest {
                     quantity INTEGER NOT NULL DEFAULT 1
                 )""");
             stmt.executeUpdate("""
-                CREATE TABLE NOTE_ITEM_GLPI_TRACKING (
-                    item_id           INTEGER PRIMARY KEY REFERENCES NOTE_ITEM(id),
+                CREATE TABLE NOTE_ITEM_STATUS_TRACKING (
+                    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                    item_id           INTEGER NOT NULL REFERENCES NOTE_ITEM(id),
+                    tracking_type     TEXT NOT NULL CHECK (tracking_type IN ('GLPI', 'RETURN', 'GLPI_RETURN')),
                     status            TEXT NOT NULL,
                     rejection_reason  TEXT,
-                    status_updated_at TEXT
-                )""");
-            stmt.executeUpdate("""
-                CREATE TABLE NOTE_ITEM_RETURN_TRACKING (
-                    item_id           INTEGER PRIMARY KEY REFERENCES NOTE_ITEM(id),
-                    status            TEXT NOT NULL,
-                    rejection_reason  TEXT,
-                    status_updated_at TEXT
+                    status_updated_at TEXT,
+                    UNIQUE (item_id, tracking_type)
                 )""");
             stmt.executeUpdate("""
                 CREATE TABLE NOTE_ITEM_STOCK_EXCEPTION (
                     item_id INTEGER PRIMARY KEY REFERENCES NOTE_ITEM(id),
                     reason  TEXT NOT NULL
-                )""");
-            stmt.executeUpdate("""
-                CREATE TABLE NOTE_ITEM_GLPI_RETURN_TRACKING (
-                    item_id           INTEGER PRIMARY KEY REFERENCES NOTE_ITEM(id),
-                    status            TEXT NOT NULL,
-                    rejection_reason  TEXT,
-                    status_updated_at TEXT
                 )""");
             stmt.executeUpdate("""
                 CREATE TABLE NOTE_ITEM_RETURN_ALLOCATION (
