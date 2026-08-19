@@ -7,8 +7,21 @@ import com.bunshock.note_app_for_it_frontend.models.history.GlpiStatus;
 import com.bunshock.note_app_for_it_frontend.models.history.HistoryFilter;
 import com.bunshock.note_app_for_it_frontend.models.history.NoteReport;
 import com.bunshock.note_app_for_it_frontend.models.history.ReturnStatus;
+import com.bunshock.note_app_for_it_frontend.services.core.ConfigService;
 
 public interface IHistoryService {
+
+    // Config-driven so renaming a motivoOptions.proveedor value doesn't require a code change.
+    static boolean isProviderReturnable(String profileType, String motivo) {
+        if (!"ENTREGA - PROVEEDOR".equalsIgnoreCase(profileType) || motivo == null) return false;
+        try {
+            List<String> returnable = ConfigService.getInstance().getConfig().returnableMotivosProveedor;
+            return returnable != null && returnable.stream().anyMatch(motivo::equalsIgnoreCase);
+        } catch (IllegalStateException notLoaded) {
+            // ConfigService not loaded in this context (e.g. some test setups)
+            return false;
+        }
+    }
 
     int save(NoteReport report);
 

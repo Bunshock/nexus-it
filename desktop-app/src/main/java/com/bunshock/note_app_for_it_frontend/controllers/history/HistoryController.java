@@ -382,7 +382,7 @@ public class HistoryController {
         colGDate.setCellValueFactory(d ->
             new SimpleStringProperty(d.getValue().getCreatedAt().format(FMT)));
         colGProfile.setCellValueFactory(d ->
-            new SimpleStringProperty(toDisplayName(d.getValue().getProfileType())));
+            new SimpleStringProperty(NoteReport.toDisplayName(d.getValue().getProfileType())));
         colGRecipient.setCellValueFactory(d ->
             new SimpleStringProperty(orEmpty(d.getValue().getRecipientDisplay())));
         colGAuthor.setCellValueFactory(d ->
@@ -601,7 +601,7 @@ public class HistoryController {
             orEmpty(summary.getAuthorName()),
             orEmpty(summary.getAuthorDni()),
             orEmpty(summary.getSede()),
-            toDisplayName(summary.getProfileType()),
+            NoteReport.toDisplayName(summary.getProfileType()),
             orEmpty(summary.getMotivo()),
             orEmpty(summary.getRecipientDisplay()),
             approvalStatusDisplay(summary.getApprovalStatus()),
@@ -721,21 +721,4 @@ public class HistoryController {
 
     private static String orEmpty(String s) { return s != null ? s : ""; }
 
-    // Mirrors NoteGenerationService.toDisplayName() — duplicated per the no-shared-abstraction
-    // convention, since it's only used to format a value already read from the DB here.
-    private static String toDisplayName(String profileType) {
-        if (profileType == null) return "";
-        return switch (profileType.toUpperCase().trim()) {
-            case "ENTREGA"             -> "Entrega";
-            case "DEVOLUCIÓN"          -> "Devolución";
-            case "DEVOLUCION"          -> "Devolución";
-            case "PRÉSTAMO"            -> "Préstamo";
-            case "PRESTAMO"            -> "Préstamo";
-            case "ENTREGA PERMANENTE"  -> "Entrega Permanente";
-            case "FIN DE CONTRATO"     -> "Entrega Permanente";
-            case "ENTREGA - PROVEEDOR" -> "Entrega - Proveedor";
-            case "REMITO DE ENVÍO"     -> "Remito de Envío";
-            default                    -> profileType;
-        };
-    }
 }

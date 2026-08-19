@@ -18,7 +18,6 @@ import com.bunshock.note_app_for_it_frontend.models.history.ReturnAllocationBatc
 import com.bunshock.note_app_for_it_frontend.models.history.ReturnStatus;
 
 import com.bunshock.note_app_for_it_frontend.services.catalog.IEquipmentService;
-import com.bunshock.note_app_for_it_frontend.services.core.ConfigService;
 import com.bunshock.note_app_for_it_frontend.services.core.DatabaseService;
 import com.bunshock.note_app_for_it_frontend.services.core.ServiceLocator;
 public class SqliteHistoryService implements IHistoryService {
@@ -30,17 +29,6 @@ public class SqliteHistoryService implements IHistoryService {
         return profileType != null && PRESTAMO_PROFILE_TYPES.stream().anyMatch(profileType::equalsIgnoreCase);
     }
 
-    // Config-driven so renaming a motivoOptions.proveedor value doesn't require a code change.
-    private static boolean isProviderReturnable(String profileType, String motivo) {
-        if (!"ENTREGA - PROVEEDOR".equalsIgnoreCase(profileType) || motivo == null) return false;
-        try {
-            List<String> returnable = ConfigService.getInstance().getConfig().returnableMotivosProveedor;
-            return returnable != null && returnable.stream().anyMatch(motivo::equalsIgnoreCase);
-        } catch (IllegalStateException notLoaded) {
-            // ConfigService not loaded in this context (e.g. some test setups)
-            return false;
-        }
-    }
 
     // return_pending/returned/lost counts are weighted by quantity, not row count: an asset row
     // is always 1, a countable row splits across RETURNED/LOST via the pre-aggregated `alloc`
@@ -135,7 +123,7 @@ public class SqliteHistoryService implements IHistoryService {
                 int reportId = insertReport(c, report);
                 insertProfileDetail(c, reportId, report);
                 boolean needsReturnTracking = isPrestamo(report.getProfileType())
-                    || isProviderReturnable(report.getProfileType(), report.getMotivo());
+                    || IHistoryService.isProviderReturnable(report.getProfileType(), report.getMotivo());
                 insertItems(c, reportId, report.getItems(), needsReturnTracking);
                 c.commit();
                 return reportId;

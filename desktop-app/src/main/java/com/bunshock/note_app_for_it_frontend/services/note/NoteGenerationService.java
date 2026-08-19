@@ -33,7 +33,7 @@ public class NoteGenerationService {
         String template = loadTemplate(resolveTemplateName(profileType));
 
         Map<String, String> tokens = new LinkedHashMap<>();
-        tokens.put("TEMPLATE_NAME", toDisplayName(profileType));
+        tokens.put("TEMPLATE_NAME", NoteReport.toDisplayName(profileType));
         tokens.put("DATE", LocalDateTime.now().format(DT_FMT));
         tokens.put("NAME", userName);
         tokens.put("DNI", userDni);
@@ -131,7 +131,7 @@ public class NoteGenerationService {
         String motivo = orEmpty(report.getMotivo());
 
         Map<String, String> tokens = new LinkedHashMap<>();
-        tokens.put("TEMPLATE_NAME", toDisplayName(report.getProfileType()));
+        tokens.put("TEMPLATE_NAME", NoteReport.toDisplayName(report.getProfileType()));
         tokens.put("DATE", dateStr);
         tokens.put("NAME",   orEmpty(report.getUserName()));
         tokens.put("DNI",    orEmpty(report.getUserDni()));
@@ -279,21 +279,6 @@ public class NoteGenerationService {
         return present ? List.of(Map.of()) : List.of();
     }
 
-    private String toDisplayName(String profileType) {
-        if (profileType == null) return "";
-        return switch (profileType.toUpperCase().trim()) {
-            case "ENTREGA"             -> "Entrega";
-            case "DEVOLUCIÓN"          -> "Devolución";
-            case "DEVOLUCION"          -> "Devolución";
-            case "PRÉSTAMO"            -> "Préstamo";
-            case "PRESTAMO"            -> "Préstamo";
-            case "ENTREGA PERMANENTE"  -> "Entrega Permanente";
-            case "FIN DE CONTRATO"     -> "Entrega Permanente";
-            case "ENTREGA - PROVEEDOR" -> "Entrega - Proveedor";
-            case "REMITO DE ENVÍO"     -> "Remito de Envío";
-            default                    -> profileType;
-        };
-    }
 
     private String resolveTemplateName(String profileType) {
         if (profileType == null) return "entrega.html";

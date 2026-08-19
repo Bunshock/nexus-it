@@ -11,7 +11,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import com.bunshock.note_app_for_it_frontend.models.core.AppConfig;
 
 public class DatabaseService {
 
@@ -460,19 +459,8 @@ public class DatabaseService {
         }
     }
 
-    // BRAND has no scoping FK, so it's identified by name — reads the live config value so a
-    // renamed fallback brand stays correctly seeded as long as catalog.genericLabel is kept in
-    // sync. Duplicated from SqliteEquipmentService's identical helper (no shared abstraction).
     private String resolveGenericLabel() {
-        try {
-            AppConfig.CatalogConfig catalog = ConfigService.getInstance().getConfig().catalog;
-            if (catalog != null && catalog.genericLabel != null && !catalog.genericLabel.isBlank()) {
-                return catalog.genericLabel.trim();
-            }
-        } catch (IllegalStateException notLoaded) {
-            // ConfigService not loaded in this context (e.g. some test setups) — use the default
-        }
-        return "Genérico / Otro";
+        return ConfigService.getInstance().getGenericLabel();
     }
 
     private boolean isColumnNotNull(Connection conn, String table, String column) throws SQLException {

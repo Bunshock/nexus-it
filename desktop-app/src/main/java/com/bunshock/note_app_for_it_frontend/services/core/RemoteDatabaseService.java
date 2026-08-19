@@ -11,7 +11,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import com.bunshock.note_app_for_it_frontend.models.core.AppConfig;
 
 public class RemoteDatabaseService {
 
@@ -583,18 +582,8 @@ public class RemoteDatabaseService {
         }
     }
 
-    // BRAND has no scoping FK, so it stays identified by name — duplicated from
-    // DatabaseService's identical helper per this codebase's no-shared-abstraction convention.
     private String resolveGenericLabel() {
-        try {
-            AppConfig.CatalogConfig catalog = ConfigService.getInstance().getConfig().catalog;
-            if (catalog != null && catalog.genericLabel != null && !catalog.genericLabel.isBlank()) {
-                return catalog.genericLabel.trim();
-            }
-        } catch (IllegalStateException notLoaded) {
-            // ConfigService not loaded in this context — use the default
-        }
-        return "Genérico / Otro";
+        return ConfigService.getInstance().getGenericLabel();
     }
 
     private boolean isColumnNotNullable(Connection c, String table, String column) throws SQLException {

@@ -4,6 +4,25 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 public class NoteReport {
+
+    // Maps a stored profile_type value (raw, ALL-CAPS as written by the note-generation flow,
+    // or a legacy nice-cased demo/seed value) to its Spanish display label.
+    public static String toDisplayName(String profileType) {
+        if (profileType == null) return "";
+        return switch (profileType.toUpperCase().trim()) {
+            case "ENTREGA"             -> "Entrega";
+            case "DEVOLUCIÓN"          -> "Devolución";
+            case "DEVOLUCION"          -> "Devolución";
+            case "PRÉSTAMO"            -> "Préstamo";
+            case "PRESTAMO"            -> "Préstamo";
+            case "ENTREGA PERMANENTE"  -> "Entrega Permanente";
+            case "FIN DE CONTRATO"     -> "Entrega Permanente";
+            case "ENTREGA - PROVEEDOR" -> "Entrega - Proveedor";
+            case "REMITO DE ENVÍO"     -> "Remito de Envío";
+            default                    -> profileType;
+        };
+    }
+
     private int id;
     private LocalDateTime createdAt;
     private String profileType;

@@ -67,10 +67,8 @@ class HistoryControllerTest {
         return (String) m.invoke(controller, approvalStatus);
     }
 
-    private String toDisplayName(String profileType) throws Exception {
-        Method m = HistoryController.class.getDeclaredMethod("toDisplayName", String.class);
-        m.setAccessible(true);
-        return (String) m.invoke(null, profileType);
+    private String toDisplayName(String profileType) {
+        return NoteReport.toDisplayName(profileType);
     }
 
     @SuppressWarnings("unchecked")

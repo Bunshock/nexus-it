@@ -13,7 +13,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.function.Supplier;
 
-import com.bunshock.note_app_for_it_frontend.models.core.AppConfig;
 import com.bunshock.note_app_for_it_frontend.models.catalog.EquipmentBrand;
 import com.bunshock.note_app_for_it_frontend.models.catalog.EquipmentModel;
 import com.bunshock.note_app_for_it_frontend.models.catalog.EquipmentProvider;
@@ -27,22 +26,10 @@ import com.bunshock.note_app_for_it_frontend.services.core.ConfigService;
 import com.bunshock.note_app_for_it_frontend.services.core.DatabaseService;
 public class SqliteEquipmentService implements IEquipmentService {
 
-    private static final String DEFAULT_GENERIC_LABEL = "Genérico / Otro";
-
     // BRAND has no structural way to mark "this is the fallback row" the way MODEL does
     // (brand_type_id IS NULL) — no scoping FK to leave null — so it's still identified by name.
-    // Reads the live config value rather than a hardcoded constant so a renamed fallback brand
-    // stays protected as long as an admin keeps catalog.genericLabel in sync with the rename.
     private String genericLabel() {
-        try {
-            AppConfig.CatalogConfig catalog = ConfigService.getInstance().getConfig().catalog;
-            if (catalog != null && catalog.genericLabel != null && !catalog.genericLabel.isBlank()) {
-                return catalog.genericLabel.trim();
-            }
-        } catch (IllegalStateException notLoaded) {
-            // ConfigService not loaded in this context (e.g. some test setups) — use the default
-        }
-        return DEFAULT_GENERIC_LABEL;
+        return ConfigService.getInstance().getGenericLabel();
     }
 
     private final Supplier<Connection> connector;

@@ -2,8 +2,6 @@ package com.bunshock.note_app_for_it_frontend.controllers.history;
 
 import java.io.IOException;
 
-import java.util.List;
-
 import com.bunshock.note_app_for_it_frontend.models.history.GlpiStatus;
 import com.bunshock.note_app_for_it_frontend.models.history.NoteReport;
 import com.bunshock.note_app_for_it_frontend.models.history.NoteReportItem;
@@ -11,8 +9,8 @@ import com.bunshock.note_app_for_it_frontend.models.admin.Permission;
 import com.bunshock.note_app_for_it_frontend.models.history.ReturnAllocationBatch;
 import com.bunshock.note_app_for_it_frontend.models.history.ReturnStatus;
 import com.bunshock.note_app_for_it_frontend.services.auth.AdminSession;
-import com.bunshock.note_app_for_it_frontend.services.core.ConfigService;
 import com.bunshock.note_app_for_it_frontend.services.admin.IUserRoleService;
+import com.bunshock.note_app_for_it_frontend.services.history.IHistoryService;
 import com.bunshock.note_app_for_it_frontend.services.note.NoteGenerationService;
 import com.bunshock.note_app_for_it_frontend.services.history.PendingCountsService;
 import com.bunshock.note_app_for_it_frontend.services.core.ServiceLocator;
@@ -82,7 +80,7 @@ public class NoteDetailController {
         this.onUpdate  = onUpdate;
 
         String date = report.getCreatedAt() != null ? report.getCreatedAt().format(DT_FMT) : "";
-        lblTitle.setText(toDisplayName(report.getProfileType()) + " — " + date);
+        lblTitle.setText(NoteReport.toDisplayName(report.getProfileType()) + " — " + date);
 
         try {
             String html = GEN_SVC.generateFromStoredReport(report);
@@ -320,18 +318,9 @@ public class NoteDetailController {
     // Config-driven (AppConfig.returnableMotivosProveedor) — a returnable Provider note's items
     // (asset or countable alike, same "whole note" semantics as Préstamo) get this row alongside
     // the GLPI row above; a non-returnable Provider note (or any other note type) gets neither
-    // this nor any special handling here. Duplicated from SqliteHistoryService's identical check
-    // per this codebase's no-shared-abstraction convention.
+    // this nor any special handling here.
     private boolean isProviderReturnableNote() {
-        if (!"ENTREGA - PROVEEDOR".equalsIgnoreCase(report.getProfileType())) return false;
-        String motivo = report.getMotivo();
-        if (motivo == null) return false;
-        try {
-            List<String> returnable = ConfigService.getInstance().getConfig().returnableMotivosProveedor;
-            return returnable != null && returnable.stream().anyMatch(motivo::equalsIgnoreCase);
-        } catch (IllegalStateException notLoaded) {
-            return false;
-        }
+        return IHistoryService.isProviderReturnable(report.getProfileType(), report.getMotivo());
     }
 
     // Same underlying ReturnStatus/NOTE_ITEM_RETURN_TRACKING mechanism as Préstamo's own
@@ -990,21 +979,4 @@ public class NoteDetailController {
         return scene;
     }
 
-    // Mirrors NoteGenerationService.toDisplayName() — duplicated per the no-shared-abstraction
-    // convention, since it's only used to format a value already read from the DB here.
-    private static String toDisplayName(String profileType) {
-        if (profileType == null) return "";
-        return switch (profileType.toUpperCase().trim()) {
-            case "ENTREGA"             -> "Entrega";
-            case "DEVOLUCIÓN"          -> "Devolución";
-            case "DEVOLUCION"          -> "Devolución";
-            case "PRÉSTAMO"            -> "Préstamo";
-            case "PRESTAMO"            -> "Préstamo";
-            case "ENTREGA PERMANENTE"  -> "Entrega Permanente";
-            case "FIN DE CONTRATO"     -> "Entrega Permanente";
-            case "ENTREGA - PROVEEDOR" -> "Entrega - Proveedor";
-            case "REMITO DE ENVÍO"     -> "Remito de Envío";
-            default                    -> profileType;
-        };
-    }
 }

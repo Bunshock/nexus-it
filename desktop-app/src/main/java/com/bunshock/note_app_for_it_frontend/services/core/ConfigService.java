@@ -41,6 +41,22 @@ public class ConfigService {
         return config;
     }
 
+    private static final String DEFAULT_GENERIC_LABEL = "Genérico / Otro";
+
+    // Falls back to the default when unconfigured, blank, or ConfigService isn't loaded yet
+    // (e.g. some test setups) — never throws.
+    public String getGenericLabel() {
+        try {
+            AppConfig.CatalogConfig catalog = getConfig().catalog;
+            if (catalog != null && catalog.genericLabel != null && !catalog.genericLabel.isBlank()) {
+                return catalog.genericLabel.trim();
+            }
+        } catch (IllegalStateException notLoaded) {
+            // fall through to default
+        }
+        return DEFAULT_GENERIC_LABEL;
+    }
+
     public void save() throws IOException {
         ObjectMapper mapper = new ObjectMapper();
         mapper.writerWithDefaultPrettyPrinter().writeValue(new File(CONFIG_FILE), config);
