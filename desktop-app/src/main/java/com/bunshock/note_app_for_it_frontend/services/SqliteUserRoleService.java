@@ -28,10 +28,12 @@ public class SqliteUserRoleService implements IUserRoleService {
     @Override
     public String getRole(String username) {
         try (Connection c = connector.get();
-             PreparedStatement ps = c.prepareStatement("SELECT role FROM APP_USER WHERE username = ?")) {
+             PreparedStatement ps = c.prepareStatement("""
+                 SELECT r.name FROM APP_USER u JOIN ROLE r ON r.id = u.role_id WHERE u.username = ?
+                 """)) {
             ps.setString(1, username);
             try (ResultSet rs = ps.executeQuery()) {
-                return rs.next() ? rs.getString("role") : ROLE_USER;
+                return rs.next() ? rs.getString("name") : ROLE_USER;
             }
         } catch (SQLException e) {
             throw new RuntimeException("Failed to look up role for " + username, e);
@@ -83,7 +85,10 @@ public class SqliteUserRoleService implements IUserRoleService {
     public Set<Permission> getPermissionsForRole(String role) {
         Set<Permission> permissions = new HashSet<>();
         try (Connection c = connector.get();
-             PreparedStatement ps = c.prepareStatement("SELECT permission FROM ROLE_PERMISSION WHERE role = ?")) {
+             PreparedStatement ps = c.prepareStatement("""
+                 SELECT rp.permission FROM ROLE_PERMISSION rp JOIN ROLE r ON r.id = rp.role_id
+                 WHERE r.name = ?
+                 """)) {
             ps.setString(1, role);
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
