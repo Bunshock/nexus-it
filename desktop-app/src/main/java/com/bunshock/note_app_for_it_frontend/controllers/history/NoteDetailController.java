@@ -118,7 +118,7 @@ public class NoteDetailController {
 
         HBox statusRow = new HBox(4);
         statusRow.setAlignment(Pos.CENTER_LEFT);
-        statusRow.getChildren().addAll(prefixLabel("Aprobación: "), statusBadge(badgeText, badgeColor));
+        statusRow.getChildren().addAll(DetailCardLabels.prefixLabel("Aprobación: "), DetailCardLabels.statusBadge(badgeText, badgeColor));
         vboxApproval.getChildren().add(statusRow);
 
         if (isSedeMismatchForAdmin()) {
@@ -275,15 +275,15 @@ public class NoteDetailController {
 
         if (item.isAsset()) {
             if (item.getSerialNumber() != null && !item.getSerialNumber().isBlank())
-                card.getChildren().add(smallLabel("S/N: " + item.getSerialNumber()));
+                card.getChildren().add(DetailCardLabels.smallLabel("S/N: " + item.getSerialNumber()));
             if (item.getAf() != null && !item.getAf().isBlank())
-                card.getChildren().add(smallLabel("A/F: " + item.getAf()));
+                card.getChildren().add(DetailCardLabels.smallLabel("A/F: " + item.getAf()));
         } else {
-            card.getChildren().add(smallLabel("Cantidad: " + item.getQuantity()));
+            card.getChildren().add(DetailCardLabels.smallLabel("Cantidad: " + item.getQuantity()));
         }
 
         if (item.getObservations() != null && !item.getObservations().isBlank())
-            card.getChildren().add(smallLabel("Obs: " + item.getObservations()));
+            card.getChildren().add(DetailCardLabels.smallLabel("Obs: " + item.getObservations()));
 
         // Shown unconditionally, regardless of approval status — this is exactly the information
         // an admin needs before deciding whether to approve the note (ItemDialogController's
@@ -291,7 +291,7 @@ public class NoteDetailController {
         if (!item.isModifiesStock()) {
             String reason = item.getModifiesStockReason();
             String badgeText = "⚠ No modifica stock" + (reason != null && !reason.isBlank() ? ": " + reason : "");
-            card.getChildren().add(statusBadge(badgeText, "#f97316"));
+            card.getChildren().add(DetailCardLabels.statusBadge(badgeText, "#f97316"));
         }
 
         // PENDING/RECHAZADO notes show no item-level action rows at all — an admin must approve
@@ -306,7 +306,7 @@ public class NoteDetailController {
                     card.getChildren().add(buildGlpiReturnStatusRow(item));
                 }
             } else {
-                card.getChildren().add(statusBadge("— Sin acción GLPI", "#94a3b8"));
+                card.getChildren().add(DetailCardLabels.statusBadge("— Sin acción GLPI", "#94a3b8"));
             }
             if (isProviderReturnableNote()) {
                 card.getChildren().add(buildProviderReturnStatusRow(item));
@@ -368,11 +368,11 @@ public class NoteDetailController {
 
         HBox statusRow = new HBox(4);
         statusRow.setAlignment(Pos.CENTER_LEFT);
-        statusRow.getChildren().addAll(prefixLabel("Proveedor: "), statusBadge(badgeText, badgeColor));
+        statusRow.getChildren().addAll(DetailCardLabels.prefixLabel("Proveedor: "), DetailCardLabels.statusBadge(badgeText, badgeColor));
         box.getChildren().add(statusRow);
 
         if (status == ReturnStatus.PENDING && item.getGlpiStatus() != GlpiStatus.SYNCED) {
-            box.getChildren().add(smallLabel("Debe sincronizar GLPI antes de validar la recepción"));
+            box.getChildren().add(DetailCardLabels.smallLabel("Debe sincronizar GLPI antes de validar la recepción"));
         }
 
         if (showActions && adminMode
@@ -404,7 +404,7 @@ public class NoteDetailController {
         if (item.getReturnStatus() == ReturnStatus.N_A) {
             HBox statusRow = new HBox(4);
             statusRow.setAlignment(Pos.CENTER_LEFT);
-            statusRow.getChildren().addAll(prefixLabel("Proveedor: "), statusBadge("—", "#94a3b8"));
+            statusRow.getChildren().addAll(DetailCardLabels.prefixLabel("Proveedor: "), DetailCardLabels.statusBadge("—", "#94a3b8"));
             box.getChildren().add(statusRow);
             return box;
         }
@@ -413,21 +413,21 @@ public class NoteDetailController {
 
         HBox prefixRow = new HBox(4);
         prefixRow.setAlignment(Pos.CENTER_LEFT);
-        prefixRow.getChildren().add(prefixLabel("Proveedor: "));
+        prefixRow.getChildren().add(DetailCardLabels.prefixLabel("Proveedor: "));
         box.getChildren().add(prefixRow);
 
-        if (pending > 0) box.getChildren().add(statusBadge("⏳ " + qtyLabel("Pendiente", "Pendientes", pending) + ": " + pending, "#f97316"));
+        if (pending > 0) box.getChildren().add(DetailCardLabels.statusBadge("⏳ " + qtyLabel("Pendiente", "Pendientes", pending) + ": " + pending, "#f97316"));
         // One badge per batch, not one aggregate line, for both "no recibido" and "recibido" —
         // each batch is one real event with its own single timestamp (a "no recibido" batch also
         // has its own reason), so this is the only way to show a meaningful "when" for each.
         for (ReturnAllocationBatch batch : item.getLostBatches()) {
             String reason = batch.getReason() != null && !batch.getReason().isBlank() ? " (" + batch.getReason() + ")" : "";
             String ts = batch.getUpdatedAt() != null ? " · " + formatStatusTimestamp(batch.getUpdatedAt()) : "";
-            box.getChildren().add(statusBadge("✗ " + qtyLabel("No recibido", "No recibidos", batch.getQuantity()) + ": " + batch.getQuantity() + reason + ts, "#ef4444"));
+            box.getChildren().add(DetailCardLabels.statusBadge("✗ " + qtyLabel("No recibido", "No recibidos", batch.getQuantity()) + ": " + batch.getQuantity() + reason + ts, "#ef4444"));
         }
         for (ReturnAllocationBatch batch : item.getReturnedBatches()) {
             String ts = batch.getUpdatedAt() != null ? " · " + formatStatusTimestamp(batch.getUpdatedAt()) : "";
-            box.getChildren().add(statusBadge("✓ " + qtyLabel("Recibido", "Recibidos", batch.getQuantity()) + ": " + batch.getQuantity() + ts, "#22c55e"));
+            box.getChildren().add(DetailCardLabels.statusBadge("✓ " + qtyLabel("Recibido", "Recibidos", batch.getQuantity()) + ": " + batch.getQuantity() + ts, "#22c55e"));
         }
 
         if (pending > 0 && adminMode
@@ -653,7 +653,7 @@ public class NoteDetailController {
 
         HBox statusRow = new HBox(4);
         statusRow.setAlignment(Pos.CENTER_LEFT);
-        statusRow.getChildren().addAll(prefixLabel("GLPI: "), statusBadge(badgeText, badgeColor));
+        statusRow.getChildren().addAll(DetailCardLabels.prefixLabel("GLPI: "), DetailCardLabels.statusBadge(badgeText, badgeColor));
         box.getChildren().add(statusRow);
 
         if (showActions && adminMode
@@ -752,7 +752,7 @@ public class NoteDetailController {
 
         HBox statusRow = new HBox(4);
         statusRow.setAlignment(Pos.CENTER_LEFT);
-        statusRow.getChildren().addAll(prefixLabel("GLPI ret.: "), statusBadge(badgeText, badgeColor));
+        statusRow.getChildren().addAll(DetailCardLabels.prefixLabel("GLPI ret.: "), DetailCardLabels.statusBadge(badgeText, badgeColor));
         box.getChildren().add(statusRow);
 
         if (showActions && adminMode
@@ -918,25 +918,6 @@ public class NoteDetailController {
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
-
-    private Label smallLabel(String text) {
-        Label l = new Label(text);
-        l.setStyle("-fx-font-size: 11px; -fx-text-fill: #475569; -fx-wrap-text: true;");
-        return l;
-    }
-
-    private Label prefixLabel(String text) {
-        Label l = new Label(text);
-        l.setStyle("-fx-font-size: 11px; -fx-font-weight: bold; -fx-text-fill: #475569;");
-        return l;
-    }
-
-    private Label statusBadge(String text, String color) {
-        Label l = new Label(text);
-        l.setStyle(String.format(
-            "-fx-font-size: 10px; -fx-font-weight: bold; -fx-text-fill: %s; -fx-wrap-text: true;", color));
-        return l;
-    }
 
     // ── Dialog helpers (per admin dialog pattern — no shared base class) ──────
 
