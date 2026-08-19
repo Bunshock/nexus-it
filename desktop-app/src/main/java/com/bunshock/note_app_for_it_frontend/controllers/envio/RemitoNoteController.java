@@ -522,32 +522,7 @@ public class RemitoNoteController implements ItemDialogHost {
     // sedeId. Returns one human-readable line per short model, or an empty list if everything
     // requested fits.
     private List<String> computeStockShortages(int sedeId) {
-        record StockKey(int typeId, int brandId, int modelId) {}
-        java.util.Map<StockKey, Integer> requested = new java.util.LinkedHashMap<>();
-        java.util.Map<StockKey, String> labels = new java.util.LinkedHashMap<>();
-        for (AssetItem a : assetList) {
-            if (!a.isModifiesStock()) continue;
-            StockKey key = new StockKey(a.getTypeId(), a.getBrandId(), a.getModelId());
-            requested.merge(key, 1, Integer::sum);
-            labels.putIfAbsent(key, a.getType().get() + " " + a.getBrand().get() + " " + a.getModel().get());
-        }
-        for (CountableItem item : countableList) {
-            if (!item.isModifiesStock()) continue;
-            StockKey key = new StockKey(item.getTypeId(), item.getBrandId(), item.getModelId());
-            requested.merge(key, item.getQuantity().get(), Integer::sum);
-            labels.putIfAbsent(key, item.getType().get() + " " + item.getBrand().get() + " " + item.getModel().get());
-        }
-        if (requested.isEmpty()) return List.of();
-
-        List<String> shortages = new java.util.ArrayList<>();
-        for (var entry : requested.entrySet()) {
-            StockKey key = entry.getKey();
-            int available = equipmentService.getModelStock(key.modelId(), key.brandId(), key.typeId(), sedeId);
-            if (available < entry.getValue()) {
-                shortages.add(labels.get(key) + " (solicita " + entry.getValue() + ", disponible " + available + ")");
-            }
-        }
-        return shortages;
+        return ItemDialogHost.computeStockShortages(assetList, countableList, equipmentService, sedeId);
     }
 
     @FXML
