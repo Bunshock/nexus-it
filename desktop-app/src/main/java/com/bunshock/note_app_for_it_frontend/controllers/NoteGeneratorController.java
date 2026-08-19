@@ -57,12 +57,10 @@ public class NoteGeneratorController implements ItemDialogHost {
     @FXML private ComboBox<NoteTypeOption> cmbNoteType;
     @FXML private StackPane dynamicContentArea;
 
-    // Flat list of every note type Generar Nota can produce — replaces the old Usuario/Proveedor
-    // toggle plus UserNoteView's own inner Entrega/Devolución/Préstamo/Fin de Contrato toggle
-    // stack. Raw values stay byte-identical to what UserNoteController.getSelectedNoteType() (and
-    // therefore NOTE_REPORT.profile_type) has always returned, so History/filtering/toDisplayName()
-    // downstream need no changes. Display labels match NoteGenerationService.toDisplayName()'s
-    // existing mapping.
+    // Flat list of every note type Generar Nota can produce. Raw values match exactly what
+    // UserNoteController.getSelectedNoteType() (and NOTE_REPORT.profile_type) expects, so
+    // History/filtering/toDisplayName() need no changes. Display labels match
+    // NoteGenerationService.toDisplayName()'s mapping.
     private record NoteTypeOption(String rawType, String displayLabel, boolean isProvider) {
         @Override public String toString() { return displayLabel; }
     }
@@ -110,8 +108,7 @@ public class NoteGeneratorController implements ItemDialogHost {
 
     public void setViewFactory(ViewFactory viewFactory) {
         this.viewFactory = viewFactory;
-        // Fires the cmbNoteType listener below, landing on the first option ("Entrega") — same
-        // effective default the old btnTypeEntrega selected="true" toggle used to give.
+        // Fires the cmbNoteType listener below, landing on the first option ("Entrega").
         cmbNoteType.getSelectionModel().selectFirst();
     }
 
@@ -172,17 +169,10 @@ public class NoteGeneratorController implements ItemDialogHost {
         updateAddButtonState();
     }
 
-    // Detail shows on hover over "Ver detalle" instead of a click-to-expand panel — a long
-    // shortage list would otherwise take over the layout below it. Same PopOver +
-    // MainController.setupTitleBarStatusHover() precedent, but that alone still flickered here:
-    // the popover opens directly beneath a small text link, close enough that the moment it
-    // appears the cursor is already geometrically inside its screen bounds — the OS then routes
-    // further mouse-move events to the (now topmost) popover window, JavaFX synthesizes a
-    // MOUSE_EXITED on the link, and an immediate hide()-on-exit closes the very popover the
-    // cursor is sitting on. Fixed with the standard "hoverable popover" bridge: hiding always
-    // goes through a short delay that's cancelled if the cursor lands on the link OR the
-    // popover's own content before it fires — so crossing the small gap between them (or the
-    // instant of the popover appearing under the cursor) never closes it.
+    // The popover opens directly beneath the link, close enough that JavaFX synthesizes a
+    // MOUSE_EXITED on the link the instant it appears, which would immediately hide it again.
+    // Fixed with a "hoverable popover" bridge: hiding goes through a short delay cancelled if
+    // the cursor lands on the link OR the popover's own content first.
     private static final Duration STOCK_WARNING_SHOW_DELAY = Duration.millis(400);
     private static final Duration STOCK_WARNING_HIDE_DELAY = Duration.millis(200);
     private final PauseTransition stockWarningShowDelay = new PauseTransition(STOCK_WARNING_SHOW_DELAY);
@@ -433,12 +423,9 @@ public class NoteGeneratorController implements ItemDialogHost {
             if (!isUserNote() && !viewFactory.getProviderNoteController().validateAndShowErrors()) {
                 canGenerate = false;
             }
-            // Evaluated unconditionally, alongside every other check above — not gated behind an
-            // early return — so the stock pill's flash always fires together with any other
-            // validation error animation on the same click, instead of only when it's the sole
-            // problem. Skips entirely for Devolución (see refreshStockWarning()'s own comment),
-            // which is also the only case checkGlpiAssignments() below applies to — the two
-            // never both fire on the same click.
+            // Evaluated unconditionally alongside every other check, not gated behind an early
+            // return, so the stock pill's flash fires together with any other validation error on
+            // the same click.
             if (!refreshStockWarning()) {
                 flashStockWarningPill();
                 canGenerate = false;
@@ -629,12 +616,9 @@ public class NoteGeneratorController implements ItemDialogHost {
         return false;
     }
 
-    // Live heuristic only — does NOT move any stock itself (that happens on admin approval, see
-    // SqliteHistoryService.applyNoteStockIfNeeded()). Recomputed on every item add/edit/delete and
-    // on note-type change, so the warning stays live while the technician keeps editing; also the
-    // actual gate at Generar-click time (return value), reusing the same computation rather than a
-    // separate popup — the persistent warning already shown in the view is the explanation. Skips
-    // entirely for Devolución (ingress — nothing to block, you can always receive stock back).
+    // Live heuristic only — does NOT move any stock itself (that happens on admin approval,
+    // see SqliteHistoryService.applyNoteStockIfNeeded()). Recomputed on every item change; the
+    // return value also gates Generar-click. Skipped for Devolución (ingress, nothing to block).
     public boolean refreshStockWarning() {
         NoteTypeOption selected = cmbNoteType.getValue();
         if (selected == null || "DEVOLUCIÓN".equals(selected.rawType())) {
@@ -700,17 +684,10 @@ public class NoteGeneratorController implements ItemDialogHost {
         if (stockWarningPopOver.isShowing()) stockWarningPopOver.hide();
     }
 
-    // Draws attention to the (already-visible) pill when a click on "Generar Nota" is actually
-    // blocked by it — same border-fade mechanism/timing as UserNoteController.highlightFields()
-    // (TABLE_ERROR_HOLD/TABLE_ERROR_FADE = 2000ms hold / 650ms fade, reused here rather than a
-    // third pair of identical constants), fading toward fully transparent instead of toward a
-    // "default border color" — the pill has no border at rest, unlike a text field.
-    // Only -fx-border-color is ever set here, never -fx-border-width/-fx-border-radius —
-    // .stock-warning-inline (styles.css) already reserves a permanent, transparent 2px border at
-    // rest, so this animation only ever changes color, never the pill's actual size. Setting the
-    // width here too (as a first attempt did) made the pill visibly grow/shift its siblings
-    // (lblTableStatus, "+ Agregar Equipo") the instant the flash started, since no border-width
-    // was reserved at rest — same class of bug already fixed once for Historial's row accents.
+    // Draws attention to the pill when Generar Nota is blocked by it — fades toward fully
+    // transparent, not a "default" color, since the pill has no border at rest. Only
+    // -fx-border-color is ever set (never -fx-border-width) — .stock-warning-inline reserves a
+    // permanent transparent 2px border at rest, so this never shifts the pill's siblings.
     private Transition stockWarningBorderFade;
 
     private void flashStockWarningPill() {

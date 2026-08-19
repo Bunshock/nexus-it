@@ -86,10 +86,8 @@ public class MainController {
     @FXML private Tooltip tooltipGLPI;
     @FXML private Tooltip tooltipDB;
 
-    // Title-bar status preview — see setupTitleBarStatusHover(). Mini circles mirror
-    // circleAD/circleGLPI/circleDB's colors; statusPanel is the full sidebar-style panel
-    // (still holding the real circleAD/circleGLPI/circleDB + tooltips), reparented into a
-    // PopOver on hover instead of sitting permanently in the sidebar.
+    // Title-bar status preview (see setupTitleBarStatusHover()) — mini circles mirror
+    // circleAD/circleGLPI/circleDB, reparented into a PopOver on hover.
     @FXML private HBox statusPreview;
     @FXML private Circle circleADMini;
     @FXML private Circle circleGLPIMini;
@@ -140,11 +138,8 @@ public class MainController {
         updateWelcomeLabels();
 
         showSection(viewFactory.getGeneratorView());
-        // Deferred: initialize() runs during FXMLLoader.load(), before App.start() calls
-        // stage.show() — centerOnContent()'s localToScreen() needs the window already
-        // shown to position the overlay correctly, so this must wait one pulse. setupWindowChrome()
-        // needs the same deferral, for the same reason (rootPane.getScene().getWindow() is null
-        // until App.start() attaches the scene, which happens after initialize() returns).
+        // Deferred one pulse: at initialize() time the Stage isn't shown/attached yet, and
+        // both centerOnContent() and setupWindowChrome() need a real Scene/Window to work with.
         Platform.runLater(this::runStartupChecks);
         Platform.runLater(this::setupWindowChrome);
 
@@ -162,12 +157,9 @@ public class MainController {
         startPendingCountsPolling();
     }
 
-    // First step of live-update polling — scoped deliberately to just the badges, not the
-    // in-page tables/pills: a badge has no selection/scroll/in-progress-edit state a background
-    // reload could clobber, unlike a TableView, so this is safe to run unconditionally for the
-    // whole session regardless of which section is currently shown. refreshPendingCounts() itself
-    // already does its DB work on a background Thread (see its own doc comment), so this Timeline
-    // tick on the FX thread is just "kick off that background work again," never a query itself.
+    // Scoped to badges only — they have no selection/scroll state a background reload could
+    // clobber, unlike a TableView. refreshPendingCounts() already runs its DB work on a
+    // background thread, so this tick just re-triggers it.
     private static final Duration PENDING_COUNTS_POLL_INTERVAL = Duration.seconds(30);
 
     private void startPendingCountsPolling() {
@@ -201,9 +193,9 @@ public class MainController {
     private void updateSedeLabel() {
         String sede = TechnicianSessionService.getInstance().getSede();
         boolean hasSede = sede != null && !sede.isBlank();
-        // Unlike the old self-service preference, Sede is now superadmin-assigned — an unset
-        // Sede blocks note generation entirely (see NoteGeneratorController/PrestamoNewLoanController),
-        // so this must read as a standing warning rather than just being hidden.
+        // An unset Sede blocks note generation entirely (see
+        // NoteGeneratorController/PrestamoNewLoanController), so this reads as a standing
+        // warning rather than being hidden.
         lblSede.setText(hasSede ? "Sede: " + sede : "Sede no asignada");
         lblSede.getStyleClass().setAll(hasSede ? "user-sede" : "user-sede-warning");
         lblSede.setVisible(true);
@@ -211,12 +203,8 @@ public class MainController {
     }
 
     /**
-     * Runs the AD profile lookup, DB connection test, and GLPI reachability check in
-     * parallel behind a blurred, non-dismissable loading overlay, so the technician sees
-     * one unified startup sequence instead of the AD lookup silently taking a while in the
-     * background. Feeds the same sidebar dots the periodic monitor updates later. Only
-     * after the overlay closes (plus a short pause so the results are actually readable) is
-     * the existing "AD lookup failed" warning shown, if the AD check failed.
+     * Runs the AD/DB/GLPI checks in parallel behind a blurred, non-dismissable loading overlay
+     * and feeds the same sidebar dots the periodic monitor updates later.
      */
     private void runStartupChecks() {
         GaussianBlur blur = new GaussianBlur(20);
@@ -254,10 +242,8 @@ public class MainController {
             }
         };
 
-        // Staggered starts (1s, 2s, 3s from when the overlay appears) so the pending/loading
-        // state of each row is visible for a moment, and so the three don't all flash their
-        // spinners at once — each still runs independently and reports its own result
-        // whenever it finishes, regardless of the others.
+        // Staggered starts (1s/2s/3s) so each row's pending state is visible for a moment and
+        // the three spinners don't all flash at once; each still resolves independently.
         delayThenRun(1, () -> startAdCheck(rowAD, onCheckDone));
         delayThenRun(2, () -> startDbCheck(rowDB, onCheckDone));
         delayThenRun(3, () -> startGlpiCheck(rowGLPI, onCheckDone));
@@ -272,11 +258,8 @@ public class MainController {
     }
 
     /**
-     * Retries a live AD reachability check up to MAX_CONNECTION_ATTEMPTS times before giving
-     * up. Identity is already fully resolved by this point (login succeeded before MainView
-     * was even constructed — see App.java/LoginController) — this is purely about whether AD
-     * is reachable right now, for the sidebar status dot, using the already-known technician
-     * username rather than re-deriving anything from the Windows session.
+     * Retries a live AD reachability check up to MAX_CONNECTION_ATTEMPTS times, using the
+     * already-resolved technician username.
      */
     private void startAdCheck(StartupRow row, Runnable onCheckDone) {
         Thread t = new Thread(() -> {
@@ -427,26 +410,18 @@ public class MainController {
         Timeline unblur = new Timeline(new KeyFrame(fadeDuration, new KeyValue(blur.radiusProperty(), 0)));
 
         ParallelTransition fadeOut = new ParallelTransition(fade, unblur);
-        // Technician identity is guaranteed resolved by the time MainView exists at all — login
-        // (App.java/LoginController) already succeeded before this overlay was ever shown, so
-        // there's no "profile unavailable" case left to warn about here anymore. Sede, however,
-        // is a separate, superadmin-assigned value that can genuinely still be unset the first
-        // time a new technician logs in, so it gets its own warning right after this overlay.
         fadeOut.setOnFinished(e -> {
             loadingStage.close();
             rootPane.setEffect(null);
-            // showAndWait() is not allowed while still inside an animation's finished handler
-            // (JavaFX throws IllegalStateException: "not allowed during animation or layout
-            // processing") — defer to the next pulse, same Platform.runLater precedent already
-            // used elsewhere in this class for post-initialize() UI work.
+            // showAndWait() inside an animation's finished handler throws IllegalStateException
+            // ("not allowed during animation or layout processing") — defer to the next pulse.
             Platform.runLater(this::warnIfSedeUnassigned);
         });
         fadeOut.play();
     }
 
-    // Sede is superadmin-assigned (no more self-service preference), and is mandatory to
-    // generate a note or register a Préstamo — a technician who hasn't been assigned one yet
-    // needs to know immediately, not discover it only when a note-generation attempt fails.
+    // Sede is mandatory to generate a note or register a Préstamo — a technician without one
+    // needs to know immediately, not discover it only when generation fails.
     private void warnIfSedeUnassigned() {
         String sede = TechnicianSessionService.getInstance().getSede();
         if (sede == null || sede.isBlank()) {
@@ -528,9 +503,8 @@ public class MainController {
     private void updateAdminIndicator() {
         boolean active = AdminSession.getInstance().isActive();
         lblAdminIndicator.setVisible(active);
-        // managed must follow visible, not just default true — otherwise the label still
-        // reserves its layout space while hidden, which would throw off the welcome/username
-        // block's vertical centering (MainView.fxml) for the common non-admin case.
+        // managed must follow visible — otherwise the label reserves layout space while
+        // hidden, throwing off the welcome block's vertical centering.
         lblAdminIndicator.setManaged(active);
 
         boolean superadmin = IUserRoleService.ROLE_SUPERADMIN.equals(AdminSession.getInstance().getEffectiveRole());
@@ -551,37 +525,20 @@ public class MainController {
         return profileType != null && ENVIO_PROFILE_TYPES.stream().anyMatch(profileType::equalsIgnoreCase);
     }
 
-    // A note with no resolved Sede (mySede blank/null, or the report's own Sede blank/null)
-    // never matches — mirrors AdminSession.hasPermission(Permission, Integer)'s own
-    // "unset counts as no match" rule for Sede-scoped actions, so this badge count and the
-    // buttons it points at never disagree about which notes are actually "mine."
+    // Unset never matches (mirrors AdminSession.hasPermission(Permission, Integer)'s
+    // Sede-scoping rule), so this count never disagrees with which notes the buttons can act on.
     private static boolean sameSede(NoteReport report, String mySede) {
         return mySede != null && !mySede.isBlank()
             && report.getSede() != null && mySede.equalsIgnoreCase(report.getSede());
     }
 
     /**
-     * Recomputes the Historial (GLPI-pending / approval-pending), Préstamos (return-pending /
-     * approval-pending), and Envíos (approval-pending only — no other pending dimension exists
-     * for a Remito) sidebar badge counts on a background thread — called once at startup, on
-     * navigation into any of the three sections (see handleShowHistory()/
-     * handleShowPrestamoHistorial()/handleShowHistorialEnvios()), and again whenever
-     * PendingCountsService.notifyChanged() fires (a note was saved, a GLPI sync/reject action
-     * happened, a Préstamo return/lost action happened, or a note was approved/rejected).
-     * Visible to every technician, not admin-gated — the underlying pending/orange rows are
-     * already visible to anyone who opens Historial or Préstamos; only the actual
-     * sync/validate/approve actions are admin-gated.
-     *
-     * A plain ADMIN only ever acts on their own Sede's notes (see AdminSession.hasPermission's
-     * Sede-scoping) — counting every other Sede's pending items here would just be noise they
-     * can't act on. SUPERADMIN acts across every Sede, so its badge stays global. A regular
-     * (non-admin) technician has no Sede-scoped permission at all, so the badge is global for
-     * them too — the count is informational either way, not a claim they can act on it.
-     *
-     * GLPI-pending and Préstamo return-pending only ever count an APPROVED note — a note still
-     * awaiting approval isn't real yet (an admin might reject it outright), and a rejected note's
-     * pending items should never resurface here either. Approval-pending itself is unaffected by
-     * this rule (it counts PENDING notes directly, by definition). Direct user requirement.
+     * Recomputes the Historial/Préstamos/Envíos pending-badge counts on a background thread.
+     * Not admin-gated — the underlying pending rows are already visible to any technician; only
+     * the sync/validate/approve actions themselves are gated. A plain ADMIN is scoped to their
+     * own Sede (see AdminSession.hasPermission's Sede-scoping); SUPERADMIN and non-admin
+     * technicians see the global count. GLPI-pending and Préstamo return-pending only count an
+     * APPROVED note — a still-pending or rejected note isn't real yet.
      */
     private void refreshPendingCounts() {
         Thread t = new Thread(() -> {
@@ -607,10 +564,8 @@ public class MainController {
                     pendingApproval = pendingApproval.stream().filter(r -> sameSede(r, mySede)).toList();
                 }
                 approvalPending = pendingApproval.size();
-                // Approval applies to every profile type, Préstamo and Envío included — the
-                // Historial badge counts all of them, the Préstamos/Envíos badges count just the
-                // subset relevant there. No second query needed; all three counts come from the
-                // one already-fetched list.
+                // Historial counts every profile type; Préstamos/Envíos filter the same
+                // already-fetched list down to their own subset — no second query needed.
                 prestamoApprovalPending = (int) pendingApproval.stream()
                     .filter(r -> isPrestamoProfileType(r.getProfileType()))
                     .count();
@@ -745,25 +700,18 @@ public class MainController {
     private static final double NAV_POINTER_TOP_OFFSET = 13;
     private static final String NAV_FLYOUT_FILL = "#0c8570"; // matches .sidebar/.nav-flyout
 
-    // Small rightward nudge so the flyout matches the old (effect-inflated) position every
-    // non-active button used to open at, now that showFlyout() anchors off effect-free
-    // layoutBounds. Tune this value directly if the gap still looks off.
+    // Small rightward nudge to compensate for showFlyout() anchoring off effect-free
+    // layoutBounds. Tune directly if the gap looks off.
     private static final double NAV_FLYOUT_X_OFFSET = 5;
 
-    // Reparents statusPanel (the full AD/GLPI/DB status block, declared hidden in MainView.fxml)
-    // into a PopOver anchored off statusPreview's 3 mini dots, shown on hover — same PauseTransition
-    // hover-delay pattern ADUserSelectionController already uses for its per-row AD PopOver, chosen
-    // over the click-toggled Popup nav flyouts use since a hover interaction needs none of their
-    // outside-click/focus-loss plumbing (that exists specifically for click-to-open menus).
+    // Reparents statusPanel (hidden in MainView.fxml) into a PopOver anchored off statusPreview's
+    // mini dots, shown on hover — a Popup (like the nav flyouts use) would need outside-click/
+    // focus-loss handling a plain hover doesn't.
     private void setupTitleBarStatusHover() {
-        // PopOver.setContentNode() does NOT reparent statusPanel immediately — unlike the raw
-        // Popup nav flyouts use (setupFlyoutPopup()'s `new HBox(pointerColumn, card)` reparents
-        // synchronously the moment it's constructed), PopOver's skin — and with it, the actual
-        // attachment of its content node — is only created lazily, on first show(). Left as-is,
-        // statusPanel would still be visible/managed inside the sidebar VBox (its FXML parent)
-        // for the entire time between startup and the first hover. Wrapping it in a fresh
-        // StackPane here forces the same synchronous auto-reparent JavaFX's Parent.getChildren()
-        // already performs whenever a node with an existing parent is added to a new one.
+        // PopOver.setContentNode() doesn't reparent statusPanel immediately — its skin (and the
+        // actual attachment) is only created lazily on first show(), so statusPanel would stay
+        // visible in its FXML parent until then. Wrapping it in a fresh StackPane here forces an
+        // immediate reparent instead.
         StackPane statusPopOverRoot = new StackPane(statusPanel);
         statusPanel.setVisible(true);
         statusPanel.setManaged(true);
@@ -1048,15 +996,10 @@ public class MainController {
     @FXML
     private void handleShowHistory() {
         showSection(viewFactory.getHistoryView());
-        // ViewFactory caches the History section for the session (see ViewFactory's doc), so
-        // without this, notes generated after the first visit wouldn't appear until the
-        // technician manually clicked "Buscar" — refresh() re-runs the currently-set filters
-        // rather than resetting them.
+        // ViewFactory caches this view for the session, so without this, notes generated after
+        // the first visit wouldn't show until "Buscar" was clicked manually.
         viewFactory.getHistoryController().refresh();
-        // Sidebar/title-bar badges otherwise only move on THIS session's own actions (see
-        // refreshPendingCounts()'s PendingCountsService wiring) — re-running it here closes the
-        // gap against another technician's changes at least as often as the table itself
-        // refreshes, without adding any polling/timer.
+        // Also re-syncs badges against another technician's changes on a shared remote DB.
         refreshPendingCounts();
         setActiveTopLevelButton(btnMovimientosGroup);
         flyoutPrestamosGroup.selectToggle(null);
@@ -1124,12 +1067,8 @@ public class MainController {
     }
 
     /**
-     * Ends the current technician's session and returns to the login screen — deactivates
-     * AdminSession (regardless of role/timeout state) and fully resets TechnicianSessionService
-     * before handing control back to App.showLoginAgain(), which reuses the exact same login flow
-     * as the app's very first launch. A fresh login rebuilds MainView (and this MainController,
-     * and its ViewFactory) from scratch, so there is nothing else to reset here — the old
-     * instance is discarded entirely once the login screen replaces it.
+     * Ends the session and returns to login. A fresh login rebuilds MainView (and this
+     * controller) from scratch, so nothing else needs resetting here.
      */
     @FXML
     private void handleLogout() {
@@ -1183,9 +1122,7 @@ public class MainController {
 
     private static final double RESIZE_MARGIN = 6;
 
-    // Must match App.java's WINDOW_SHADOW_MARGIN (the wrapper's initial padding) — this is the
-    // value that padding gets toggled back to when un-maximizing. Reduced from 20 — see
-    // App.java's comment on its own copy of this constant for why.
+    // Must match App.java's WINDOW_SHADOW_MARGIN — the padding value restored on un-maximize.
     private static final double WINDOW_SHADOW_MARGIN = 12;
     // Rectangle.arcWidth/arcHeight are corner *diameters*, not radii — 20 here gives the same
     // ~10px visual corner radius as .app-window-frame's CSS -fx-background-radius/-fx-border-radius.
@@ -1215,13 +1152,10 @@ public class MainController {
         stage.maximizedProperty().addListener((obs, was, isNow) -> applyWindowFrame(windowWrapper, isNow));
     }
 
-    // Node.clip and Node.effect don't combine cleanly on the same node — a DropShadow needs to
-    // bleed outside the node's own bounds, but a clip cuts rendering to exactly those bounds, so
-    // the shadow gets clipped away. Splitting them onto two nodes avoids that: windowWrapper (the
-    // StackPane from App.java) carries the shadow, unclipped; rootPane carries the rounded-corner
-    // clip. Both — plus the wrapper's padding and rootPane's ".maximized" CSS modifier — are
-    // removed together while maximized, so a maximized window fills the screen edge-to-edge with
-    // square corners instead of a rounded shape or shadow gap cutting into the screen.
+    // Node.clip and Node.effect don't combine on the same node — a DropShadow needs to bleed
+    // outside the node's bounds, but a clip cuts exactly at them. Shadow lives on windowWrapper
+    // (unclipped), rounded-corner clip lives on rootPane; both are removed while maximized so
+    // the window fills the screen edge-to-edge with square corners.
     private void applyWindowFrame(StackPane windowWrapper, boolean maximized) {
         updateMaximizeGlyph(maximized);
         if (maximized) {
@@ -1231,9 +1165,8 @@ public class MainController {
             if (!rootPane.getStyleClass().contains("maximized")) rootPane.getStyleClass().add("maximized");
         } else {
             windowWrapper.setPadding(new Insets(WINDOW_SHADOW_MARGIN));
-            // Radius/offset scaled down to match WINDOW_SHADOW_MARGIN's smaller padding (was
-            // 24/6 against a 20px margin) — a shadow that bleeds further than the padding gives
-            // it room for just gets clipped at the wrapper's own edge.
+            // Radius/offset kept within WINDOW_SHADOW_MARGIN's padding — a shadow that bleeds
+            // further than the padding allows just gets clipped at the wrapper's edge.
             DropShadow shadow = new DropShadow();
             shadow.setColor(Color.rgb(0, 0, 0, 0.35));
             shadow.setRadius(14);
@@ -1260,10 +1193,8 @@ public class MainController {
         });
     }
 
-    // Only the right, bottom, and bottom-corner edges are resize-draggable — the top edge is the
-    // title bar (drag-to-move, not resize) and adding top/top-corner resize zones would fight
-    // that same 6px strip for two different gestures. Right/bottom-only is a common simplification
-    // for custom title bars and still covers the actual day-to-day resize need.
+    // Only right/bottom/bottom-corner edges are resize-draggable — the top edge is reserved for
+    // title-bar drag-to-move, so a top resize zone would fight that same strip.
     private void setupEdgeResize(Stage stage) {
         rootPane.setOnMouseMoved(e -> updateResizeCursor(stage, e));
         rootPane.setOnMouseExited(e -> { if (activeResizeDirection == null) rootPane.setCursor(Cursor.DEFAULT); });
@@ -1333,24 +1264,13 @@ public class MainController {
         stage.setHeight(newHeight);
     }
 
-    // Drawn as small Rectangle shapes rather than a Unicode glyph (e.g. "▢"/"❐", which rendered
-    // as an ugly, inconsistent glyph next to the plain "─"/"✕" used for minimize/close) or a
-    // CSS-styled Region (a first attempt at this — a bordered Region ended up invisible with a
-    // stray white square around it instead, most likely a CSS-cascade issue from styling via
-    // -fx-style string; unclear exactly which rule won). Rectangle.setFill()/setStroke() are set
-    // directly via the Java API, not CSS, so there's no stylesheet cascade to fight — the
-    // rendered shape is exactly what's set here, full stop. Restore uses the classic
-    // two-overlapping-squares convention.
+    // Drawn as Rectangle shapes, not a Unicode glyph or CSS-styled Region — Rectangle.setFill()/
+    // setStroke() are set directly via the Java API, so there's no stylesheet cascade to fight.
+    // Restore uses the classic two-overlapping-squares convention.
     private void updateMaximizeGlyph(boolean maximized) {
         if (maximized) {
-            // Both squares are fill=TRANSPARENT (outline only) — an earlier version filled the
-            // front square with the title bar's flat background color to "punch a hole" in the
-            // back square, the classic restore-icon trick. But .title-bar-button's :hover/
-            // :pressed states change the BUTTON's own background to a lighter overlay while
-            // this graphic's fill stayed a static solid color, so hovering/pressing showed a
-            // visibly mismatched patch sitting on top of the lighter background — reported as
-            // "malformed." Two hollow outlines have no background to match, so they render
-            // identically regardless of the button's state.
+            // Both squares are outline-only (fill=TRANSPARENT) — a solid fill would visibly
+            // mismatch .title-bar-button's :hover/:pressed background overlay.
             Rectangle back = new Rectangle(8, 8);
             back.setFill(Color.TRANSPARENT);
             back.setStroke(Color.WHITE);
@@ -1362,12 +1282,8 @@ public class MainController {
             StackPane icon = new StackPane(back, front);
             StackPane.setAlignment(back, Pos.TOP_RIGHT);
             StackPane.setAlignment(front, Pos.BOTTOM_LEFT);
-            // maxSize, not just prefSize: the button (42x36) is much bigger than this 11x11
-            // icon, and StackPane's default max size is unbounded — without an explicit cap,
-            // the button's layout pass happily stretches it to fill more of that space, pulling
-            // the two corner-aligned squares apart into visibly separate corners instead of
-            // overlapping. Only affects this StackPane-wrapped restore icon, not the plain
-            // maximize Rectangle below — a bare Shape isn't Resizable, so it can't be stretched.
+            // maxSize is required — StackPane's default max size is unbounded, so without it
+            // the button's layout pass stretches the icon and pulls the two squares apart.
             icon.setMinSize(11, 11);
             icon.setPrefSize(11, 11);
             icon.setMaxSize(11, 11);

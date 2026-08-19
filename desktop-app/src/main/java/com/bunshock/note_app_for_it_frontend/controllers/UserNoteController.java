@@ -44,8 +44,7 @@ public class UserNoteController implements AdSearchHost {
     private static final Pattern DNI_PATTERN =
         Pattern.compile("^\\d{7,8}$");
     private static final int AREA_EVENTO_MAX_LENGTH = 200;
-    // Matches NOTE_ENTREGA_DEVOLUCION.user_name's NVARCHAR(255) bound on SQL Server —
-    // this field only restricted character set before, with no length limit.
+    // Matches NOTE_ENTREGA_DEVOLUCION.user_name's NVARCHAR(255) bound on SQL Server.
     private static final int USER_NAME_MAX_LENGTH = 255;
 
     // txtUserAccount is never persisted (an AD-username lookup box only — see getUserAccount()),
@@ -53,11 +52,9 @@ public class UserNoteController implements AdSearchHost {
     // accidental huge paste, same reasoning already applied to SettingsController's regex field.
     private static final int USER_ACCOUNT_MAX_LENGTH = 100;
 
-    // Note type is now pushed in externally via setNoteType() (called by NoteGeneratorController
-    // from its own cmbNoteType), rather than selected from a toggle stack that used to live here —
-    // see "TIPO DE MOVIMIENTO" removal from UserNoteView.fxml. Raw values match exactly what
-    // getSelectedNoteType() has always returned ("ENTREGA"/"DEVOLUCIÓN"/"ENTREGA PERMANENTE"/
-    // "PRÉSTAMO"), since that's stored directly in NOTE_REPORT.profile_type.
+    // Pushed in externally via setNoteType() (called by NoteGeneratorController). Raw values
+    // match exactly what getSelectedNoteType() returns ("ENTREGA"/"DEVOLUCIÓN"/
+    // "ENTREGA PERMANENTE"/"PRÉSTAMO"), stored directly in NOTE_REPORT.profile_type.
     private String currentType = "ENTREGA";
 
     @FXML private VBox vboxMotivo;
@@ -91,9 +88,8 @@ public class UserNoteController implements AdSearchHost {
     // confirmed for this session" unambiguous regardless of what cause/details actually contain.
     private boolean failureConfirmed;
 
-    // "Full Motivo memory per type" — each note type remembers its own last-selected Motivo
-    // across type switches, instead of resetting to unselected every time (the old behavior).
-    // Keyed by the raw type string (currentType), not by the motivoOptions map key.
+    // Each note type remembers its own last-selected Motivo across type switches, keyed by
+    // the raw type string (currentType), not by the motivoOptions map key.
     private final Map<String, String> lastMotivoByType = new HashMap<>();
 
     // True only for the duration of loadMotivoOptions()'s programmatic cmbMotivo.setValue(...)
@@ -139,15 +135,11 @@ public class UserNoteController implements AdSearchHost {
         cmbMotivo.setButtonCell(motivoButtonCell);
 
         cmbMotivo.valueProperty().addListener((obs, old, motivo) -> {
-            // A programmatic reload (loadMotivoOptions(), which sets restoringMotivo for its
-            // *entire* body — not just the final setValue()) must be completely invisible to
-            // this listener, including the lastMotivoByType bookkeeping below: setItems() alone
-            // can fire this listener with an intermediate null on a fully-skinned ComboBox (a
-            // real Stage/Scene is required to reproduce this — a bare FXMLLoader.load() in a
-            // test never installs a Skin, which is exactly why this slipped through testing
-            // once already). Without this early return, that intermediate null would overwrite
-            // the "Falla" entry in lastMotivoByType before loadMotivoOptions() ever reads it
-            // back, silently losing the remembered selection.
+            // loadMotivoOptions() sets restoringMotivo for its entire body, not just the final
+            // setValue() — setItems() alone can fire this listener with an intermediate null on a
+            // fully-skinned ComboBox (requires a real Stage/Scene; a bare FXMLLoader.load() never
+            // installs a Skin). Without this guard, that null would overwrite lastMotivoByType's
+            // entry before loadMotivoOptions() ever reads it back.
             if (restoringMotivo) return;
 
             lastMotivoByType.put(currentType, motivo);
@@ -186,8 +178,7 @@ public class UserNoteController implements AdSearchHost {
         updateMotivoVisibility(currentType);
     }
 
-    // New external entry point — called by NoteGeneratorController when its own cmbNoteType
-    // selection changes, replacing what the removed internal toggle-group listener used to do.
+    // Called by NoteGeneratorController when its own cmbNoteType selection changes.
     public void setNoteType(String type) {
         currentType = type;
         updateMotivoVisibility(type);
@@ -540,9 +531,7 @@ public class UserNoteController implements AdSearchHost {
     }
 
     // Shared by triggerFeedback()'s label fade and highlightFields()'s border fade so the
-    // two always stay in sync — they used to drift because the border was cleared with a
-    // flat setStyle("") instead of an animated fade, making it look like an on/off snap
-    // next to the label's smooth opacity fade.
+    // two stay in sync.
     private static final Duration FEEDBACK_HOLD = Duration.millis(2000);
     private static final Duration FEEDBACK_FADE = Duration.millis(650);
 

@@ -129,22 +129,16 @@ public class HistoryController {
         loadGlobal(new HistoryFilter());
     }
 
-    // The Sede filter defaults to the technician's own assigned Sede (if any) rather than "Todas"
-    // — a technician mostly cares about their own site's history. Still just a starting point, not
-    // a hard restriction: the technician can clear or change it like any other filter. "Limpiar
-    // filtros" restores this same default rather than going to "Todas", same "Limpiar filtros
-    // restores the default view" precedent already established for resetApprovalStatusFilterToDefault().
+    // Defaults to the technician's own Sede (if any), not "Todas" — a technician mostly cares
+    // about their own site's history. Just a starting point; can be cleared/changed freely.
     private void resetSedeFilterToDefault() {
         selSedes.clear();
         String mySede = TechnicianSessionService.getInstance().getSede();
         if (mySede != null && !mySede.isBlank()) selSedes.add(mySede);
     }
 
-    // APROBACIÓN defaults to Pendiente+Aprobada selected, not "Todas" — a RECHAZADO note is void
-    // and stays hidden from the default view, same reasoning as the checkbox this menu replaced.
-    // Still just a starting point: unchecking down to "Todas" (or picking Rechazada explicitly)
-    // shows everything, same as any other multi-select filter here — same shape as
-    // resetSedeFilterToDefault() pre-seeding a non-empty default rather than leaving it empty.
+    // Defaults to Pendiente+Aprobada, not "Todas" — a RECHAZADO note is void and stays hidden
+    // from the default view. Unchecking to "Todas" (or picking Rechazada) shows everything.
     private void resetApprovalStatusFilterToDefault() {
         selApprovalStatuses.clear();
         selApprovalStatuses.add("Pendiente");
@@ -175,11 +169,9 @@ public class HistoryController {
         populateMenu(mnuSede,      sedeCatalogNames(),                  selSedes,      this::autoSearch);
     }
 
-    // Sede options come from the live SEDE catalog (same source Configuración/Base de Datos use),
-    // not "distinct values actually seen in history" like the item type/brand/model filters above
-    // — unlike those, a technician's own Sede (the default filter, see resetSedeFilterToDefault())
-    // may not have any history yet at all (e.g. a brand-new site), and the option must still exist
-    // and be selectable in that case.
+    // Sede options come from the live SEDE catalog, not "values actually seen in history" like
+    // the item type/brand/model filters — a technician's own Sede may have no history yet at all
+    // (e.g. a brand-new site) and must still be selectable.
     private List<String> sedeCatalogNames() {
         return ServiceLocator.getInstance().getEquipmentService().getAllSedes().stream()
             .map(com.bunshock.note_app_for_it_frontend.models.Sede::getName)
@@ -252,11 +244,10 @@ public class HistoryController {
         todasChk.selectedProperty().addListener((obs, old, newVal) -> {
             if (lock[0] || suppressCallbacks) return;
             if (!newVal) {
-                // "Todas" can only ever go true->false when nothing else is selected (an
-                // individual checkbox being checked already un-checks it directly, above, under
-                // lock — see that listener). Manually unchecking it here would leave nothing
-                // visibly selected while the filter still silently matches everything — direct
-                // user report. Snap it back instead of allowing that dead state.
+                // "Todas" can only go true->false when nothing else is selected (an individual
+                // checkbox being checked already un-checks it directly, under lock, above). Snap
+                // it back instead of leaving nothing visibly selected while the filter still
+                // matches everything.
                 lock[0] = true;
                 todasChk.setSelected(true);
                 lock[0] = false;
@@ -376,10 +367,9 @@ public class HistoryController {
         colGItems.setSortable(false);
         colGStatus.setSortable(false);
 
-        // A dedicated narrow column, not a row border — a border always consumes layout space,
-        // shifting every cell's content relative to the column headers (which never had a
-        // matching inset). A real TableColumn's own header reserves the exact same width
-        // automatically, so there's nothing to misalign. See approvalStatusColor() below.
+        // A dedicated narrow column, not a row border — a border consumes layout space and shifts
+        // cell content relative to the headers; a column's own header reserves the same width
+        // automatically. See approvalStatusColor() below.
         colGApproval.setCellValueFactory(d -> new SimpleStringProperty(""));
         colGApproval.setCellFactory(col -> new TableCell<>() {
             @Override
@@ -404,11 +394,9 @@ public class HistoryController {
             new SimpleStringProperty(orEmpty(d.getValue().getMotivo())));
         colGItems.setCellValueFactory(d -> {
             NoteReport r = d.getValue();
-            // getItems() isn't populated on these summary rows (mapSummary() only loads the
-            // aggregate counts below, not the full item list — that's loaded separately when
-            // opening a note's detail popup), so this must read the SQL-aggregated counts
-            // directly rather than deriving countables from items.size() - assets, which always
-            // evaluated to <= 0 here and silently hid every countable-only or mixed note.
+            // getItems() isn't populated on summary rows (only loaded when opening a note's
+            // detail popup) — must read the SQL-aggregated counts directly, not derive from
+            // items.size().
             int assets = r.getAssetItemCount();
             int countables = r.getCountableItemCount();
             String label = assets > 0
@@ -443,11 +431,8 @@ public class HistoryController {
         updatePendingGlpiLabel(reports);
     }
 
-    // Counts notes among the currently-filtered rows still awaiting approval — red, distinct from
-    // the orange GLPI-pending pill below, same distinction MainController's own nav badges already
-    // make between .nav-badge/.nav-badge-approval. Hidden entirely at 0, same "a present badge
-    // always means something needs attention" convention as every other pending-count indicator
-    // in this app (see MainController.updateBadge()/PrestamoHistoryController's own pills).
+    // Counts filtered rows still awaiting approval — red, distinct from the orange GLPI-pending
+    // pill below. Hidden entirely at 0 (a present badge always means something needs attention).
     private void updatePendingApprovalLabel(List<NoteReport> reports) {
         long pending = reports.stream()
             .filter(r -> r.getApprovalStatus() == null || "PENDING".equals(r.getApprovalStatus()))
@@ -458,12 +443,8 @@ public class HistoryController {
         lblPendingApproval.setManaged(show);
     }
 
-    // Counts notes among the currently-filtered rows that still have at least one item pending
-    // GLPI sync AND are already APPROVED — a note still awaiting approval isn't a real sync
-    // candidate yet (an admin might reject it outright), and a rejected note's items should never
-    // count as pending either; only an approved note's pending sync is genuinely "needs
-    // attention." Mirrors PrestamoHistoryController's own return-pending pill and
-    // HistoryFilter.pendingGlpiSync()'s matching APPROVED-only rule (used by the sidebar badge).
+    // Counts filtered rows with a pending GLPI item AND already APPROVED — a still-pending or
+    // rejected note isn't a real sync candidate yet.
     private void updatePendingGlpiLabel(List<NoteReport> reports) {
         long pending = reports.stream()
             .filter(r -> "APPROVED".equals(r.getApprovalStatus()))
@@ -477,14 +458,9 @@ public class HistoryController {
 
     // ── Row color ─────────────────────────────────────────────────────────────
 
-    // A Préstamo note's assets are all glpi_status N_A and its countables are never GLPI-tracked
-    // at all (see CLAUDE.md's "Préstamo assets are deliberately excluded from GLPI sync"), so the
-    // GLPI-based coloring below always falls into the flat "nothing to track" gray for every
-    // Préstamo row, regardless of whether the loan was actually returned, still pending, or
-    // partially lost — exactly the info this row color should be showing for a Préstamo note.
-    // Delegates to the same return-status-based coloring already used in Préstamos' own History
-    // (PrestamoHistoryController.computeRowStyle(), duplicated here per this codebase's
-    // no-shared-abstraction convention) instead of the GLPI-based one below.
+    // A Préstamo note's items are never GLPI-tracked, so the GLPI-based coloring below would
+    // always show flat gray — delegates to return-status coloring instead (duplicated from
+    // PrestamoHistoryController.computeRowStyle()).
     private String computeRowStyle(NoteReport r) {
         if (isPrestamoProfileType(r.getProfileType())) {
             return computeRowStyleForPrestamo(r);
@@ -539,13 +515,8 @@ public class HistoryController {
         return g.toString();
     }
 
-    // Color for the dedicated colGApproval status column (orange/red/green) — see setupTable()'s
-    // cell factory above. Was originally a per-row left border layered onto computeRowStyle()'s
-    // return value; replaced because a border that only sometimes existed (no border
-    // for Aprobada) shifted bordered rows' content relative to unbordered ones, and even once every
-    // row was given a same-width border, that still shifted every row's content relative to the
-    // column headers (which have no border of their own to match). A real column's header
-    // reserves the exact same space as its cells, so this doesn't have that problem at all.
+    // Color for the dedicated colGApproval column — a column (not a border) so header and cell
+    // width always match exactly.
     private String approvalStatusColor(NoteReport r) {
         String status = r.getApprovalStatus();
         if (status == null || "PENDING".equals(status)) return "#f97316";
@@ -585,12 +556,9 @@ public class HistoryController {
         return profileType != null && PRESTAMO_PROFILE_TYPES.stream().anyMatch(profileType::equalsIgnoreCase);
     }
 
-    // A Préstamo note opens the exact same PrestamoDetailController popup used from the
-    // Préstamos section — same return-status rows, same admin actions — rather than
-    // NoteDetailController's GLPI-only view, which has no equivalent for Préstamo return status
-    // at all (GLPI sync never applies to Préstamo assets — see "Préstamo assets are deliberately
-    // excluded from GLPI sync" in CLAUDE.md) and would show nothing useful. Explicit user
-    // decision, reversing the original "kept separate on purpose" design for this one popup.
+    // A Préstamo note opens PrestamoDetailController (same return-status rows/admin actions)
+    // instead of NoteDetailController's GLPI-only view, which has no equivalent for Préstamo
+    // return status at all.
     private void openDetail(int reportId) {
         NoteReport full = ServiceLocator.getInstance().getHistoryService().getById(reportId);
         if (full == null) return;
@@ -611,11 +579,9 @@ public class HistoryController {
 
     // ── Export ────────────────────────────────────────────────────────────────
 
-    // Every column the export should contain, in order — deliberately a superset of what's shown
-    // on screen, per explicit user direction ("CSV/Excel exports should contain every possible
-    // note value, NULLs allowed"). The last 5 columns (Falla/CUIT/Responsable/Área-Evento/
-    // Observaciones) only ever apply to some profile types — a blank cell for the rest is
-    // expected, not a bug.
+    // Every export column, in order — deliberately a superset of what's shown on screen. The
+    // last 5 (Falla/CUIT/Responsable/Área-Evento/Observaciones) only apply to some profile
+    // types; a blank cell for the rest is expected, not a bug.
     private static final String[] EXPORT_HEADERS = {
         "Fecha", "Autor", "Autor DNI", "Sede", "Tipo", "Motivo", "Destinatario",
         "Estado", "Razón Rechazo", "Estado GLPI",
@@ -625,12 +591,9 @@ public class HistoryController {
         "Área/Evento", "Observaciones"
     };
 
-    // The visible table's rows are summary rows (mapSummary()) — they don't carry the
-    // profile-specific detail fields (Falla, Provider CUIT/responsible person, Préstamo
-    // Área/Evento, Observaciones Generales). Exporting "every possible value" per explicit user
-    // request means fetching the full report per row via getById() — one extra query per
-    // exported row, a deliberate, accepted trade-off (a large export will be noticeably slower)
-    // over leaving those columns out entirely.
+    // Summary rows don't carry profile-specific detail fields (Falla, Provider CUIT/
+    // responsible, Préstamo Área/Evento, Observaciones) — fetching the full report per row via
+    // getById() is a deliberate, accepted trade-off (slower export) over leaving them blank.
     private List<String> exportRowValues(NoteReport summary) {
         NoteReport full = ServiceLocator.getInstance().getHistoryService().getById(summary.getId());
         if (full == null) full = summary;

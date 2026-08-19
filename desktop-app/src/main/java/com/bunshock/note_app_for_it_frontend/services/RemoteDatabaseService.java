@@ -251,17 +251,11 @@ public class RemoteDatabaseService {
                     performed_at DATETIME2 NOT NULL
                 )""");
 
-            // created_at is a real DATETIME2 — see dropDeadNoteReportColumns()/
-            // migrateTimestampColumnsToDatetime2() below for the migration path on an
-            // already-running installation). SqliteHistoryService writes it via plain
-            // setString(LocalDateTime.toString()) on both engines (SQL Server implicitly
-            // converts an ISO-8601 'T'-separated string to DATETIME2 on INSERT/UPDATE — a
-            // documented, locale-independent conversion) and reads it back tolerant of either
-            // engine's getString() rendering (parseStoredTimestamp()), so no write-path change
-            // was needed, only the column type plus a tolerant read.
-            // glpi_synced/sede were both dead (no reader/writer anywhere in the app — sede was
-            // superseded by sede_id, glpi_synced was never wired to anything) — dropped,
-            // see dropDeadNoteReportColumns().
+            // created_at is a real DATETIME2 — see migrateTimestampColumnsToDatetime2() below for
+            // the migration path. SQL Server implicitly converts the ISO-8601 'T'-separated string
+            // SqliteHistoryService writes via setString(LocalDateTime.toString()), so no write-path
+            // change is needed, only the column type plus a tolerant read (parseStoredTimestamp()).
+            // glpi_synced/sede were both dead — dropped, see dropDeadNoteReportColumns().
             createTableIfMissing(stmt, "NOTE_REPORT", """
                 CREATE TABLE NOTE_REPORT (
                     id              INT IDENTITY(1,1) PRIMARY KEY,
@@ -492,11 +486,8 @@ public class RemoteDatabaseService {
             migrateTimestampColumnsToDatetime2(stmt, c);
             addColumnIfMissing(stmt, c, "NOTE_REPORT", "stock_applied", "INT NOT NULL DEFAULT 0");
             migrateStockAppliedSchema(stmt, c);
-            // approval_status's rejected value was originally the Spanish "RECHAZADO" —
-            // inconsistent with its siblings PENDING/APPROVED (English). Renamed to REJECTED in
-            // code; any row already written under the old value must be updated too, or it
-            // silently stops matching any switch/if branch. Safe on every run — a no-op once no
-            // row has the old value left.
+            // A row still holding the legacy Spanish value ("RECHAZADO") stops matching every
+            // switch/if branch keyed on the English REJECTED.
             stmt.executeUpdate("UPDATE NOTE_REPORT SET approval_status = 'REJECTED' WHERE approval_status = 'RECHAZADO'");
             // profile_type's Provider-note value was originally mixed-case "Entrega - Proveedor"
             // — inconsistent with the other ALL-CAPS literal values. See DatabaseService's
@@ -538,18 +529,12 @@ public class RemoteDatabaseService {
             narrowNvarcharIfNeeded(stmt, c, "NOTE_ENTREGA_DEVOLUCION", "motivo", 100);
             narrowNvarcharIfNeeded(stmt, c, "NOTE_PROVEEDOR", "motivo", 100);
             narrowNvarcharIfNeeded(stmt, c, "NOTE_ITEM", "observations", 200);
-            // glpi_rejection_reason/return_rejection_reason used to live on NOTE_ITEM itself and
-            // were narrowed here; they now live on NOTE_ITEM_GLPI_TRACKING/NOTE_ITEM_RETURN_TRACKING
-            // (see migrateNoteItemSchema()), created with the NVARCHAR(300) bound from the start —
-            // nothing left to narrow on this table for either column. Same reasoning for
-            // failure_cause/failure_details/area_evento/rejection_reason (split into
-            // NOTE_DEVOLUCION_FALLA/NOTE_PRESTAMO_AREA_EVENTO/NOTE_REPORT_REJECTION) — each new
-            // table is only ever created with its bounded NVARCHAR(n) type from the start, so
-            // there's nothing pre-existing on it to narrow.
+            // glpi_rejection_reason/return_rejection_reason moved to NOTE_ITEM_GLPI_TRACKING/
+            // NOTE_ITEM_RETURN_TRACKING, created with the NVARCHAR(300) bound from the start —
+            // nothing left to narrow on NOTE_ITEM for either column.
 
-            // Lets a specific account skip the AD-group login gate (see LoginController) without
-            // needing an AD group of its own — e.g. intern technicians. DEFAULT 0 preserves
-            // today's behavior for every existing account (still must be in the allowed group).
+            // Lets a specific account skip the AD-group login gate (see LoginController) — e.g.
+            // interns, who aren't in the org's IT support group but still need access.
             addColumnIfMissing(stmt, c, "APP_USER", "bypass_group_check", "INT NOT NULL DEFAULT 0");
 
             if (tableExists(c, "ROLE_PERMISSION")) {
@@ -628,12 +613,9 @@ public class RemoteDatabaseService {
      * Javadoc for the full rationale. T-SQL supports ALTER COLUMN natively, so unlike the SQLite
      * side this doesn't need a rebuild-under-a-temp-name dance: brand_type_id is relaxed to
      * nullable in place, then every existing per-link "Genérico / Otro" row is consolidated into
-     * a single global row the same way. No-ops once already migrated (brand_type_id already
-     * nullable) — including on a brand-new remote database, which gets the nullable column
-     * straight from ensureSchema()'s CREATE TABLE. Unlike DatabaseService, there's no always-run
-     * seed step for a brand-new database here either — same as BRAND's own "Genérico / Otro" row,
-     * the remote catalog is only ever populated via CatalogMigrationTool or manual entry, never
-     * auto-seeded.
+     * a single global row. No-op once already migrated. Unlike DatabaseService, there's no
+     * always-run seed step here — the remote catalog is only ever populated via
+     * CatalogMigrationTool or manual entry, never auto-seeded.
      */
     private void migrateGenericModelSchema(Statement stmt, Connection c) throws SQLException {
         if (!isColumnNotNullable(c, "MODEL", "brand_type_id")) return;
@@ -755,10 +737,8 @@ public class RemoteDatabaseService {
     }
 
     // MODEL_STOCK gained sede_id as part of its primary key — mirrors DatabaseService's identical
-    // SQLite migration. Nothing else has an FK pointing INTO MODEL_STOCK, so an already-running
-    // installation's old-shape table is simply dropped and recreated rather than attempting to
-    // split its existing numbers across Sedes — explicit user decision: every (model, Sede) pair
-    // starts at 0, and an admin re-enters real counts going forward.
+    // SQLite migration. Nothing else has an FK into MODEL_STOCK, so an old-shape table is simply
+    // dropped and recreated; every (model, Sede) pair starts at 0 rather than guessing a split.
     private void migrateModelStockSedeSchema(Statement stmt, Connection c) throws SQLException {
         if (tableExists(c, "MODEL_STOCK") && !columnExists(c, "MODEL_STOCK", "sede_id")) {
             stmt.executeUpdate("DROP TABLE MODEL_STOCK");
@@ -773,16 +753,11 @@ public class RemoteDatabaseService {
         }
     }
 
-    // SEDE_SHIPPING_INFO's PK changed from sede_id itself to a surrogate id — see
+    // SEDE_SHIPPING_INFO's PK changed from sede_id to a surrogate id — see
     // DatabaseService.migrateSedeShippingInfoIdSchema()'s SQLite mirror for the full rationale.
-    // T-SQL supports adding an IDENTITY column to an existing (non-empty) table directly via
-    // ALTER TABLE ADD, so unlike the SQLite side this doesn't need a rebuild-under-a-temp-name
-    // dance — just drop the old inline PK constraint (auto-named by SQL Server, so its name has
-    // to be looked up dynamically first, same as dropDefaultConstraintIfAny() does for DEFAULT
-    // constraints) and add the new one. No live SQL Server instance in this project's test
-    // infrastructure to validate the IDENTITY-on-a-non-empty-table behavior against — same
-    // limitation already accepted elsewhere in this file. No-ops (past the index check) once
-    // already migrated (id column present), including on a brand-new install.
+    // T-SQL supports adding an IDENTITY column to a non-empty table directly, so this just drops
+    // the old inline PK constraint (auto-named by SQL Server, looked up dynamically, same as
+    // dropDefaultConstraintIfAny() does for DEFAULT constraints) and adds the new one.
     private void migrateSedeShippingInfoIdSchema(Statement stmt, Connection c) throws SQLException {
         if (tableExists(c, "SEDE_SHIPPING_INFO") && !columnExists(c, "SEDE_SHIPPING_INFO", "id")) {
             boolean originalAutoCommit = c.getAutoCommit();
@@ -1048,8 +1023,6 @@ public class RemoteDatabaseService {
         }
     }
 
-    // Shared resolve-or-create for TYPE/BRAND/PROVIDER — see DatabaseService's identical helper
-    // for the full rationale (uniqueness on name holds regardless of deprecated status).
     // SQL Server mirror of DatabaseService.migrateSedeIdSchema() — see that method's Javadoc for
     // the full rationale (why backfilled rows are left active, not deprecated, unlike the
     // NOTE_ITEM/NOTE_PROVEEDOR catalog-FK backfill).
@@ -1257,12 +1230,9 @@ public class RemoteDatabaseService {
     }
 
     // SQL Server mirror of DatabaseService.migrateItemKindRevertSchema() — see that method's
-    // Javadoc for the full rationale (a same-session, never-shipped detour into a 4-kind
-    // item_kind/requires_identifier shape, reverted back to plain is_asset/requires_serial the
-    // same day). sp_rename is T-SQL's only column-rename mechanism; DROP COLUMN on item_kind
-    // needs its inline DEFAULT/CHECK constraints dropped first, same precedent as
-    // dropDeadNoteReportColumns()'s glpi_synced handling. Both steps no-op once already reverted
-    // (item_kind no longer exists on TYPE) — including on a brand-new install.
+    // Javadoc for the full rationale. sp_rename is T-SQL's only column-rename mechanism; DROP
+    // COLUMN on item_kind needs its inline DEFAULT/CHECK constraints dropped first, same
+    // precedent as dropDeadNoteReportColumns()'s glpi_synced handling.
     private void migrateItemKindRevertSchema(Statement stmt, Connection c) throws SQLException {
         if (columnExists(c, "TYPE", "requires_identifier")) {
             try {
@@ -1335,13 +1305,9 @@ public class RemoteDatabaseService {
         }
     }
 
-    // glpi_synced/sede on NOTE_REPORT were both confirmed dead (no reader/writer anywhere in the
-    // app — sede was superseded by sede_id, glpi_synced was never wired to anything). A brand-new
-    // install never creates either column (see the CREATE TABLE above); this only fires on an
-    // already-running installation that still has one or both. Wrapped in try/catch per the
-    // existing "fail safely, don't block startup" convention used by narrowNvarcharIfNeeded()
-    // above — an installation with unexpected constraints on either column just keeps them until
-    // an admin investigates, rather than failing ensureSchema() outright.
+    // glpi_synced/sede on NOTE_REPORT are both dead (sede superseded by sede_id, glpi_synced
+    // never wired to anything). Wrapped in try/catch — an unexpected failure leaves the column in
+    // place rather than failing ensureSchema() outright.
     private void dropDeadNoteReportColumns(Statement stmt, Connection c) throws SQLException {
         if (columnExists(c, "NOTE_REPORT", "glpi_synced")) {
             try {
@@ -1380,17 +1346,10 @@ public class RemoteDatabaseService {
         }
     }
 
-    // SQL Server mirror of DatabaseService.migrateRejectionReasonSchema() — see that method's
-    // Javadoc for the full rationale. T-SQL has no INSERT OR IGNORE, so a NOT EXISTS guard makes
-    // the backfill safely re-runnable if the DROP COLUMN below fails partway and this method
-    // retries on next startup with the column still present.
-    // A first attempt at this feature added modifies_stock_reason directly as a nullable column
-    // on NOTE_ITEM — reverted before shipping once a nullable-on-every-row shape was flagged as
-    // inconsistent with this schema's own standing normalization rule (see
-    // migrateRejectionReasonSchema()'s identical split, just below, for the established
-    // precedent). No live SQL Server instance in this project's test infrastructure ever ran the
-    // old shape, so this is defensive/no-op on every real remote installation — kept only for
-    // parity with DatabaseService's own migration, which a local SQLite database genuinely needed.
+    // Backfills a NOTE_ITEM.modifies_stock_reason column that briefly existed on a nullable
+    // (never-shipped) shape into NOTE_ITEM_STOCK_EXCEPTION, then drops it — no live SQL Server
+    // instance in this project's test infrastructure ever ran the old shape, so this is
+    // defensive/no-op here, kept only for parity with DatabaseService's own migration.
     private void migrateStockExceptionReasonSchema(Statement stmt, Connection c) throws SQLException {
         if (!columnExists(c, "NOTE_ITEM", "modifies_stock_reason")) return;
         stmt.executeUpdate("""
@@ -1406,6 +1365,9 @@ public class RemoteDatabaseService {
         }
     }
 
+    // SQL Server mirror of DatabaseService.migrateRejectionReasonSchema() — T-SQL has no INSERT OR
+    // IGNORE, so a NOT EXISTS guard makes the backfill safely re-runnable if DROP COLUMN below
+    // fails partway.
     private void migrateRejectionReasonSchema(Statement stmt, Connection c) throws SQLException {
         if (!columnExists(c, "NOTE_REPORT", "rejection_reason")) return;
         stmt.executeUpdate("""

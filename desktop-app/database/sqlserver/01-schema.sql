@@ -1,17 +1,10 @@
 -- Generador de Notas IT — Microsoft SQL Server schema
 --
--- Mirrors RemoteDatabaseService.ensureSchema() exactly (desktop-app/src/main/java/.../services/RemoteDatabaseService.java).
--- The app already creates this schema automatically the first time it connects to a configured
--- remote database (Configuración → Base de Datos → Editar, admin mode), so running this script
--- by hand is OPTIONAL — it's here for DBAs who want to provision the database independently of
--- ever launching the app, or who want the schema under version control / change review before
--- the app touches it.
+-- Mirrors RemoteDatabaseService.ensureSchema(). Optional to run by hand — the app creates this
+-- schema automatically on first connection — provided for DBA-managed provisioning/review.
 --
--- Safe to run multiple times (every CREATE TABLE / index / column addition is guarded by an
--- existence check first, since T-SQL has no CREATE TABLE IF NOT EXISTS or ADD COLUMN IF NOT
--- EXISTS the way PostgreSQL/SQLite do) and safe to run against a database at ANY prior schema
--- version this app has ever shipped — every migration step below is its own existence-guarded,
--- idempotent block, exactly like the Java it mirrors.
+-- Safe to run multiple times: every statement is guarded by an existence check (T-SQL has no
+-- CREATE TABLE IF NOT EXISTS / ADD COLUMN IF NOT EXISTS).
 -- Run 02-seed-equipment.sql afterward to populate the starting Type/Brand/Model catalog.
 
 BEGIN TRANSACTION;
@@ -167,9 +160,8 @@ BEGIN
 END
 
 -- Login-time role/Sede lookup — not the same thing as AD group membership, which gates app
--- access at all and is checked against the AD API at login time, not stored here. Renamed from
--- USER_ROLE (2026-07-30) since USER is a reserved keyword/niladic function in T-SQL and the old
--- table had no sede_id/SUPERADMIN tier.
+-- access at all and is checked against the AD API at login time, not stored here. Named APP_USER,
+-- not USER — USER is a reserved keyword/niladic function in T-SQL.
 --
 -- ROLE is a plain lookup table for the 3 fixed role names — APP_USER.role_id and
 -- ROLE_PERMISSION.role_id both reference it, instead of each independently duplicating the same
@@ -206,16 +198,11 @@ BEGIN
     );
 END
 
--- Append-only audit trail. AUDIT_ADMIN_ACTION is deliberately generic (target_id NVARCHAR, not
--- a typed FK) since it has to cover a heterogeneous set of admin actions (catalog CRUD, note
--- approval/rejection, config changes, S/N validation edits, profile overrides) that don't share
--- one FK target — the same "object_id as text" shape most real-world audit logs use (Django's
--- LogEntry, Rails' PaperTrail). AUDIT_STOCK/AUDIT_ITEM_STATUS stay typed since each has one clear,
--- single FK target worth keeping precise. old_value/new_value must NEVER hold an actual secret
--- value (SMTP password, GLPI API key, AD token, DB credentials) — only that a change happened;
--- enforced by the caller, not this schema. APP_USER/ROLE_PERMISSION changes are made via direct
--- SQL, not through the app, so they are structurally outside what an app-level audit table can
--- ever see — that would need a DB trigger, not an application-level insert.
+-- Append-only audit trail. AUDIT_ADMIN_ACTION is deliberately generic (target_id NVARCHAR, not a
+-- typed FK) since it covers heterogeneous admin actions with no single shared FK target;
+-- AUDIT_STOCK/AUDIT_ITEM_STATUS stay typed since each has one clear FK target.
+-- old_value/new_value must NEVER hold an actual secret value (SMTP password, GLPI API key, AD
+-- token, DB credentials) — only that a change happened; enforced by the caller, not this schema.
 IF OBJECT_ID('dbo.AUDIT_LOGIN', 'U') IS NULL
 BEGIN
     CREATE TABLE AUDIT_LOGIN (
@@ -259,8 +246,8 @@ BEGIN
     );
 END
 
--- glpi_synced/sede are deliberately absent here — both were confirmed dead (no reader/writer
--- anywhere in the app) and are actively dropped from an existing database further down
+-- glpi_synced/sede are deliberately absent here — both are dead (no reader/writer
+-- anywhere in the app) and are dropped from an existing database further down
 -- (dropDeadNoteReportColumns), never re-created for a fresh install. stock_applied guards
 -- against double-applying a note's stock adjustment on re-approve — every note type moves stock
 -- on approval now (not just Remito), so this is a universal per-note flag, not a NOTE_REMITO-only
@@ -565,7 +552,7 @@ END
 IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE lower(table_name) = 'note_report' AND lower(column_name) = 'approval_status')
     ALTER TABLE NOTE_REPORT ADD approval_status NVARCHAR(20) NOT NULL DEFAULT 'PENDING';
 
--- glpi_synced/sede on NOTE_REPORT were both confirmed dead (no reader/writer anywhere in the
+-- glpi_synced/sede on NOTE_REPORT are both dead (no reader/writer anywhere in the
 -- app — sede was superseded by sede_id, glpi_synced was never wired to anything). A brand-new
 -- install never creates either column; this only fires on an already-running installation that
 -- still has one or both.

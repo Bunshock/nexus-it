@@ -49,60 +49,35 @@ public class DatabaseService {
     // table from an older schema version, so newly added columns never land on disk —
     // each column added after the initial release must be migrated in here too.
     private void migrateSchema(Connection conn, Statement stmt) throws SQLException {
-        // approval_status's rejected value was originally the Spanish "RECHAZADO" — inconsistent
-        // with its siblings PENDING/APPROVED (English, per this project's code-in-English
-        // convention; only UI-facing display text stays Spanish). Renamed to REJECTED in code;
-        // any row already written under the old value must be updated too, or it silently stops
-        // matching any switch/if branch and misdisplays as "Pendiente" while staying stuck
-        // (nothing re-shows the Aprobar/Rechazar buttons for a status that isn't literally
-        // "PENDING"). Safe to run on every startup — a no-op once no row has the old value left.
-        // Guarded on columnExists() — a database from before the approval workflow existed (or
-        // this file's own minimal test fixtures reproducing that shape) has no approval_status
-        // column at all yet.
+        // A row still holding the legacy Spanish value ("RECHAZADO") stops matching every
+        // switch/if branch (all keyed on the English REJECTED) and gets stuck showing
+        // "Pendiente" with no way to re-show the Aprobar/Rechazar buttons.
         if (columnExists(conn, "NOTE_REPORT", "approval_status")) {
             stmt.executeUpdate("UPDATE NOTE_REPORT SET approval_status = 'REJECTED' WHERE approval_status = 'RECHAZADO'");
         }
-        // profile_type's Provider-note value was originally the mixed-case "Entrega - Proveedor"
-        // — inconsistent with the other three literal values ("ENTREGA", "DEVOLUCIÓN", "PRÉSTAMO",
-        // "ENTREGA PERMANENTE"), all ALL-CAPS. Renamed to "ENTREGA - PROVEEDOR" in
-        // NoteGeneratorController; every toDisplayName() duplicate already had a dedicated,
-        // previously-dead switch case expecting exactly this value (case "ENTREGA - PROVEEDOR" ->
-        // "Entrega - Proveedor"), so this also makes that case finally get exercised instead of
-        // silently falling through to the default branch. Not strictly required for correctness —
-        // every read site either uses equalsIgnoreCase() or the same graceful default fallback, so
-        // an old mixed-case row was never actually broken by this — but kept consistent with every
-        // other raw-value column in this schema rather than leaving one exception in place.
+        // Normalizes the mixed-case Provider-note value to match the other ALL-CAPS profile_type
+        // literals; every read site already tolerates either casing, so this is cleanup, not a fix.
         stmt.executeUpdate("UPDATE NOTE_REPORT SET profile_type = 'ENTREGA - PROVEEDOR' WHERE profile_type = 'Entrega - Proveedor'");
-        // Added after AUDIT_ITEM_STATUS's own CREATE TABLE already shipped once this session —
-        // CREATE TABLE IF NOT EXISTS is a no-op on a database that already has the table, so an
-        // install that created it before this column existed would otherwise never get it.
-        // DEFAULT 1 is required here, not optional — SQLite rejects ADD COLUMN ... NOT NULL on a
+        // DEFAULT 1 is required, not optional — SQLite rejects ADD COLUMN ... NOT NULL on a
         // table with existing rows unless a default is supplied.
         addColumnIfMissing(stmt, "AUDIT_ITEM_STATUS", "quantity", "INTEGER NOT NULL DEFAULT 1");
-        // failure_cause/failure_details/area_evento (the old, already-released columns) are
-        // deliberately NOT re-added here — they're dead going forward, split into
-        // NOTE_DEVOLUCION_FALLA/NOTE_PRESTAMO_AREA_EVENTO instead (see
-        // migrateEntregaDevolucionSplitSchema() below), same "stop re-adding a retired column"
-        // precedent as NOTE_REPORT.sede elsewhere in this method.
+        // failure_cause/failure_details/area_evento are deliberately NOT re-added here — they
+        // moved to NOTE_DEVOLUCION_FALLA/NOTE_PRESTAMO_AREA_EVENTO (see
+        // migrateEntregaDevolucionSplitSchema() below).
         addColumnIfMissing(stmt, "NOTE_PROVEEDOR", "responsible_name", "TEXT");
         addColumnIfMissing(stmt, "NOTE_PROVEEDOR", "responsible_dni", "TEXT");
         addColumnIfMissing(stmt, "NOTE_REPORT", "technician_name", "TEXT");
         addColumnIfMissing(stmt, "NOTE_REPORT", "technician_dni", "TEXT");
-        // Only relevant to a database still on the old wide NOTE_ITEM shape (is_asset present) —
-        // on a brand-new install NOTE_ITEM is already the slim shape from createHistoryTables(),
-        // and these columns must NOT be re-added there just because they're "missing"; walking a
-        // genuinely old database up to the full wide shape here is a prerequisite for
-        // migrateNoteItemSchema() below to correctly split it into the 5-table shape.
+        // Only applies to a database still on the old wide NOTE_ITEM shape (is_asset present) —
+        // a brand-new install is already slim and must not get these columns re-added.
         if (columnExists(conn, "NOTE_ITEM", "is_asset")) {
             addColumnIfMissing(stmt, "NOTE_ITEM", "return_status", "TEXT NOT NULL DEFAULT 'N_A'");
             addColumnIfMissing(stmt, "NOTE_ITEM", "return_rejection_reason", "TEXT");
             addColumnIfMissing(stmt, "NOTE_ITEM", "return_status_updated_at", "TEXT");
         }
         addColumnIfMissing(stmt, "NOTE_REPORT", "observations", "TEXT");
-        // "sede" (the old free-text column) is deliberately NOT re-added here — it's dead going
-        // forward (see dropDeadNoteReportColumns() below); addColumnIfMissing(..., "sede", ...)
-        // used to run unconditionally, which would have silently reintroduced the column on a
-        // brand-new install even after it was removed from createHistoryTables()'s CREATE TABLE.
+        // "sede" (the old free-text column) is deliberately NOT re-added here — see
+        // dropDeadNoteReportColumns() below.
         addColumnIfMissing(stmt, "NOTE_REPORT", "sede_id", "INTEGER REFERENCES SEDE(id)");
         migrateSedeIdSchema(conn, stmt);
         addColumnIfMissing(stmt, "NOTE_REPORT", "approval_status", "TEXT NOT NULL DEFAULT 'PENDING'");
@@ -114,9 +89,8 @@ public class DatabaseService {
         addColumnIfMissing(stmt, "NOTE_REPORT", "stock_applied", "INTEGER NOT NULL DEFAULT 0");
         migrateStockAppliedSchema(conn, stmt);
 
-        // Column just introduced — backfill the type that used to be hardcoded as
-        // "always requires S/N" (ItemDialogController's old "Notebook".equals(...) check)
-        // so existing databases keep today's behavior instead of silently losing the rule.
+        // Backfills the type that was previously hardcoded as "always requires S/N" so existing
+        // databases keep that behavior after the column replaces the hardcoded check.
         if (addColumnIfMissing(stmt, "TYPE", "requires_serial", "INTEGER NOT NULL DEFAULT 0")) {
             try {
                 stmt.executeUpdate("UPDATE TYPE SET requires_serial = 1 WHERE LOWER(name) = 'notebook'");
@@ -133,10 +107,8 @@ public class DatabaseService {
         addColumnIfMissing(stmt, "MODEL", "deprecated", "INTEGER NOT NULL DEFAULT 0");
         addColumnIfMissing(stmt, "PROVIDER", "deprecated", "INTEGER NOT NULL DEFAULT 0");
 
-        // "Generic" -> "Genérico / Otro": one-time rename so the seeded fallback BRAND row's
-        // name matches exactly what every combo box has always displayed for it (see
-        // ItemDialogController's GENERIC_LABEL) instead of two different names for the same
-        // concept. Plain no-op UPDATE on a database that's already been through this once.
+        // One-time rename so the seeded fallback BRAND row's name matches what every combo box
+        // displays for it (ItemDialogController.GENERIC_LABEL). No-op once already renamed.
         try {
             stmt.executeUpdate("UPDATE BRAND SET name = 'Genérico / Otro' WHERE name = 'Generic'");
         } catch (SQLException ignored) {
@@ -152,18 +124,14 @@ public class DatabaseService {
         migrateSedeShippingInfoIdSchema(conn, stmt);
         migrateNoteRemitoSplitSchema(conn, stmt);
 
-        // Added after every NOTE_ITEM-rebuilding migration above, so it lands correctly
-        // regardless of which shape an existing database's NOTE_ITEM table was migrated through.
-        // DEFAULT 1 preserves today's behavior for every existing item (stock already applied
-        // normally) — only newly-created items can opt out via the dialog checkbox.
+        // DEFAULT 1 preserves current behavior for every existing item; only newly-created items
+        // can opt out via the dialog checkbox.
         addColumnIfMissing(stmt, "NOTE_ITEM", "modifies_stock", "INTEGER NOT NULL DEFAULT 1");
         migrateStockExceptionReasonSchema(conn, stmt);
         migrateNoteItemStatusTrackingSchema(conn, stmt);
 
-        // Lets a specific account skip the AD-group login gate (see LoginController) without
-        // needing an AD group of its own — e.g. intern technicians, who aren't in the org's IT
-        // support group but should still be able to log in. DEFAULT 0 preserves today's behavior
-        // for every existing account (still must be in the allowed group).
+        // Lets a specific account skip the AD-group login gate (see LoginController) — e.g.
+        // interns, who aren't in the org's IT support group but still need access.
         addColumnIfMissing(stmt, "APP_USER", "bypass_group_check", "INTEGER NOT NULL DEFAULT 0");
 
         migrateRoleTableSchema(conn, stmt);
@@ -174,13 +142,9 @@ public class DatabaseService {
         }
     }
 
-    // Collapses the 3 old byte-identical per-dimension tables (NOTE_ITEM_GLPI_TRACKING,
-    // NOTE_ITEM_RETURN_TRACKING, NOTE_ITEM_GLPI_RETURN_TRACKING) into one
-    // NOTE_ITEM_STATUS_TRACKING table, discriminated by tracking_type — see createHistoryTables()
-    // for the full reasoning. No FK anywhere else points into any of the 3 old tables, so this is
-    // a plain backfill + drop, not the rename-under-temp-name dance NOTE_ITEM's own subtype-table
-    // rebuild needed. No-ops once already migrated (the 3 old tables no longer exist) — including
-    // on a brand-new install, which gets the unified table straight from createHistoryTables().
+    // Collapses the 3 old byte-identical per-dimension tables into one NOTE_ITEM_STATUS_TRACKING
+    // table discriminated by tracking_type. No FK points into the old tables, so this is a plain
+    // backfill + drop. No-op once already migrated.
     private void migrateNoteItemStatusTrackingSchema(Connection conn, Statement stmt) throws SQLException {
         if (tableExists(conn, "NOTE_ITEM_GLPI_TRACKING")) {
             stmt.executeUpdate("""
@@ -205,26 +169,19 @@ public class DatabaseService {
         }
     }
 
-    // Replaces APP_USER.role / ROLE_PERMISSION.role (each independently a TEXT column with its
-    // own CHECK (role IN (...)) constraint, no FK relationship between the two) with a real
-    // role_id FK into the ROLE lookup table — see createUserRoleTable() for the full reasoning.
-    // Both tables are rebuilt under a temporary name (SQLite can't alter a column out from under
-    // an inline CHECK constraint, and role_id must end up NOT NULL, which ALTER TABLE ADD COLUMN
-    // can't express for a per-row-varying backfill) — safe to do without the
-    // rename-silently-rewrites-other-tables'-FK gotcha NOTE_ITEM's own rebuild had to work around,
-    // since nothing else in this schema references APP_USER or ROLE_PERMISSION by FK. No-ops once
-    // already migrated (role_id already present) — including on a brand-new install, which gets
-    // the FK shape straight from createUserRoleTable(). Each half is also independently guarded on
-    // the old table actually existing, matching the "some migration tests call migrateSchema()
-    // standalone, against a minimal fixture" precedent already established elsewhere in this file.
+    // Replaces APP_USER.role / ROLE_PERMISSION.role (each an independent TEXT column with its own
+    // CHECK constraint) with a role_id FK into the ROLE lookup table. Rebuilt under a temporary
+    // name — SQLite can't alter a column out from under an inline CHECK constraint, and role_id
+    // must end up NOT NULL, which ADD COLUMN can't express for a per-row backfill. No other table
+    // references APP_USER/ROLE_PERMISSION by FK, so this is safe without a rename gotcha. No-op
+    // once already migrated.
     private void migrateRoleTableSchema(Connection conn, Statement stmt) throws SQLException {
         boolean appUserNeedsMigration = tableExists(conn, "APP_USER") && !columnExists(conn, "APP_USER", "role_id");
         boolean rolePermissionNeedsMigration = tableExists(conn, "ROLE_PERMISSION") && !columnExists(conn, "ROLE_PERMISSION", "role_id");
         if (!appUserNeedsMigration && !rolePermissionNeedsMigration) return;
 
-        // createUserRoleTable() normally creates and seeds ROLE before migrateSchema() ever runs,
-        // but a caller invoking migrateSchema() standalone (e.g. a migration test reproducing a
-        // pre-existing database directly) can't assume that already happened.
+        // A caller invoking migrateSchema() standalone (e.g. a migration test) can't assume
+        // createUserRoleTable() already created and seeded ROLE.
         if (!tableExists(conn, "ROLE")) {
             stmt.executeUpdate("""
                 CREATE TABLE ROLE (
@@ -281,12 +238,9 @@ public class DatabaseService {
         }
     }
 
-    // A first attempt at this feature added modifies_stock_reason directly as a nullable column
-    // on NOTE_ITEM — reverted before ever being committed once a nullable-on-every-row shape was
-    // flagged as inconsistent with this schema's own standing normalization rule (see
-    // NOTE_REPORT_REJECTION's identical split). Only matters for a database that happened to run
-    // through the brief window where that column existed (this local dev database included) —
-    // a brand-new install never creates the column at all, so this is a no-op there.
+    // Backfills a NOTE_ITEM.modifies_stock_reason column that briefly existed on a nullable
+    // (never-shipped) shape into NOTE_ITEM_STOCK_EXCEPTION, then drops it. No-op on any database
+    // that never had the column.
     private void migrateStockExceptionReasonSchema(Connection conn, Statement stmt) throws SQLException {
         if (!columnExists(conn, "NOTE_ITEM", "modifies_stock_reason")) return;
         stmt.executeUpdate("""
@@ -297,12 +251,9 @@ public class DatabaseService {
         stmt.executeUpdate("ALTER TABLE NOTE_ITEM DROP COLUMN modifies_stock_reason");
     }
 
-    // MODEL_STOCK gained sede_id as part of its primary key — stock is now tracked per Sede,
-    // not one shared global number. Nothing else has an FK pointing INTO MODEL_STOCK, so an
-    // already-running installation's old-shape table is simply dropped and recreated rather than
-    // attempting to split its existing numbers across Sedes — there's no correct way to guess
-    // that split. Explicit user decision: every (model, Sede) pair starts at 0, and an admin
-    // re-enters real counts going forward.
+    // MODEL_STOCK gained sede_id as part of its primary key — stock is now tracked per Sede, not
+    // one shared number. Nothing else has an FK into MODEL_STOCK, so an old-shape table is simply
+    // dropped and recreated; every (model, Sede) pair starts at 0 rather than guessing a split.
     private void migrateModelStockSedeSchema(Connection conn, Statement stmt) throws SQLException {
         if (tableExists(conn, "MODEL_STOCK") && !columnExists(conn, "MODEL_STOCK", "sede_id")) {
             stmt.executeUpdate("DROP TABLE MODEL_STOCK");
@@ -317,16 +268,10 @@ public class DatabaseService {
         }
     }
 
-    // SEDE_SHIPPING_INFO's PK changed from sede_id itself to a surrogate id (see
-    // createEquipmentTables() above) — SQLite can't relax/change a PRIMARY KEY via ALTER TABLE,
-    // so this uses the same "build under a temp name, DROP the old table, RENAME the new one into
-    // place" recipe as migrateGenericModelSchema() above. Nothing references SEDE_SHIPPING_INFO
-    // by FK yet at this point (NOTE_REMITO_SEDE is only backfilled afterward, by
-    // migrateNoteRemitoSplitSchema() below), so no other table's schema needs to survive this
-    // rename the way SN_VALIDATION/NOTE_ITEM did for MODEL. Every migrated row is left active
-    // (deprecated=0) — they're all "current" as far as this migration is concerned. No-ops once
-    // already migrated (id column present), including on a brand-new install, which gets the new
-    // shape straight from createEquipmentTables().
+    // SEDE_SHIPPING_INFO's PK changed from sede_id to a surrogate id — SQLite can't relax a
+    // PRIMARY KEY via ALTER TABLE, so this rebuilds under a temp name and renames it into place.
+    // Nothing references it by FK yet at this point, so no other table's schema needs to survive
+    // the rebuild. Every migrated row is left active (deprecated=0). No-op once already migrated.
     private void migrateSedeShippingInfoIdSchema(Connection conn, Statement stmt) throws SQLException {
         if (!tableExists(conn, "SEDE_SHIPPING_INFO") || columnExists(conn, "SEDE_SHIPPING_INFO", "id")) return;
 
@@ -361,16 +306,10 @@ public class DatabaseService {
         }
     }
 
-    // NOTE_REMITO mixed a nullable destination_sede_id (meaningful only for a catalog-Sede
-    // destination) with always-populated destination_label/address/recipients text. Split into
-    // NOTE_REMITO_SEDE (references the exact historical SEDE_SHIPPING_INFO row instead of
-    // duplicating its text — see createHistoryTables()'s comment for why that's safe) and
-    // NOTE_REMITO_OTHER (its own free text, for a destination with no catalog row at all). Must
-    // run after migrateSedeShippingInfoIdSchema() — relies on SEDE_SHIPPING_INFO already having
-    // its id/deprecated columns. No table rebuild needed here — nothing references NOTE_REMITO by
-    // FK, so a plain per-row backfill + DROP TABLE is safe. No-ops once NOTE_REMITO is gone,
-    // including on a brand-new install, which never creates it at all (createHistoryTables() only
-    // ever creates NOTE_REMITO_SEDE/NOTE_REMITO_OTHER directly).
+    // Splits NOTE_REMITO (a nullable destination_sede_id mixed with always-populated free text)
+    // into NOTE_REMITO_SEDE (FK to the exact historical SEDE_SHIPPING_INFO row) and
+    // NOTE_REMITO_OTHER (free text, for a destination with no catalog row). Must run after
+    // migrateSedeShippingInfoIdSchema(). No-op once NOTE_REMITO is gone.
     private void migrateNoteRemitoSplitSchema(Connection conn, Statement stmt) throws SQLException {
         if (!tableExists(conn, "NOTE_REMITO")) return;
 
@@ -425,14 +364,11 @@ public class DatabaseService {
         stmt.executeUpdate("DROP TABLE NOTE_REMITO");
     }
 
-    // Matches a historical NOTE_REMITO row's exact (sede_id, label, address, recipients) tuple
-    // against SEDE_SHIPPING_INFO, regardless of deprecated status — an old note's snapshot may no
-    // longer match the currently-active row if a superadmin has since edited it, same "resolve by
-    // exact value, deprecated included" reasoning as resolveOrCreateCatalogRow()'s name-based
-    // matching. Creates a new, deprecated=1 row only when nothing matches; never touches whatever
-    // is currently the active row for that Sede. SQLite's IS operator (unlike T-SQL's) compares a
-    // NULL operand against a bound parameter correctly, so this needs no separate NULL-vs-value
-    // branching the way RemoteDatabaseService's SQL Server mirror does.
+    // Matches a historical row's exact (sede_id, label, address, recipients) tuple regardless of
+    // deprecated status, since an old note's snapshot may no longer match the currently-active
+    // row. Creates a new deprecated=1 row only when nothing matches. SQLite's IS operator compares
+    // a NULL operand against a bound parameter correctly, unlike T-SQL — no separate branching
+    // needed here.
     private int resolveOrCreateShippingInfoRow(Connection conn, Map<String, Integer> cache,
             int sedeId, String label, String address, String recipients) throws SQLException {
         String key = sedeId + "|" + label + "|" + address + "|" + recipients;
@@ -471,19 +407,10 @@ public class DatabaseService {
         return existing;
     }
 
-    // ItemDialogController used to lazily create a real BRAND_TYPE_LINK the first time a
-    // technician picked the global generic brand for a given type — vestigial now that the
-    // generic brand is offered for every type via client-side synthesis instead
-    // (ItemDialogController.onTypeSelected(), DatabaseSectionController.refreshBrandsForType()).
-    // A surviving link isn't just clutter: it makes getBrandsForType() return the generic brand
-    // via its real JOIN for *that one type* (sorted alphabetically among real brands), while
-    // every other type only shows it via synthesis (always appended last) — a real, visible
-    // per-type inconsistency in ordering/styling, not just untidy data. Removes any such link
-    // that has no MODEL rows left under it (the generic model that used to live there was
-    // already consolidated into the single global row by migrateGenericModelSchema() above);
-    // a link that somehow still has a genuinely different, deliberately-added model under it is
-    // left alone rather than risking an orphaned row. Idempotent and cheap — safe every startup,
-    // same as the other backfills in this method.
+    // A leftover BRAND_TYPE_LINK for the generic brand makes getBrandsForType() return it via a
+    // real JOIN for that one type (sorted among real brands) instead of via client-side synthesis
+    // (always appended last) — a visible per-type ordering inconsistency. Removes any such link
+    // with no MODEL rows left under it; a link with a genuinely different model is left alone.
     private void cleanupStrayGenericBrandLinks(Connection conn) throws SQLException {
         String label = resolveGenericLabel();
         Integer genericBrandId = null;
@@ -533,10 +460,9 @@ public class DatabaseService {
         }
     }
 
-    // BRAND has no scoping FK, so it stays identified by name — reads the live config value so
-    // a renamed fallback brand stays correctly seeded/protected as long as catalog.genericLabel
-    // is kept in sync with the rename. Duplicated from SqliteEquipmentService's identical
-    // helper per this codebase's no-shared-abstraction convention.
+    // BRAND has no scoping FK, so it's identified by name — reads the live config value so a
+    // renamed fallback brand stays correctly seeded as long as catalog.genericLabel is kept in
+    // sync. Duplicated from SqliteEquipmentService's identical helper (no shared abstraction).
     private String resolveGenericLabel() {
         try {
             AppConfig.CatalogConfig catalog = ConfigService.getInstance().getConfig().catalog;
@@ -562,17 +488,11 @@ public class DatabaseService {
     }
 
     /**
-     * MODEL.brand_type_id used to be NOT NULL, which forced a duplicate "Genérico / Otro" row
-     * per BRAND_TYPE_LINK purely to satisfy the FK — the label itself never actually varied by
-     * scope, so this was pure redundancy (renaming the fallback meant updating N rows to stay
-     * in sync, and nothing stopped the copies from drifting apart). Collapses every existing
-     * per-link "Genérico / Otro" row into a single global row (brand_type_id = NULL, offered
-     * for every brand+type combination regardless — see SqliteEquipmentService's
-     * getModelsForBrandAndType()), re-points historical NOTE_ITEM references onto it, and
-     * deprecates (never deletes) the old per-link rows. No-ops once already migrated
-     * (brand_type_id already nullable) — including on a brand-new install, which gets the
-     * nullable column straight from createEquipmentTables(); insertDefaultData() is what
-     * actually creates the global row for that case.
+     * Collapses every per-link "Genérico / Otro" MODEL row (a duplicate forced by
+     * brand_type_id's old NOT NULL constraint) into a single global row (brand_type_id = NULL,
+     * offered for every brand+type combination — see getModelsForBrandAndType()), re-points
+     * historical NOTE_ITEM references onto it, and deprecates the old rows. No-op once already
+     * migrated.
      */
     private void migrateGenericModelSchema(Connection conn, Statement stmt) throws SQLException {
         if (!isColumnNotNull(conn, "MODEL", "brand_type_id")) return;
@@ -581,11 +501,9 @@ public class DatabaseService {
         boolean originalAutoCommit = conn.getAutoCommit();
         conn.setAutoCommit(false);
         try {
-            // Built under a temp name rather than renaming MODEL itself — SN_VALIDATION/NOTE_ITEM
-            // both say REFERENCES MODEL(id), and SQLite's ALTER TABLE RENAME silently rewrites
-            // other tables' schema to follow a renamed table (the same gotcha already hit and
-            // documented in migrateNoteItemSchema() above) — dropping the old MODEL (never
-            // renamed) and renaming the new table into its exact name avoids that entirely.
+            // Built under a temp name rather than renaming MODEL itself — SQLite's ALTER TABLE
+            // RENAME silently rewrites other tables' REFERENCES clauses to follow a renamed
+            // table (SN_VALIDATION/NOTE_ITEM both say REFERENCES MODEL(id)).
             stmt.executeUpdate("""
                 CREATE TABLE MODEL_NEW_20260723 (
                     id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -631,10 +549,9 @@ public class DatabaseService {
                 }
             }
 
-            // Re-point every historical NOTE_ITEM referencing any OTHER per-link "Genérico /
-            // Otro" row onto the single new global row, then deprecate those now-unused rows —
-            // deprecated, not deleted, so a stray SN_VALIDATION row (unlikely, but not
-            // impossible) referencing one keeps resolving instead of hitting a dangling FK.
+            // Re-points every historical NOTE_ITEM referencing any other per-link row onto the
+            // new global row, then deprecates (not deletes) those rows, so a stray SN_VALIDATION
+            // reference keeps resolving instead of hitting a dangling FK.
             try (PreparedStatement up = conn.prepareStatement("""
                     UPDATE NOTE_ITEM SET model_id = ?
                     WHERE model_id IN (
@@ -692,13 +609,10 @@ public class DatabaseService {
     }
 
     /**
-     * Splits the old wide NOTE_ITEM (is_asset, serial_number, a_f, quantity, the glpi_ and
-     * return_ tracking columns) into the slim base table plus
-     * NOTE_ITEM_ASSET/COUNTABLE/GLPI_TRACKING/RETURN_TRACKING — a row in a
-     * subtype table now only ever exists when that dimension actually applies, instead of every
-     * row always carrying every column with a 'N_A'/NULL sentinel for whatever doesn't apply.
-     * No-ops once already migrated (is_asset no longer exists on NOTE_ITEM) — including on a
-     * brand-new install, which got the slim shape straight from createHistoryTables().
+     * Splits the old wide NOTE_ITEM (is_asset, serial_number, a_f, quantity, glpi_/return_
+     * tracking columns) into the slim base table plus its subtype tables — a subtype row now
+     * only exists when that dimension actually applies, instead of every row carrying a
+     * 'N_A'/NULL sentinel. No-op once already migrated.
      */
     private void migrateNoteItemSchema(Connection conn, Statement stmt) throws SQLException {
         if (!columnExists(conn, "NOTE_ITEM", "is_asset")) return;
@@ -712,24 +626,12 @@ public class DatabaseService {
         try {
             stmt.executeUpdate("ALTER TABLE NOTE_ITEM RENAME TO NOTE_ITEM_OLD_20260722");
 
-            // SQLite's ALTER TABLE RENAME auto-rewrites the REFERENCES clause of any OTHER
-            // table's schema that mentioned the renamed table by name. createHistoryTables()
-            // (which runs before migrateSchema() in initialize()) already created these subtype
-            // tables moments earlier — on this old-wide-shape database they never existed before,
-            // so its own CREATE TABLE IF NOT EXISTS for them was NOT a no-op — and their
-            // `REFERENCES NOTE_ITEM(id)` just got silently rewritten by the RENAME above to point
-            // at NOTE_ITEM_OLD_20260722, which is then DROPped a few statements down, leaving a
-            // dangling reference. Drop and recreate all of them fresh here (they're guaranteed
-            // empty either way — this whole method only ever runs once, the first time a given
-            // database is migrated) so their FK unambiguously targets the new, just-renamed-free
-            // NOTE_ITEM created right below, not a table that's about to stop existing. Confirmed
-            // via PRAGMA foreign_key_list against the real data/noteapp.db — this was silent (no
-            // FK violation, since PRAGMA foreign_keys is OFF here) but left every one of these
-            // tables with a broken/dangling reference, invisible until a tool like DBeaver tried
-            // to render the relationship. Goes straight to the unified NOTE_ITEM_STATUS_TRACKING
-            // shape rather than the old 2-table GLPI_TRACKING/RETURN_TRACKING intermediate — no
-            // reason to land on a shape that would just get consolidated again a few statements
-            // later in migrateSchema().
+            // SQLite's ALTER TABLE RENAME silently rewrites the REFERENCES clause of any other
+            // table's schema that names the renamed table. createHistoryTables() already created
+            // these subtype tables moments earlier on this old-wide-shape database, so their
+            // REFERENCES NOTE_ITEM(id) just got rewritten to point at NOTE_ITEM_OLD_20260722,
+            // which is dropped a few statements down — a dangling reference. Drop and recreate
+            // them fresh (guaranteed empty) so their FK targets the new NOTE_ITEM created below.
             stmt.executeUpdate("DROP TABLE IF EXISTS NOTE_ITEM_ASSET");
             stmt.executeUpdate("DROP TABLE IF EXISTS NOTE_ITEM_COUNTABLE");
             stmt.executeUpdate("DROP TABLE IF EXISTS NOTE_ITEM_STATUS_TRACKING");
@@ -798,15 +700,11 @@ public class DatabaseService {
     }
 
     /**
-     * Replaces NOTE_ITEM.type_name/brand_name/model_name and NOTE_PROVEEDOR.provider_name
-     * (plain text snapshots) with real type_id/brand_id/model_id/provider_id foreign keys into
-     * the catalog tables. Every distinct historical text value is resolved against the catalog
-     * case-insensitively, regardless of a matching row's deprecated status (uniqueness on name
-     * holds regardless of deprecated — see SqliteEquipmentService's rename methods); a value with
-     * no match at all gets a brand-new deprecated=1 catalog row created for it, so a historical
-     * value never silently becomes an active, selectable entry. No-ops once already migrated
-     * (NOTE_ITEM/NOTE_PROVEEDOR no longer have their old text columns) — including on a brand-new
-     * install, which gets the FK shape straight from createHistoryTables()/createEquipmentTables().
+     * Replaces NOTE_ITEM.type_name/brand_name/model_name and NOTE_PROVEEDOR.provider_name (text
+     * snapshots) with real FKs into the catalog tables. Every distinct historical value is
+     * resolved case-insensitively regardless of deprecated status; a value with no match gets a
+     * new deprecated=1 catalog row, so it never silently becomes an active, selectable entry.
+     * No-op once already migrated.
      */
     private void migrateCatalogFkSchema(Connection conn, Statement stmt) throws SQLException {
         boolean needsNoteItem = columnExists(conn, "NOTE_ITEM", "type_name");
@@ -829,15 +727,9 @@ public class DatabaseService {
         }
     }
 
-    // Builds the new table under a temporary name rather than renaming NOTE_ITEM itself —
-    // NOTE_ITEM_ASSET/COUNTABLE/GLPI_TRACKING/RETURN_TRACKING all say REFERENCES NOTE_ITEM(id),
-    // and SQLite's ALTER TABLE RENAME silently rewrites OTHER tables' schema to follow a renamed
-    // table (the exact gotcha already hit and documented in migrateNoteItemSchema() above) —
-    // renaming NOTE_ITEM here would leave those 4 already-populated subtype tables pointing at a
-    // table that's about to be dropped. Building under a fresh name and only touching NOTE_ITEM
-    // via DROP+RENAME-into-place at the very end means the subtype tables (never renamed, never
-    // dropped) are untouched throughout and their FK just starts resolving correctly again the
-    // moment the rename completes.
+    // Builds the new table under a temporary name rather than renaming NOTE_ITEM itself — its
+    // subtype tables all say REFERENCES NOTE_ITEM(id), and SQLite's ALTER TABLE RENAME silently
+    // rewrites other tables' schema to follow a renamed table (see migrateNoteItemSchema()).
     private void migrateNoteItemToFk(Connection conn, Statement stmt) throws SQLException {
         Map<String, Integer> typeCache = new HashMap<>();
         Map<String, Integer> brandCache = new HashMap<>();
@@ -945,25 +837,13 @@ public class DatabaseService {
     }
 
     /**
-     * NOTE_REPORT.sede used to be a plain free-text snapshot; sede_id is a
-     * real FK into the SEDE catalog table, mirroring the earlier TYPE/BRAND/MODEL/PROVIDER
-     * catalog-FK redesign, so Sede can be renamed via the same deprecate/reactivate mechanism
-     * without corrupting how old notes render. Backfills every existing row's free-text sede
-     * into a matching (or newly created) SEDE row, resolved case-insensitively via the same
-     * resolveOrCreateCatalogRow() helper the NOTE_ITEM/NOTE_PROVEEDOR backfill already uses.
-     * Unlike that backfill, a newly created row here is left ACTIVE (deprecated=0), not 1 —
-     * SEDE has no pre-existing admin-curated catalog to fall back on (it's a brand-new table),
-     * so marking every backfilled row deprecated would leave the Settings combobox with zero
-     * selectable options, blocking every technician from generating a note until an admin
-     * manually reactivated each one. Unlike the TECHNICIAN_PROFILE/NOTE_REPORT.technician_id
-     * precedent (left in place, unused), the old sede TEXT column is actively dropped once
-     * backfilled, by dropDeadNoteReportColumns() below — a DB-admin schema review flagged it as
-     * dead weight on brand-new installs too (unlike TECHNICIAN_PROFILE, which was already absent
-     * from CREATE TABLE by that point).
-     * Naturally idempotent (only ever selects rows still missing sede_id) — safe to run every
-     * startup. Guarded against a database that never had (or no longer has) the sede column at
-     * all — a brand-new install's NOTE_REPORT never gets one, so the backfill SELECT below must
-     * not assume it exists.
+     * Backfills NOTE_REPORT.sede (free text) into a matching or newly created SEDE row and
+     * points sede_id at it, resolved case-insensitively via resolveOrCreateCatalogRow(). A newly
+     * created row is left ACTIVE (deprecated=0) — unlike the catalog-FK backfill for
+     * Type/Brand/Model/Provider, SEDE has no pre-existing curated catalog to fall back on, so
+     * marking every row deprecated would leave zero selectable Sedes and block note generation.
+     * Idempotent — only selects rows still missing sede_id. No-op on a database with no sede
+     * column at all.
      */
     private void migrateSedeIdSchema(Connection conn, Statement stmt) throws SQLException {
         if (!columnExists(conn, "NOTE_REPORT", "sede")) return;
@@ -989,15 +869,10 @@ public class DatabaseService {
         }
     }
 
-    // Drops NOTE_REPORT.sede once migrateSedeIdSchema() has already backfilled sede_id from it
-    // (must run after that call, never before) — confirmed dead going forward via grep: no
-    // INSERT/UPDATE writes to it anymore (insertReport() only ever sets sede_id). SQLite has
-    // supported ALTER TABLE ... DROP COLUMN natively since 3.35.0 (this project bundles 3.45.3
-    // via sqlite-jdbc), so no table-rebuild dance is needed here, unlike the NOT NULL-relaxation
-    // migration elsewhere in this file. Wrapped in try/catch, same "fail safely, don't block
-    // startup" precedent as every other best-effort migration step in this class — an unexpected
-    // failure just leaves the dead column in place for next startup to retry, rather than
-    // crashing initialize().
+    // Drops NOTE_REPORT.sede once migrateSedeIdSchema() has backfilled sede_id from it — must
+    // run after that call, never before. SQLite supports DROP COLUMN natively (3.35+), so no
+    // table rebuild is needed. Wrapped in try/catch — a failure leaves the column for next
+    // startup to retry rather than crashing initialize().
     private void dropDeadNoteReportColumns(Connection conn, Statement stmt) throws SQLException {
         if (columnExists(conn, "NOTE_REPORT", "sede")) {
             try {
@@ -1009,13 +884,8 @@ public class DatabaseService {
     }
 
     // Consolidates the double-approval stock guard onto one shared NOTE_REPORT.stock_applied
-    // column instead of NOTE_REMITO's own — every note type moves stock on approval now (see
-    // SqliteHistoryService.applyNoteStockIfNeeded()), not just Remito, so "has this note's stock
-    // effect already been applied" is a universal per-note fact now, not a Remito-only one.
-    // Backfills from the old column before dropping it, same "backfill + native DROP COLUMN
-    // (SQLite 3.35+), wrapped in try/catch to fail safely" precedent as dropDeadNoteReportColumns()
-    // above. Guarded on NOTE_REMITO still having its own stock_applied column — a no-op once
-    // already migrated, including on a brand-new install, which never creates that column at all.
+    // column instead of NOTE_REMITO's own — every note type moves stock on approval now, not
+    // just Remito. Backfills from the old column before dropping it. No-op once already migrated.
     private void migrateStockAppliedSchema(Connection conn, Statement stmt) throws SQLException {
         if (!columnExists(conn, "NOTE_REMITO", "stock_applied")) return;
         try {
@@ -1029,24 +899,9 @@ public class DatabaseService {
         }
     }
 
-    // NOTE_REPORT.rejection_reason used to sit inline, nullable on every row and only ever
-    // populated once an admin actually rejects a note — the same "doesn't apply to this row"
-    // pattern the NOTE_ITEM 5-table split fixed. Split into NOTE_REPORT_REJECTION (see
-    // createHistoryTables()): a row exists only for
-    // a note that's actually been rejected. No table rebuild needed — nothing references
-    // NOTE_REPORT.rejection_reason by FK, so a plain backfill + native DROP COLUMN (SQLite 3.35+)
-    // is safe, same as dropDeadNoteReportColumns() above. INSERT OR IGNORE makes the backfill
-    // safely re-runnable if the DROP COLUMN below fails partway and this method retries next
-    // startup with the column still present. No-ops once already migrated (column gone) —
-    // including on a brand-new install, which never gets the column at all.
-    // A same-session, never-shipped design detour: TYPE.is_asset/requires_serial were briefly
-    // replaced with item_kind (ASSET_SERIAL/ASSET_IMEI/NUMBERED/COUNTABLE)/requires_identifier
-    // to model mobile phones (IMEI) and corporate chips as distinct item kinds. Reverted the same
-    // day, back to plain is_asset/requires_serial — phones are just assets (IMEI typed into the
-    // existing serial_number field) and chips are just countables, so no new TYPE shape was
-    // actually needed. This reverses item_kind/requires_identifier back on any local database
-    // that already ran the (also never-shipped) forward migration. No-op once already reverted
-    // (item_kind no longer exists) — including on a brand-new install, which never sees it at all.
+    // Reverses a never-shipped item_kind/requires_identifier design (which replaced TYPE.is_asset/
+    // requires_serial to model phones/chips as distinct kinds) back to plain is_asset/
+    // requires_serial, on any local database that ran the forward migration. No-op once reverted.
     private void migrateItemKindRevertSchema(Connection conn, Statement stmt) throws SQLException {
         if (columnExists(conn, "TYPE", "requires_identifier")) {
             try {
@@ -1071,6 +926,8 @@ public class DatabaseService {
         stmt.executeUpdate("DROP TABLE IF EXISTS NOTE_ITEM_SIM");
     }
 
+    // rejection_reason moved into NOTE_REPORT_REJECTION — a row exists only for a note that's
+    // actually been rejected. No-op once already migrated.
     private void migrateRejectionReasonSchema(Connection conn, Statement stmt) throws SQLException {
         if (!columnExists(conn, "NOTE_REPORT", "rejection_reason")) return;
         stmt.executeUpdate("""
@@ -1086,12 +943,9 @@ public class DatabaseService {
     }
 
     // NOTE_ENTREGA_DEVOLUCION mixed 4 profile types' fields on one table — failure_cause/
-    // failure_details only ever populated for Devolución+Falla, area_evento only for Préstamo.
-    // Same "doesn't apply to this row" pattern as above (this table predates the normalization
-    // rule entirely). Split into NOTE_DEVOLUCION_FALLA/NOTE_PRESTAMO_AREA_EVENTO (see
-    // createHistoryTables()) — a row exists
-    // only when that dimension actually applies. No table rebuild needed, same reasoning as
-    // migrateRejectionReasonSchema() above — nothing references these 3 columns by FK.
+    // failure_details only apply to Devolución+Falla, area_evento only to Préstamo. Split into
+    // NOTE_DEVOLUCION_FALLA/NOTE_PRESTAMO_AREA_EVENTO — a row exists only when that dimension
+    // applies.
     private void migrateEntregaDevolucionSplitSchema(Connection conn, Statement stmt) throws SQLException {
         boolean hasFailureCause = columnExists(conn, "NOTE_ENTREGA_DEVOLUCION", "failure_cause");
         boolean hasAreaEvento = columnExists(conn, "NOTE_ENTREGA_DEVOLUCION", "area_evento");
@@ -1129,10 +983,9 @@ public class DatabaseService {
         }
     }
 
-    // Shared resolve-or-create for TYPE/BRAND/PROVIDER/SEDE: matched by a plain,
-    // case-insensitive `name` lookup regardless of deprecated status (a name may only ever live
-    // on one row at a time — see SqliteEquipmentService's rename logic), and insertSql is
-    // expected to bind exactly one `?` for the name.
+    // Shared resolve-or-create for TYPE/BRAND/PROVIDER/SEDE: matched case-insensitively by name
+    // regardless of deprecated status (a name only ever lives on one row at a time). insertSql
+    // must bind exactly one `?` for the name.
     private int resolveOrCreateCatalogRow(Connection conn, Map<String, Integer> cache,
             String table, String name, String insertSql) throws SQLException {
         String key = name.toLowerCase();
@@ -1263,9 +1116,7 @@ public class DatabaseService {
             )""");
 
         // brand_type_id is nullable — NULL is reserved for the single global "Genérico / Otro"
-        // model, not scoped to any particular brand+type link (see SqliteEquipmentService's
-        // getModelsForBrandAndType()/renameModel()). Every other MODEL row still has a real,
-        // non-null brand_type_id.
+        // model (see getModelsForBrandAndType()); every other row has a real brand_type_id.
         stmt.executeUpdate("""
             CREATE TABLE IF NOT EXISTS MODEL (
                 id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1274,11 +1125,9 @@ public class DatabaseService {
                 deprecated    INTEGER NOT NULL DEFAULT 0
             )""");
 
-        // No table rebuild needed for this constraint (SQLite can't ALTER TABLE ADD CONSTRAINT) —
-        // a unique index enforces it just as well. Wrapped locally: an existing database that
-        // already has accidental duplicate (brand_type_id, name) rows would fail this statement:
-        // swallow it and degrade to app-layer-only enforcement (SqliteEquipmentService.addModel/
-        // renameModel) rather than blocking startup — same "fail safely" pattern as addColumnIfMissing.
+        // SQLite can't ALTER TABLE ADD CONSTRAINT — a unique index enforces it instead. A
+        // database with pre-existing duplicate (brand_type_id, name) rows fails this statement;
+        // swallowed to degrade to app-layer-only enforcement rather than block startup.
         try {
             stmt.executeUpdate(
                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_model_brand_type_name ON MODEL(brand_type_id, name)");
@@ -1286,25 +1135,18 @@ public class DatabaseService {
             // pre-existing duplicate model names for the same brand+type — see comment above
         }
 
-        // The index above never actually protects the global generic row (brand_type_id IS
-        // NULL) — every SQL engine treats NULL as never-equal-to-NULL, even in a unique index,
-        // so a plain UNIQUE(brand_type_id, name) silently permits any number of NULL-scoped
-        // rows sharing the same name. Two narrower indexes fill that gap instead of indexing
-        // brand_type_id itself: idx_model_global_generic_name keys off `name` (a real,
-        // comparable value for every NULL-scoped row) to stop an accidental duplicate of the
-        // exact same label; idx_model_single_active_generic keys off `deprecated` (constant 0
-        // among the rows the filter matches) to guarantee at most one ACTIVE global row exists
-        // at a time, regardless of how many renamed-away deprecated copies pile up over time.
+        // The index above doesn't protect the global generic row (brand_type_id IS NULL) — every
+        // SQL engine treats NULL as never-equal-to-NULL, even in a unique index. Two narrower
+        // indexes fill the gap: idx_model_global_generic_name blocks a duplicate label among
+        // NULL-scoped rows; idx_model_single_active_generic guarantees at most one active global
+        // row at a time.
         try {
             stmt.executeUpdate(
                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_model_global_generic_name ON MODEL(name) WHERE brand_type_id IS NULL");
             stmt.executeUpdate(
                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_model_single_active_generic ON MODEL(deprecated) WHERE brand_type_id IS NULL AND deprecated = 0");
         } catch (SQLException duplicatesExist) {
-            // Same "fail safely" degradation as idx_model_brand_type_name above — an
-            // installation that already has duplicate global-generic rows (shouldn't happen via
-            // normal app use, but not impossible via direct DB access) just runs without this
-            // DB-level backstop; SqliteEquipmentService's app-layer checks still apply.
+            // Degrades to app-layer-only enforcement, same as idx_model_brand_type_name above.
         }
 
         stmt.executeUpdate("""
@@ -1331,16 +1173,10 @@ public class DatabaseService {
                 deprecated INTEGER NOT NULL DEFAULT 0
             )""");
 
-        // Row exists only once a superadmin has actually configured a Sede's Remito shipping
-        // info via direct SQL — not a set of nullable columns on SEDE itself, which every Sede
-        // would carry regardless of whether shipping was ever configured for it.
-        // deprecated-flag versioned, same pattern as TYPE/BRAND/MODEL/PROVIDER/SEDE — an edit
-        // deprecates the old row and inserts a new one rather than mutating in place, so
-        // NOTE_REMITO_SEDE.shipping_info_id can safely reference a specific row by FK (see
-        // createHistoryTables() below) without that historical value ever silently changing out
-        // from under an already-saved note. id is a surrogate PK now (was sede_id itself) so more
-        // than one row — current + any deprecated history — can exist per Sede; the partial
-        // unique index enforces "at most one active row per Sede" in its place.
+        // Row exists only once a superadmin has configured a Sede's Remito shipping info — not
+        // nullable columns on SEDE itself. Deprecated-flag versioned like TYPE/BRAND/MODEL/
+        // PROVIDER/SEDE, so NOTE_REMITO_SEDE.shipping_info_id can reference a specific row by FK
+        // without it silently changing under an already-saved note.
         stmt.executeUpdate("""
             CREATE TABLE IF NOT EXISTS SEDE_SHIPPING_INFO (
                 id                 INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1350,26 +1186,20 @@ public class DatabaseService {
                 recipients         TEXT,
                 deprecated         INTEGER NOT NULL DEFAULT 0
             )""");
-        // Wrapped like the MODEL indexes above — on an old-shape SEDE_SHIPPING_INFO table (the
-        // CREATE TABLE IF NOT EXISTS above is a no-op against it), `deprecated` doesn't exist yet
-        // until migrateSedeShippingInfoIdSchema() adds it; this statement would otherwise fail
-        // startup with "no such column: deprecated" on every run until that migration catches up.
+        // On an old-shape table, `deprecated` doesn't exist yet until migrateSedeShippingInfoIdSchema()
+        // adds it — this would otherwise fail startup on every run until that migration catches up.
         try {
             stmt.executeUpdate(
                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_sede_shipping_single_active "
                     + "ON SEDE_SHIPPING_INFO(sede_id) WHERE deprecated = 0");
         } catch (SQLException notMigratedYet) {
-            // fails safely — migrateSedeShippingInfoIdSchema() (called later, from migrateSchema())
-            // creates this same index again once the column exists
+            // migrateSedeShippingInfoIdSchema() creates this same index again once the column exists.
         }
 
-        // brand_type_id is stored explicitly rather than inferred from model_id — required
-        // because the single global "Genérico / Otro" MODEL row (brand_type_id IS NULL) needs
-        // an independent, non-shared stock number per (Type,Brand) it's used under. For every
-        // other (non-generic) model, brand_type_id here is redundantly the same value MODEL's
-        // own row already carries — one natural row, functionally identical to a plain column.
-        // sede_id makes stock genuinely per-site: the same Model at two Sedes carries two
-        // independent counts, not one shared global number.
+        // brand_type_id is stored explicitly (not inferred from model_id) because the global
+        // "Genérico / Otro" MODEL row needs an independent stock number per (Type,Brand) it's
+        // used under. sede_id makes stock per-site — the same Model at two Sedes carries two
+        // independent counts.
         stmt.executeUpdate("""
             CREATE TABLE IF NOT EXISTS MODEL_STOCK (
                 brand_type_id INTEGER NOT NULL REFERENCES BRAND_TYPE_LINK(id),
@@ -1442,19 +1272,11 @@ public class DatabaseService {
             )""");
 
         // Split into two mutually-exclusive subtype tables — exactly one exists per Remito note,
-        // never neither, never both, same shape as NOTE_ITEM_ASSET/NOTE_ITEM_COUNTABLE. Replaces
-        // the old single NOTE_REMITO table's nullable destination_sede_id + always-duplicated
-        // destination_label/address/recipients text.
-        //
-        // A catalog-Sede destination's 3 text fields are locked (disabled) in
-        // RemitoNoteController the moment a Sede is picked — they can only ever equal that Sede's
-        // currently-active SEDE_SHIPPING_INFO row, never a technician-edited variant — so
-        // NOTE_REMITO_SEDE references that row by FK instead of duplicating its text at all.
-        // SEDE_SHIPPING_INFO's own deprecated-flag versioning (see createEquipmentTables() above)
-        // is what makes this safe: a later superadmin edit deprecates the old row rather than
-        // mutating it, so an already-saved note's FK keeps resolving to the exact historical
-        // values, same guarantee the old "snapshot, don't reference" text columns gave, without
-        // duplicating the text at all.
+        // same shape as NOTE_ITEM_ASSET/NOTE_ITEM_COUNTABLE. A catalog-Sede destination's text
+        // fields are locked in RemitoNoteController once a Sede is picked, so NOTE_REMITO_SEDE
+        // can safely reference the SEDE_SHIPPING_INFO row by FK instead of duplicating its text —
+        // SEDE_SHIPPING_INFO's deprecated-flag versioning keeps an already-saved note's FK
+        // resolving to the exact historical values even after a later edit.
         stmt.executeUpdate("""
             CREATE TABLE IF NOT EXISTS NOTE_REMITO_SEDE (
                 note_report_id    INTEGER PRIMARY KEY REFERENCES NOTE_REPORT(id),
@@ -1470,10 +1292,8 @@ public class DatabaseService {
                 recipients          TEXT
             )""");
 
-        // Slim base table — asset-only, countable-only, GLPI-tracking, and return-tracking
-        // fields each live in their own subtype table below, so a row never carries a column
-        // that doesn't apply to it (see migrateNoteItemSchema() for the pre-existing-database
-        // migration path off the old wide 16-column shape).
+        // Slim base table — asset-only/countable-only/tracking fields each live in their own
+        // subtype table below, so a row never carries a column that doesn't apply to it.
         stmt.executeUpdate("""
             CREATE TABLE IF NOT EXISTS NOTE_ITEM (
                 id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1498,14 +1318,10 @@ public class DatabaseService {
                 quantity INTEGER NOT NULL DEFAULT 1
             )""");
 
-        // No 'N_A' value/default here — a row simply doesn't exist for a tracking dimension that
-        // doesn't apply to an item, instead of always existing with a sentinel value. One table
-        // for all 3 tracking dimensions (GLPI sync-out, Préstamo/Provider return, GLPI sync-back
-        // after a return) — they're byte-identical in shape, differing only in which dimension a
-        // row belongs to, so tracking_type is the discriminator. UNIQUE(item_id, tracking_type)
-        // is what used to be each dimension's own item_id PK — an item can now legitimately hold
-        // up to 3 rows at once (a returnable Provider note's asset gets a GLPI row on sync-out, a
-        // RETURN row once returned, and a GLPI_RETURN row once re-synced afterward).
+        // A row simply doesn't exist for a tracking dimension that doesn't apply, instead of a
+        // sentinel value. One table for all 3 dimensions (GLPI sync-out, Préstamo/Provider
+        // return, GLPI sync-back), discriminated by tracking_type — an item can hold up to 3 rows
+        // at once (a returnable Provider asset gets GLPI, then RETURN, then GLPI_RETURN).
         stmt.executeUpdate("""
             CREATE TABLE IF NOT EXISTS NOTE_ITEM_STATUS_TRACKING (
                 id                INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1517,26 +1333,19 @@ public class DatabaseService {
                 UNIQUE (item_id, tracking_type)
             )""");
 
-        // Row exists only for an item flagged "no modifica stock" (NOTE_ITEM.modifies_stock = 0)
-        // — the overwhelming majority of items never use this exception, so the reason lives here
-        // rather than as an always-present-but-usually-NULL column on NOTE_ITEM itself, same
-        // "row-absence means not applicable" precedent as every other conditional-reason table in
-        // this schema (NOTE_REPORT_REJECTION, NOTE_ITEM_STATUS_TRACKING.rejection_reason's own row).
+        // Row exists only for an item flagged "no modifica stock" — most items never use this
+        // exception, so the reason lives here rather than as an always-present NULL column on
+        // NOTE_ITEM.
         stmt.executeUpdate("""
             CREATE TABLE IF NOT EXISTS NOTE_ITEM_STOCK_EXCEPTION (
                 item_id INTEGER PRIMARY KEY REFERENCES NOTE_ITEM(id),
                 reason  TEXT NOT NULL
             )""");
 
-        // Countable items (quantity > 1) can be resolved in partial batches over time — e.g. 5
-        // loaned headsets coming back as 3 returned now, 1 lost later, 1 still pending. A single
-        // status column on NOTE_ITEM_STATUS_TRACKING (tracking_type = 'RETURN') can't express
-        // that, so each partial action gets its own append-only row here instead; PENDING is
-        // never stored — the remaining pending quantity is always NOTE_ITEM_COUNTABLE.quantity
-        // minus the sum of allocations for that item, same "row absence is the state" convention
-        // as every other tracking table in this schema. Asset items never get a row here at all
-        // (they stay on the existing whole-item RETURN-dimension status, since a physical asset
-        // unit isn't divisible) — this table exists purely for the countable partial-quantity case.
+        // Countable items can be resolved in partial batches over time (e.g. 5 loaned headsets: 3
+        // returned now, 1 lost later, 1 still pending) — a single status column can't express
+        // that, so each partial action gets its own append-only row. PENDING is never stored —
+        // remaining quantity is NOTE_ITEM_COUNTABLE.quantity minus the sum of allocations.
         stmt.executeUpdate("""
             CREATE TABLE IF NOT EXISTS NOTE_ITEM_RETURN_ALLOCATION (
                 id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1556,10 +1365,9 @@ public class DatabaseService {
             )""");
     }
 
-    // Login-time role/sede/permission lookup — see IUserRoleService. Not the same thing as AD
-    // group membership (which gates app access at all, checked at login against the AD API) —
-    // this only distinguishes admin tiers among users who already got past that gate. Named
-    // APP_USER, not USER — USER is a reserved keyword (a niladic function) in T-SQL.
+    // Login-time role/sede/permission lookup — see IUserRoleService. Distinct from AD group
+    // membership (checked separately at login). Named APP_USER, not USER — USER is a reserved
+    // keyword in T-SQL.
     private void createUserRoleTable(Statement stmt) throws SQLException {
         // Lookup table for the 3 fixed role names — APP_USER.role_id and ROLE_PERMISSION.role_id
         // both reference this instead of each independently duplicating the same
@@ -1651,25 +1459,18 @@ public class DatabaseService {
             """);
     }
 
-    // Append-only audit trail — 4 tables, one per concern rather than a single fully generic
-    // table, since 3 of the 4 have enough real structure (typed FKs, typed old/new columns) to
-    // be worth keeping precise. AUDIT_ADMIN_ACTION is the deliberate exception: a generic
-    // action/target_type/target_id/old_value/new_value shape, since it has to cover a genuinely
-    // heterogeneous set of admin actions (catalog CRUD, note approval/rejection, config changes,
-    // S/N validation edits, profile overrides) that don't share one FK target — the same
-    // "object_id as text" shape most real-world audit logs use (Django's LogEntry, Rails'
-    // PaperTrail) for exactly this reason. target_id is TEXT, not INTEGER, since it sometimes
-    // holds a settings key (e.g. "glpi_api_key") rather than a numeric row id.
+    // Append-only audit trail — 4 tables, one per concern, since 3 of the 4 have enough real
+    // structure (typed FKs, old/new columns) to be worth keeping precise. AUDIT_ADMIN_ACTION is
+    // the exception: a generic action/target_type/target_id/old_value/new_value shape, since it
+    // covers a heterogeneous set of admin actions with no shared FK target. target_id is TEXT
+    // since it sometimes holds a settings key rather than a numeric row id.
     //
-    // Deliberately excluded: old_value/new_value must NEVER hold an actual secret value (SMTP
-    // password, GLPI API key, AD token, DB credentials) — only that a change happened. This is
-    // enforced by whoever calls IAuditService.recordAdminAction(), not by this schema; flagged
-    // here so it isn't missed when EDIT_SMTP_CONFIG/EDIT_GLPI_CONFIG/EDIT_AD_CONFIG get wired in.
+    // old_value/new_value must NEVER hold an actual secret (SMTP password, GLPI API key, AD
+    // token, DB credentials) — only that a change happened. Enforced by the caller, not this
+    // schema.
     //
-    // Also deliberately out of reach of this table entirely: APP_USER/ROLE_PERMISSION changes
-    // (role, Sede, permission grants) are made via direct SQL, not through the app (see
-    // IUserRoleService's own Javadoc) — an app-level audit table structurally cannot see those
-    // writes. Auditing that would need a DB trigger, not an application-level insert.
+    // APP_USER/ROLE_PERMISSION changes are made via direct SQL, not through the app, so this
+    // table structurally cannot see those writes.
     private void createAuditTables(Statement stmt) throws SQLException {
         // No FK to APP_USER — a failed login attempt's username may not be a registered account
         // at all (a typo, or someone probing), and APP_USER only has rows for accounts a
@@ -1702,10 +1503,8 @@ public class DatabaseService {
             )""");
 
         // Covers both GLPI and Préstamo/Provider return-status transitions in one table via a
-        // status_kind discriminator, rather than two near-identical tables — both are the exact
-        // same shape (an item's status moved from A to B, by whom, when, optionally why). This
-        // is a genuine current-state history NOTE_ITEM_GLPI_TRACKING/NOTE_ITEM_RETURN_TRACKING
-        // don't provide today — those only ever keep the latest status, never prior transitions.
+        // status_kind discriminator — both are the same shape (status moved A to B, by whom,
+        // when, why), and NOTE_ITEM_STATUS_TRACKING only ever keeps the latest status.
         stmt.executeUpdate("""
             CREATE TABLE IF NOT EXISTS AUDIT_ITEM_STATUS (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,

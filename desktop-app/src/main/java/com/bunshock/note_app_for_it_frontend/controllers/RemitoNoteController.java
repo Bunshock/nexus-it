@@ -404,17 +404,10 @@ public class RemitoNoteController implements ItemDialogHost {
         return false;
     }
 
-    // Detail shows on hover over "Ver detalle" instead of a click-to-expand panel — a long
-    // shortage list would otherwise take over the layout below it. Same PopOver +
-    // MainController.setupTitleBarStatusHover() precedent, but that alone still flickered here:
-    // the popover opens directly beneath a small text link, close enough that the moment it
-    // appears the cursor is already geometrically inside its screen bounds — the OS then routes
-    // further mouse-move events to the (now topmost) popover window, JavaFX synthesizes a
-    // MOUSE_EXITED on the link, and an immediate hide()-on-exit closes the very popover the
-    // cursor is sitting on. Fixed with the standard "hoverable popover" bridge: hiding always
-    // goes through a short delay that's cancelled if the cursor lands on the link OR the
-    // popover's own content before it fires — so crossing the small gap between them (or the
-    // instant of the popover appearing under the cursor) never closes it.
+    // The popover opens directly beneath the link, close enough that JavaFX synthesizes a
+    // MOUSE_EXITED on the link the instant it appears, which would immediately hide it again.
+    // Fixed with a "hoverable popover" bridge: hiding goes through a short delay cancelled if
+    // the cursor lands on the link OR the popover's own content first.
     private static final Duration STOCK_WARNING_SHOW_DELAY = Duration.millis(400);
     private static final Duration STOCK_WARNING_HIDE_DELAY = Duration.millis(200);
     private final PauseTransition stockWarningShowDelay = new PauseTransition(STOCK_WARNING_SHOW_DELAY);
@@ -486,17 +479,10 @@ public class RemitoNoteController implements ItemDialogHost {
         if (stockWarningPopOver.isShowing()) stockWarningPopOver.hide();
     }
 
-    // Draws attention to the (already-visible) pill when a click on "Generar Remito" is actually
-    // blocked by it — same border-fade mechanism/timing as UserNoteController.highlightFields()
-    // (FEEDBACK_HOLD/FEEDBACK_FADE, already declared above for this controller's own field
-    // feedback), fading toward fully transparent instead of toward a "default border color" —
-    // the pill has no border at rest, unlike a text field.
-    // Only -fx-border-color is ever set here, never -fx-border-width/-fx-border-radius —
-    // .stock-warning-inline (styles.css) already reserves a permanent, transparent 2px border at
-    // rest, so this animation only ever changes color, never the pill's actual size. Setting the
-    // width here too (as a first attempt did) made the pill visibly grow/shift its siblings the
-    // instant the flash started, since no border-width was reserved at rest — same class of bug
-    // already fixed once for Historial's row accents.
+    // Draws attention to the pill when Generar Remito is blocked by it — fades toward fully
+    // transparent, not a "default" color, since the pill has no border at rest. Only
+    // -fx-border-color is ever set (never -fx-border-width) — .stock-warning-inline reserves a
+    // permanent transparent 2px border at rest, so this never shifts the pill's siblings.
     private Transition stockWarningBorderFade;
 
     private void flashStockWarningPill() {

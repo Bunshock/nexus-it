@@ -19,18 +19,14 @@ import com.bunshock.note_app_for_it_frontend.models.ReturnStatus;
 
 public class SqliteHistoryService implements IHistoryService {
 
-    // Profile types that identify a Préstamo note — same case/accent variants
-    // HistoryController.PROFILE_TYPE_LABEL_TO_RAW already has to tolerate, since profile_type
-    // is stored raw (see CLAUDE.md) and its casing differs by how the row was created.
+    // profile_type is stored raw, so casing/accents vary by how the row was created.
     private static final List<String> PRESTAMO_PROFILE_TYPES = List.of("PRÉSTAMO", "PRESTAMO", "Préstamo");
 
     private static boolean isPrestamo(String profileType) {
         return profileType != null && PRESTAMO_PROFILE_TYPES.stream().anyMatch(profileType::equalsIgnoreCase);
     }
 
-    // Config-driven, not hardcoded — mirrors UserNoteController.isFailureTriggerMotivo()'s
-    // reasoning: renaming a motivoOptions.proveedor value in app-config.json shouldn't require a
-    // code change to keep return tracking correctly gated.
+    // Config-driven so renaming a motivoOptions.proveedor value doesn't require a code change.
     private static boolean isProviderReturnable(String profileType, String motivo) {
         if (!"ENTREGA - PROVEEDOR".equalsIgnoreCase(profileType) || motivo == null) return false;
         try {
@@ -42,25 +38,16 @@ public class SqliteHistoryService implements IHistoryService {
         }
     }
 
-    // return_pending_count/returned_count/lost_count are weighted by quantity, not row count —
-    // an asset row always weighs 1 (a physical unit isn't divisible), but a countable row weighs
-    // its actual quantity, split across RETURNED/LOST via the pre-aggregated `alloc` subquery
-    // (NOTE_ITEM_RETURN_ALLOCATION, one row per partial action) so a partially-resolved countable
-    // (e.g. 5 loaned, 3 returned, 1 lost, 1 still pending) is counted correctly instead of as one
-    // indivisible unit. `alloc` is pre-aggregated to one row per item_id before joining so it can
-    // never fan out the surrounding SUMs the way a raw join against its many-rows-per-item shape
-    // would. The CASE-based clamp (instead of a 2-arg MAX()) keeps this portable to SQL Server,
-    // which has no scalar MAX(x, y) — see "Remote SQL Server" in CLAUDE.md.
+    // return_pending/returned/lost counts are weighted by quantity, not row count: an asset row
+    // is always 1, a countable row splits across RETURNED/LOST via the pre-aggregated `alloc`
+    // subquery (one row per item_id, so it can't fan out the surrounding SUMs). The CASE-based
+    // clamp replaces a 2-arg MAX(), which SQL Server doesn't have.
     //
-    // pending_count/synced_count/rejected_count fold in the second GLPI dimension
-    // (tracking_type = 'GLPI_RETURN', "synced back in") via COALESCE(igr.status, ig.status): once
-    // an item's return has been validated and this second dimension has a row at all, IT becomes
-    // the item's effective GLPI status for coloring purposes (the original sync-out is subsumed —
-    // what matters after a return is whether GLPI now correctly reflects the item being back, not
-    // whether it was correctly marked as sent out). igr only ever has rows for a returnable
-    // Provider note's asset items post-validation, so this COALESCE is a no-op (falls through to
-    // ig.status) for every other note/item — safe for Entrega/Devolución/Fin de Contrato/Préstamo/
-    // non-returnable-Provider notes, none of which are affected by this change.
+    // pending/synced/rejected counts use COALESCE(igr.status, ig.status): once an item's return
+    // is validated and a GLPI_RETURN row exists, that becomes its effective GLPI status (what
+    // matters after a return is whether GLPI reflects the item being back, not the original
+    // sync-out). igr only has rows for a returnable Provider note post-validation, so this is a
+    // no-op for every other note/item.
     private static final String LIST_BASE_SQL = """
         SELECT r.id, r.created_at, r.profile_type,
                r.approval_status, rr.rejection_reason,
@@ -175,10 +162,7 @@ public class SqliteHistoryService implements IHistoryService {
     private void insertProfileDetail(Connection c, int reportId, NoteReport report) throws SQLException {
         if (report.getDestinationLabel() != null) {
             // Discriminated by shippingInfoId, not destinationSedeId — a catalog-Sede destination
-            // always has a real SEDE_SHIPPING_INFO row to reference (RemitoNoteController only
-            // ever offers Sedes that have one configured, see its populateDestinationSedeCombo()),
-            // captured at Sede-selection time rather than re-derived here (see NoteReport's own
-            // shippingInfoId Javadoc for why).
+            // always has a real SEDE_SHIPPING_INFO row to reference.
             if (report.getShippingInfoId() != null) {
                 PreparedStatement ps = c.prepareStatement("""
                     INSERT INTO NOTE_REMITO_SEDE (note_report_id, shipping_info_id)
@@ -225,9 +209,7 @@ public class SqliteHistoryService implements IHistoryService {
             ps.executeUpdate();
 
             // failure_cause/failure_details and area_evento each live in their own subtype
-            // table now — a row exists only when that dimension actually applies, instead of
-            // every ENTREGA_DEVOLUCION row always
-            // carrying both regardless of profile type/motivo.
+            // table — a row exists only when that dimension actually applies.
             if (report.getFailureCause() != null && !report.getFailureCause().isBlank()) {
                 PreparedStatement falla = c.prepareStatement("""
                     INSERT INTO NOTE_DEVOLUCION_FALLA (note_report_id, failure_cause, failure_details)
@@ -250,12 +232,9 @@ public class SqliteHistoryService implements IHistoryService {
         }
     }
 
-    // The base NOTE_ITEM insert can't be batched like the old single-table insert was — each
-    // subtype-table row needs its own base row's generated id first. Only the 4 subtype
-    // PreparedStatements below are batched. A subtype row is only ever inserted when that
-    // dimension actually applies (see the 5-table split in DatabaseService/RemoteDatabaseService)
-    // — trusting the exact same caller-supplied status values this method already trusted before
-    // the split, not re-deriving the applicability rule a second time here.
+    // The base NOTE_ITEM insert can't be batched — each subtype-table row needs its own base
+    // row's generated id first. Only the 4 subtype PreparedStatements below are batched. A
+    // subtype row is only inserted when that dimension actually applies.
     private void insertItems(Connection c, int reportId, List<NoteReportItem> items, boolean needsReturnTracking) throws SQLException {
         if (items == null) return;
         PreparedStatement itemPs = c.prepareStatement("""
@@ -279,10 +258,8 @@ public class SqliteHistoryService implements IHistoryService {
         PreparedStatement stockExceptionPs = c.prepareStatement(
             "INSERT INTO NOTE_ITEM_STOCK_EXCEPTION (item_id, reason) VALUES (?, ?)");
 
-        // Every item on a Préstamo note (asset AND countable — return tracking isn't asset-only
-        // the way GLPI is) needs its own return tracked; same for a Provider note whose Motivo is
-        // in the config-driven returnable list (e.g. Garantía, Reparación — see
-        // isProviderReturnable()). Every other note type's items are simply not applicable.
+        // Return tracking applies to every item (asset and countable alike, unlike GLPI) on a
+        // Préstamo note, and on a Provider note whose Motivo is in the returnable list.
         for (NoteReportItem item : items) {
             itemPs.setInt(1, reportId);
             itemPs.setInt(2, item.getTypeId());
@@ -360,9 +337,8 @@ public class SqliteHistoryService implements IHistoryService {
             params.add("%" + filter.getRecipientSearch().trim() + "%");
         }
         if (filter.getAuthorSearch() != null && !filter.getAuthorSearch().isBlank()) {
-            // Can't reference the "author_name" SELECT alias here — SQLite tolerates it but
-            // SQL Server doesn't, and this query runs against both (see ServiceLocator's dual
-            // wiring of SqliteHistoryService for local vs. remote). Repeat the column instead.
+            // Can't reference the "author_name" SELECT alias — SQLite tolerates it, SQL Server
+            // doesn't, and this query runs against both. Repeat the column instead.
             sql.append(" AND COALESCE(r.technician_name, '') LIKE ?");
             params.add("%" + filter.getAuthorSearch().trim() + "%");
         }
@@ -404,9 +380,8 @@ public class SqliteHistoryService implements IHistoryService {
         params.addAll(values);
     }
 
-    // Filters NOTE_ITEM by a catalog id whose current-or-historical name matches one of the
-    // given values — regardless of deprecated status, so filtering by a name a type/brand/model
-    // was later renamed away from still finds the notes that used it at the time.
+    // Matches regardless of deprecated status, so filtering by a name a type/brand/model was
+    // later renamed away from still finds the notes that used it at the time.
     private void appendInViaCatalog(StringBuilder sql, List<Object> params, String idColumn,
             String catalogTable, List<String> names) {
         if (!hasValues(names)) return;
@@ -435,12 +410,8 @@ public class SqliteHistoryService implements IHistoryService {
         int synced   = r.getSyncedItemCount();
         int rejected = r.getRejectedItemCount();
         return switch (status) {
-            // Not total == 0 — a Préstamo note's assets are all glpi_status N_A (see CLAUDE.md's
-            // "Préstamo assets are deliberately excluded from GLPI sync"), so getAssetItemCount()
-            // alone would be > 0 for such a note even though none of its assets are GLPI-tracked,
-            // silently excluding it from the "Sin GLPI" filter. A note has nothing GLPI-tracked
-            // whenever none of pending/synced/rejected are non-zero, whether that's because it
-            // has no assets at all or because every asset on it is N_A.
+            // Not asset count == 0 — a Préstamo note's assets are all glpi_status N_A, so a raw
+            // asset count would wrongly exclude such a note from the "Sin GLPI" filter.
             case "N_A"      -> (pending + synced + rejected) == 0;
             case "PENDING"  -> pending > 0;
             case "SYNCED"   -> synced > 0;
@@ -459,17 +430,12 @@ public class SqliteHistoryService implements IHistoryService {
         return getFiltered(HistoryFilter.pendingApproval());
     }
 
-    // approval_status is a plain UPDATE on the always-existing NOTE_REPORT row — but
-    // rejection_reason (split into NOTE_REPORT_REJECTION, a row exists only for an
-    // actually-rejected note) needs the same check-then-insert-or-update-or-delete shape as
-    // updateItemGlpiStatus()/updateItemReturnStatus() below: a blank reason (approving, or
-    // re-approving a previously-rejected note) deletes any existing row; a real reason
-    // upserts one.
+    // rejection_reason lives in NOTE_REPORT_REJECTION (a row exists only for a rejected note) —
+    // a blank reason deletes any existing row, a real reason upserts one.
     @Override
     public void updateNoteApprovalStatus(int reportId, String status, String rejectionReason) {
-        // Applied before the approval_status write below, not after — if a note's stock
-        // adjustment fails (e.g. requesting more than the Sede has on hand), the note must not
-        // end up APPROVED with the stock left unmoved.
+        // Applied before the approval_status write — a failed stock adjustment must not leave
+        // the note APPROVED with the stock unmoved.
         if ("APPROVED".equals(status)) {
             applyNoteStockIfNeeded(reportId);
         }
@@ -508,20 +474,15 @@ public class SqliteHistoryService implements IHistoryService {
 
     private record StockItemKey(int modelId, int brandId, int typeId) {}
 
-    // Every note type that actually moves physical equipment (egress: Entrega/Entrega Permanente/
-    // Préstamo/Provider; ingress: Devolución) dispatches through here — Remito keeps its own
-    // dual-Sede shape below since it's the only type that can write to two Sedes per item.
-    // Case/legacy-variant tolerant, matching HistoryController.PROFILE_TYPE_LABEL_TO_RAW's own
-    // alias lists (a pre-rename installation's rows still say "FIN DE CONTRATO").
+    // Egress (stock decreases): Entrega/Entrega Permanente/Préstamo/Provider. Ingress (stock
+    // increases): Devolución. Remito has its own dual-Sede move below. Case/legacy-variant
+    // tolerant — a pre-rename installation's rows still say "FIN DE CONTRATO".
     private static final List<String> EGRESS_PROFILE_TYPES = List.of(
         "ENTREGA", "ENTREGA PERMANENTE", "FIN DE CONTRATO", "PRÉSTAMO", "PRESTAMO", "ENTREGA - PROVEEDOR");
     private static final List<String> INGRESS_PROFILE_TYPES = List.of("DEVOLUCIÓN", "DEVOLUCION");
 
-    // Consolidated stock dispatcher for every note type — called unconditionally from
-    // updateNoteApprovalStatus() on approval. No-op for a note with no stock effect (an
-    // unrecognized/other profile type) and for a note already applied (stock_applied = 1), via the
-    // single shared NOTE_REPORT.stock_applied flag (see migrateStockAppliedSchema() — this used to
-    // be Remito-only, tracked on NOTE_REMITO itself, before every note type started moving stock).
+    // Stock dispatcher for every note type, called from updateNoteApprovalStatus() on approval.
+    // No-op for a note with no stock effect or already applied (stock_applied = 1).
     private void applyNoteStockIfNeeded(int reportId) {
         try (Connection c = connector.get()) {
             String profileType;
@@ -559,17 +520,12 @@ public class SqliteHistoryService implements IHistoryService {
         }
     }
 
-    // Aggregates this note's items by (model, brand, type) first — the same model can appear on
-    // multiple item rows (e.g. several units of the global "Genérico / Otro" model, or several
-    // asset rows of one model), and only their combined total is what actually needs to fit in the
-    // Sede's current stock. On egress (insufficientMessage != null), every aggregate is checked
-    // against current stock BEFORE any write happens, so a note that would over-request one model
-    // doesn't leave a different model's stock already moved; ingress has no upper bound to check.
-    // Not cross-connection-transactional (two notes approved at the exact same instant could still
-    // both pass the check before either writes) — an accepted limitation given this app has no
-    // equivalent cross-row locking anywhere else either, and approval is a low-concurrency,
-    // single-admin action in practice (same accepted limitation Remito's own move already had).
-    // Returns whether anything was actually moved (false for a note with zero items).
+    // Aggregates by (model, brand, type) first, since the same model can appear on multiple item
+    // rows and only their combined total needs to fit in the Sede's stock. On egress, every
+    // aggregate is checked against current stock before any write, so an over-requested model
+    // can't leave a different model's stock already moved. Not cross-connection-transactional —
+    // an accepted limitation, since approval is a low-concurrency, single-admin action in
+    // practice. Returns whether anything was actually moved (false for a note with zero items).
     private boolean applyDirectionalStock(Connection c, int reportId, int sedeId, int direction,
             String insufficientMessage) throws SQLException {
         java.util.Map<StockItemKey, Integer> quantities = aggregateItemQuantities(c, reportId);
@@ -594,13 +550,10 @@ public class SqliteHistoryService implements IHistoryService {
     }
 
     // Remito's own dual-Sede move — source always decrements, destination only increments when
-    // it's a real catalog Sede (destination_sede_id is null for a custom/manual destination, e.g.
-    // a CAU not in the SEDE catalog, which has no stock to receive at all). Kept separate from
-    // applyDirectionalStock() since it can write to two Sedes per item, not one.
+    // it's a real catalog Sede (a custom/manual destination has no stock to receive).
     private boolean applyRemitoStock(Connection c, int reportId, int sourceSedeId) throws SQLException {
-        // Absence from NOTE_REMITO_SEDE is now a valid, expected case (a custom/manual
-        // destination in NOTE_REMITO_OTHER instead), not an error — unlike the old single-table
-        // shape, where "no row at all" was the only way to detect that.
+        // Absence from NOTE_REMITO_SEDE means a custom/manual destination (in NOTE_REMITO_OTHER
+        // instead) — a valid, expected case, not an error.
         Integer destinationSedeId = null;
         try (PreparedStatement ps = c.prepareStatement("""
                 SELECT ssi.sede_id FROM NOTE_REMITO_SEDE rms
@@ -638,9 +591,7 @@ public class SqliteHistoryService implements IHistoryService {
     private java.util.Map<StockItemKey, Integer> aggregateItemQuantities(Connection c, int reportId) throws SQLException {
         java.util.Map<StockItemKey, Integer> quantities = new java.util.LinkedHashMap<>();
         for (NoteReportItem item : loadItems(c, reportId)) {
-            // An item marked "no modifica stock" (ItemDialogController's exceptional-case
-            // checkbox) is excluded entirely — it must never move stock on approval, regardless
-            // of note direction (egress or ingress).
+            // An item marked "no modifica stock" is excluded entirely, regardless of direction.
             if (!item.isModifiesStock()) continue;
             StockItemKey key = new StockItemKey(item.getModelId(), item.getBrandId(), item.getTypeId());
             int qty = item.isAsset() ? 1 : item.getQuantity();
@@ -714,11 +665,8 @@ public class SqliteHistoryService implements IHistoryService {
         }
     }
 
-    // created_at is stored as ISO-8601 text on SQLite (TEXT column, unchanged) but as a real
-    // DATETIME2 on the remote SQL Server connection (this same class runs against both — see
-    // ServiceLocator) — DATETIME2's own getString() rendering is space-separated
-    // ("yyyy-MM-dd HH:mm:ss[.fffffff]"), not 'T'-separated, so tolerate both instead of assuming
-    // SQLite's format everywhere.
+    // Tolerates both SQLite's ISO-8601 ('T'-separated) text and SQL Server DATETIME2's
+    // space-separated getString() rendering, since this class runs against both.
     private static LocalDateTime parseStoredTimestamp(String raw) {
         try {
             return LocalDateTime.parse(raw);
@@ -729,11 +677,8 @@ public class SqliteHistoryService implements IHistoryService {
         }
     }
 
-    // Same space-vs-'T' tolerance as parseStoredTimestamp(), but for the two tracking-table
-    // columns that are kept as raw display strings (never parsed to LocalDateTime) — normalizes
-    // to 'T'-separated so NoteDetailController/PrestamoDetailController's
-    // getXxxUpdatedAt().substring(0, 16) display trick keeps working regardless of which engine
-    // produced the value.
+    // Same space-vs-'T' tolerance as parseStoredTimestamp(), but for columns kept as raw
+    // display strings rather than parsed to LocalDateTime.
     private static String normalizeTimestampString(String raw) {
         if (raw == null) return null;
         int spaceIdx = raw.indexOf(' ');
@@ -850,10 +795,8 @@ public class SqliteHistoryService implements IHistoryService {
         }
     }
 
-    // Reproduces the exact same result-column names the old wide NOTE_ITEM table used to return
-    // natively (is_asset, glpi_status, serial_number, etc.), now computed via LEFT JOIN/COALESCE
-    // against the split subtype tables — the row-mapping code below is unchanged from before the
-    // 5-table split.
+    // is_asset/glpi_status/etc. are computed via LEFT JOIN/COALESCE against the split subtype
+    // tables, reproducing the flat column shape NoteReportItem expects.
     private List<NoteReportItem> loadItems(Connection c, int reportId) throws SQLException {
         List<NoteReportItem> items = new ArrayList<>();
         PreparedStatement ps = c.prepareStatement("""
@@ -935,11 +878,8 @@ public class SqliteHistoryService implements IHistoryService {
         return items;
     }
 
-    // Each allocation batch (LOST or RETURNED) is one real event with its own single timestamp
-    // (LOST also has its own reason) — a one-query-per-countable-item follow-up, same accepted
-    // "extra query per row, scoped to a single detail view, not a bulk list" trade-off already
-    // used elsewhere in this class (see HistoryController.exportRowValues() in CLAUDE.md for the
-    // same precedent).
+    // Each allocation batch (LOST or RETURNED) is one real event with its own timestamp — a
+    // one-query-per-countable-item follow-up, scoped to a single detail view, not a bulk list.
     private List<ReturnAllocationBatch> loadAllocationBatches(Connection c, int itemId, ReturnStatus status) throws SQLException {
         List<ReturnAllocationBatch> batches = new ArrayList<>();
         try (PreparedStatement ps = c.prepareStatement("""
@@ -1034,14 +974,8 @@ public class SqliteHistoryService implements IHistoryService {
 
     @Override
     public void updateItemGlpiStatus(int itemId, GlpiStatus status, String reason) {
-        // Plain UPDATE-then-INSERT-if-missing, not an ON CONFLICT upsert (that was SQLite/
-        // PostgreSQL-only syntax — SQL Server has no ON CONFLICT/MERGE-free upsert clause at all,
-        // and this class runs unchanged against both the local SQLite and remote SQL Server
-        // connections). Mirrors the same shape already established for every other upsert in this
-        // codebase — see "Remote SQL Server" / "Upserts rewritten as plain check-then-insert/update"
-        // in CLAUDE.md. Defensive either way: every real caller only ever transitions an item that
-        // already has a GLPI-dimension tracking row (PENDING), but the INSERT fallback is correct
-        // even if that assumption is ever wrong, at no extra cost.
+        // Plain UPDATE-then-INSERT-if-missing, not ON CONFLICT — SQL Server has no equivalent
+        // upsert clause, and this class runs against both SQLite and SQL Server.
         try (Connection c = connector.get()) {
             String updatedAt = LocalDateTime.now().toString();
             try (PreparedStatement up = c.prepareStatement("""
@@ -1075,11 +1009,9 @@ public class SqliteHistoryService implements IHistoryService {
 
     @Override
     public void updateItemGlpiReturnStatus(int itemId, GlpiStatus status, String reason) {
-        // Same UPDATE-then-INSERT-if-missing shape as updateItemGlpiStatus() above. Unlike that
-        // one, the very first call for a given item is expected to be an INSERT — this dimension
-        // doesn't exist at all until NoteDetailController.handleProviderReceived() seeds a PENDING
-        // row the moment the item's return is validated (see the 'GLPI_RETURN' tracking_type's own
-        // doc in DatabaseService).
+        // Same shape as updateItemGlpiStatus() above, but the first call for a given item is
+        // expected to be an INSERT — this dimension doesn't exist until the item's return is
+        // validated.
         try (Connection c = connector.get()) {
             String updatedAt = LocalDateTime.now().toString();
             try (PreparedStatement up = c.prepareStatement("""
@@ -1113,8 +1045,7 @@ public class SqliteHistoryService implements IHistoryService {
 
     @Override
     public void updateItemReturnStatus(int itemId, ReturnStatus status, String reason) {
-        // Same UPDATE-then-INSERT-if-missing shape as updateItemGlpiStatus() above, for the same
-        // SQL Server compatibility reason.
+        // Same UPDATE-then-INSERT-if-missing shape as updateItemGlpiStatus() above.
         try (Connection c = connector.get()) {
             String previousStatus = currentReturnStatus(c, itemId);
             String updatedAt = LocalDateTime.now().toString();
@@ -1140,10 +1071,8 @@ public class SqliteHistoryService implements IHistoryService {
                     }
                 }
             }
-            // Credit stock back only on a genuine transition INTO Returned (old status was
-            // Pending/Lost, new status is Returned) — not on an already-Returned re-call
-            // (idempotency, e.g. a UI double-click) and never for Lost (permanently gone, no
-            // credit). Whole-item, so always +1 regardless of asset vs. countable-as-a-whole-unit.
+            // Only on a genuine transition into Returned — not an already-Returned re-call
+            // (idempotency) and never for Lost. Whole-item, so always +1.
             if (status == ReturnStatus.RETURNED && !"RETURNED".equals(previousStatus)) {
                 ItemStockInfo info = resolveItemStockInfo(c, itemId);
                 if (info != null && info.modifiesStock()) {
@@ -1167,11 +1096,9 @@ public class SqliteHistoryService implements IHistoryService {
 
     private record ItemStockInfo(int modelId, int brandId, int typeId, int sedeId, boolean modifiesStock) {}
 
-    // Resolves what a NOTE_ITEM's return actually credits back — its own catalog ids plus the
-    // Sede it was loaned/shipped from (the note's own sede_id; Préstamo/Provider have no separate
-    // "destination Sede" the way Remito does, equipment always returns to where it left from).
-    // modifiesStock mirrors the same exceptional-item flag applyDirectionalStock() already
-    // respects on the way out — an item that never decremented stock must never credit it back in.
+    // Credits back to the note's own sede_id — Préstamo/Provider equipment always returns to
+    // where it left from. modifiesStock mirrors applyDirectionalStock()'s exceptional-item flag:
+    // an item that never decremented stock must never credit it back in.
     private ItemStockInfo resolveItemStockInfo(Connection c, int itemId) throws SQLException {
         try (PreparedStatement ps = c.prepareStatement("""
                 SELECT i.model_id, i.brand_id, i.type_id, r.sede_id, i.modifies_stock
@@ -1213,11 +1140,8 @@ public class SqliteHistoryService implements IHistoryService {
                 ins.setString(5, LocalDateTime.now().toString());
                 ins.executeUpdate();
             }
-            // Credit stock on every Returned allocation, unconditionally — unlike the whole-item
-            // case above, each call here already represents a genuinely-new partial-return event
-            // (the pending-quantity check just above already prevents over-allocating beyond what
-            // was actually loaned/shipped out), so the quantity itself is the idempotency guard;
-            // no "was it already Returned" check needed. Never credit Lost.
+            // Unconditional credit — the pending-quantity check above already prevents
+            // over-allocating, so the quantity itself is the idempotency guard. Never credit Lost.
             if (status == ReturnStatus.RETURNED) {
                 ItemStockInfo info = resolveItemStockInfo(c, itemId);
                 if (info != null && info.modifiesStock()) {

@@ -825,13 +825,8 @@ public class SqliteEquipmentService implements IEquipmentService {
 
     @Override
     public void setModelStock(int modelId, int brandId, int typeId, int sedeId, int stock) {
-        // Boundary validation — the UI's own tfStock TextFormatter
-        // already blocks typing a minus sign, but this is the actual persistence boundary every
-        // caller goes through (including any future direct caller), so it's checked here too,
-        // same "validate at every system boundary" precedent as this project's other input
-        // validation. CachingEquipmentService.setModelStock() calls primary.setModelStock(...)
-        // with no surrounding try/catch, so this propagates as a "fail loudly" write failure,
-        // exactly like every other primary-write error in that class.
+        // The UI's tfStock TextFormatter already blocks a minus sign, but this is the actual
+        // persistence boundary every caller goes through, so it's validated here too.
         if (stock < 0) {
             throw new IllegalArgumentException("El stock no puede ser negativo");
         }

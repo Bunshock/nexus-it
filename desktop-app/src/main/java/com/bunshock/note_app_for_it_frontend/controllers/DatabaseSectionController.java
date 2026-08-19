@@ -74,28 +74,20 @@ public class DatabaseSectionController {
 
     private IEquipmentService equipmentService;
 
-    // Stock is now tracked per Sede (see IEquipmentService.getModelStock/setModelStock) — null
-    // means "every Sede combined" (summed), only ever selectable by a SUPERADMIN; a plain
-    // ADMIN/USER is locked to their own superadmin-assigned Sede, mirroring the same
-    // ADMIN-own-Sede/SUPERADMIN-sees-all split already used for note approval/GLPI/return
-    // permissions (AdminSession.hasPermission(Permission, Integer)).
+    // Stock is tracked per Sede — null means "every Sede combined," selectable only by
+    // SUPERADMIN. A plain ADMIN/USER is locked to their own assigned Sede.
     private Integer currentStockSedeId;
 
-    // true only for a non-SUPERADMIN with no Sede assigned at all — currentStockSedeId is null in
-    // that case too (same value a SUPERADMIN's "Todas" selection uses), but the two must not be
-    // treated the same: "Todas" is a SUPERADMIN's deliberate choice to see every Sede combined;
-    // "no Sede assigned" means this technician has no valid scope at all and must see nothing,
-    // not silently fall back to the same combined-everything total. See stockTotalsByType()/
-    // ByBrandForType()/ByModelForBrandAndType() below, which are the only methods allowed to read
-    // currentStockSedeId for a display query — they check this flag first.
+    // True only when a non-SUPERADMIN has no Sede assigned — currentStockSedeId is null in that
+    // case too, but the two aren't the same: null from "Todas" means every Sede combined; null
+    // here means no valid scope at all. stockTotalsByType()/ByBrandForType()/
+    // ByModelForBrandAndType() below check this before reading currentStockSedeId.
     private boolean stockSedeUnassigned;
 
-    // Guards listTypes'/listBrands' own selectedItemProperty listeners (below) while
-    // refreshStockRollupsOnly() re-selects a Type/Brand by id after resorting — that re-selection
-    // targets a freshly-queried object (a different instance than whatever was selected before,
-    // even for "the same" Type/Brand), which would otherwise register as a real selection change
-    // and cascade into refreshBrandsForType()/refreshModelsForBrandType(), wiping the very
-    // listModels state that method exists to preserve during a stock edit.
+    // Guards listTypes'/listBrands' selection listeners while refreshStockRollupsOnly()
+    // re-selects a Type/Brand by id after resorting (a different instance than what was
+    // selected), which would otherwise cascade into refreshBrandsForType()/
+    // refreshModelsForBrandType() and wipe listModels' state.
     private boolean suppressSelectionListeners = false;
 
     public void initialize() {
@@ -122,16 +114,10 @@ public class DatabaseSectionController {
         updateCrudButtonVisibility();
     }
 
-    // A plain technician (no ADMIN/SUPERADMIN role) can never actually complete any of these
-    // actions — requirePermission() is a hard permission check with no fallback of any kind
-    // (the old shared-password bypass was removed entirely, see CLAUDE.md). Leaving the buttons
-    // visible to everyone else was pure clutter with no real affordance behind it (explicit user
-    // report/request). Hidden, not just disabled, same "no point leaving a dead control visible"
-    // reasoning as every other
-    // permission-gated control in this app. Not Sede-scoped for MANAGE_STOCK — unlike a fixed
-    // note's own Sede elsewhere in this app, cmbStockSede's selection changes live as the
-    // technician browses the catalog, so the Stock button's mere visibility is governed by the
-    // role permission alone; the actual Sede match is still enforced at click time via
+    // requirePermission() has no fallback for a plain technician, so these are hidden rather
+    // than left visible-but-dead. Not Sede-scoped for MANAGE_STOCK — cmbStockSede's selection
+    // changes live as the technician browses, so visibility is governed by the role permission
+    // alone; the Sede match itself is enforced at click time via
     // requirePermission(Permission, Integer, Runnable).
     private void updateCrudButtonVisibility() {
         setButtonVisible(btnAddType,    AdminSession.getInstance().hasPermission(Permission.MANAGE_TYPES));
@@ -176,21 +162,17 @@ public class DatabaseSectionController {
         lblLocalConnectionStatus.setStyle("-fx-text-fill: #94a3b8; -fx-font-size: 13px;");
     }
 
+    // Not admin-gated — db_host/port/name/username/password live in local-only APP_SETTINGS
+    // (never synced), so this only ever affects the machine it's changed on; the
+    // test-connection-before-accepting flow below still guards against saving an unreachable
+    // config.
     @FXML
-    // Not admin-gated (explicit user decision) — any technician can point
-    // their own local install at a different remote database. db_host/port/name/username/
-    // password all live in local APP_SETTINGS only (never synced), so this only ever affects
-    // the machine it's changed on, and the existing test-connection-before-accepting flow below
-    // still guards against silently saving an unreachable/wrong config either way.
     private void handleEditConnection() {
         openEditConnectionDialog();
     }
 
-    // Tests and reports both databases independently every time — previously this only ever
-    // tested one or the other (remote if configured, local otherwise), so clicking "Probar
-    // conexión" with no remote database configured silently reported the *local* database's
-    // status as if that were the answer, with no indication that the remote side was never
-    // configured in the first place.
+    // Tests and reports both databases independently, since either can be reachable/configured
+    // without the other.
     @FXML
     private void handleTestConnection() {
         RemoteDatabaseService remote = RemoteDatabaseService.getInstance();
@@ -253,11 +235,9 @@ public class DatabaseSectionController {
         tfUser.setPromptText("Ej: admin"); tfUser.getStyleClass().add("form-input-main");
         tfUser.setTextFormatter(connectionFieldFormatter());
 
-        // Write-only, like every other secret field in this app (SMTP/GLPI/AD) — never
-        // pre-filled with the decrypted current value. Removing the admin gate on this dialog
-        // means any technician can open it now, and a PasswordField's masked text can still be
-        // selected/copied in plain text, so pre-filling it here would hand out the real shared
-        // DB password to anyone who opens this screen.
+        // Write-only, like every other secret field in this app — never pre-filled with the
+        // decrypted value. A PasswordField's masked text can still be selected/copied, so
+        // pre-filling would expose the real shared DB password to anyone who opens this screen.
         Label lblPw = new Label("CONTRASEÑA");
         lblPw.getStyleClass().add("input-label-small");
         Label lblPwError = buildErrorLabel();
@@ -277,14 +257,9 @@ public class DatabaseSectionController {
             String portStr = tfPort.getText().trim().isEmpty() ? "1433" : tfPort.getText().trim();
             String name   = tfName.getText().trim();
             String user   = tfUser.getText().trim();
-            // Blank means "keep the existing password" — write-only field, see above — but
-            // ONLY when the destination itself (host/port) is unchanged. Reusing the stored
-            // password against a genuinely different host would submit the real, live
-            // credential to wherever the field was just pointed at — via the test-connection
-            // call below, before anything is even saved — letting anyone who can type a new
-            // host effectively exfiltrate the password to a server of their choosing without
-            // ever needing to read it back. Changing just the database name or username against
-            // the SAME already-trusted host is fine and still allowed with a blank password.
+            // Blank keeps the existing password, but only when host/port are unchanged —
+            // reusing it against a different host would submit the live credential to wherever
+            // the field now points, via the test-connection call below, before saving anything.
             String curHostNorm = curHost != null ? curHost : "";
             String curPortNorm = curPort != null && !curPort.isBlank() ? curPort : "1433";
             boolean destinationChanged = !host.equals(curHostNorm) || !portStr.equals(curPortNorm);
@@ -357,25 +332,18 @@ public class DatabaseSectionController {
 
     // ── Equipment catalog ────────────────────────────────────────────
 
-    // Called by MainController.handleShowDatabase() on every navigation into this section — same
-    // "ViewFactory caches the section for the whole session, so a stale initialize()-time snapshot
-    // never re-runs on later visits" gap already fixed once for HistoryController.refresh(). Stock
-    // here can change from well outside this controller's own reach entirely — approving any note,
-    // or crediting a Préstamo/Provider return, both move MODEL_STOCK from inside
-    // SqliteHistoryService, with no event/listener back to whichever DatabaseSectionController
-    // instance happens to be showing a given Model at the time. Direct user report: after
-    // approving a note, Marcas' number only updated once a Type was reselected (its own
-    // selection-listener already re-queries fresh on every reselect — see refreshBrandsForType()),
-    // but Tipos' number never updated at all, since nothing had ever re-run refreshTypes() since
-    // initialize().
+    // Called on every navigation into this section — ViewFactory caches the section for the
+    // whole session, so initialize()'s snapshot never re-runs on its own. Stock can change from
+    // outside this controller entirely (note approval, Préstamo/Provider returns), with no
+    // listener back to whichever instance is showing a given Model.
     public void refresh() {
         EquipmentType selectedType = listTypes.getSelectionModel().getSelectedItem();
         if (selectedType == null) {
             refreshTypes();
             return;
         }
-        // Refreshes Tipos + Marcas' rollups in place, preserving both selections — but, by design
-        // (see its own comment below), never touches listModels itself.
+        // Refreshes Tipos + Marcas' rollups in place, preserving both selections; never touches
+        // listModels itself (see refreshStockRollupsOnly()'s own comment).
         refreshStockRollupsOnly(selectedType.getId());
         EquipmentBrand reselectedBrand = listBrands.getSelectionModel().getSelectedItem();
         if (reselectedBrand != null) {
@@ -383,21 +351,15 @@ public class DatabaseSectionController {
         }
     }
 
-    // Manual escape hatch for the same staleness refresh() above already fixes on navigation —
-    // a technician working a long stretch inside Base de Datos without ever leaving the section
-    // (so MainController.handleShowDatabase() never re-fires) had no way to pick up a stock/catalog
-    // change made elsewhere (another technician's note approval on a shared remote database, a
-    // return credited from a different screen) without restarting the app. Not permission-gated —
-    // a plain re-read of already-visible data, same "read-only action, available to everyone"
-    // precedent as e.g. NoteDetailController's "Reimprimir Nota".
+    // Manual escape hatch for the same staleness refresh() fixes on navigation — for a technician
+    // working a long stretch inside this section without leaving it. Not permission-gated: a
+    // read-only refresh of already-visible data.
     @FXML
     private void handleRefreshCatalog() {
         refresh();
     }
 
-    // The only three places allowed to read currentStockSedeId for a display query — each checks
-    // stockSedeUnassigned first (see that field's own comment for why null alone can't
-    // distinguish a SUPERADMIN's "Todas" from a technician with no Sede at all).
+    // Checks stockSedeUnassigned first — see that field's own comment.
     private Map<Integer, Integer> stockTotalsByType() {
         return stockSedeUnassigned ? Map.of() : equipmentService.getStockTotalsByType(currentStockSedeId);
     }
@@ -421,13 +383,10 @@ public class DatabaseSectionController {
         listModels.setItems(FXCollections.observableArrayList());
     }
 
-    // The global generic brand isn't linked to every type (it doesn't need to be — see
-    // SqliteEquipmentService.addBrandForType()), so it's synthesized into the list here exactly
-    // like ItemDialogController.onTypeSelected() already does for the note-generation Item
-    // dialog — otherwise it would only appear for whichever type(s) happen to have a real,
-    // now-vestigial BRAND_TYPE_LINK, and be missing everywhere else. Its own final position
-    // (last within its stock group) comes from sortStockFirstThenAlphabetical() below, not from
-    // where it's inserted here.
+    // The global generic brand isn't linked to every type, so it's synthesized here the same way
+    // ItemDialogController.onTypeSelected() does — otherwise it would only appear for types with
+    // a real, now-vestigial BRAND_TYPE_LINK. Its final position (last within its stock group)
+    // comes from sortStockFirstThenAlphabetical() below.
     private void refreshBrandsForType(int typeId) {
         List<EquipmentBrand> brands = new ArrayList<>(equipmentService.getBrandsForType(typeId));
         if (brands.stream().noneMatch(b -> genericLabel().equals(b.getName()))) {
@@ -471,13 +430,9 @@ public class DatabaseSectionController {
         applyCatalogCellFactory(listModels, m -> stockByModel.getOrDefault(m.getId(), 0));
     }
 
-    // Direct user request: every cascading list shows every item with stock > 0 first, then
-    // every item with 0 stock, each group sorted alphabetically (case-insensitive) — not one
-    // flat alphabetical list. Within each of those two groups, the synthesized "Genérico / Otro"
-    // fallback (Brand/Model lists only — genericLabel() never matches a real Type name, so this
-    // is a no-op there) sorts last, per its own pre-existing "generic sits last" convention —
-    // scoped to its own stock group now, confirmed with the user, rather than globally last
-    // across both groups like before.
+    // Items with stock > 0 sort first, then zero-stock items, each group alphabetical
+    // (case-insensitive); the synthesized "Genérico / Otro" fallback (Brand/Model lists only)
+    // sorts last within its group.
     private <T> List<T> sortStockFirstThenAlphabetical(List<T> items, Function<T, Integer> stockLookup,
             Function<T, String> nameLookup) {
         Comparator<T> genericLast = Comparator.comparing(
@@ -497,23 +452,15 @@ public class DatabaseSectionController {
         return hasStock;
     }
 
-    // A stock edit changes the Type- and Brand-level rollup totals too (they sum every Model
-    // under their scope), which can move a Type/Brand between the has-stock/zero-stock groups —
-    // direct user report that the lists weren't reordering after a stock edit. Re-sorts and
-    // rebuilds listTypes'/listModels' items (unlike a plain applyCatalogCellFactory() repaint),
-    // but explicitly does NOT touch listModels — that list was already just fully rebuilt by
-    // refreshModelsForBrandType(), called right before this in every caller, and this method has
-    // no reason to touch it a second time.
+    // A stock edit changes the Type/Brand rollup totals too, which can move one between the
+    // has-stock/zero-stock groups. Re-sorts/rebuilds listTypes'/listBrands' items but never
+    // touches listModels — that list was already rebuilt by refreshModelsForBrandType(), called
+    // right before this in every caller.
     //
-    // Selection is preserved by id, not by object identity: equipmentService.getAllTypes()/
-    // getBrandsForType() return freshly-queried objects each call, so the Type/Brand the
-    // technician had selected before this runs is never the same instance as its post-sort
-    // replacement, even when nothing about it actually changed. Re-selecting it explicitly (by
-    // matching id in the newly-sorted list) is done under suppressSelectionListeners — selecting
-    // a different instance still fires listTypes'/listBrands' own selectedItemProperty listeners,
-    // which would otherwise cascade into refreshBrandsForType()/refreshModelsForBrandType() and
-    // wipe out listModels' state, defeating the whole point of doing this instead of just calling
-    // refreshTypes()/refreshBrandsForType() again.
+    // Selection is preserved by id, not object identity: getAllTypes()/getBrandsForType() return
+    // freshly-queried objects each call, so the previously-selected Type/Brand is never the same
+    // instance as its post-sort replacement. Re-selecting by id under suppressSelectionListeners
+    // avoids re-triggering the selection listeners and wiping listModels' state.
     private void refreshStockRollupsOnly(int typeId) {
         EquipmentType selectedType = listTypes.getSelectionModel().getSelectedItem();
         EquipmentBrand selectedBrand = listBrands.getSelectionModel().getSelectedItem();
@@ -552,15 +499,10 @@ public class DatabaseSectionController {
 
     private static final String GENERIC_STYLE = "-fx-font-style: italic; -fx-text-fill: #94a3b8;";
 
-    // Two-column row (name left, stock right-aligned) instead of a single text string — lines up
-    // under the "NOMBRE"/"STOCK" header row each list gets in FXML, which (being a plain sibling
-    // above the ListView, not inside its scrollable viewport) stays fixed while the list scrolls.
-    // Stock comes from the already-fetched rollup Map (one query per list refresh, not one per
-    // row) — applied to all three cascading lists (Types/Brands/Models), each with its own
-    // id-to-stock lookup. Same italic/grey treatment ItemDialogController's combo boxes give the
-    // generic fallback; selected-row text color is handled manually (matching
-    // .modern-list .list-cell:filled:selected) since CSS text-fill on the cell itself doesn't
-    // reach into a custom graphic's child Labels.
+    // Two-column row (name left, stock right-aligned). Stock comes from an already-fetched
+    // rollup Map (one query per refresh, not per row). Selected-row text color is handled
+    // manually since CSS text-fill on the cell doesn't reach into a custom graphic's child
+    // Labels.
     private static final double STOCK_COLUMN_WIDTH = 50;
     private static final String STOCK_ALIGN_STYLE = "-fx-alignment: CENTER_RIGHT;";
 
@@ -577,13 +519,10 @@ public class DatabaseSectionController {
                 lblStock.setPrefWidth(STOCK_COLUMN_WIDTH);
                 lblStock.setMaxWidth(STOCK_COLUMN_WIDTH);
                 lblStock.setStyle(STOCK_ALIGN_STYLE);
-                // A ListCell's graphic isn't stretched to the cell's own width by default (unlike
-                // a plain HBox living directly in a VBox, which IS stretched via VBox's own
-                // fillWidth=true default — that's why the FXML header row lines up on its own).
-                // Without this, the spacer has no extra space to grow into, and lblStock ends up
-                // sitting immediately after lblName instead of pinned to the row's right edge —
-                // matching HistoryView's ".modern-list .list-cell" padding (7 12, i.e. 24px total
-                // horizontal) so the bound width matches the cell's actual content area.
+                // A ListCell's graphic isn't stretched to the cell's own width by default, so the
+                // spacer has nothing to grow into without this — 24 matches
+                // ".modern-list .list-cell"'s own padding (7 12) so the bound width matches the
+                // cell's actual content area.
                 row.prefWidthProperty().bind(widthProperty().subtract(24));
                 selectedProperty().addListener((obs, was, sel) -> refreshTextStyle());
             }
@@ -599,13 +538,8 @@ public class DatabaseSectionController {
                     String weight = isSelected() ? "-fx-font-weight: bold;" : "";
                     lblName.setStyle(base + color + weight);
                 }
-                // Stock's color is driven by its own value (black = in stock, red = none),
-                // independent of selection/generic state, and always bold so it reads as a number
-                // at a glance rather than plain label text. Was green (#22c55e) for in-stock, but
-                // that blended into the selected-row background (.modern-list's #6ebdb0 teal) —
-                // low contrast, hard to read — direct user report with a screenshot. Black reads
-                // clearly against both the white unselected background and the teal selected one;
-                // red (out of stock) already had enough contrast against both and was left as-is.
+                // Black (not green) for in-stock — green blended into the selected row's teal
+                // background, low contrast.
                 Integer stock = stockLookup.apply(getItem());
                 String stockColor = stock != null && stock > 0 ? "#000000" : "#ef4444";
                 lblStock.setStyle(base + "-fx-font-weight: bold; -fx-text-fill: " + stockColor + ";" + STOCK_ALIGN_STYLE);
@@ -627,12 +561,9 @@ public class DatabaseSectionController {
         });
     }
 
-    // A plain ADMIN/USER is locked to their own superadmin-assigned Sede (no way to view or edit
-    // another Sede's stock from here) — the title row already names that Sede, so the combo box
-    // is hidden entirely rather than shown disabled. A SUPERADMIN gets the full list plus a
-    // leading null entry meaning "Todas" (every Sede combined/summed), defaulting to it —
-    // confirmed with the user rather than assumed, since "Todas" isn't itself an editable target
-    // (see requireConcreteStockSede()).
+    // A plain ADMIN/USER is locked to their own assigned Sede — the title row already names it,
+    // so the combo box is hidden entirely rather than shown disabled. A SUPERADMIN gets the full
+    // list plus a leading null "Todas" entry (every Sede combined), defaulting to it.
     private void initStockSedeSelector() {
         cmbStockSede.setConverter(new javafx.util.StringConverter<>() {
             @Override public String toString(Sede s) { return s == null ? "Todas" : s.getName(); }
@@ -661,8 +592,7 @@ public class DatabaseSectionController {
                 cmbStockSede.getSelectionModel().selectFirst();
             }
             // visible=false only (not managed=false) — keeps the combo's layout space reserved
-            // so the title row's height matches the SUPERADMIN case exactly, instead of
-            // collapsing down to just the Label.
+            // so the title row's height matches the SUPERADMIN case.
             cmbStockSede.setVisible(false);
         }
         cmbStockSede.valueProperty().addListener((obs, old, sel) -> {
@@ -674,9 +604,7 @@ public class DatabaseSectionController {
     }
 
     // Names the Sede the shown stock numbers belong to, so a technician can't mistake one Sede's
-    // counts for another's. All caps, matching every other section title in this app; its own
-    // soft-teal style (see .page-subtitle-sede) sets it apart from the "CATÁLOGO DE EQUIPOS :"
-    // prefix, which is static FXML text.
+    // counts for another's.
     private void updateEquipmentCatalogTitle() {
         Sede sel = cmbStockSede.getValue();
         String sedeLabel;
@@ -690,14 +618,10 @@ public class DatabaseSectionController {
         lblEquipmentCatalogSede.setText(sedeLabel.toUpperCase());
     }
 
-    // Editing a stock number always requires one concrete Sede — a combined "Todas" number has
-    // no single row to write to. Called at the top of every stock-writing dialog (Add/Edit
-    // Model, Modify Stock) so a SUPERADMIN viewing "Todas" is asked to pick a specific Sede from
-    // cmbStockSede first, rather than silently writing to an arbitrary one. A non-SUPERADMIN with
-    // no Sede assigned hits this same guard (currentStockSedeId is null there too — see
-    // stockSedeUnassigned's own comment) but gets a different message, since they have no
-    // cmbStockSede selector to pick from at all — the fix is an admin assigning them a Sede, not
-    // an action they can take themselves.
+    // A combined "Todas" total has no single row to write to — called at the top of every
+    // stock-writing dialog so a SUPERADMIN viewing "Todas" must pick a concrete Sede first. A
+    // non-SUPERADMIN with no Sede assigned hits the same guard but gets a different message,
+    // since there's no selector for them to pick from.
     private boolean requireConcreteStockSede() {
         if (currentStockSedeId != null) return true;
         if (stockSedeUnassigned) {
@@ -744,13 +668,9 @@ public class DatabaseSectionController {
         requirePermission(Permission.MANAGE_MODELS, () -> openEditModelDialog(sel, brand.getId(), type.getId()));
     }
 
-    // Quick, stock-only alternative to "Editar" (which also lets you rename) — added per direct
-    // user request for a faster path when only the quantity needs to change. Its own permission
-    // since a future role might adjust stock without full model-management rights. Sede-scoped
-    // (unlike MANAGE_MODELS above, which governs catalog structure, not any one Sede's numbers):
-    // an ADMIN can only ever be viewing their own assigned Sede here anyway (see
-    // initStockSedeSelector()), and SUPERADMIN bypasses Sede-scoping entirely, so this only
-    // actually changes behavior for the shared-password fallback path.
+    // Quick, stock-only alternative to "Editar" (which also renames). Its own permission since a
+    // future role might adjust stock without full model-management rights. Sede-scoped, unlike
+    // MANAGE_MODELS, which governs catalog structure rather than any one Sede's numbers.
     @FXML
     private void handleModifyStock() {
         EquipmentModel sel = listModels.getSelectionModel().getSelectedItem();
@@ -832,10 +752,7 @@ public class DatabaseSectionController {
     private static final Duration FIELD_ERROR_HOLD = Duration.millis(2000);
     private static final Duration FIELD_ERROR_FADE = Duration.millis(650);
 
-    // Matches TYPE/BRAND/MODEL/PROVIDER/SEDE.name's NVARCHAR(255) bound on SQL Server —
-    // every catalog name dialog's tfName field had no length cap of any kind
-    // before this. One shared constant since every use is within this same class (unlike the
-    // per-controller duplication convention used for fields shared *across* controllers).
+    // Matches TYPE/BRAND/MODEL/PROVIDER/SEDE.name's NVARCHAR(255) bound on SQL Server.
     private static final int CATALOG_NAME_MAX_LENGTH = 255;
 
     private TextFormatter<String> catalogNameFormatter() {
@@ -843,10 +760,8 @@ public class DatabaseSectionController {
             change.getControlNewText().length() <= CATALOG_NAME_MAX_LENGTH ? change : null);
     }
 
-    // db_host/db_port/db_name/db_username/db_password are local-only APP_SETTINGS values (see
-    // CLAUDE.md — remote connection config is never mirrored to the remote database itself), so
-    // there's no SQL Server column bound to match; capped purely as a sanity guard against an
-    // accidental huge paste, same reasoning as catalogNameFormatter() above.
+    // db_host/port/name/username/password are local-only APP_SETTINGS values with no SQL Server
+    // column bound to match — capped as a sanity guard against an accidental huge paste.
     private static final int CONNECTION_FIELD_MAX_LENGTH = 255;
 
     private TextFormatter<String> connectionFieldFormatter() {
@@ -1191,11 +1106,9 @@ public class DatabaseSectionController {
         buildAndShow(stage, root, tfName);
     }
 
-    // Model is the one catalog entity whose Base de Datos edit dialog needs more than a plain
-    // rename — Stock (see IEquipmentService.setModelStock()) is scoped to this specific
-    // (Type,Brand) usage, not the model row alone, so it's edited alongside the name here rather
-    // than through the shared openRenameDialog() every other entity still uses. Same precedent as
-    // openEditTypeDialog() getting its own dedicated dialog for the requires_serial flag.
+    // Model is the only catalog entity whose edit dialog needs more than a rename — Stock is
+    // scoped to this (Type,Brand) usage, not the model row alone, so it's edited here rather
+    // than through the shared openRenameDialog().
     private void openEditModelDialog(EquipmentModel model, int brandId, int typeId) {
         if (!requireConcreteStockSede()) return;
         Stage stage = buildDialogStage();
@@ -1497,10 +1410,8 @@ public class DatabaseSectionController {
 
     // ── Admin auth ────────────────────────────────────────────────────
 
-    // No shared-password fallback anymore (removed — see CLAUDE.md) — a hard permission check,
-    // matching SettingsController.handleEditRow()'s own pattern. The corresponding buttons are
-    // already hidden entirely when this would fail (see updateCrudButtonVisibility()); this
-    // check is what actually enforces it, not the button's visibility, which is cosmetic only.
+    // Hard permission check, no fallback. The corresponding buttons are already hidden when this
+    // would fail; this check is what actually enforces it, not the button's visibility.
     private void requirePermission(Permission permission, Runnable action) {
         if (!AdminSession.getInstance().hasPermission(permission)) {
             showErrorDialog("Acceso restringido", "No tiene permisos para realizar esta acción.");
