@@ -6,8 +6,7 @@ import com.bunshock.note_app_for_it_frontend.models.catalog.EquipmentBrand;
 import com.bunshock.note_app_for_it_frontend.models.catalog.EquipmentModel;
 import com.bunshock.note_app_for_it_frontend.models.catalog.EquipmentType;
 import com.bunshock.note_app_for_it_frontend.models.catalog.SnValidationRow;
-import com.bunshock.note_app_for_it_frontend.services.MockEquipmentService;
-
+import com.bunshock.note_app_for_it_frontend.services.catalog.MockEquipmentService;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 

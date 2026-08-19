@@ -1,7 +1,6 @@
 package com.bunshock.note_app_for_it_frontend.controllers;
 
-import com.bunshock.note_app_for_it_frontend.utils.ViewFactory;
-
+import com.bunshock.note_app_for_it_frontend.utils.core.ViewFactory;
 import javafx.fxml.FXML;
 import javafx.scene.control.Label;
 import javafx.scene.layout.StackPane;

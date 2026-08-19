@@ -24,10 +24,9 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
 import com.bunshock.note_app_for_it_frontend.models.history.HistoryFilter;
 import com.bunshock.note_app_for_it_frontend.models.history.NoteReport;
-import com.bunshock.note_app_for_it_frontend.services.AdminSession;
-import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;
-import com.bunshock.note_app_for_it_frontend.services.TechnicianSessionService;
-
+import com.bunshock.note_app_for_it_frontend.services.auth.AdminSession;
+import com.bunshock.note_app_for_it_frontend.services.core.ServiceLocator;
+import com.bunshock.note_app_for_it_frontend.services.auth.TechnicianSessionService;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.collections.FXCollections;
 import javafx.fxml.FXML;

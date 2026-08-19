@@ -6,11 +6,10 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 import com.bunshock.note_app_for_it_frontend.controllers.SettingsController;
-import com.bunshock.note_app_for_it_frontend.services.AdminSession;
-import com.bunshock.note_app_for_it_frontend.services.IUserRoleService;
-import com.bunshock.note_app_for_it_frontend.services.MockUserRoleService;
-import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;
-
+import com.bunshock.note_app_for_it_frontend.services.auth.AdminSession;
+import com.bunshock.note_app_for_it_frontend.services.admin.IUserRoleService;
+import com.bunshock.note_app_for_it_frontend.services.admin.MockUserRoleService;
+import com.bunshock.note_app_for_it_frontend.services.core.ServiceLocator;
 import javafx.application.Platform;
 import javafx.scene.control.Button;
 import javafx.scene.control.Control;

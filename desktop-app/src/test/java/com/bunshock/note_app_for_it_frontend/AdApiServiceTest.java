@@ -4,7 +4,7 @@ import java.lang.reflect.Method;
 import java.util.List;
 
 import com.bunshock.note_app_for_it_frontend.models.auth.ADUser;
-import com.bunshock.note_app_for_it_frontend.services.AdApiService;
+import com.bunshock.note_app_for_it_frontend.services.auth.AdApiService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -25,7 +25,7 @@ class AdApiServiceTest {
 
     private Object buildDto(String samAccountName, String displayName, String dni, String mail, String ou) throws Exception {
         Class<?> dtoClass = Class.forName(
-            "com.bunshock.note_app_for_it_frontend.services.AdApiService$AdApiUserDto");
+            "com.bunshock.note_app_for_it_frontend.services.auth.AdApiService$AdApiUserDto");
         var constructor = dtoClass.getDeclaredConstructor();
         constructor.setAccessible(true);
         Object dto = constructor.newInstance();

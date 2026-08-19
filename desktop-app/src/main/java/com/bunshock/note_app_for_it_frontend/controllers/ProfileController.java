@@ -2,9 +2,8 @@ package com.bunshock.note_app_for_it_frontend.controllers;
 
 import java.util.regex.Pattern;
 
-import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;
-import com.bunshock.note_app_for_it_frontend.services.TechnicianSessionService;
-
+import com.bunshock.note_app_for_it_frontend.services.core.ServiceLocator;
+import com.bunshock.note_app_for_it_frontend.services.auth.TechnicianSessionService;
 import javafx.animation.Animation;
 import javafx.animation.FadeTransition;
 import javafx.animation.SequentialTransition;

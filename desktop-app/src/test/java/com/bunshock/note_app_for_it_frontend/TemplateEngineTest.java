@@ -3,8 +3,7 @@ package com.bunshock.note_app_for_it_frontend;
 import java.util.List;
 import java.util.Map;
 
-import com.bunshock.note_app_for_it_frontend.services.TemplateEngine;
-
+import com.bunshock.note_app_for_it_frontend.services.core.TemplateEngine;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 

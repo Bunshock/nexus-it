@@ -19,6 +19,9 @@ import javafx.scene.control.TextField;
 
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import com.bunshock.note_app_for_it_frontend.services.auth.TechnicianSessionService;
+import com.bunshock.note_app_for_it_frontend.services.catalog.MockEquipmentService;
+import com.bunshock.note_app_for_it_frontend.services.core.ServiceLocator;
 import static org.junit.jupiter.api.Assertions.*;
 
 class HistoryControllerTest {
@@ -483,10 +486,10 @@ class HistoryControllerTest {
     // login/APP_USER round trip — resetSedeFilterToDefault() only ever reads the public getSede()
     // getter, so this is enough to exercise it without a live database or MockUserRoleService.
     private void setTechnicianSede(String sedeName) throws Exception {
-        Field f = com.bunshock.note_app_for_it_frontend.services.TechnicianSessionService.class
+        Field f = com.bunshock.note_app_for_it_frontend.services.auth.TechnicianSessionService.class
             .getDeclaredField("sedeName");
         f.setAccessible(true);
-        f.set(com.bunshock.note_app_for_it_frontend.services.TechnicianSessionService.getInstance(), sedeName);
+        f.set(com.bunshock.note_app_for_it_frontend.services.auth.TechnicianSessionService.getInstance(), sedeName);
     }
 
     @Test
@@ -511,10 +514,10 @@ class HistoryControllerTest {
 
     @Test
     void sedeCatalogNamesReturnsActiveSedesFromEquipmentService() throws Exception {
-        var mockEquipment = new com.bunshock.note_app_for_it_frontend.services.MockEquipmentService();
+        var mockEquipment = new com.bunshock.note_app_for_it_frontend.services.catalog.MockEquipmentService();
         mockEquipment.addSede("Campus Norte");
         mockEquipment.addSede("Campus Sur");
-        com.bunshock.note_app_for_it_frontend.services.ServiceLocator.getInstance()
+        com.bunshock.note_app_for_it_frontend.services.core.ServiceLocator.getInstance()
             .setEquipmentService(mockEquipment);
 
         Method m = HistoryController.class.getDeclaredMethod("sedeCatalogNames");

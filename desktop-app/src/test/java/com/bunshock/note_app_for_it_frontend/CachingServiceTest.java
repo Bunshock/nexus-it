@@ -9,13 +9,13 @@ import org.junit.jupiter.api.Test;
 
 import com.bunshock.note_app_for_it_frontend.models.history.NoteReport;
 import com.bunshock.note_app_for_it_frontend.models.admin.Permission;
-import com.bunshock.note_app_for_it_frontend.services.CachingEquipmentService;
-import com.bunshock.note_app_for_it_frontend.services.CachingHistoryService;
-import com.bunshock.note_app_for_it_frontend.services.CachingUserRoleService;
-import com.bunshock.note_app_for_it_frontend.services.IUserRoleService;
-import com.bunshock.note_app_for_it_frontend.services.MockEquipmentService;
-import com.bunshock.note_app_for_it_frontend.services.MockUserRoleService;
-
+import com.bunshock.note_app_for_it_frontend.services.catalog.CachingEquipmentService;
+import com.bunshock.note_app_for_it_frontend.services.history.CachingHistoryService;
+import com.bunshock.note_app_for_it_frontend.services.admin.CachingUserRoleService;
+import com.bunshock.note_app_for_it_frontend.services.admin.IUserRoleService;
+import com.bunshock.note_app_for_it_frontend.services.catalog.MockEquipmentService;
+import com.bunshock.note_app_for_it_frontend.services.admin.MockUserRoleService;
+import com.bunshock.note_app_for_it_frontend.services.history.IHistoryService;
 class CachingServiceTest {
 
     private MockEquipmentService primary;
@@ -278,7 +278,7 @@ class CachingServiceTest {
         @Override public java.util.Set<Integer> getSedeIdsWithShippingInfo() { throw new RuntimeException("primary down"); }
     }
 
-    private static class MockHistoryService implements com.bunshock.note_app_for_it_frontend.services.IHistoryService {
+    private static class MockHistoryService implements com.bunshock.note_app_for_it_frontend.services.history.IHistoryService {
         private final List<NoteReport> store = new java.util.ArrayList<>();
         private int nextId = 1;
         @Override public int save(NoteReport r) { r.setId(nextId++); store.add(r); return r.getId(); }
@@ -286,7 +286,7 @@ class CachingServiceTest {
         @Override public NoteReport getById(int id) { return store.stream().filter(r -> r.getId() == id).findFirst().orElse(null); }
     }
 
-    private static class FailingHistoryService implements com.bunshock.note_app_for_it_frontend.services.IHistoryService {
+    private static class FailingHistoryService implements com.bunshock.note_app_for_it_frontend.services.history.IHistoryService {
         @Override public int save(NoteReport r) { throw new RuntimeException("primary down"); }
         @Override public List<NoteReport> getAll() { throw new RuntimeException("primary down"); }
         @Override public NoteReport getById(int id) { throw new RuntimeException("primary down"); }

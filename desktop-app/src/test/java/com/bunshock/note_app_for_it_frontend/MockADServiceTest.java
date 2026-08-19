@@ -4,8 +4,7 @@ import java.util.List;
 
 import com.bunshock.note_app_for_it_frontend.models.auth.ADUser;
 import com.bunshock.note_app_for_it_frontend.models.auth.AdCredentialResult;
-import com.bunshock.note_app_for_it_frontend.services.MockADService;
-
+import com.bunshock.note_app_for_it_frontend.services.auth.MockADService;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 

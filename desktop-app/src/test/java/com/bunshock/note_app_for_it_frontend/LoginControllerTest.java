@@ -8,16 +8,15 @@ import java.util.concurrent.TimeUnit;
 import com.bunshock.note_app_for_it_frontend.controllers.LoginController;
 import com.bunshock.note_app_for_it_frontend.models.auth.ADUser;
 import com.bunshock.note_app_for_it_frontend.models.auth.AdCredentialResult;
-import com.bunshock.note_app_for_it_frontend.services.AdminSession;
-import com.bunshock.note_app_for_it_frontend.services.ConfigService;
-import com.bunshock.note_app_for_it_frontend.services.IADService;
-import com.bunshock.note_app_for_it_frontend.services.IUserRoleService;
-import com.bunshock.note_app_for_it_frontend.services.MockADService;
-import com.bunshock.note_app_for_it_frontend.services.MockAuditService;
-import com.bunshock.note_app_for_it_frontend.services.MockUserRoleService;
-import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;
-import com.bunshock.note_app_for_it_frontend.services.TechnicianSessionService;
-
+import com.bunshock.note_app_for_it_frontend.services.auth.AdminSession;
+import com.bunshock.note_app_for_it_frontend.services.core.ConfigService;
+import com.bunshock.note_app_for_it_frontend.services.auth.IADService;
+import com.bunshock.note_app_for_it_frontend.services.admin.IUserRoleService;
+import com.bunshock.note_app_for_it_frontend.services.auth.MockADService;
+import com.bunshock.note_app_for_it_frontend.services.audit.MockAuditService;
+import com.bunshock.note_app_for_it_frontend.services.admin.MockUserRoleService;
+import com.bunshock.note_app_for_it_frontend.services.core.ServiceLocator;
+import com.bunshock.note_app_for_it_frontend.services.auth.TechnicianSessionService;
 import java.util.List;
 
 import javafx.application.Platform;

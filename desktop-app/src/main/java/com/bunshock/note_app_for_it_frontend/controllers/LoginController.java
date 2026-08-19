@@ -4,14 +4,13 @@ import java.util.List;
 
 import com.bunshock.note_app_for_it_frontend.models.auth.ADUser;
 import com.bunshock.note_app_for_it_frontend.models.auth.AdCredentialResult;
-import com.bunshock.note_app_for_it_frontend.services.AdminSession;
-import com.bunshock.note_app_for_it_frontend.services.ConfigService;
-import com.bunshock.note_app_for_it_frontend.services.IAuditService;
-import com.bunshock.note_app_for_it_frontend.services.IUserRoleService;
-import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;
-import com.bunshock.note_app_for_it_frontend.services.TechnicianSessionService;
-import com.bunshock.note_app_for_it_frontend.services.WindowsIdentityService;
-
+import com.bunshock.note_app_for_it_frontend.services.auth.AdminSession;
+import com.bunshock.note_app_for_it_frontend.services.core.ConfigService;
+import com.bunshock.note_app_for_it_frontend.services.audit.IAuditService;
+import com.bunshock.note_app_for_it_frontend.services.admin.IUserRoleService;
+import com.bunshock.note_app_for_it_frontend.services.core.ServiceLocator;
+import com.bunshock.note_app_for_it_frontend.services.auth.TechnicianSessionService;
+import com.bunshock.note_app_for_it_frontend.services.auth.WindowsIdentityService;
 import javafx.application.Platform;
 import javafx.fxml.FXML;
 import javafx.scene.control.Button;

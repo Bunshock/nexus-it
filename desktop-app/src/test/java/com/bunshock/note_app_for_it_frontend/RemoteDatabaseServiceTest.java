@@ -1,7 +1,6 @@
 package com.bunshock.note_app_for_it_frontend;
 
-import com.bunshock.note_app_for_it_frontend.services.RemoteDatabaseService;
-
+import com.bunshock.note_app_for_it_frontend.services.core.RemoteDatabaseService;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 

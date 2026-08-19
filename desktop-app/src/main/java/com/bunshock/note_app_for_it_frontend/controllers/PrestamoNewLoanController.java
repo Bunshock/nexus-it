@@ -17,10 +17,9 @@ import com.bunshock.note_app_for_it_frontend.models.catalog.CountableItem;
 import com.bunshock.note_app_for_it_frontend.models.history.GlpiStatus;
 import com.bunshock.note_app_for_it_frontend.models.history.NoteReport;
 import com.bunshock.note_app_for_it_frontend.models.history.NoteReportItem;
-import com.bunshock.note_app_for_it_frontend.services.PendingCountsService;
-import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;
-import com.bunshock.note_app_for_it_frontend.services.TechnicianSessionService;
-
+import com.bunshock.note_app_for_it_frontend.services.history.PendingCountsService;
+import com.bunshock.note_app_for_it_frontend.services.core.ServiceLocator;
+import com.bunshock.note_app_for_it_frontend.services.auth.TechnicianSessionService;
 import javafx.animation.FadeTransition;
 import javafx.animation.PauseTransition;
 import javafx.animation.Transition;
@@ -53,6 +52,7 @@ import javafx.stage.StageStyle;
 import javafx.util.Callback;
 import javafx.util.Duration;
 
+import com.bunshock.note_app_for_it_frontend.services.core.ConfigService;
 // "Cargar Nuevo Préstamo" — a lightweight, non-printing sibling of NoteGeneratorController's
 // Préstamo flow (see CLAUDE.md's "Préstamos section"). It logs a loan straight into history,
 // with no HTML render/print/email step at all — that's the entire difference from the printed
@@ -245,7 +245,7 @@ public class PrestamoNewLoanController implements ItemDialogHost, AdSearchHost {
     }
 
     private boolean isAtItemLimit() {
-        int limit = com.bunshock.note_app_for_it_frontend.services.ConfigService.getInstance().getConfig().noteItemLimit;
+        int limit = com.bunshock.note_app_for_it_frontend.services.core.ConfigService.getInstance().getConfig().noteItemLimit;
         return (assetList.size() + countableList.size()) >= limit;
     }
 

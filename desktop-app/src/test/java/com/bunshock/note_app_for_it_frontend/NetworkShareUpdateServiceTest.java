@@ -9,8 +9,7 @@ import java.util.Optional;
 
 import com.bunshock.note_app_for_it_frontend.models.update.ChangelogEntry;
 import com.bunshock.note_app_for_it_frontend.models.update.UpdateInfo;
-import com.bunshock.note_app_for_it_frontend.services.NetworkShareUpdateService;
-
+import com.bunshock.note_app_for_it_frontend.services.update.NetworkShareUpdateService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;

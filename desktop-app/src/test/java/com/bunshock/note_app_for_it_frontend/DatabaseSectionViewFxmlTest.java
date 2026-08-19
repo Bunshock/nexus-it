@@ -4,10 +4,9 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
-import com.bunshock.note_app_for_it_frontend.services.ConfigService;
-import com.bunshock.note_app_for_it_frontend.services.MockEquipmentService;
-import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;
-
+import com.bunshock.note_app_for_it_frontend.services.core.ConfigService;
+import com.bunshock.note_app_for_it_frontend.services.catalog.MockEquipmentService;
+import com.bunshock.note_app_for_it_frontend.services.core.ServiceLocator;
 import javafx.application.Platform;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Parent;

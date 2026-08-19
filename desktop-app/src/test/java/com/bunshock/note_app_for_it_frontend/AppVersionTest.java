@@ -1,7 +1,6 @@
 package com.bunshock.note_app_for_it_frontend;
 
-import com.bunshock.note_app_for_it_frontend.utils.AppVersion;
-
+import com.bunshock.note_app_for_it_frontend.utils.update.AppVersion;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 

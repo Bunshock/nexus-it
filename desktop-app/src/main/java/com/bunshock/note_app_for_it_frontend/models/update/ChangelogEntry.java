@@ -1,5 +1,6 @@
 package com.bunshock.note_app_for_it_frontend.models.update;
 
+
 /** One past release's notes, read from changelog.json on the update network share — see
  * IUpdateService.getChangelog(). Full history, independent of whether that version is still
  * "the latest" (unlike UpdateInfo, which only ever describes the newest one). */

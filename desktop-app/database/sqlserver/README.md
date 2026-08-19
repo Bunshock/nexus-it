@@ -53,7 +53,7 @@ Both scripts are idempotent — safe to re-run; they only insert rows that don't
 If you've been building up the real equipment catalog (and S/N validation rules) locally through the app's own "Base de Datos" UI — e.g. because a remote SQL Server wasn't available yet — you don't need to re-type everything into `02-seed-equipment.sql`. `CatalogMigrationTool` (`src/main/java/.../utils/CatalogMigrationTool.java`) copies Type, Brand, Brand-Type links, Model, S/N validation rules, and Provider straight from `data/noteapp.db` into a configured SQL Server database, remapping autoincrement ids correctly along the way (SQL Server's `IDENTITY` columns assign their own ids independent of whatever SQLite happened to use locally). It creates the schema itself (same `ensureSchema()` call the app makes), so an empty database is all you need on the SQL Server side — you can skip `01-schema.sql` entirely if using this path. Run it from `desktop-app/`:
 
 ```bash
-mvn exec:java -Dexec.mainClass="com.bunshock.note_app_for_it_frontend.utils.CatalogMigrationTool"
+mvn exec:java -Dexec.mainClass="com.bunshock.note_app_for_it_frontend.utils.admin.CatalogMigrationTool"
 ```
 
 It prompts interactively for the connection details and is safe to re-run (upserts by name, so running it again after adding more local data only inserts what's new). Note this only covers the equipment catalog — it does not migrate History (`NOTE_REPORT` and related tables).

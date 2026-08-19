@@ -1,7 +1,6 @@
 package com.bunshock.note_app_for_it_frontend.controllers;
 
-import com.bunshock.note_app_for_it_frontend.services.ConfigService;
-
+import com.bunshock.note_app_for_it_frontend.services.core.ConfigService;
 import javafx.collections.FXCollections;
 import javafx.fxml.FXML;
 import javafx.scene.control.Button;

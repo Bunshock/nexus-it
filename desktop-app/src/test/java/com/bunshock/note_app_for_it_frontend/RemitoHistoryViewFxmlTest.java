@@ -7,10 +7,9 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.List;
 
 import com.bunshock.note_app_for_it_frontend.models.history.NoteReport;
-import com.bunshock.note_app_for_it_frontend.services.IHistoryService;
-import com.bunshock.note_app_for_it_frontend.services.MockEquipmentService;
-import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;
-
+import com.bunshock.note_app_for_it_frontend.services.history.IHistoryService;
+import com.bunshock.note_app_for_it_frontend.services.catalog.MockEquipmentService;
+import com.bunshock.note_app_for_it_frontend.services.core.ServiceLocator;
 import javafx.application.Platform;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Parent;

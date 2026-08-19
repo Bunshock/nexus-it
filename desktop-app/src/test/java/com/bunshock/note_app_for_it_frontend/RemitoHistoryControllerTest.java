@@ -7,10 +7,9 @@ import java.util.Set;
 
 import com.bunshock.note_app_for_it_frontend.controllers.RemitoHistoryController;
 import com.bunshock.note_app_for_it_frontend.models.history.NoteReport;
-import com.bunshock.note_app_for_it_frontend.services.MockEquipmentService;
-import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;
-import com.bunshock.note_app_for_it_frontend.services.TechnicianSessionService;
-
+import com.bunshock.note_app_for_it_frontend.services.catalog.MockEquipmentService;
+import com.bunshock.note_app_for_it_frontend.services.core.ServiceLocator;
+import com.bunshock.note_app_for_it_frontend.services.auth.TechnicianSessionService;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;

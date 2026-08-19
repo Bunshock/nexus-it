@@ -13,9 +13,8 @@ import com.bunshock.note_app_for_it_frontend.models.catalog.CountableItem;
 import com.bunshock.note_app_for_it_frontend.models.history.NoteReport;
 import com.bunshock.note_app_for_it_frontend.models.history.GlpiStatus;
 import com.bunshock.note_app_for_it_frontend.models.history.NoteReportItem;
-import com.bunshock.note_app_for_it_frontend.services.PendingCountsService;
-import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;
-
+import com.bunshock.note_app_for_it_frontend.services.history.PendingCountsService;
+import com.bunshock.note_app_for_it_frontend.services.core.ServiceLocator;
 import javafx.animation.KeyFrame;
 import javafx.animation.KeyValue;
 import javafx.animation.Timeline;

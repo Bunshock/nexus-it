@@ -6,10 +6,9 @@ import java.util.Optional;
 
 import com.bunshock.note_app_for_it_frontend.models.update.ChangelogEntry;
 import com.bunshock.note_app_for_it_frontend.models.update.UpdateInfo;
-import com.bunshock.note_app_for_it_frontend.services.IUpdateService;
-import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;
-import com.bunshock.note_app_for_it_frontend.utils.AppVersion;
-
+import com.bunshock.note_app_for_it_frontend.services.update.IUpdateService;
+import com.bunshock.note_app_for_it_frontend.services.core.ServiceLocator;
+import com.bunshock.note_app_for_it_frontend.utils.update.AppVersion;
 import javafx.application.Platform;
 import javafx.fxml.FXML;
 import javafx.geometry.Pos;

@@ -15,11 +15,10 @@ import com.bunshock.note_app_for_it_frontend.models.catalog.EquipmentBrand;
 import com.bunshock.note_app_for_it_frontend.models.catalog.EquipmentModel;
 import com.bunshock.note_app_for_it_frontend.models.catalog.EquipmentType;
 import com.bunshock.note_app_for_it_frontend.models.catalog.SnValidation;
-import com.bunshock.note_app_for_it_frontend.services.ConfigService;
-import com.bunshock.note_app_for_it_frontend.services.IEquipmentService;
-import com.bunshock.note_app_for_it_frontend.services.IHistoryService;
-import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;
-
+import com.bunshock.note_app_for_it_frontend.services.core.ConfigService;
+import com.bunshock.note_app_for_it_frontend.services.catalog.IEquipmentService;
+import com.bunshock.note_app_for_it_frontend.services.history.IHistoryService;
+import com.bunshock.note_app_for_it_frontend.services.core.ServiceLocator;
 import javafx.animation.FadeTransition;
 import javafx.collections.FXCollections;
 import javafx.concurrent.Task;

@@ -13,11 +13,10 @@ import com.bunshock.note_app_for_it_frontend.models.catalog.CountableItem;
 import com.bunshock.note_app_for_it_frontend.models.history.NoteReport;
 import com.bunshock.note_app_for_it_frontend.models.catalog.Sede;
 import com.bunshock.note_app_for_it_frontend.models.catalog.SedeShippingInfo;
-import com.bunshock.note_app_for_it_frontend.services.IEquipmentService;
-import com.bunshock.note_app_for_it_frontend.services.NoteGenerationService;
-import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;
-import com.bunshock.note_app_for_it_frontend.services.TechnicianSessionService;
-
+import com.bunshock.note_app_for_it_frontend.services.catalog.IEquipmentService;
+import com.bunshock.note_app_for_it_frontend.services.note.NoteGenerationService;
+import com.bunshock.note_app_for_it_frontend.services.core.ServiceLocator;
+import com.bunshock.note_app_for_it_frontend.services.auth.TechnicianSessionService;
 import javafx.animation.FadeTransition;
 import javafx.animation.PauseTransition;
 import javafx.animation.Transition;
@@ -50,6 +49,7 @@ import javafx.stage.StageStyle;
 import javafx.util.Callback;
 import javafx.util.Duration;
 
+import com.bunshock.note_app_for_it_frontend.services.core.ConfigService;
 // Inter-Sede stock transfer note. Ships from the technician's own assigned Sede to either a
 // SEDE-catalog destination (auto-fills its saved SEDE_SHIPPING_INFO, still editable) or a custom
 // one-off destination (e.g. a CAU not in the catalog). Unlike PrestamoNewLoanController's
@@ -290,7 +290,7 @@ public class RemitoNoteController implements ItemDialogHost {
     }
 
     private boolean isAtItemLimit() {
-        int limit = com.bunshock.note_app_for_it_frontend.services.ConfigService.getInstance().getConfig().noteItemLimit;
+        int limit = com.bunshock.note_app_for_it_frontend.services.core.ConfigService.getInstance().getConfig().noteItemLimit;
         return (assetList.size() + countableList.size()) >= limit;
     }
 

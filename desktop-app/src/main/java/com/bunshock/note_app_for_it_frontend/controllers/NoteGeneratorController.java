@@ -11,12 +11,11 @@ import org.controlsfx.control.PopOver;
 import com.bunshock.note_app_for_it_frontend.models.catalog.AssetItem;
 import com.bunshock.note_app_for_it_frontend.models.catalog.CountableItem;
 import com.bunshock.note_app_for_it_frontend.models.history.NoteReport;
-import com.bunshock.note_app_for_it_frontend.services.ConfigService;
-import com.bunshock.note_app_for_it_frontend.services.NoteGenerationService;
-import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;
-import com.bunshock.note_app_for_it_frontend.services.TechnicianSessionService;
-import com.bunshock.note_app_for_it_frontend.utils.ViewFactory;
-
+import com.bunshock.note_app_for_it_frontend.services.core.ConfigService;
+import com.bunshock.note_app_for_it_frontend.services.note.NoteGenerationService;
+import com.bunshock.note_app_for_it_frontend.services.core.ServiceLocator;
+import com.bunshock.note_app_for_it_frontend.services.auth.TechnicianSessionService;
+import com.bunshock.note_app_for_it_frontend.utils.core.ViewFactory;
 import javafx.animation.FadeTransition;
 import javafx.animation.PauseTransition;
 import javafx.animation.Transition;

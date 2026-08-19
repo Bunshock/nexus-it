@@ -1,9 +1,8 @@
 package com.bunshock.note_app_for_it_frontend;
 
-import com.bunshock.note_app_for_it_frontend.services.ConfigService;
-import com.bunshock.note_app_for_it_frontend.services.DatabaseService;
-import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;
-
+import com.bunshock.note_app_for_it_frontend.services.core.ConfigService;
+import com.bunshock.note_app_for_it_frontend.services.core.DatabaseService;
+import com.bunshock.note_app_for_it_frontend.services.core.ServiceLocator;
 import javafx.application.Application;
 import javafx.fxml.FXMLLoader;
 import javafx.geometry.Insets;

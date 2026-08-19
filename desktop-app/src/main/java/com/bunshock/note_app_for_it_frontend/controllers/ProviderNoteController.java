@@ -4,9 +4,8 @@ import java.util.List;
 import java.util.regex.Pattern;
 
 import com.bunshock.note_app_for_it_frontend.models.catalog.EquipmentProvider;
-import com.bunshock.note_app_for_it_frontend.services.ConfigService;
-import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;
-
+import com.bunshock.note_app_for_it_frontend.services.core.ConfigService;
+import com.bunshock.note_app_for_it_frontend.services.core.ServiceLocator;
 import javafx.animation.FadeTransition;
 import javafx.collections.FXCollections;
 import javafx.fxml.FXML;

@@ -9,7 +9,6 @@ import com.bunshock.note_app_for_it_frontend.models.catalog.AssetItem;
 import com.bunshock.note_app_for_it_frontend.models.catalog.CountableItem;
 import com.bunshock.note_app_for_it_frontend.models.history.GlpiStatus;
 import com.bunshock.note_app_for_it_frontend.models.history.NoteReport;
-import com.bunshock.note_app_for_it_frontend.models.history.NoteReportItem;
 
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
