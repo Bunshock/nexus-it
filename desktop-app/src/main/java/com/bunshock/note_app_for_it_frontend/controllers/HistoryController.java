@@ -22,8 +22,8 @@ import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
-import com.bunshock.note_app_for_it_frontend.models.HistoryFilter;
-import com.bunshock.note_app_for_it_frontend.models.NoteReport;
+import com.bunshock.note_app_for_it_frontend.models.history.HistoryFilter;
+import com.bunshock.note_app_for_it_frontend.models.history.NoteReport;
 import com.bunshock.note_app_for_it_frontend.services.AdminSession;
 import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;
 import com.bunshock.note_app_for_it_frontend.services.TechnicianSessionService;
@@ -174,7 +174,7 @@ public class HistoryController {
     // (e.g. a brand-new site) and must still be selectable.
     private List<String> sedeCatalogNames() {
         return ServiceLocator.getInstance().getEquipmentService().getAllSedes().stream()
-            .map(com.bunshock.note_app_for_it_frontend.models.Sede::getName)
+            .map(com.bunshock.note_app_for_it_frontend.models.catalog.Sede::getName)
             .toList();
     }
 

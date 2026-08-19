@@ -2,11 +2,11 @@ package com.bunshock.note_app_for_it_frontend.controllers;
 
 import java.io.IOException;
 
-import com.bunshock.note_app_for_it_frontend.models.NoteReport;
-import com.bunshock.note_app_for_it_frontend.models.NoteReportItem;
-import com.bunshock.note_app_for_it_frontend.models.Permission;
-import com.bunshock.note_app_for_it_frontend.models.ReturnAllocationBatch;
-import com.bunshock.note_app_for_it_frontend.models.ReturnStatus;
+import com.bunshock.note_app_for_it_frontend.models.history.NoteReport;
+import com.bunshock.note_app_for_it_frontend.models.history.NoteReportItem;
+import com.bunshock.note_app_for_it_frontend.models.admin.Permission;
+import com.bunshock.note_app_for_it_frontend.models.history.ReturnAllocationBatch;
+import com.bunshock.note_app_for_it_frontend.models.history.ReturnStatus;
 import com.bunshock.note_app_for_it_frontend.services.AdminSession;
 import com.bunshock.note_app_for_it_frontend.services.IUserRoleService;
 import com.bunshock.note_app_for_it_frontend.services.NoteGenerationService;

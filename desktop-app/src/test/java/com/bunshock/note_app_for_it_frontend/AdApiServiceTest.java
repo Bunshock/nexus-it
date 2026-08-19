@@ -3,7 +3,7 @@ package com.bunshock.note_app_for_it_frontend;
 import java.lang.reflect.Method;
 import java.util.List;
 
-import com.bunshock.note_app_for_it_frontend.models.ADUser;
+import com.bunshock.note_app_for_it_frontend.models.auth.ADUser;
 import com.bunshock.note_app_for_it_frontend.services.AdApiService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;

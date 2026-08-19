@@ -2,10 +2,10 @@ package com.bunshock.note_app_for_it_frontend;
 
 import java.util.List;
 
-import com.bunshock.note_app_for_it_frontend.models.EquipmentBrand;
-import com.bunshock.note_app_for_it_frontend.models.EquipmentModel;
-import com.bunshock.note_app_for_it_frontend.models.EquipmentType;
-import com.bunshock.note_app_for_it_frontend.models.SnValidationRow;
+import com.bunshock.note_app_for_it_frontend.models.catalog.EquipmentBrand;
+import com.bunshock.note_app_for_it_frontend.models.catalog.EquipmentModel;
+import com.bunshock.note_app_for_it_frontend.models.catalog.EquipmentType;
+import com.bunshock.note_app_for_it_frontend.models.catalog.SnValidationRow;
 import com.bunshock.note_app_for_it_frontend.services.MockEquipmentService;
 
 import org.junit.jupiter.api.Test;
@@ -286,7 +286,7 @@ class MockEquipmentServiceTest {
     void sedeShippingInfoEmptyByDefaultAndReturnsWhatWasSeeded() {
         assertTrue(service.getSedeShippingInfo(SEDE_ID).isEmpty());
 
-        service.setSedeShippingInfo(new com.bunshock.note_app_for_it_frontend.models.SedeShippingInfo(
+        service.setSedeShippingInfo(new com.bunshock.note_app_for_it_frontend.models.catalog.SedeShippingInfo(
             1, SEDE_ID, "CAU Recoleta", "Av. Siempreviva 742", "Juan Pérez"));
 
         var info = service.getSedeShippingInfo(SEDE_ID);
@@ -298,7 +298,7 @@ class MockEquipmentServiceTest {
     void sedeIdsWithShippingInfoReflectsWhatWasSeeded() {
         assertTrue(service.getSedeIdsWithShippingInfo().isEmpty());
 
-        service.setSedeShippingInfo(new com.bunshock.note_app_for_it_frontend.models.SedeShippingInfo(
+        service.setSedeShippingInfo(new com.bunshock.note_app_for_it_frontend.models.catalog.SedeShippingInfo(
             1, SEDE_ID, "CAU Recoleta", "Av. Siempreviva 742", "Juan Pérez"));
 
         assertTrue(service.getSedeIdsWithShippingInfo().contains(SEDE_ID));

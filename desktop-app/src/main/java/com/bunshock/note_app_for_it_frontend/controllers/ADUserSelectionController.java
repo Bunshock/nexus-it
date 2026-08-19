@@ -5,7 +5,7 @@ import java.util.List;
 
 import org.controlsfx.control.PopOver;
 
-import com.bunshock.note_app_for_it_frontend.models.ADUser;
+import com.bunshock.note_app_for_it_frontend.models.auth.ADUser;
 
 import javafx.animation.PauseTransition;
 import javafx.collections.FXCollections;

@@ -8,9 +8,9 @@ import java.sql.Statement;
 import java.util.List;
 import java.util.Map;
 
-import com.bunshock.note_app_for_it_frontend.models.EquipmentBrand;
-import com.bunshock.note_app_for_it_frontend.models.EquipmentModel;
-import com.bunshock.note_app_for_it_frontend.models.EquipmentType;
+import com.bunshock.note_app_for_it_frontend.models.catalog.EquipmentBrand;
+import com.bunshock.note_app_for_it_frontend.models.catalog.EquipmentModel;
+import com.bunshock.note_app_for_it_frontend.models.catalog.EquipmentType;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

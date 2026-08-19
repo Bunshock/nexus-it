@@ -11,7 +11,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import com.bunshock.note_app_for_it_frontend.models.AppConfig;
+import com.bunshock.note_app_for_it_frontend.models.core.AppConfig;
 
 public class DatabaseService {
 
@@ -1432,10 +1432,10 @@ public class DatabaseService {
     private void seedDefaultRolePermissions(Statement stmt) throws SQLException {
         int adminRoleId = roleIdFor(stmt, "ADMIN");
         int superadminRoleId = roleIdFor(stmt, "SUPERADMIN");
-        for (com.bunshock.note_app_for_it_frontend.models.Permission p
-                : com.bunshock.note_app_for_it_frontend.models.Permission.values()) {
-            if (p != com.bunshock.note_app_for_it_frontend.models.Permission.EDIT_SMTP_CONFIG
-                    && p != com.bunshock.note_app_for_it_frontend.models.Permission.EDIT_AF_FORMAT_CONFIG) {
+        for (com.bunshock.note_app_for_it_frontend.models.admin.Permission p
+                : com.bunshock.note_app_for_it_frontend.models.admin.Permission.values()) {
+            if (p != com.bunshock.note_app_for_it_frontend.models.admin.Permission.EDIT_SMTP_CONFIG
+                    && p != com.bunshock.note_app_for_it_frontend.models.admin.Permission.EDIT_AF_FORMAT_CONFIG) {
                 stmt.executeUpdate("INSERT INTO ROLE_PERMISSION (role_id, permission) VALUES (" + adminRoleId + ", '" + p.name() + "')");
             }
             stmt.executeUpdate("INSERT INTO ROLE_PERMISSION (role_id, permission) VALUES (" + superadminRoleId + ", '" + p.name() + "')");

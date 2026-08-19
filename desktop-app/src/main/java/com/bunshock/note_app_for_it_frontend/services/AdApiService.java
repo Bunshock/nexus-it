@@ -14,8 +14,8 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 
-import com.bunshock.note_app_for_it_frontend.models.ADUser;
-import com.bunshock.note_app_for_it_frontend.models.AdCredentialResult;
+import com.bunshock.note_app_for_it_frontend.models.auth.ADUser;
+import com.bunshock.note_app_for_it_frontend.models.auth.AdCredentialResult;
 // ConfigService.getInstance() below reads the same live AppConfig singleton loaded at startup —
 // no constructor wiring needed, same pattern SqliteEquipmentService.genericLabel() already uses.
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;

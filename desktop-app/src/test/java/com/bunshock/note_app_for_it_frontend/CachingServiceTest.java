@@ -7,8 +7,8 @@ import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import com.bunshock.note_app_for_it_frontend.models.NoteReport;
-import com.bunshock.note_app_for_it_frontend.models.Permission;
+import com.bunshock.note_app_for_it_frontend.models.history.NoteReport;
+import com.bunshock.note_app_for_it_frontend.models.admin.Permission;
 import com.bunshock.note_app_for_it_frontend.services.CachingEquipmentService;
 import com.bunshock.note_app_for_it_frontend.services.CachingHistoryService;
 import com.bunshock.note_app_for_it_frontend.services.CachingUserRoleService;
@@ -164,7 +164,7 @@ class CachingServiceTest {
 
     @Test
     void sedeShippingInfoFallsBackToLocalWhenPrimaryThrows() {
-        local.setSedeShippingInfo(new com.bunshock.note_app_for_it_frontend.models.SedeShippingInfo(
+        local.setSedeShippingInfo(new com.bunshock.note_app_for_it_frontend.models.catalog.SedeShippingInfo(
             1, SEDE_ID, "CAU Recoleta", "Dir", "Juan"));
         CachingEquipmentService failingPrimary = new CachingEquipmentService(
             new FailingEquipmentService(), local);
@@ -173,7 +173,7 @@ class CachingServiceTest {
 
     @Test
     void sedeIdsWithShippingInfoFallsBackToLocalWhenPrimaryThrows() {
-        local.setSedeShippingInfo(new com.bunshock.note_app_for_it_frontend.models.SedeShippingInfo(
+        local.setSedeShippingInfo(new com.bunshock.note_app_for_it_frontend.models.catalog.SedeShippingInfo(
             1, SEDE_ID, "CAU Recoleta", "Dir", "Juan"));
         CachingEquipmentService failingPrimary = new CachingEquipmentService(
             new FailingEquipmentService(), local);
@@ -269,12 +269,12 @@ class CachingServiceTest {
     }
 
     private static class FailingEquipmentService extends MockEquipmentService {
-        @Override public java.util.List<com.bunshock.note_app_for_it_frontend.models.EquipmentType> getAllTypes() { throw new RuntimeException("primary down"); }
+        @Override public java.util.List<com.bunshock.note_app_for_it_frontend.models.catalog.EquipmentType> getAllTypes() { throw new RuntimeException("primary down"); }
         @Override public void addType(String n, boolean a) { throw new RuntimeException("primary down"); }
         @Override public int getModelStock(int modelId, int brandId, int typeId, int sedeId) { throw new RuntimeException("primary down"); }
         @Override public void setModelStock(int modelId, int brandId, int typeId, int sedeId, int stock) { throw new RuntimeException("primary down"); }
         @Override public void adjustModelStock(int modelId, int brandId, int typeId, int sedeId, int delta) { throw new RuntimeException("primary down"); }
-        @Override public java.util.Optional<com.bunshock.note_app_for_it_frontend.models.SedeShippingInfo> getSedeShippingInfo(int sedeId) { throw new RuntimeException("primary down"); }
+        @Override public java.util.Optional<com.bunshock.note_app_for_it_frontend.models.catalog.SedeShippingInfo> getSedeShippingInfo(int sedeId) { throw new RuntimeException("primary down"); }
         @Override public java.util.Set<Integer> getSedeIdsWithShippingInfo() { throw new RuntimeException("primary down"); }
     }
 

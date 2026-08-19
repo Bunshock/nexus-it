@@ -1,4 +1,4 @@
-package com.bunshock.note_app_for_it_frontend.models;
+package com.bunshock.note_app_for_it_frontend.models.history;
 
 /**
  * One recorded LOST allocation batch for a countable item under active return tracking (see

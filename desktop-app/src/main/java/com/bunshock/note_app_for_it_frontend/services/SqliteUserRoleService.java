@@ -8,7 +8,7 @@ import java.util.HashSet;
 import java.util.Set;
 import java.util.function.Supplier;
 
-import com.bunshock.note_app_for_it_frontend.models.Permission;
+import com.bunshock.note_app_for_it_frontend.models.admin.Permission;
 
 public class SqliteUserRoleService implements IUserRoleService {
 

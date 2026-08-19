@@ -1,4 +1,4 @@
-package com.bunshock.note_app_for_it_frontend.models;
+package com.bunshock.note_app_for_it_frontend.models.admin;
 
 // Deny-by-default: a new admin-tier action must add a value here AND a ROLE_PERMISSION grant
 // before anyone (including ADMIN) can use it. Absence of a grant row is the denial — there is no

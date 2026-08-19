@@ -9,7 +9,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import com.bunshock.note_app_for_it_frontend.models.ADUser;
+import com.bunshock.note_app_for_it_frontend.models.auth.ADUser;
 
 import javafx.application.Platform;
 
@@ -329,7 +329,7 @@ class TechnicianSessionServiceTest {
             @Override public String getRole(String username) { throw new RuntimeException("unreachable"); }
             @Override public boolean isRegistered(String username) { throw new RuntimeException("unreachable"); }
             @Override public Integer getSedeId(String username) { throw new RuntimeException("unreachable"); }
-            @Override public java.util.Set<com.bunshock.note_app_for_it_frontend.models.Permission>
+            @Override public java.util.Set<com.bunshock.note_app_for_it_frontend.models.admin.Permission>
                 getPermissionsForRole(String role) { throw new RuntimeException("unreachable"); }
             @Override public boolean hasGroupCheckBypass(String username) { throw new RuntimeException("unreachable"); }
         });

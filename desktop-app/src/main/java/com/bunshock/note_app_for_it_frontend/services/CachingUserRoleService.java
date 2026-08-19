@@ -2,7 +2,7 @@ package com.bunshock.note_app_for_it_frontend.services;
 
 import java.util.Set;
 
-import com.bunshock.note_app_for_it_frontend.models.Permission;
+import com.bunshock.note_app_for_it_frontend.models.admin.Permission;
 
 public class CachingUserRoleService implements IUserRoleService {
 

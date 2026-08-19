@@ -3,7 +3,7 @@ package com.bunshock.note_app_for_it_frontend.controllers;
 import java.util.List;
 import java.util.regex.Pattern;
 
-import com.bunshock.note_app_for_it_frontend.models.EquipmentProvider;
+import com.bunshock.note_app_for_it_frontend.models.catalog.EquipmentProvider;
 import com.bunshock.note_app_for_it_frontend.services.ConfigService;
 import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;
 

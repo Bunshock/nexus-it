@@ -1,4 +1,4 @@
-package com.bunshock.note_app_for_it_frontend.models;
+package com.bunshock.note_app_for_it_frontend.models.catalog;
 
 // A Sede's saved Remito destination details — configured directly via SQL by a superadmin (see
 // CLAUDE.md's Provider/Sede "no in-app CRUD" convention), read-only from the app's own side.

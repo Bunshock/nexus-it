@@ -1,4 +1,4 @@
-package com.bunshock.note_app_for_it_frontend.models;
+package com.bunshock.note_app_for_it_frontend.models.core;
 
 import java.util.List;
 import java.util.Map;

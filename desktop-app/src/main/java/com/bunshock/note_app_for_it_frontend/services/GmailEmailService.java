@@ -3,7 +3,7 @@ package com.bunshock.note_app_for_it_frontend.services;
 import java.io.File;
 import java.util.Properties;
 
-import com.bunshock.note_app_for_it_frontend.models.AppConfig;
+import com.bunshock.note_app_for_it_frontend.models.core.AppConfig;
 
 import jakarta.activation.DataHandler;
 import jakarta.activation.DataSource;

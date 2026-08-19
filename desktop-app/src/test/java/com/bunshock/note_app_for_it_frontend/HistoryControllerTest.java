@@ -7,8 +7,8 @@ import java.util.List;
 import java.util.Set;
 
 import com.bunshock.note_app_for_it_frontend.controllers.HistoryController;
-import com.bunshock.note_app_for_it_frontend.models.HistoryFilter;
-import com.bunshock.note_app_for_it_frontend.models.NoteReport;
+import com.bunshock.note_app_for_it_frontend.models.history.HistoryFilter;
+import com.bunshock.note_app_for_it_frontend.models.history.NoteReport;
 
 import javafx.application.Platform;
 import javafx.scene.control.CheckBox;

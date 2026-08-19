@@ -4,14 +4,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
-import com.bunshock.note_app_for_it_frontend.models.EquipmentBrand;
-import com.bunshock.note_app_for_it_frontend.models.EquipmentModel;
-import com.bunshock.note_app_for_it_frontend.models.EquipmentProvider;
-import com.bunshock.note_app_for_it_frontend.models.EquipmentType;
-import com.bunshock.note_app_for_it_frontend.models.Sede;
-import com.bunshock.note_app_for_it_frontend.models.SedeShippingInfo;
-import com.bunshock.note_app_for_it_frontend.models.SnValidation;
-import com.bunshock.note_app_for_it_frontend.models.SnValidationRow;
+import com.bunshock.note_app_for_it_frontend.models.catalog.EquipmentBrand;
+import com.bunshock.note_app_for_it_frontend.models.catalog.EquipmentModel;
+import com.bunshock.note_app_for_it_frontend.models.catalog.EquipmentProvider;
+import com.bunshock.note_app_for_it_frontend.models.catalog.EquipmentType;
+import com.bunshock.note_app_for_it_frontend.models.catalog.Sede;
+import com.bunshock.note_app_for_it_frontend.models.catalog.SedeShippingInfo;
+import com.bunshock.note_app_for_it_frontend.models.catalog.SnValidation;
+import com.bunshock.note_app_for_it_frontend.models.catalog.SnValidationRow;
 
 public class CachingEquipmentService implements IEquipmentService {
 

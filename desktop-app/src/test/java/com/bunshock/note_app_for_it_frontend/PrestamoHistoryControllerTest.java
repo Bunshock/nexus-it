@@ -8,8 +8,8 @@ import java.util.List;
 import java.util.Set;
 
 import com.bunshock.note_app_for_it_frontend.controllers.PrestamoHistoryController;
-import com.bunshock.note_app_for_it_frontend.models.HistoryFilter;
-import com.bunshock.note_app_for_it_frontend.models.NoteReport;
+import com.bunshock.note_app_for_it_frontend.models.history.HistoryFilter;
+import com.bunshock.note_app_for_it_frontend.models.history.NoteReport;
 import com.bunshock.note_app_for_it_frontend.services.MockEquipmentService;
 import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;
 import com.bunshock.note_app_for_it_frontend.services.TechnicianSessionService;

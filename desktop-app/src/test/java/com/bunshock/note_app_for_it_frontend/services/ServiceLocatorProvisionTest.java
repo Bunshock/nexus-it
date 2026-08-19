@@ -6,7 +6,7 @@ import java.sql.ResultSet;
 import java.util.HashMap;
 import java.util.Map;
 
-import com.bunshock.note_app_for_it_frontend.models.AppConfig;
+import com.bunshock.note_app_for_it_frontend.models.core.AppConfig;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;

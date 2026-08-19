@@ -7,7 +7,7 @@ import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Statement;
 
-import com.bunshock.note_app_for_it_frontend.models.Permission;
+import com.bunshock.note_app_for_it_frontend.models.admin.Permission;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

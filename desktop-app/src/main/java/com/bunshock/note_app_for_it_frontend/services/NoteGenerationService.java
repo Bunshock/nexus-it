@@ -11,10 +11,10 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-import com.bunshock.note_app_for_it_frontend.models.AssetItem;
-import com.bunshock.note_app_for_it_frontend.models.CountableItem;
-import com.bunshock.note_app_for_it_frontend.models.NoteReport;
-import com.bunshock.note_app_for_it_frontend.models.NoteReportItem;
+import com.bunshock.note_app_for_it_frontend.models.catalog.AssetItem;
+import com.bunshock.note_app_for_it_frontend.models.catalog.CountableItem;
+import com.bunshock.note_app_for_it_frontend.models.history.NoteReport;
+import com.bunshock.note_app_for_it_frontend.models.history.NoteReportItem;
 
 public class NoteGenerationService {
 

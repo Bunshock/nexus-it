@@ -1,4 +1,4 @@
-package com.bunshock.note_app_for_it_frontend.models;
+package com.bunshock.note_app_for_it_frontend.models.history;
 
 import java.time.LocalDate;
 import java.util.List;

@@ -1,6 +1,6 @@
 package com.bunshock.note_app_for_it_frontend;
 
-import com.bunshock.note_app_for_it_frontend.models.ReturnStatus;
+import com.bunshock.note_app_for_it_frontend.models.history.ReturnStatus;
 
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;

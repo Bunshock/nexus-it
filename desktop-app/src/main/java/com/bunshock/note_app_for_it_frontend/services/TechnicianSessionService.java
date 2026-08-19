@@ -7,7 +7,7 @@ import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.bunshock.note_app_for_it_frontend.models.ADUser;
+import com.bunshock.note_app_for_it_frontend.models.auth.ADUser;
 
 import javafx.application.Platform;
 

@@ -11,12 +11,12 @@ import java.util.regex.Pattern;
 
 import org.controlsfx.control.PopOver;
 
-import com.bunshock.note_app_for_it_frontend.models.ADUser;
-import com.bunshock.note_app_for_it_frontend.models.AssetItem;
-import com.bunshock.note_app_for_it_frontend.models.CountableItem;
-import com.bunshock.note_app_for_it_frontend.models.GlpiStatus;
-import com.bunshock.note_app_for_it_frontend.models.NoteReport;
-import com.bunshock.note_app_for_it_frontend.models.NoteReportItem;
+import com.bunshock.note_app_for_it_frontend.models.auth.ADUser;
+import com.bunshock.note_app_for_it_frontend.models.catalog.AssetItem;
+import com.bunshock.note_app_for_it_frontend.models.catalog.CountableItem;
+import com.bunshock.note_app_for_it_frontend.models.history.GlpiStatus;
+import com.bunshock.note_app_for_it_frontend.models.history.NoteReport;
+import com.bunshock.note_app_for_it_frontend.models.history.NoteReportItem;
 import com.bunshock.note_app_for_it_frontend.services.PendingCountsService;
 import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;
 import com.bunshock.note_app_for_it_frontend.services.TechnicianSessionService;

@@ -10,8 +10,8 @@ import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
-import com.bunshock.note_app_for_it_frontend.models.ChangelogEntry;
-import com.bunshock.note_app_for_it_frontend.models.UpdateInfo;
+import com.bunshock.note_app_for_it_frontend.models.update.ChangelogEntry;
+import com.bunshock.note_app_for_it_frontend.models.update.UpdateInfo;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;

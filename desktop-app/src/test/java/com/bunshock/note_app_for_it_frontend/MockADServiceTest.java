@@ -2,8 +2,8 @@ package com.bunshock.note_app_for_it_frontend;
 
 import java.util.List;
 
-import com.bunshock.note_app_for_it_frontend.models.ADUser;
-import com.bunshock.note_app_for_it_frontend.models.AdCredentialResult;
+import com.bunshock.note_app_for_it_frontend.models.auth.ADUser;
+import com.bunshock.note_app_for_it_frontend.models.auth.AdCredentialResult;
 import com.bunshock.note_app_for_it_frontend.services.MockADService;
 
 import org.junit.jupiter.api.Test;

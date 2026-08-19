@@ -1,4 +1,4 @@
-package com.bunshock.note_app_for_it_frontend.models;
+package com.bunshock.note_app_for_it_frontend.models.update;
 
 /** A newer-version manifest entry — see IUpdateService.checkForUpdate(). fileSizeBytes is a
  * plain byte-count sanity check against a truncated network copy, not a cryptographic guarantee. */

@@ -10,12 +10,12 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Supplier;
 
-import com.bunshock.note_app_for_it_frontend.models.GlpiStatus;
-import com.bunshock.note_app_for_it_frontend.models.HistoryFilter;
-import com.bunshock.note_app_for_it_frontend.models.NoteReport;
-import com.bunshock.note_app_for_it_frontend.models.NoteReportItem;
-import com.bunshock.note_app_for_it_frontend.models.ReturnAllocationBatch;
-import com.bunshock.note_app_for_it_frontend.models.ReturnStatus;
+import com.bunshock.note_app_for_it_frontend.models.history.GlpiStatus;
+import com.bunshock.note_app_for_it_frontend.models.history.HistoryFilter;
+import com.bunshock.note_app_for_it_frontend.models.history.NoteReport;
+import com.bunshock.note_app_for_it_frontend.models.history.NoteReportItem;
+import com.bunshock.note_app_for_it_frontend.models.history.ReturnAllocationBatch;
+import com.bunshock.note_app_for_it_frontend.models.history.ReturnStatus;
 
 public class SqliteHistoryService implements IHistoryService {
 

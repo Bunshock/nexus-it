@@ -5,7 +5,7 @@ import java.util.List;
 import java.util.function.Function;
 
 import com.bunshock.note_app_for_it_frontend.controllers.DatabaseSectionController;
-import com.bunshock.note_app_for_it_frontend.models.EquipmentType;
+import com.bunshock.note_app_for_it_frontend.models.catalog.EquipmentType;
 
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;

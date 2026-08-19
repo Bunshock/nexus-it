@@ -11,12 +11,12 @@ import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
-import com.bunshock.note_app_for_it_frontend.models.AppConfig;
-import com.bunshock.note_app_for_it_frontend.models.EquipmentBrand;
-import com.bunshock.note_app_for_it_frontend.models.EquipmentModel;
-import com.bunshock.note_app_for_it_frontend.models.EquipmentType;
-import com.bunshock.note_app_for_it_frontend.models.Permission;
-import com.bunshock.note_app_for_it_frontend.models.Sede;
+import com.bunshock.note_app_for_it_frontend.models.core.AppConfig;
+import com.bunshock.note_app_for_it_frontend.models.catalog.EquipmentBrand;
+import com.bunshock.note_app_for_it_frontend.models.catalog.EquipmentModel;
+import com.bunshock.note_app_for_it_frontend.models.catalog.EquipmentType;
+import com.bunshock.note_app_for_it_frontend.models.admin.Permission;
+import com.bunshock.note_app_for_it_frontend.models.catalog.Sede;
 import com.bunshock.note_app_for_it_frontend.services.AdminSession;
 import com.bunshock.note_app_for_it_frontend.services.AppKeyEncryptionService;
 import com.bunshock.note_app_for_it_frontend.services.ConfigService;

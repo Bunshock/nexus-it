@@ -2,8 +2,8 @@ package com.bunshock.note_app_for_it_frontend.controllers;
 
 import java.util.List;
 
-import com.bunshock.note_app_for_it_frontend.models.ADUser;
-import com.bunshock.note_app_for_it_frontend.models.AdCredentialResult;
+import com.bunshock.note_app_for_it_frontend.models.auth.ADUser;
+import com.bunshock.note_app_for_it_frontend.models.auth.AdCredentialResult;
 import com.bunshock.note_app_for_it_frontend.services.AdminSession;
 import com.bunshock.note_app_for_it_frontend.services.ConfigService;
 import com.bunshock.note_app_for_it_frontend.services.IAuditService;

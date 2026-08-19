@@ -4,7 +4,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 
-import com.bunshock.note_app_for_it_frontend.models.AppConfig;
+import com.bunshock.note_app_for_it_frontend.models.core.AppConfig;
 
 public class ServiceLocator {
 

@@ -1,4 +1,4 @@
-package com.bunshock.note_app_for_it_frontend.models;
+package com.bunshock.note_app_for_it_frontend.models.history;
 
 public enum ReturnStatus {
     PENDING, RETURNED, LOST, N_A;

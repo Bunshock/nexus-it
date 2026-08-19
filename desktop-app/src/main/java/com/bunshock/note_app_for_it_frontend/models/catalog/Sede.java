@@ -1,10 +1,10 @@
-package com.bunshock.note_app_for_it_frontend.models;
+package com.bunshock.note_app_for_it_frontend.models.catalog;
 
-public class EquipmentBrand {
+public class Sede {
     private final int id;
     private final String name;
 
-    public EquipmentBrand(int id, String name) {
+    public Sede(int id, String name) {
         this.id = id;
         this.name = name;
     }

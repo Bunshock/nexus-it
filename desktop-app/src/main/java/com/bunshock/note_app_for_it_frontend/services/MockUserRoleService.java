@@ -5,7 +5,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 
-import com.bunshock.note_app_for_it_frontend.models.Permission;
+import com.bunshock.note_app_for_it_frontend.models.admin.Permission;
 
 /**
  * In-memory, test-only. Real roles/sedes/permissions are set by a superadmin directly via SQL

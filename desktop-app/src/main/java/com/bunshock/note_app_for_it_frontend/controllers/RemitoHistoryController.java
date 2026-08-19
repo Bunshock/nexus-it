@@ -7,8 +7,8 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
-import com.bunshock.note_app_for_it_frontend.models.HistoryFilter;
-import com.bunshock.note_app_for_it_frontend.models.NoteReport;
+import com.bunshock.note_app_for_it_frontend.models.history.HistoryFilter;
+import com.bunshock.note_app_for_it_frontend.models.history.NoteReport;
 import com.bunshock.note_app_for_it_frontend.services.AdminSession;
 import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;
 import com.bunshock.note_app_for_it_frontend.services.TechnicianSessionService;
@@ -97,7 +97,7 @@ public class RemitoHistoryController {
     private void initSedeMenu() {
         var svc = ServiceLocator.getInstance().getEquipmentService();
         List<String> sedeNames = svc.getAllSedes().stream()
-            .map(com.bunshock.note_app_for_it_frontend.models.Sede::getName)
+            .map(com.bunshock.note_app_for_it_frontend.models.catalog.Sede::getName)
             .toList();
         populateMenu(mnuSede, sedeNames, selSedes, this::autoSearch);
     }

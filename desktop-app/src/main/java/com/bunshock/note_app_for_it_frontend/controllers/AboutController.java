@@ -4,8 +4,8 @@ import java.io.IOException;
 import java.util.List;
 import java.util.Optional;
 
-import com.bunshock.note_app_for_it_frontend.models.ChangelogEntry;
-import com.bunshock.note_app_for_it_frontend.models.UpdateInfo;
+import com.bunshock.note_app_for_it_frontend.models.update.ChangelogEntry;
+import com.bunshock.note_app_for_it_frontend.models.update.UpdateInfo;
 import com.bunshock.note_app_for_it_frontend.services.IUpdateService;
 import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;
 import com.bunshock.note_app_for_it_frontend.utils.AppVersion;

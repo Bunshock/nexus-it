@@ -4,8 +4,8 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import com.bunshock.note_app_for_it_frontend.App;
-import com.bunshock.note_app_for_it_frontend.models.HistoryFilter;
-import com.bunshock.note_app_for_it_frontend.models.NoteReport;
+import com.bunshock.note_app_for_it_frontend.models.history.HistoryFilter;
+import com.bunshock.note_app_for_it_frontend.models.history.NoteReport;
 import com.bunshock.note_app_for_it_frontend.services.AdminSession;
 import com.bunshock.note_app_for_it_frontend.services.IHistoryService;
 import com.bunshock.note_app_for_it_frontend.services.IUserRoleService;

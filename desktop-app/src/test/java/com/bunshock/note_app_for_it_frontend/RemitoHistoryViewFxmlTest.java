@@ -6,7 +6,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import java.util.List;
 
-import com.bunshock.note_app_for_it_frontend.models.NoteReport;
+import com.bunshock.note_app_for_it_frontend.models.history.NoteReport;
 import com.bunshock.note_app_for_it_frontend.services.IHistoryService;
 import com.bunshock.note_app_for_it_frontend.services.MockEquipmentService;
 import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;

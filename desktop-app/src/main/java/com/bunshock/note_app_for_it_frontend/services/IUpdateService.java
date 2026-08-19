@@ -4,8 +4,8 @@ import java.io.IOException;
 import java.util.List;
 import java.util.Optional;
 
-import com.bunshock.note_app_for_it_frontend.models.ChangelogEntry;
-import com.bunshock.note_app_for_it_frontend.models.UpdateInfo;
+import com.bunshock.note_app_for_it_frontend.models.update.ChangelogEntry;
+import com.bunshock.note_app_for_it_frontend.models.update.UpdateInfo;
 
 /**
  * Auto-update checks, per CLAUDE.md's "Auto-update system" design — a Strategy interface so a

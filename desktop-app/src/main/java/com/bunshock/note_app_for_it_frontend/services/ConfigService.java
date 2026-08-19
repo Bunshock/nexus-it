@@ -5,7 +5,7 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
-import com.bunshock.note_app_for_it_frontend.models.AppConfig;
+import com.bunshock.note_app_for_it_frontend.models.core.AppConfig;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 public class ConfigService {

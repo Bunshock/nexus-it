@@ -8,7 +8,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 import com.bunshock.note_app_for_it_frontend.controllers.SettingsController;
-import com.bunshock.note_app_for_it_frontend.models.SnValidationRow;
+import com.bunshock.note_app_for_it_frontend.models.catalog.SnValidationRow;
 import com.bunshock.note_app_for_it_frontend.services.MockEquipmentService;
 
 import javafx.application.Platform;

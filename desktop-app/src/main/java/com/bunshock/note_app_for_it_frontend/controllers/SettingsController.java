@@ -8,9 +8,9 @@ import java.util.List;
 import java.util.Set;
 import java.util.function.Predicate;
 
-import com.bunshock.note_app_for_it_frontend.models.AppConfig;
-import com.bunshock.note_app_for_it_frontend.models.Permission;
-import com.bunshock.note_app_for_it_frontend.models.SnValidationRow;
+import com.bunshock.note_app_for_it_frontend.models.core.AppConfig;
+import com.bunshock.note_app_for_it_frontend.models.admin.Permission;
+import com.bunshock.note_app_for_it_frontend.models.catalog.SnValidationRow;
 import com.bunshock.note_app_for_it_frontend.services.AdApiService;
 import com.bunshock.note_app_for_it_frontend.services.AdminSession;
 import com.bunshock.note_app_for_it_frontend.services.AppKeyEncryptionService;

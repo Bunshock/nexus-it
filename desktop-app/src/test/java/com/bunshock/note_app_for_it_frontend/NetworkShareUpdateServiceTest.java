@@ -7,8 +7,8 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
 
-import com.bunshock.note_app_for_it_frontend.models.ChangelogEntry;
-import com.bunshock.note_app_for_it_frontend.models.UpdateInfo;
+import com.bunshock.note_app_for_it_frontend.models.update.ChangelogEntry;
+import com.bunshock.note_app_for_it_frontend.models.update.UpdateInfo;
 import com.bunshock.note_app_for_it_frontend.services.NetworkShareUpdateService;
 
 import org.junit.jupiter.api.AfterEach;

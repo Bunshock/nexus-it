@@ -11,7 +11,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import com.bunshock.note_app_for_it_frontend.models.AppConfig;
+import com.bunshock.note_app_for_it_frontend.models.core.AppConfig;
 
 public class RemoteDatabaseService {
 
@@ -1066,10 +1066,10 @@ public class RemoteDatabaseService {
     // (EDIT_SMTP_CONFIG, EDIT_AF_FORMAT_CONFIG); SUPERADMIN gets everything. Enumerated from the
     // Permission enum itself (not hand-typed strings) so this can't drift out of sync with it.
     private void seedDefaultRolePermissions(Statement stmt) throws SQLException {
-        for (com.bunshock.note_app_for_it_frontend.models.Permission p
-                : com.bunshock.note_app_for_it_frontend.models.Permission.values()) {
-            if (p != com.bunshock.note_app_for_it_frontend.models.Permission.EDIT_SMTP_CONFIG
-                    && p != com.bunshock.note_app_for_it_frontend.models.Permission.EDIT_AF_FORMAT_CONFIG) {
+        for (com.bunshock.note_app_for_it_frontend.models.admin.Permission p
+                : com.bunshock.note_app_for_it_frontend.models.admin.Permission.values()) {
+            if (p != com.bunshock.note_app_for_it_frontend.models.admin.Permission.EDIT_SMTP_CONFIG
+                    && p != com.bunshock.note_app_for_it_frontend.models.admin.Permission.EDIT_AF_FORMAT_CONFIG) {
                 stmt.executeUpdate("INSERT INTO ROLE_PERMISSION (role, permission) VALUES ('ADMIN', '" + p.name() + "')");
             }
             stmt.executeUpdate("INSERT INTO ROLE_PERMISSION (role, permission) VALUES ('SUPERADMIN', '" + p.name() + "')");

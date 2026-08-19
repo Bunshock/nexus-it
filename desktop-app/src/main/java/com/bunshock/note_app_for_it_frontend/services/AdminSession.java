@@ -3,7 +3,7 @@ package com.bunshock.note_app_for_it_frontend.services;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.bunshock.note_app_for_it_frontend.models.Permission;
+import com.bunshock.note_app_for_it_frontend.models.admin.Permission;
 
 import javafx.application.Platform;
 

@@ -8,9 +8,9 @@ import java.util.function.Consumer;
 
 import org.controlsfx.control.PopOver;
 
-import com.bunshock.note_app_for_it_frontend.models.AssetItem;
-import com.bunshock.note_app_for_it_frontend.models.CountableItem;
-import com.bunshock.note_app_for_it_frontend.models.NoteReport;
+import com.bunshock.note_app_for_it_frontend.models.catalog.AssetItem;
+import com.bunshock.note_app_for_it_frontend.models.catalog.CountableItem;
+import com.bunshock.note_app_for_it_frontend.models.history.NoteReport;
 import com.bunshock.note_app_for_it_frontend.services.ConfigService;
 import com.bunshock.note_app_for_it_frontend.services.NoteGenerationService;
 import com.bunshock.note_app_for_it_frontend.services.ServiceLocator;
