@@ -19,6 +19,7 @@ import com.bunshock.note_app_for_it_frontend.services.core.DatabaseService;
 import com.bunshock.note_app_for_it_frontend.services.catalog.IEquipmentService;
 import com.bunshock.note_app_for_it_frontend.services.core.ServiceLocator;
 import com.bunshock.note_app_for_it_frontend.services.auth.TechnicianSessionService;
+import com.bunshock.note_app_for_it_frontend.utils.core.DialogChrome;
 import javafx.animation.FadeTransition;
 import javafx.application.Platform;
 import javafx.collections.FXCollections;
@@ -42,13 +43,9 @@ import javafx.scene.control.TableView;
 import javafx.scene.control.TextField;
 import javafx.scene.control.TextFormatter;
 import javafx.scene.layout.HBox;
-import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
-import javafx.scene.paint.Color;
-import javafx.stage.Modality;
 import javafx.stage.Stage;
 import javafx.util.Duration;
-import javafx.stage.StageStyle;
 
 public class SettingsController {
 
@@ -322,8 +319,8 @@ public class SettingsController {
 
     private boolean confirmSaveDespiteFailedTest() {
         boolean[] confirmed = {false};
-        Stage stage = buildDialogStage();
-        centerOnContent(stage);
+        Stage stage = DialogChrome.buildDialogStage();
+        DialogChrome.centerOnContent(stage, panelSettings.isVisible() ? panelSettings : panelSnValidation);
 
         Label lblTitle = new Label("No se pudo conectar");
         lblTitle.getStyleClass().add("section-label");
@@ -346,10 +343,10 @@ public class SettingsController {
         HBox buttons = new HBox(8, btnCancel, btnConfirm);
         buttons.setAlignment(Pos.CENTER_RIGHT);
 
-        VBox root = buildDialogRoot(380);
+        VBox root = DialogChrome.buildDialogRoot(380, "#1a1a1a");
         root.getChildren().addAll(lblTitle, lblMsg, buttons);
 
-        Scene scene = buildDialogScene(root);
+        Scene scene = DialogChrome.buildDialogScene(root);
         scene.setOnKeyPressed(ev -> { if (ev.getCode() == javafx.scene.input.KeyCode.ESCAPE) stage.close(); });
         stage.setScene(scene);
         stage.showAndWait();
@@ -662,8 +659,8 @@ public class SettingsController {
     }
 
     private void openEditDialog(SnValidationRow row) {
-        Stage stage = buildDialogStage();
-        centerOnContent(stage);
+        Stage stage = DialogChrome.buildDialogStage();
+        DialogChrome.centerOnContent(stage, panelSettings.isVisible() ? panelSettings : panelSnValidation);
         boolean[] saved = {false};
 
         Label path = new Label(row.getTypeName() + " › " + row.getBrandName() + " › " + row.getModelName());
@@ -727,10 +724,10 @@ public class SettingsController {
         HBox buttons = new HBox(8, btnCancel, btnSave);
         buttons.setAlignment(Pos.CENTER_RIGHT);
 
-        VBox root = buildDialogRoot(420);
+        VBox root = DialogChrome.buildDialogRoot(420, "#1a1a1a");
         root.getChildren().addAll(path, new Separator(), lblRegex, tfRegex, lblRegexError, chkActive, buttons);
 
-        Scene scene = buildDialogScene(root);
+        Scene scene = DialogChrome.buildDialogScene(root);
         scene.setOnKeyPressed(e -> { if (e.getCode() == javafx.scene.input.KeyCode.ESCAPE) stage.close(); });
         stage.setScene(scene);
         javafx.application.Platform.runLater(tfRegex::requestFocus);
@@ -739,48 +736,6 @@ public class SettingsController {
         if (saved[0]) loadSnValidationData();
     }
 
-    // ── Dialog helpers ────────────────────────────────────────────────
-
-    private void centerOnContent(Stage stage) {
-        stage.setOpacity(0);
-        stage.setOnShown(e -> {
-            VBox panel = panelSettings.isVisible() ? panelSettings : panelSnValidation;
-            javafx.geometry.Bounds b = panel.localToScreen(panel.getBoundsInLocal());
-            if (b != null) {
-                stage.setX(b.getMinX() + (b.getWidth()  - stage.getWidth())  / 2);
-                stage.setY(b.getMinY() + (b.getHeight() - stage.getHeight()) / 2);
-            }
-            stage.setOpacity(1);
-        });
-    }
-
-    private Stage buildDialogStage() {
-        Stage stage = new Stage();
-        stage.initStyle(StageStyle.TRANSPARENT);
-        stage.initModality(Modality.APPLICATION_MODAL);
-        return stage;
-    }
-
-    private VBox buildDialogRoot(double prefWidth) {
-        VBox root = new VBox(14);
-        root.setPrefWidth(prefWidth);
-        root.setStyle("""
-            -fx-background-color: #1a1a1a, white;
-            -fx-background-radius: 12, 10;
-            -fx-background-insets: 0, 2;
-            -fx-padding: 24;
-            -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.6), 20, 0, 0, 5);
-            """);
-        return root;
-    }
-
-    private Scene buildDialogScene(VBox content) {
-        StackPane wrapper = new StackPane(content);
-        wrapper.setStyle("-fx-background-color: transparent; -fx-padding: 20;");
-        Scene scene = new Scene(wrapper);
-        scene.setFill(Color.TRANSPARENT);
-        scene.getStylesheets().add(getClass().getResource(
-            "/com/bunshock/note_app_for_it_frontend/css/styles.css").toExternalForm());
-        return scene;
-    }
+    // Dialog helpers (buildDialogStage/buildDialogRoot/buildDialogScene/centerOnContent) live in
+    // utils.core.DialogChrome, shared across every controller that opens a dialog.
 }

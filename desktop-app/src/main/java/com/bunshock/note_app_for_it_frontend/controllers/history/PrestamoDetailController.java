@@ -13,6 +13,7 @@ import com.bunshock.note_app_for_it_frontend.services.note.NoteGenerationService
 import com.bunshock.note_app_for_it_frontend.services.history.PendingCountsService;
 import com.bunshock.note_app_for_it_frontend.services.core.ServiceLocator;
 import com.bunshock.note_app_for_it_frontend.services.auth.TechnicianSessionService;
+import com.bunshock.note_app_for_it_frontend.utils.core.DialogChrome;
 import javafx.application.Platform;
 import javafx.fxml.FXML;
 import javafx.fxml.FXMLLoader;
@@ -219,7 +220,8 @@ public class PrestamoDetailController {
     }
 
     private String promptNoteRejectionReason() {
-        Stage stage = buildDialogStage();
+        Stage stage = DialogChrome.buildDialogStage();
+        DialogChrome.centerOnContent(stage, rootContainer);
         String[] result = {null};
 
         Label lblT = new Label("Motivo de rechazo de la nota");
@@ -249,10 +251,10 @@ public class PrestamoDetailController {
         HBox buttons = new HBox(8, btnCancel, btnOk);
         buttons.setAlignment(Pos.CENTER_RIGHT);
 
-        VBox root = buildDialogRoot(420);
+        VBox root = DialogChrome.buildDialogRoot(420, "#1a1a1a");
         root.getChildren().addAll(lblT, lblSub, ta, buttons);
 
-        Scene scene = buildDialogScene(root);
+        Scene scene = DialogChrome.buildDialogScene(root);
         scene.setOnKeyPressed(ev -> { if (ev.getCode() == KeyCode.ESCAPE) stage.close(); });
         stage.setScene(scene);
         Platform.runLater(ta::requestFocus);
@@ -553,7 +555,8 @@ public class PrestamoDetailController {
     }
 
     private String promptRejectionReason() {
-        Stage stage = buildDialogStage();
+        Stage stage = DialogChrome.buildDialogStage();
+        DialogChrome.centerOnContent(stage, rootContainer);
         String[] result = {null};
 
         Label lblT = new Label("Motivo de pérdida");
@@ -583,10 +586,10 @@ public class PrestamoDetailController {
         HBox buttons = new HBox(8, btnCancel, btnOk);
         buttons.setAlignment(Pos.CENTER_RIGHT);
 
-        VBox root = buildDialogRoot(420);
+        VBox root = DialogChrome.buildDialogRoot(420, "#1a1a1a");
         root.getChildren().addAll(lblT, lblSub, ta, buttons);
 
-        Scene scene = buildDialogScene(root);
+        Scene scene = DialogChrome.buildDialogScene(root);
         scene.setOnKeyPressed(ev -> { if (ev.getCode() == KeyCode.ESCAPE) stage.close(); });
         stage.setScene(scene);
         Platform.runLater(ta::requestFocus);
@@ -671,44 +674,6 @@ public class PrestamoDetailController {
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    // ── Dialog helpers (per admin dialog pattern — no shared base class) ──────
-
-    private Stage buildDialogStage() {
-        Stage s = new Stage();
-        s.initStyle(StageStyle.TRANSPARENT);
-        s.initModality(Modality.APPLICATION_MODAL);
-        s.setOpacity(0);
-        s.setOnShown(e -> {
-            javafx.geometry.Bounds b = rootContainer.localToScreen(rootContainer.getBoundsInLocal());
-            if (b != null) {
-                s.setX(b.getMinX() + (b.getWidth()  - s.getWidth())  / 2);
-                s.setY(b.getMinY() + (b.getHeight() - s.getHeight()) / 2);
-            }
-            s.setOpacity(1);
-        });
-        return s;
-    }
-
-    private VBox buildDialogRoot(double prefWidth) {
-        VBox root = new VBox(14);
-        root.setPrefWidth(prefWidth);
-        root.setStyle("""
-            -fx-background-color: #1a1a1a, white;
-            -fx-background-radius: 12, 10;
-            -fx-background-insets: 0, 2;
-            -fx-padding: 24;
-            -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.6), 20, 0, 0, 5);
-            """);
-        return root;
-    }
-
-    private Scene buildDialogScene(VBox content) {
-        StackPane wrapper = new StackPane(content);
-        wrapper.setStyle("-fx-background-color: transparent; -fx-padding: 20;");
-        Scene scene = new Scene(wrapper);
-        scene.setFill(Color.TRANSPARENT);
-        scene.getStylesheets().add(getClass().getResource(
-            "/com/bunshock/note_app_for_it_frontend/css/styles.css").toExternalForm());
-        return scene;
-    }
+    // Dialog helpers (buildDialogStage/buildDialogRoot/buildDialogScene/centerOnContent) live in
+    // utils.core.DialogChrome, shared across every controller that opens a dialog.
 }

@@ -52,7 +52,7 @@ import javafx.stage.StageStyle;
 import javafx.util.Callback;
 import javafx.util.Duration;
 
-import com.bunshock.note_app_for_it_frontend.services.core.ConfigService;
+import com.bunshock.note_app_for_it_frontend.utils.core.DialogChrome;
 // Inter-Sede stock transfer note. Ships from the technician's own assigned Sede to either a
 // SEDE-catalog destination (auto-fills its saved SEDE_SHIPPING_INFO, still editable) or a custom
 // one-off destination (e.g. a CAU not in the catalog). Unlike PrestamoNewLoanController's
@@ -656,8 +656,8 @@ public class RemitoNoteController implements ItemDialogHost {
     // ── Dialog helpers (per admin dialog pattern — no shared base class) ──────
 
     private void showWarningNotice(String title, String message) {
-        Stage stage = buildDialogStage();
-        centerOnContent(stage);
+        Stage stage = DialogChrome.buildDialogStage();
+        DialogChrome.centerOnContent(stage, rootContainer);
 
         HBox titleRow = new HBox(8);
         titleRow.setAlignment(Pos.CENTER_LEFT);
@@ -678,54 +678,15 @@ public class RemitoNoteController implements ItemDialogHost {
         HBox buttons = new HBox(btnOk);
         buttons.setAlignment(Pos.CENTER_RIGHT);
 
-        VBox root = buildDialogRoot(360, "#f59e0b");
+        VBox root = DialogChrome.buildDialogRoot(360, "#f59e0b");
         root.getChildren().addAll(titleRow, lblMsg, buttons);
 
-        Scene scene = buildDialogScene(root);
+        Scene scene = DialogChrome.buildDialogScene(root);
         scene.setOnKeyPressed(ev -> { if (ev.getCode() == KeyCode.ESCAPE) stage.close(); });
         stage.setScene(scene);
         stage.showAndWait();
     }
 
-    private Stage buildDialogStage() {
-        Stage s = new Stage();
-        s.initStyle(StageStyle.TRANSPARENT);
-        s.initModality(Modality.APPLICATION_MODAL);
-        return s;
-    }
-
-    private void centerOnContent(Stage stage) {
-        stage.setOpacity(0);
-        stage.setOnShown(e -> {
-            javafx.geometry.Bounds b = rootContainer.localToScreen(rootContainer.getBoundsInLocal());
-            if (b != null) {
-                stage.setX(b.getMinX() + (b.getWidth()  - stage.getWidth())  / 2);
-                stage.setY(b.getMinY() + (b.getHeight() - stage.getHeight()) / 2);
-            }
-            stage.setOpacity(1);
-        });
-    }
-
-    private VBox buildDialogRoot(double prefWidth, String accentColor) {
-        VBox root = new VBox(14);
-        root.setPrefWidth(prefWidth);
-        root.setStyle("""
-            -fx-background-color: %s, white;
-            -fx-background-radius: 12, 10;
-            -fx-background-insets: 0, 2;
-            -fx-padding: 24;
-            -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.6), 20, 0, 0, 5);
-            """.formatted(accentColor));
-        return root;
-    }
-
-    private Scene buildDialogScene(VBox content) {
-        StackPane wrapper = new StackPane(content);
-        wrapper.setStyle("-fx-background-color: transparent; -fx-padding: 20;");
-        Scene scene = new Scene(wrapper);
-        scene.setFill(Color.TRANSPARENT);
-        scene.getStylesheets().add(getClass().getResource(
-            "/com/bunshock/note_app_for_it_frontend/css/styles.css").toExternalForm());
-        return scene;
-    }
+    // Dialog helpers (buildDialogStage/buildDialogRoot/buildDialogScene/centerOnContent) live in
+    // utils.core.DialogChrome, shared across every controller that opens a dialog.
 }

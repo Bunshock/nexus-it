@@ -13,6 +13,7 @@ import com.bunshock.note_app_for_it_frontend.services.history.PendingCountsServi
 import com.bunshock.note_app_for_it_frontend.services.core.RemoteDatabaseService;
 import com.bunshock.note_app_for_it_frontend.services.core.ServiceLocator;
 import com.bunshock.note_app_for_it_frontend.services.auth.TechnicianSessionService;
+import com.bunshock.note_app_for_it_frontend.utils.core.DialogChrome;
 import com.bunshock.note_app_for_it_frontend.utils.core.ViewFactory;
 import javafx.animation.FadeTransition;
 import javafx.animation.KeyFrame;
@@ -51,10 +52,8 @@ import javafx.scene.paint.Color;
 import javafx.scene.shape.Circle;
 import javafx.scene.shape.Polygon;
 import javafx.scene.shape.Rectangle;
-import javafx.stage.Modality;
 import javafx.stage.Popup;
 import javafx.stage.Stage;
-import javafx.stage.StageStyle;
 import javafx.util.Duration;
 
 public class MainController {
@@ -138,7 +137,8 @@ public class MainController {
 
         showSection(viewFactory.getGeneratorView());
         // Deferred one pulse: at initialize() time the Stage isn't shown/attached yet, and
-        // both centerOnContent() and setupWindowChrome() need a real Scene/Window to work with.
+        // both DialogChrome.centerOnContent() and setupWindowChrome() need a real Scene/Window
+        // to work with.
         Platform.runLater(this::runStartupChecks);
         Platform.runLater(this::setupWindowChrome);
 
@@ -223,13 +223,13 @@ public class MainController {
         VBox statusRows = new VBox(8, rowAD.container, rowDB.container, rowGLPI.container);
         statusRows.setStyle("-fx-padding: 10 0 0 0;");
 
-        VBox root = buildDialogRoot(320, "#1a1a1a");
+        VBox root = DialogChrome.buildDialogRoot(320, "#1a1a1a");
         root.setAlignment(Pos.CENTER);
         root.getChildren().addAll(spinner, lblTitle, statusRows);
 
-        Stage loadingStage = buildDialogStage();
-        centerOnContent(loadingStage);
-        loadingStage.setScene(buildDialogScene(root));
+        Stage loadingStage = DialogChrome.buildDialogStage();
+        DialogChrome.centerOnContent(loadingStage, contentArea);
+        loadingStage.setScene(DialogChrome.buildDialogScene(root));
         loadingStage.show();
 
         AtomicInteger remaining = new AtomicInteger(3);
@@ -613,8 +613,8 @@ public class MainController {
     }
 
     private void showDialogNotice(String title, String message, String accentColor, String icon) {
-        Stage stage = buildDialogStage();
-        centerOnContent(stage);
+        Stage stage = DialogChrome.buildDialogStage();
+        DialogChrome.centerOnContent(stage, contentArea);
 
         HBox titleRow = new HBox(8);
         titleRow.setAlignment(Pos.CENTER_LEFT);
@@ -638,56 +638,17 @@ public class MainController {
         HBox buttons = new HBox(btnOk);
         buttons.setAlignment(Pos.CENTER_RIGHT);
 
-        VBox root = buildDialogRoot(360, accentColor);
+        VBox root = DialogChrome.buildDialogRoot(360, accentColor);
         root.getChildren().addAll(titleRow, lblMsg, buttons);
 
-        Scene scene = buildDialogScene(root);
+        Scene scene = DialogChrome.buildDialogScene(root);
         scene.setOnKeyPressed(ev -> { if (ev.getCode() == KeyCode.ESCAPE) stage.close(); });
         stage.setScene(scene);
         stage.showAndWait();
     }
 
-    private Stage buildDialogStage() {
-        Stage s = new Stage();
-        s.initStyle(StageStyle.TRANSPARENT);
-        s.initModality(Modality.APPLICATION_MODAL);
-        return s;
-    }
-
-    private void centerOnContent(Stage stage) {
-        stage.setOpacity(0);
-        stage.setOnShown(e -> {
-            javafx.geometry.Bounds b = contentArea.localToScreen(contentArea.getBoundsInLocal());
-            if (b != null) {
-                stage.setX(b.getMinX() + (b.getWidth()  - stage.getWidth())  / 2);
-                stage.setY(b.getMinY() + (b.getHeight() - stage.getHeight()) / 2);
-            }
-            stage.setOpacity(1);
-        });
-    }
-
-    private VBox buildDialogRoot(double prefWidth, String accentColor) {
-        VBox root = new VBox(14);
-        root.setPrefWidth(prefWidth);
-        root.setStyle("""
-            -fx-background-color: %s, white;
-            -fx-background-radius: 12, 10;
-            -fx-background-insets: 0, 2;
-            -fx-padding: 24;
-            -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.6), 20, 0, 0, 5);
-            """.formatted(accentColor));
-        return root;
-    }
-
-    private Scene buildDialogScene(VBox content) {
-        StackPane wrapper = new StackPane(content);
-        wrapper.setStyle("-fx-background-color: transparent; -fx-padding: 20;");
-        Scene scene = new Scene(wrapper);
-        scene.setFill(Color.TRANSPARENT);
-        scene.getStylesheets().add(getClass().getResource(
-            "/com/bunshock/note_app_for_it_frontend/css/styles.css").toExternalForm());
-        return scene;
-    }
+    // Dialog helpers (buildDialogStage/buildDialogRoot/buildDialogScene/centerOnContent) live in
+    // utils.core.DialogChrome, shared across every controller that opens a dialog.
 
     private void showSection(Parent view) {
         contentArea.getChildren().setAll(view);
@@ -1083,8 +1044,8 @@ public class MainController {
 
     private boolean confirmLogout() {
         boolean[] confirmed = {false};
-        Stage stage = buildDialogStage();
-        centerOnContent(stage);
+        Stage stage = DialogChrome.buildDialogStage();
+        DialogChrome.centerOnContent(stage, contentArea);
 
         Label lblTitle = new Label("Cerrar sesión");
         lblTitle.getStyleClass().add("section-label");
@@ -1105,10 +1066,10 @@ public class MainController {
         HBox buttons = new HBox(8, btnCancel, btnConfirm);
         buttons.setAlignment(Pos.CENTER_RIGHT);
 
-        VBox root = buildDialogRoot(380, "#1a1a1a");
+        VBox root = DialogChrome.buildDialogRoot(380, "#1a1a1a");
         root.getChildren().addAll(lblTitle, lblMsg, buttons);
 
-        Scene scene = buildDialogScene(root);
+        Scene scene = DialogChrome.buildDialogScene(root);
         scene.setOnKeyPressed(ev -> { if (ev.getCode() == KeyCode.ESCAPE) stage.close(); });
         stage.setScene(scene);
         stage.showAndWait();

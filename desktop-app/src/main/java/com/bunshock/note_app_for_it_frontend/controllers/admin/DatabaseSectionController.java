@@ -26,6 +26,7 @@ import com.bunshock.note_app_for_it_frontend.services.admin.IUserRoleService;
 import com.bunshock.note_app_for_it_frontend.services.core.RemoteDatabaseService;
 import com.bunshock.note_app_for_it_frontend.services.core.ServiceLocator;
 import com.bunshock.note_app_for_it_frontend.services.auth.TechnicianSessionService;
+import com.bunshock.note_app_for_it_frontend.utils.core.DialogChrome;
 import javafx.animation.FadeTransition;
 import javafx.application.Platform;
 import javafx.collections.FXCollections;
@@ -46,12 +47,8 @@ import javafx.scene.input.KeyCode;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
-import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
-import javafx.scene.paint.Color;
-import javafx.stage.Modality;
 import javafx.stage.Stage;
-import javafx.stage.StageStyle;
 import javafx.util.Duration;
 
 public class DatabaseSectionController {
@@ -197,8 +194,8 @@ public class DatabaseSectionController {
     }
 
     private void openEditConnectionDialog() {
-        Stage stage = buildDialogStage();
-        centerOnContent(stage);
+        Stage stage = DialogChrome.buildDialogStage();
+        DialogChrome.centerOnContent(stage, rootContainer);
 
         String curHost = getSetting("db_host");
         String curPort = getSetting("db_port");
@@ -315,14 +312,14 @@ public class DatabaseSectionController {
         HBox buttons = new HBox(8, btnCancel, btnSave);
         buttons.setAlignment(Pos.CENTER_RIGHT);
 
-        VBox root = buildDialogRoot(440);
+        VBox root = DialogChrome.buildDialogRoot(440, "#1a1a1a");
         root.getChildren().addAll(lblTitle, hostPort,
             new VBox(2, lblN, tfName),
             new VBox(2, lblU, tfUser),
             new VBox(2, buildFieldHeaderRow(lblPw, lblPwError), pfPass),
             new Separator(), buttons);
 
-        Scene scene = buildDialogScene(root);
+        Scene scene = DialogChrome.buildDialogScene(root);
         scene.setOnKeyPressed(ev -> { if (ev.getCode() == KeyCode.ESCAPE) stage.close(); });
         stage.setScene(scene);
         Platform.runLater(tfHost::requestFocus);
@@ -807,8 +804,8 @@ public class DatabaseSectionController {
     }
 
     private void openAddTypeDialog() {
-        Stage stage = buildDialogStage();
-        centerOnContent(stage);
+        Stage stage = DialogChrome.buildDialogStage();
+        DialogChrome.centerOnContent(stage, rootContainer);
 
         Label lblTitle = new Label("Nuevo tipo de equipo");
         lblTitle.getStyleClass().add("section-label");
@@ -863,7 +860,7 @@ public class DatabaseSectionController {
         HBox buttons = new HBox(8, btnCancel, btnSave);
         buttons.setAlignment(Pos.CENTER_RIGHT);
 
-        VBox root = buildDialogRoot(380);
+        VBox root = DialogChrome.buildDialogRoot(380, "#1a1a1a");
         root.getChildren().addAll(lblTitle, new VBox(2, buildFieldHeaderRow(lblN, lblError), tfName),
             chkAsset, chkRequiresSerial, buttons);
 
@@ -871,8 +868,8 @@ public class DatabaseSectionController {
     }
 
     private void openEditTypeDialog(EquipmentType type) {
-        Stage stage = buildDialogStage();
-        centerOnContent(stage);
+        Stage stage = DialogChrome.buildDialogStage();
+        DialogChrome.centerOnContent(stage, rootContainer);
 
         Label lblTitle = new Label("Editar tipo de equipo");
         lblTitle.getStyleClass().add("section-label");
@@ -918,7 +915,7 @@ public class DatabaseSectionController {
         HBox buttons = new HBox(8, btnCancel, btnSave);
         buttons.setAlignment(Pos.CENTER_RIGHT);
 
-        VBox root = buildDialogRoot(380);
+        VBox root = DialogChrome.buildDialogRoot(380, "#1a1a1a");
         root.getChildren().addAll(lblTitle, new VBox(2, buildFieldHeaderRow(lblN, lblError), tfName));
         if (type.isAsset()) root.getChildren().add(chkRequiresSerial);
         root.getChildren().add(buttons);
@@ -927,8 +924,8 @@ public class DatabaseSectionController {
     }
 
     private void openAddBrandDialog() {
-        Stage stage = buildDialogStage();
-        centerOnContent(stage);
+        Stage stage = DialogChrome.buildDialogStage();
+        DialogChrome.centerOnContent(stage, rootContainer);
 
         Label lblTitle = new Label("Nueva marca");
         lblTitle.getStyleClass().add("section-label");
@@ -982,7 +979,7 @@ public class DatabaseSectionController {
         HBox buttons = new HBox(8, btnCancel, btnSave);
         buttons.setAlignment(Pos.CENTER_RIGHT);
 
-        VBox root = buildDialogRoot(380);
+        VBox root = DialogChrome.buildDialogRoot(380, "#1a1a1a");
         root.getChildren().addAll(lblTitle,
             new VBox(2, buildFieldHeaderRow(lblT, lblErrorType), cmbType),
             new VBox(2, buildFieldHeaderRow(lblN, lblErrorName), tfName), buttons);
@@ -992,8 +989,8 @@ public class DatabaseSectionController {
 
     private void openAddModelDialog() {
         if (!requireConcreteStockSede()) return;
-        Stage stage = buildDialogStage();
-        centerOnContent(stage);
+        Stage stage = DialogChrome.buildDialogStage();
+        DialogChrome.centerOnContent(stage, rootContainer);
 
         Label lblTitle = new Label("Nuevo modelo");
         lblTitle.getStyleClass().add("section-label");
@@ -1095,7 +1092,7 @@ public class DatabaseSectionController {
         HBox buttons = new HBox(8, btnCancel, btnSave);
         buttons.setAlignment(Pos.CENTER_RIGHT);
 
-        VBox root = buildDialogRoot(400);
+        VBox root = DialogChrome.buildDialogRoot(400, "#1a1a1a");
         root.getChildren().addAll(lblTitle,
             new VBox(2, buildFieldHeaderRow(lblT, lblErrorType), cmbType),
             new VBox(2, buildFieldHeaderRow(lblB, lblErrorBrand), cmbBrand),
@@ -1110,8 +1107,8 @@ public class DatabaseSectionController {
     // than through the shared openRenameDialog().
     private void openEditModelDialog(EquipmentModel model, int brandId, int typeId) {
         if (!requireConcreteStockSede()) return;
-        Stage stage = buildDialogStage();
-        centerOnContent(stage);
+        Stage stage = DialogChrome.buildDialogStage();
+        DialogChrome.centerOnContent(stage, rootContainer);
 
         Label lblTitle = new Label("Editar modelo");
         lblTitle.getStyleClass().add("section-label");
@@ -1185,7 +1182,7 @@ public class DatabaseSectionController {
         HBox buttons = new HBox(8, btnCancel, btnSave);
         buttons.setAlignment(Pos.CENTER_RIGHT);
 
-        VBox root = buildDialogRoot(380);
+        VBox root = DialogChrome.buildDialogRoot(380, "#1a1a1a");
         root.getChildren().addAll(lblTitle,
             new VBox(2, buildFieldHeaderRow(lblN, lblErrorName), tfName),
             new VBox(2, lblS, tfStock),
@@ -1198,8 +1195,8 @@ public class DatabaseSectionController {
     // changing, reached via the Models list's own "Stock" button.
     private void openModifyStockDialog(EquipmentModel model, int brandId, int typeId) {
         if (!requireConcreteStockSede()) return;
-        Stage stage = buildDialogStage();
-        centerOnContent(stage);
+        Stage stage = DialogChrome.buildDialogStage();
+        DialogChrome.centerOnContent(stage, rootContainer);
 
         Label lblTitle = new Label("Modificar stock");
         lblTitle.getStyleClass().add("section-label");
@@ -1248,7 +1245,7 @@ public class DatabaseSectionController {
         HBox buttons = new HBox(8, btnCancel, btnSave);
         buttons.setAlignment(Pos.CENTER_RIGHT);
 
-        VBox root = buildDialogRoot(340);
+        VBox root = DialogChrome.buildDialogRoot(340, "#1a1a1a");
         root.getChildren().addAll(lblTitle, lblPath, new VBox(2, lblS, tfStock),
             new VBox(2, buildFieldHeaderRow(lblR, lblErrorReason), tfReason), buttons);
 
@@ -1280,8 +1277,8 @@ public class DatabaseSectionController {
     }
 
     private void openRenameDialog(String currentName, java.util.function.Consumer<String> onSave) {
-        Stage stage = buildDialogStage();
-        centerOnContent(stage);
+        Stage stage = DialogChrome.buildDialogStage();
+        DialogChrome.centerOnContent(stage, rootContainer);
 
         Label lblTitle = new Label("Renombrar");
         lblTitle.getStyleClass().add("section-label");
@@ -1317,10 +1314,10 @@ public class DatabaseSectionController {
         HBox buttons = new HBox(8, btnCancel, btnSave);
         buttons.setAlignment(Pos.CENTER_RIGHT);
 
-        VBox root = buildDialogRoot(360);
+        VBox root = DialogChrome.buildDialogRoot(360, "#1a1a1a");
         root.getChildren().addAll(lblTitle, new VBox(2, buildFieldHeaderRow(lblN, lblError), tfName), buttons);
 
-        Scene scene = buildDialogScene(root);
+        Scene scene = DialogChrome.buildDialogScene(root);
         scene.setOnKeyPressed(ev -> { if (ev.getCode() == KeyCode.ESCAPE) stage.close(); });
         stage.setScene(scene);
         Platform.runLater(() -> { tfName.requestFocus(); tfName.selectAll(); });
@@ -1329,8 +1326,8 @@ public class DatabaseSectionController {
 
     private boolean confirmDelete(String itemName) {
         boolean[] confirmed = {false};
-        Stage stage = buildDialogStage();
-        centerOnContent(stage);
+        Stage stage = DialogChrome.buildDialogStage();
+        DialogChrome.centerOnContent(stage, rootContainer);
 
         Label lblTitle = new Label("Confirmar eliminación");
         lblTitle.getStyleClass().add("section-label");
@@ -1351,10 +1348,10 @@ public class DatabaseSectionController {
         HBox buttons = new HBox(8, btnCancel, btnDel);
         buttons.setAlignment(Pos.CENTER_RIGHT);
 
-        VBox root = buildDialogRoot(380);
+        VBox root = DialogChrome.buildDialogRoot(380, "#1a1a1a");
         root.getChildren().addAll(lblTitle, lblMsg, buttons);
 
-        Scene scene = buildDialogScene(root);
+        Scene scene = DialogChrome.buildDialogScene(root);
         scene.setOnKeyPressed(ev -> { if (ev.getCode() == KeyCode.ESCAPE) stage.close(); });
         stage.setScene(scene);
         stage.showAndWait();
@@ -1364,8 +1361,8 @@ public class DatabaseSectionController {
 
     private boolean confirmSaveDespiteFailedTest() {
         boolean[] confirmed = {false};
-        Stage stage = buildDialogStage();
-        centerOnContent(stage);
+        Stage stage = DialogChrome.buildDialogStage();
+        DialogChrome.centerOnContent(stage, rootContainer);
 
         Label lblTitle = new Label("No se pudo conectar");
         lblTitle.getStyleClass().add("section-label");
@@ -1388,10 +1385,10 @@ public class DatabaseSectionController {
         HBox buttons = new HBox(8, btnCancel, btnConfirm);
         buttons.setAlignment(Pos.CENTER_RIGHT);
 
-        VBox root = buildDialogRoot(380);
+        VBox root = DialogChrome.buildDialogRoot(380, "#1a1a1a");
         root.getChildren().addAll(lblTitle, lblMsg, buttons);
 
-        Scene scene = buildDialogScene(root);
+        Scene scene = DialogChrome.buildDialogScene(root);
         scene.setOnKeyPressed(ev -> { if (ev.getCode() == KeyCode.ESCAPE) stage.close(); });
         stage.setScene(scene);
         stage.showAndWait();
@@ -1400,7 +1397,7 @@ public class DatabaseSectionController {
     }
 
     private void buildAndShow(Stage stage, VBox root, TextField focusTarget) {
-        Scene scene = buildDialogScene(root);
+        Scene scene = DialogChrome.buildDialogScene(root);
         scene.setOnKeyPressed(ev -> { if (ev.getCode() == KeyCode.ESCAPE) stage.close(); });
         stage.setScene(scene);
         Platform.runLater(focusTarget::requestFocus);
@@ -1478,8 +1475,8 @@ public class DatabaseSectionController {
     // ── Dialog helpers ────────────────────────────────────────────────
 
     private void showErrorDialog(String title, String message) {
-        Stage stage = buildDialogStage();
-        centerOnContent(stage);
+        Stage stage = DialogChrome.buildDialogStage();
+        DialogChrome.centerOnContent(stage, rootContainer);
 
         Label lblTitle = new Label(title);
         lblTitle.getStyleClass().add("section-label");
@@ -1495,54 +1492,15 @@ public class DatabaseSectionController {
         HBox buttons = new HBox(btnOk);
         buttons.setAlignment(Pos.CENTER_RIGHT);
 
-        VBox root = buildDialogRoot(360);
+        VBox root = DialogChrome.buildDialogRoot(360, "#1a1a1a");
         root.getChildren().addAll(lblTitle, lblMsg, buttons);
 
-        Scene scene = buildDialogScene(root);
+        Scene scene = DialogChrome.buildDialogScene(root);
         scene.setOnKeyPressed(ev -> { if (ev.getCode() == KeyCode.ESCAPE) stage.close(); });
         stage.setScene(scene);
         stage.showAndWait();
     }
 
-    private void centerOnContent(Stage stage) {
-        stage.setOpacity(0);
-        stage.setOnShown(e -> {
-            javafx.geometry.Bounds b = rootContainer.localToScreen(rootContainer.getBoundsInLocal());
-            if (b != null) {
-                stage.setX(b.getMinX() + (b.getWidth()  - stage.getWidth())  / 2);
-                stage.setY(b.getMinY() + (b.getHeight() - stage.getHeight()) / 2);
-            }
-            stage.setOpacity(1);
-        });
-    }
-
-    private Stage buildDialogStage() {
-        Stage stage = new Stage();
-        stage.initStyle(StageStyle.TRANSPARENT);
-        stage.initModality(Modality.APPLICATION_MODAL);
-        return stage;
-    }
-
-    private VBox buildDialogRoot(double prefWidth) {
-        VBox root = new VBox(14);
-        root.setPrefWidth(prefWidth);
-        root.setStyle("""
-            -fx-background-color: #1a1a1a, white;
-            -fx-background-radius: 12, 10;
-            -fx-background-insets: 0, 2;
-            -fx-padding: 24;
-            -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.6), 20, 0, 0, 5);
-            """);
-        return root;
-    }
-
-    private Scene buildDialogScene(VBox content) {
-        StackPane wrapper = new StackPane(content);
-        wrapper.setStyle("-fx-background-color: transparent; -fx-padding: 20;");
-        Scene scene = new Scene(wrapper);
-        scene.setFill(Color.TRANSPARENT);
-        scene.getStylesheets().add(getClass().getResource(
-            "/com/bunshock/note_app_for_it_frontend/css/styles.css").toExternalForm());
-        return scene;
-    }
+    // Dialog helpers (buildDialogStage/buildDialogRoot/buildDialogScene/centerOnContent) live in
+    // utils.core.DialogChrome, shared across every controller that opens a dialog.
 }

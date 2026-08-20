@@ -17,6 +17,7 @@ import com.bunshock.note_app_for_it_frontend.services.core.ConfigService;
 import com.bunshock.note_app_for_it_frontend.services.note.NoteGenerationService;
 import com.bunshock.note_app_for_it_frontend.services.core.ServiceLocator;
 import com.bunshock.note_app_for_it_frontend.services.auth.TechnicianSessionService;
+import com.bunshock.note_app_for_it_frontend.utils.core.DialogChrome;
 import com.bunshock.note_app_for_it_frontend.utils.core.ViewFactory;
 import javafx.animation.FadeTransition;
 import javafx.animation.PauseTransition;
@@ -513,8 +514,8 @@ public class NoteGeneratorController implements ItemDialogHost {
     }
 
     private void showDialogNotice(String title, String message, String accentColor, String icon) {
-        Stage stage = buildDialogStage();
-        centerOnContent(stage);
+        Stage stage = DialogChrome.buildDialogStage();
+        DialogChrome.centerOnContent(stage, rootContainer);
 
         HBox titleRow = new HBox(8);
         titleRow.setAlignment(Pos.CENTER_LEFT);
@@ -538,56 +539,17 @@ public class NoteGeneratorController implements ItemDialogHost {
         HBox buttons = new HBox(btnOk);
         buttons.setAlignment(Pos.CENTER_RIGHT);
 
-        VBox root = buildDialogRoot(360, accentColor);
+        VBox root = DialogChrome.buildDialogRoot(360, accentColor);
         root.getChildren().addAll(titleRow, lblMsg, buttons);
 
-        Scene scene = buildDialogScene(root);
+        Scene scene = DialogChrome.buildDialogScene(root);
         scene.setOnKeyPressed(ev -> { if (ev.getCode() == KeyCode.ESCAPE) stage.close(); });
         stage.setScene(scene);
         stage.showAndWait();
     }
 
-    private Stage buildDialogStage() {
-        Stage s = new Stage();
-        s.initStyle(StageStyle.TRANSPARENT);
-        s.initModality(Modality.APPLICATION_MODAL);
-        return s;
-    }
-
-    private void centerOnContent(Stage stage) {
-        stage.setOpacity(0);
-        stage.setOnShown(e -> {
-            javafx.geometry.Bounds b = rootContainer.localToScreen(rootContainer.getBoundsInLocal());
-            if (b != null) {
-                stage.setX(b.getMinX() + (b.getWidth()  - stage.getWidth())  / 2);
-                stage.setY(b.getMinY() + (b.getHeight() - stage.getHeight()) / 2);
-            }
-            stage.setOpacity(1);
-        });
-    }
-
-    private VBox buildDialogRoot(double prefWidth, String accentColor) {
-        VBox root = new VBox(14);
-        root.setPrefWidth(prefWidth);
-        root.setStyle("""
-            -fx-background-color: %s, white;
-            -fx-background-radius: 12, 10;
-            -fx-background-insets: 0, 2;
-            -fx-padding: 24;
-            -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.6), 20, 0, 0, 5);
-            """.formatted(accentColor));
-        return root;
-    }
-
-    private Scene buildDialogScene(VBox content) {
-        StackPane wrapper = new StackPane(content);
-        wrapper.setStyle("-fx-background-color: transparent; -fx-padding: 20;");
-        Scene scene = new Scene(wrapper);
-        scene.setFill(Color.TRANSPARENT);
-        scene.getStylesheets().add(getClass().getResource(
-            "/com/bunshock/note_app_for_it_frontend/css/styles.css").toExternalForm());
-        return scene;
-    }
+    // Dialog helpers (buildDialogStage/buildDialogRoot/buildDialogScene/centerOnContent) live in
+    // utils.core.DialogChrome, shared across every controller that opens a dialog.
 
     private boolean checkGlpiAssignments() {
         UserNoteController unc = viewFactory != null ? viewFactory.getUserNoteController() : null;

@@ -8,6 +8,7 @@ import com.bunshock.note_app_for_it_frontend.models.update.ChangelogEntry;
 import com.bunshock.note_app_for_it_frontend.models.update.UpdateInfo;
 import com.bunshock.note_app_for_it_frontend.services.update.IUpdateService;
 import com.bunshock.note_app_for_it_frontend.services.core.ServiceLocator;
+import com.bunshock.note_app_for_it_frontend.utils.core.DialogChrome;
 import com.bunshock.note_app_for_it_frontend.utils.update.AppVersion;
 import javafx.application.Platform;
 import javafx.fxml.FXML;
@@ -20,10 +21,7 @@ import javafx.scene.control.Separator;
 import javafx.scene.input.KeyCode;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
-import javafx.scene.paint.Color;
-import javafx.stage.Modality;
 import javafx.stage.Stage;
-import javafx.stage.StageStyle;
 
 public class AboutController {
 
@@ -124,8 +122,8 @@ public class AboutController {
      * (it stays open throughout), rather than closing immediately and reporting elsewhere. */
     private void showUpdateFoundDialog(UpdateInfo info) {
         IUpdateService updateService = ServiceLocator.getInstance().getUpdateService();
-        Stage stage = buildDialogStage();
-        centerOnContent(stage);
+        Stage stage = DialogChrome.buildDialogStage();
+        DialogChrome.centerOnContent(stage, panelAbout);
 
         Label lblTitle = new Label("Actualización disponible");
         lblTitle.getStyleClass().add("section-label");
@@ -195,10 +193,10 @@ public class AboutController {
         HBox buttons = new HBox(8, btnCancel, btnConfirm);
         buttons.setAlignment(Pos.CENTER_RIGHT);
 
-        VBox root = buildDialogRoot(380);
+        VBox root = DialogChrome.buildDialogRoot(380, "#1a1a1a");
         root.getChildren().addAll(lblTitle, lblMsg, lblProgress, buttons);
 
-        Scene scene = buildDialogScene(root);
+        Scene scene = DialogChrome.buildDialogScene(root);
         scene.setOnKeyPressed(ev -> { if (ev.getCode() == KeyCode.ESCAPE) stage.close(); });
         stage.setScene(scene);
         stage.showAndWait();
@@ -206,8 +204,8 @@ public class AboutController {
 
     /** Plain single-message, single-button notice — "not configured" / "already up to date". */
     private void showInfoDialog(String title, String message) {
-        Stage stage = buildDialogStage();
-        centerOnContent(stage);
+        Stage stage = DialogChrome.buildDialogStage();
+        DialogChrome.centerOnContent(stage, panelAbout);
 
         Label lblTitle = new Label(title);
         lblTitle.getStyleClass().add("section-label");
@@ -222,18 +220,18 @@ public class AboutController {
         HBox buttons = new HBox(btnClose);
         buttons.setAlignment(Pos.CENTER_RIGHT);
 
-        VBox root = buildDialogRoot(340);
+        VBox root = DialogChrome.buildDialogRoot(340, "#1a1a1a");
         root.getChildren().addAll(lblTitle, lblMsg, buttons);
 
-        Scene scene = buildDialogScene(root);
+        Scene scene = DialogChrome.buildDialogScene(root);
         scene.setOnKeyPressed(ev -> { if (ev.getCode() == KeyCode.ESCAPE) stage.close(); });
         stage.setScene(scene);
         stage.showAndWait();
     }
 
     private void showChangelogDialog(List<ChangelogEntry> entries) {
-        Stage stage = buildDialogStage();
-        centerOnContent(stage);
+        Stage stage = DialogChrome.buildDialogStage();
+        DialogChrome.centerOnContent(stage, panelAbout);
 
         Label lblTitle = new Label("Historial de cambios");
         lblTitle.getStyleClass().add("section-label");
@@ -270,58 +268,15 @@ public class AboutController {
         HBox buttons = new HBox(btnClose);
         buttons.setAlignment(Pos.CENTER_RIGHT);
 
-        VBox root = buildDialogRoot(440);
+        VBox root = DialogChrome.buildDialogRoot(440, "#1a1a1a");
         root.getChildren().addAll(lblTitle, scroll, buttons);
 
-        Scene scene = buildDialogScene(root);
+        Scene scene = DialogChrome.buildDialogScene(root);
         scene.setOnKeyPressed(ev -> { if (ev.getCode() == KeyCode.ESCAPE) stage.close(); });
         stage.setScene(scene);
         stage.showAndWait();
     }
 
-    // ── Dialog helpers ───────────────────────────────────────────────
-    // Duplicated per this codebase's no-shared-abstraction convention — same four methods as
-    // SettingsController/MainController/DatabaseSectionController's own copies.
-
-    private void centerOnContent(Stage stage) {
-        stage.setOpacity(0);
-        stage.setOnShown(e -> {
-            javafx.geometry.Bounds b = panelAbout.localToScreen(panelAbout.getBoundsInLocal());
-            if (b != null) {
-                stage.setX(b.getMinX() + (b.getWidth()  - stage.getWidth())  / 2);
-                stage.setY(b.getMinY() + (b.getHeight() - stage.getHeight()) / 2);
-            }
-            stage.setOpacity(1);
-        });
-    }
-
-    private Stage buildDialogStage() {
-        Stage stage = new Stage();
-        stage.initStyle(StageStyle.TRANSPARENT);
-        stage.initModality(Modality.APPLICATION_MODAL);
-        return stage;
-    }
-
-    private VBox buildDialogRoot(double prefWidth) {
-        VBox root = new VBox(14);
-        root.setPrefWidth(prefWidth);
-        root.setStyle("""
-            -fx-background-color: #1a1a1a, white;
-            -fx-background-radius: 12, 10;
-            -fx-background-insets: 0, 2;
-            -fx-padding: 24;
-            -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.6), 20, 0, 0, 5);
-            """);
-        return root;
-    }
-
-    private Scene buildDialogScene(VBox content) {
-        javafx.scene.layout.StackPane wrapper = new javafx.scene.layout.StackPane(content);
-        wrapper.setStyle("-fx-background-color: transparent; -fx-padding: 20;");
-        Scene scene = new Scene(wrapper);
-        scene.setFill(Color.TRANSPARENT);
-        scene.getStylesheets().add(getClass().getResource(
-            "/com/bunshock/note_app_for_it_frontend/css/styles.css").toExternalForm());
-        return scene;
-    }
+    // Dialog helpers (buildDialogStage/buildDialogRoot/buildDialogScene/centerOnContent) live in
+    // utils.core.DialogChrome, shared across every controller that opens a dialog.
 }
