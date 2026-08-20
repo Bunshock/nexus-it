@@ -1,6 +1,6 @@
-# Generador de Notas IT
+# Nexus IT
 
-Desktop application for IT support teams at Universidad Siglo 21 to generate equipment handover notes (Notas IT). Built with JavaFX 21 for Windows.
+Desktop application for IT Support team at Universidad Siglo 21 to generate equipment handover notes. It acts as a central node between centralized database for asset tracking and daily equipment movements. Built with JavaFX 21 for Windows.
 
 ---
 
@@ -8,8 +8,7 @@ Desktop application for IT support teams at Universidad Siglo 21 to generate equ
 
 - Java 21 (JDK) — verify with `java -version`
 - Maven 3.8+ — verify with `mvn -version`
-- Windows recommended — the technician-identity lookup (`WindowsIdentityService`, resolves the current Windows session's UPN) only works on Windows. Credential encryption (`AppKeyEncryptionService`) is cross-platform (pure `javax.crypto`, no native dependency) and works on Linux/macOS too.
-- Git (to clone the repository)
+- Windows recommended
 
 ---
 
@@ -17,21 +16,13 @@ Desktop application for IT support teams at Universidad Siglo 21 to generate equ
 
 ```bash
 git clone <repository-url>
-cd notes-app-for-it/desktop-app
+cd nexus-it/desktop-app
 
 # First run — copy the config template, then edit it with your real values
 cp config/app-config.json.example config/app-config.json
 
 mvn clean javafx:run
 ```
-
-> **Always use `mvn clean javafx:run`**, not just `mvn javafx:run`. The IDE (VS Code / Eclipse) can leave stale `.class` files in `target/` that Maven reuses without recompiling, causing runtime errors.
-
-> **Never commit `desktop-app/data/noteapp.db`.** It's a runtime artifact created fresh on first launch and is already listed in `.gitignore`. If your local clone fails on startup with an error like `SQLITE_ERROR ... table NOTE_ITEM has no column named ...`, you likely have a stale database file left over from an old checkout — delete `desktop-app/data/noteapp.db` and re-run `mvn clean javafx:run` to regenerate it. The regenerated database starts genuinely empty (schema only, no demo data) — see `desktop-app/database/sqlite/README.md` if you want the optional example catalog/history dataset loaded instead of starting from a blank slate.
-
-> **`desktop-app/config/app-config.json` is gitignored** — it holds real per-deployment values (internal AD API URL, SMTP sender address) that must never reach git history. `config/app-config.json.example` is the committed template with placeholder values; copy it once per machine and edit the copy. If you pull changes to `app-config.json.example` (new keys), diff it against your local `app-config.json` and merge the new keys in manually.
-
-> **Want AD/SMTP/GLPI/DB already configured on first launch, with nothing to type in Settings?** Fill in `app-config.json`'s `defaults` section before running the app for the first time — see [Pre-configuring default secrets](#pre-configuring-default-secrets-zero-touch-first-run) below.
 
 ---
 
@@ -169,12 +160,6 @@ Every real outcome above (steps 3, 4, 6, and success) writes one login-attempt r
 The app runs fully on local SQLite by default. To point it at a shared Microsoft SQL Server (Express or full edition) instance instead, go to **Base de Datos** → **✏ Editar** (admin mode required) and enter host, port, database name, username, and password — stored in `data/noteapp.db`'s `APP_SETTINGS` table (host/port/name in plaintext, username/password encrypted via `AppKeyEncryptionService`). Saving tests the connection before persisting, same confirm-on-failure flow as the AD API above. Alternatively, pre-configure all five in `app-config.json` before the very first launch (see [Pre-configuring default secrets](#pre-configuring-default-secrets-zero-touch-first-run) above) so a fresh install connects with zero manual setup. The **Probar conexión** button re-checks connectivity on demand without opening the edit dialog, and reports the remote and local databases independently: "ESTADO REMOTO" shows orange ("no configurada") if no remote database is set up at all, red if one is configured but unreachable, or green if it connects successfully; "ESTADO LOCAL" always tests and reports the local SQLite database separately. If the remote database is unreachable, the app automatically falls back to local SQLite (write-through cache: writes go to remote first, then local; reads try remote first, fall back to local).
 
 **SQL Server Express note**: it commonly installs as a named instance (`SQLEXPRESS`) with a dynamic port, discovered via SQL Server Browser rather than a fixed port the way PostgreSQL/MySQL default to. This app connects with a plain host:port — no named-instance discovery — so assigning the instance a **static TCP port** via SQL Server Configuration Manager is a required one-time setup step, not optional. See `desktop-app/database/sqlserver/README.md` for the exact steps.
-
-The app creates its own schema automatically on first connect (`RemoteDatabaseService.ensureSchema()`) — a fresh, empty SQL Server database is all that's required. **`desktop-app/database/sqlserver/`** has ready-to-run scripts for setting one up, including starting data for the equipment catalog (Type/Brand/Model) and the provider catalog (Nota de Proveedor's dropdown), and a full remote-server setup walkthrough (installing Express, enabling TCP/IP with a static port, creating the DB/login, running the scripts) — see that folder's `README.md`. The seed script is a **template** with placeholder rows only, not real data (same pattern as `app-config.json.example`) — copy it and fill in your organization's actual catalog before running it; never commit the real, filled-in file (already gitignored). S/N validation rules are configured through the app's own UI, not a SQL script — same README explains why.
-
-**Already built up a real catalog locally before setting up a remote server?** `CatalogMigrationTool` (`mvn exec:java -Dexec.mainClass="com.bunshock.note_app_for_it_frontend.utils.CatalogMigrationTool"` from `desktop-app/`) copies the equipment catalog — Type, Brand, Brand-Type links, Model, S/N validation rules, Provider — from the local `data/noteapp.db` into a SQL Server database, correctly remapping autoincrement ids instead of copying them as-is. It creates the schema itself and prompts interactively for the connection details; safe to re-run as more local data is added. See `desktop-app/database/sqlserver/README.md` for details. History isn't migrated by this tool — only the equipment catalog.
-
-**Handing the database off to a DBA/DB team, or provisioning Sede/Users/Permissions by hand?** `desktop-app/database/sqlserver/provisioning/` splits the full schema into 6 reviewable feature files (Sede, Equipment catalog, Users, Permissions, Notes, Audit trail) alongside matching starting-data `.sql.example` templates — a cleaner, feature-by-feature alternative to reading `01-schema.sql` end to end, meant for exactly this handoff. This is also where `APP_USER` (role/Sede/AD-group-bypass assignment) and `ROLE_PERMISSION` (which role can do what) actually get populated — both tables are managed by direct SQL only, with no in-app screen at all (see [Role-based permissions](#role-based-permissions) below). `desktop-app/database/sqlite/provisioning/` mirrors the same six files for the **local** SQLite database — useful while a remote SQL Server database isn't set up yet, since `APP_USER`/`ROLE_PERMISSION` still need to be populated by hand even when running fully local. Its schema files are reference copies only (local SQLite's schema is always app-managed automatically); only the data scripts are meant to actually be run.
 
 ### Auto-Updates
 
@@ -417,24 +402,6 @@ mvn test
 - SMTP password, GLPI API key, DB password, and AD API token encrypted at rest using `AppKeyEncryptionService` (AES-256/GCM); see [Pre-configuring default secrets](#pre-configuring-default-secrets-zero-touch-first-run) above for the accepted security trade-off of this scheme
 - No plaintext secrets in config files or source code
 - Input validated at every system boundary
-
----
-
-## Project Structure
-
-```
-notes-app-for-it/
-├── desktop-app/           — JavaFX desktop application
-│   ├── config/            — Runtime config files (not compiled into JAR)
-│   ├── data/              — SQLite database (created at first run, gitignored)
-│   ├── database/sqlserver/ — Remote DB setup: schema + starting equipment/provider catalog SQL scripts (example template, not real data)
-│   ├── database/sqlite/   — Optional local starting data + a SQLite mirror of the provisioning scripts below
-│   └── src/
-│       ├── main/java/     — Application source
-│       ├── main/resources/— FXML views, CSS, HTML note templates
-│       └── test/java/     — JUnit 5 unit tests
-└── docs/                  — Architecture, requirements, database schema, use cases
-```
 
 ---
 
