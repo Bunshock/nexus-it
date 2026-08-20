@@ -277,6 +277,7 @@ public class NoteGeneratorController implements ItemDialogHost {
             Stage stage = new Stage();
             stage.initStyle(StageStyle.TRANSPARENT);
             stage.initModality(Modality.APPLICATION_MODAL);
+            stage.initOwner(rootContainer.getScene().getWindow());
             Scene dialogScene = new Scene(root, 544, 620);
             dialogScene.setFill(javafx.scene.paint.Color.TRANSPARENT);
             dialogScene.getStylesheets().add(getClass().getResource(
@@ -739,6 +740,7 @@ public class NoteGeneratorController implements ItemDialogHost {
         Stage stage = new Stage();
         stage.initStyle(StageStyle.TRANSPARENT);
         stage.initModality(Modality.APPLICATION_MODAL);
+        stage.initOwner(rootContainer.getScene().getWindow());
         stage.setScene(scene);
 
         stage.setOpacity(0);

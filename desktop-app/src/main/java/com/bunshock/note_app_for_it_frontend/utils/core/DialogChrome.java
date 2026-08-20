@@ -23,6 +23,14 @@ public final class DialogChrome {
     }
 
     public static void centerOnContent(Stage stage, Region anchor) {
+        // Without an owner, Windows treats this Stage as a fully independent top-level window:
+        // it gets its own Alt+Tab/taskbar entry, and minimizing the main window doesn't take it
+        // along. Setting the owner groups it with whichever window the anchor belongs to (the
+        // main app Stage for a section-level dialog, or an already-open parent dialog for a
+        // nested one) — native Windows owned-window behavior then handles both problems for free.
+        if (anchor.getScene() != null && anchor.getScene().getWindow() != null) {
+            stage.initOwner(anchor.getScene().getWindow());
+        }
         stage.setOpacity(0);
         stage.setOnShown(e -> {
             Bounds b = anchor.localToScreen(anchor.getBoundsInLocal());

@@ -370,6 +370,7 @@ public class UserNoteController implements AdSearchHost {
             Stage stage = new Stage();
             stage.initStyle(StageStyle.TRANSPARENT);
             stage.initModality(Modality.APPLICATION_MODAL);
+            stage.initOwner(cmbMotivo.getScene().getWindow());
             Scene dialogScene = new Scene(root);
             dialogScene.setFill(Color.TRANSPARENT);
             dialogScene.getStylesheets().add(getClass().getResource(
@@ -507,6 +508,7 @@ public class UserNoteController implements AdSearchHost {
             Stage stage = new Stage();
             stage.initStyle(StageStyle.TRANSPARENT);
             stage.initModality(Modality.APPLICATION_MODAL);
+            stage.initOwner(btnBuscarAD.getScene().getWindow());
             Scene dialogScene = new Scene(root);
             dialogScene.setFill(javafx.scene.paint.Color.TRANSPARENT);
             dialogScene.getStylesheets().add(getClass().getResource(
