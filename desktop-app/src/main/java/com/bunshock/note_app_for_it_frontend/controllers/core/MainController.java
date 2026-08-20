@@ -133,6 +133,7 @@ public class MainController {
 
     public void initialize() {
         TechnicianSessionService.getInstance().addOnChangeListener(this::updateWelcomeLabels);
+        TechnicianSessionService.getInstance().addOnDisplayNameChangeListener(this::updateWelcomeLabels);
         updateWelcomeLabels();
 
         showSection(viewFactory.getGeneratorView());
