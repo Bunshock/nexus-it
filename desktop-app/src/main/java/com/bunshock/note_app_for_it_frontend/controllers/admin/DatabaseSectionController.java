@@ -293,6 +293,11 @@ public class DatabaseSectionController {
             btnSave.setDisable(true);
             btnCancel.setDisable(true);
             btnSave.setText("Probando...");
+            tfHost.setDisable(true);
+            tfPort.setDisable(true);
+            tfName.setDisable(true);
+            tfUser.setDisable(true);
+            pfPass.setDisable(true);
 
             int testPort = port;
             Thread t = new Thread(() -> {
@@ -302,6 +307,11 @@ public class DatabaseSectionController {
                     btnSave.setDisable(false);
                     btnCancel.setDisable(false);
                     btnSave.setText("Guardar");
+                    tfHost.setDisable(false);
+                    tfPort.setDisable(false);
+                    tfName.setDisable(false);
+                    tfUser.setDisable(false);
+                    pfPass.setDisable(false);
                     if (ok || confirmSaveDespiteFailedTest()) persistAndClose.run();
                 });
             }, "db-connection-test");
