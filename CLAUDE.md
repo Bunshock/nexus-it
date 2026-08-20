@@ -116,15 +116,52 @@ Every external dependency has an interface (`IADService`, `IEquipmentService`, `
 `AppKeyEncryptionService` (AES-256/GCM via `javax.crypto`) replaced `WindowsDPAPIService` on 2026-07-08. Returns Base64 (random IV + ciphertext) for SQLite storage. The key is a fixed constant shared across every installation — see "AppKeyEncryptionService replaced WindowsDPAPIService" in Known issues/gotchas for the full rationale and accepted trade-off.
 
 ### Admin dialog pattern
-`requireAdmin(Runnable)` in `SettingsController` and `DatabaseSectionController` handles the full admin flow: check `AdminAuthService.isConfigured()`, prompt password, verify hash, run action. Each controller also duplicates `buildDialogStage / buildDialogRoot / buildDialogScene / centerOnContent` — this duplication is intentional (no shared utility class, per the no-abstraction rule). Do not extract a base class or helper unless explicitly requested. `MainController` and `NoteGeneratorController` duplicate the same pattern again for `showWarningNotice`/`showDialogNotice` (orange-accent warning popups) — `NoteGeneratorController` centers on `rootContainer` instead of a `contentArea`/`panelSettings`-style field, since it's a section-level controller, not the shell.
+`requireAdmin(Runnable)` in `SettingsController` and `DatabaseSectionController` handles the full admin flow: check `AdminAuthService.isConfigured()`, prompt password, verify hash, run action. `MainController` and `NoteGeneratorController` duplicate a related pattern for `showWarningNotice`/`showDialogNotice` (orange-accent warning popups) — `NoteGeneratorController` centers on `rootContainer` instead of a `contentArea`/`panelSettings`-style field, since it's a section-level controller, not the shell.
 
 **Superseded 2026-07-30**: `DatabaseSectionController`'s `requireAdmin(Runnable)` was renamed
 `requirePermission(Permission, Runnable)` — see
 [Role-based permissions (RBAC)](#role-based-permissions-rbac-a-superadmin-tier-and-sede-scoped-admin-actions-2026-07-30)
 below. `SettingsController` never had its own `requireAdmin()`/dialog-based password prompt (its
 fields were always gated by a plain `setDisable(!adminActive)` check, now `hasPermission(...)`
-per field group) — the shared `buildDialogStage`/`buildDialogRoot`/`buildDialogScene`/
-`centerOnContent` duplication described here is otherwise unaffected.
+per field group).
+
+**Superseded 2026-08-20 — `buildDialogStage`/`buildDialogRoot`/`buildDialogScene`/`centerOnContent`
+extracted to `utils.core.DialogChrome`, direct user request, overriding the "no shared utility
+class" rule this section used to state.** These 4 methods used to be duplicated verbatim (or
+near-verbatim) across all 9 controllers that open a dialog — `DatabaseSectionController`,
+`SettingsController`, `AboutController`, `MainController`, `RemitoNoteController`,
+`NoteGeneratorController`, `PrestamoNewLoanController`, `NoteDetailController`,
+`PrestamoDetailController`. A pre-extraction survey found real per-screen variance, not just
+copy-paste noise — the extraction had to be parameterized, not a blind merge:
+- **`centerOnContent`'s anchor node differs per controller** — 6 controllers anchor on their own
+  `rootContainer`; `MainController` anchors on `contentArea`; `AboutController` anchors on
+  `panelAbout`; `SettingsController` anchors on a **dynamic** target
+  (`panelSettings.isVisible() ? panelSettings : panelSnValidation`). `DialogChrome.centerOnContent(Stage,
+  Region anchor)` takes the anchor as a parameter — each call site passes its own anchor
+  expression (including the ternary, inline, for `SettingsController`).
+- **`NoteDetailController`/`PrestamoDetailController` never had a separate `centerOnContent`
+  method at all** — the centering logic was baked directly into their own `buildDialogStage()`.
+  Normalized to call `DialogChrome.buildDialogStage()` then `DialogChrome.centerOnContent(stage,
+  rootContainer)` explicitly, same as every other controller — a structural change (how the code
+  is expressed) with no behavioral change (same opacity/`setOnShown`/bounds math, same timing
+  relative to `setScene()`).
+- **`buildDialogRoot` had 2 signatures** — 5 controllers took `(double prefWidth)` with a
+  hardcoded `#1a1a1a` background; 4 took `(double prefWidth, String accentColor)`. Unified to the
+  latter; the 5 fixed-color controllers now pass `"#1a1a1a"` explicitly.
+- **`buildDialogScene` was byte-for-byte identical across all 9 controllers** — zero behavioral
+  variance, extracted as-is.
+- Every controller's own copy of these 4 methods was deleted (replaced with a one-line comment
+  pointing at `DialogChrome`), and `getClass().getResource(...)` calls (which need to stay
+  resolvable regardless of caller) were verified to still work via `DialogChrome.class.getResource(...)`
+  with an absolute resource path.
+- Full suite verified green before and after (531 tests, 1 pre-existing unrelated failure in
+  `NoteGenerationServiceTest` present on both the pre- and post-extraction commit — confirmed via
+  `git stash` before attributing it) — this extraction did not change that count.
+- **`requireAdmin`/`requirePermission` and `showWarningNotice`/`showDialogNotice` remain
+  independently duplicated per controller, unaffected by this change** — only the 4 dialog-chrome
+  builder methods were extracted; the rest of this codebase's no-shared-abstraction convention
+  (documented throughout this file) still applies everywhere else, including the admin-flow logic
+  these dialogs are used inside of.
 
 **Exception, 2026-07-24**: `DatabaseSectionController.handleEditConnection()` (the remote DB host/port/name/username/password dialog) no longer calls `requireAdmin()` — explicit user decision, since `db_*` settings are per-machine (local `APP_SETTINGS` only, never synced) and the existing test-connection-before-accepting flow (see Security requirements above) already guards against silently saving a bad config, regardless of who opens the dialog. This surfaced a real, separate issue while reviewing it: `openEditConnectionDialog()`'s password field used to pre-fill with the *decrypted* current `db_password` — harmless while only an admin could reach it, but a real plaintext-disclosure risk once anyone can. Fixed in the same change: the password field is now write-only, like every other secret field in this app (SMTP/GLPI/AD) — blank by default (`promptText="Dejar en blanco para no cambiarla"`), and `db_password` is only re-saved when the field is actually non-blank; a blank save resolves to the existing decrypted password for `configure()`/`testConnection()` (so leaving it blank doesn't break the live connection), but never writes it back to `APP_SETTINGS` again. The username field was deliberately left as-is (still pre-filled, plain `TextField`) — out of scope for this change, and a username alone isn't a credential.
 
