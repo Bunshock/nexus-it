@@ -9,24 +9,16 @@ import com.bunshock.note_app_for_it_frontend.controllers.note.NoteGeneratorContr
 import com.bunshock.note_app_for_it_frontend.controllers.prestamo.PrestamoHistoryController;
 import com.bunshock.note_app_for_it_frontend.controllers.prestamo.PrestamoNewLoanController;
 import com.bunshock.note_app_for_it_frontend.controllers.prestamo.PrestamosController;
-import com.bunshock.note_app_for_it_frontend.controllers.note.ProviderNoteController;
 import com.bunshock.note_app_for_it_frontend.controllers.envio.RemitoHistoryController;
 import com.bunshock.note_app_for_it_frontend.controllers.envio.RemitoNoteController;
 import com.bunshock.note_app_for_it_frontend.controllers.admin.SettingsController;
-import com.bunshock.note_app_for_it_frontend.controllers.note.UserNoteController;
 
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Parent;
-import javafx.scene.layout.VBox;
 
 public class ViewFactory {
 
     private static final String BASE = "/com/bunshock/note_app_for_it_frontend/views/";
-
-    private VBox userNoteView;
-    private VBox providerNoteView;
-    private UserNoteController userNoteController;
-    private ProviderNoteController providerNoteController;
 
     private Parent generatorView;
     private NoteGeneratorController generatorController;
@@ -52,30 +44,11 @@ public class ViewFactory {
     private Parent prestamoHistoryView;
     private PrestamoHistoryController prestamoHistoryController;
 
-    public VBox getUserNoteView() {
-        if (userNoteView == null) {
-            FXMLLoader loader = loader("UserNoteView.fxml");
-            userNoteView = load(loader);
-            userNoteController = loader.getController();
-        }
-        return userNoteView;
-    }
-
-    public VBox getProviderNoteView() {
-        if (providerNoteView == null) {
-            FXMLLoader loader = loader("ProviderNoteView.fxml");
-            providerNoteView = load(loader);
-            providerNoteController = loader.getController();
-        }
-        return providerNoteView;
-    }
-
     public Parent getGeneratorView() {
         if (generatorView == null) {
             FXMLLoader loader = loader("NoteGeneratorView.fxml");
             generatorView = load(loader);
             generatorController = loader.getController();
-            generatorController.setViewFactory(this);
         }
         return generatorView;
     }
@@ -158,9 +131,6 @@ public class ViewFactory {
         if (profileView == null) profileView = load(loader("ProfileView.fxml"));
         return profileView;
     }
-
-    public UserNoteController getUserNoteController() { return userNoteController; }
-    public ProviderNoteController getProviderNoteController() { return providerNoteController; }
 
     public Parent getPrestamosView() {
         if (prestamosView == null) {

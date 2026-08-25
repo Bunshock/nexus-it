@@ -38,8 +38,17 @@
                     <HBox alignment="CENTER_LEFT" spacing="15">
                         <children>
                             <Label text="Limpiar el formulario automáticamente después de generar una nota"
-                                   wrapText="true" style="-fx-text-fill: #334155; -fx-font-size: 12px;" HBox.hgrow="ALWAYS"/>
+                                   wrapText="true" style="-fx-text-fill: #334155; -fx-font-size: 12px;"/>
+                            <Region HBox.hgrow="ALWAYS"/>
                             <ToggleSwitch fx:id="toggleAutoClearForm"/>
+                        </children>
+                    </HBox>
+                    <HBox alignment="CENTER_LEFT" spacing="15">
+                        <children>
+                            <Label text="Cerrar la pestaña automáticamente después de generar una nota"
+                                   wrapText="true" style="-fx-text-fill: #334155; -fx-font-size: 12px;"/>
+                            <Region HBox.hgrow="ALWAYS"/>
+                            <ToggleSwitch fx:id="toggleAutoCloseTab"/>
                         </children>
                     </HBox>
                 </children>

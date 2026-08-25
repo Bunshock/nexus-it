@@ -262,6 +262,37 @@ class TechnicianSessionServiceTest {
         }
     }
 
+    @Test
+    void isAutoCloseTabAfterGenerationDefaultsToFalseWhenNoPreferenceSet() {
+        session.applyManualOverride("Rodriguez Joaquin", "test-tss-autoclosetab-1", "x@x.com", "45933368");
+        assertFalse(session.isAutoCloseTabAfterGeneration());
+    }
+
+    @Test
+    void setAutoCloseTabAfterGenerationPersistsAndOverridesDefault() {
+        session.applyManualOverride("Rodriguez Joaquin", "test-tss-autoclosetab-2", "x@x.com", "45933368");
+        try {
+            session.setAutoCloseTabAfterGeneration(true);
+            assertTrue(session.isAutoCloseTabAfterGeneration());
+        } finally {
+            session.setAutoCloseTabAfterGeneration(false);
+        }
+    }
+
+    @Test
+    void autoCloseTabAfterGenerationPreferencePersistsAcrossRefresh() {
+        session.applyManualOverride("Rodriguez Joaquin", "test-tss-autoclosetab-3", "x@x.com", "45933368");
+        try {
+            session.setAutoCloseTabAfterGeneration(true);
+            // Simulate a fresh resolution of the same technician (e.g. a later login) — the
+            // preference must be reloaded from APP_SETTINGS, not just held in memory.
+            session.applyManualOverride("Rodriguez Joaquin", "test-tss-autoclosetab-3", "x@x.com", "45933368");
+            assertTrue(session.isAutoCloseTabAfterGeneration());
+        } finally {
+            session.setAutoCloseTabAfterGeneration(false);
+        }
+    }
+
     // Sede is no longer a self-service preference — it's assigned by a superadmin directly via
     // SQL against APP_USER.sede_id, and resolved here (loadAssignedSede()) at login/manual-
     // override time by reading IUserRoleService.getSedeId(username), same as role itself. Tests

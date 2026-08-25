@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?import javafx.scene.layout.*?>
+<?import javafx.scene.control.*?>
+
+<!-- One page's worth of the Generar Nota form — no footer buttons, those live in the shell. -->
+<VBox fx:id="rootContainer" style="-fx-padding: 0; -fx-background-color: transparent;"
+      xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1"
+      fx:controller="com.bunshock.note_app_for_it_frontend.controllers.note.NoteTabController">
+
+    <children>
+
+        <!-- One teal frame enclosing both the details/tables area and the Observaciones
+             Generales footer — see .note-content-frame in styles.css. -->
+        <VBox spacing="20" VBox.vgrow="ALWAYS" styleClass="note-content-frame">
+            <children>
+
+                <!-- Two-column main content -->
+                <HBox VBox.vgrow="ALWAYS" spacing="0">
+                    <children>
+
+                        <!-- Left column: user / provider form -->
+                        <VBox prefWidth="420.0" minWidth="380.0" maxWidth="460.0" HBox.hgrow="NEVER" spacing="14"
+                              style="-fx-background-color: white; -fx-background-radius: 10 0 0 10; -fx-padding: 20;">
+                            <children>
+                                <!-- Note type: a single ComboBox replaces the old Usuario/Proveedor
+                                     toggle plus UserNoteView's own inner Entrega/Devolución/Préstamo/Fin
+                                     de Contrato toggle stack — a flat list scales with new note types
+                                     without growing taller. -->
+                                <VBox spacing="4">
+                                    <children>
+                                        <Label text="TIPO DE NOTA" styleClass="input-label-small"/>
+                                        <ComboBox fx:id="cmbNoteType" maxWidth="Infinity" styleClass="form-input-main"/>
+                                    </children>
+                                </VBox>
+                                <!-- No ScrollPane — the taller "Proveedor (Entrega)" sub-form must
+                                     fit directly, no internal scrollbar. -->
+                                <StackPane fx:id="dynamicContentArea" VBox.vgrow="ALWAYS">
+                                    <children>
+                                        <Label text="Seleccione un perfil arriba para cargar el formulario."
+                                               style="-fx-text-fill: #aaa;"/>
+                                    </children>
+                                </StackPane>
+                            </children>
+                        </VBox>
+
+                        <!-- Column divider -->
+                        <Region minWidth="1.0" maxWidth="1.0" style="-fx-background-color: #e2e8f0;"/>
+
+                        <!-- Right column: equipment tables -->
+                        <VBox spacing="15" HBox.hgrow="ALWAYS"
+                              style="-fx-background-color: white; -fx-background-radius: 0 10 10 0; -fx-padding: 20;">
+                            <children>
+
+                                <!-- Section title + add button. The stock-shortage indicator lives right
+                                     here (not between this row and the tables below) so its appearance
+                                     never resizes the item tables — see
+                                     NoteTabController.refreshStockWarning()/showStockWarning().
+                                     "Ver detalle" reveals the full per-item breakdown as a hover popover
+                                     (setupStockWarningHover()) instead of expanding inline, so a long
+                                     shortage list floats above the layout rather than taking it over. -->
+                                <HBox alignment="CENTER_LEFT" spacing="10">
+                                    <children>
+                                        <Label text="DETALLES DEL EQUIPAMIENTO" styleClass="section-label"/>
+                                        <Region HBox.hgrow="ALWAYS"/>
+                                        <HBox fx:id="stockWarningBox" alignment="CENTER_LEFT" spacing="20"
+                                              visible="false" managed="false" styleClass="stock-warning-inline">
+                                            <children>
+                                                <Label fx:id="lblStockWarningSummary" styleClass="stock-warning-summary-inline"/>
+                                                <Hyperlink fx:id="lnkStockWarningToggle" text="Ver detalle" styleClass="stock-warning-toggle"/>
+                                            </children>
+                                        </HBox>
+                                        <Label fx:id="lblTableStatus" text=""
+                                               style="-fx-text-fill: #ef4444; -fx-font-size: 10px; -fx-font-weight: bold;" opacity="0"/>
+                                        <Button fx:id="btnAddItem" text="+ Agregar Equipo" onAction="#handleAddItem" styleClass="button-primary"/>
+                                    </children>
+                                </HBox>
+
+                                <!-- Asset items table -->
+                                <VBox spacing="5" VBox.vgrow="ALWAYS">
+                                    <children>
+                                        <Label text="EQUIPOS CON S/N (NOTEBOOKS, MONITORES, ETC.)" styleClass="input-label-small"/>
+                                        <TableView fx:id="tblAssets" styleClass="modern-table, equipment-table" VBox.vgrow="ALWAYS">
+                                            <placeholder>
+                                                <Label text="No hay ítems cargados. Haga click en '+ Agregar Equipo'."/>
+                                            </placeholder>
+                                            <columnResizePolicy>
+                                                <TableView fx:constant="CONSTRAINED_RESIZE_POLICY"/>
+                                            </columnResizePolicy>
+                                            <columns>
+                                                <TableColumn fx:id="colAssetType"    text="TIPO"          prefWidth="120" minWidth="120" maxWidth="120"/>
+                                                <TableColumn fx:id="colAssetBrand"   text="MARCA"         prefWidth="100" minWidth="100" maxWidth="100"/>
+                                                <TableColumn fx:id="colAssetModel"   text="MODELO"        prefWidth="180" minWidth="180" maxWidth="180"/>
+                                                <TableColumn fx:id="colAssetSerial"  text="S/N"           prefWidth="150" minWidth="150" maxWidth="150"/>
+                                                <TableColumn fx:id="colAssetAF"      text="A/F"           prefWidth="100" minWidth="100" maxWidth="100"/>
+                                                <TableColumn fx:id="colAssetObs"     text="OBSERVACIONES"/>
+                                                <TableColumn fx:id="colAssetActions" text="ACCIONES"      prefWidth="80"  minWidth="80"  maxWidth="80"/>
+                                            </columns>
+                                        </TableView>
+                                    </children>
+                                </VBox>
+
+                                <!-- Countable items table -->
+                                <VBox spacing="5" VBox.vgrow="ALWAYS">
+                                    <children>
+                                        <Label text="PERIFÉRICOS Y OTROS (POR CANTIDAD)" styleClass="input-label-small"/>
+                                        <TableView fx:id="tblCountables" styleClass="modern-table, equipment-table" VBox.vgrow="ALWAYS">
+                                            <placeholder>
+                                                <Label text="No hay ítems cargados. Haga click en '+ Agregar Equipo'."/>
+                                            </placeholder>
+                                            <columnResizePolicy>
+                                                <TableView fx:constant="CONSTRAINED_RESIZE_POLICY"/>
+                                            </columnResizePolicy>
+                                            <columns>
+                                                <TableColumn fx:id="colCountType"    text="TIPO"          prefWidth="120" minWidth="120" maxWidth="120"/>
+                                                <TableColumn fx:id="colCountBrand"   text="MARCA"         prefWidth="100" minWidth="100" maxWidth="100"/>
+                                                <TableColumn fx:id="colCountModel"   text="MODELO"        prefWidth="180" minWidth="180" maxWidth="180"/>
+                                                <TableColumn fx:id="colCountQty"     text="CANT."         prefWidth="60"  minWidth="60"  maxWidth="60"/>
+                                                <TableColumn fx:id="colCountObs"     text="OBSERVACIONES"/>
+                                                <TableColumn fx:id="colCountActions" text="ACCIONES"      prefWidth="80"  minWidth="80"  maxWidth="80" sortable="false" resizable="false"/>
+                                            </columns>
+                                        </TableView>
+                                    </children>
+                                </VBox>
+
+                            </children>
+                        </VBox>
+
+                    </children>
+                </HBox>
+
+                <!-- Observaciones Generales -->
+                <VBox fx:id="vboxObservationsFooter" spacing="10" minHeight="110.0" prefHeight="110.0" maxHeight="110.0"
+                      style="-fx-background-color: white; -fx-background-radius: 10; -fx-padding: 15 20 20 20;">
+                    <children>
+                        <Label text="OBSERVACIONES GENERALES" styleClass="section-label"/>
+                        <TextField fx:id="txtObservations"
+                                   prefHeight="35.0"
+                                   promptText="Ingrese detalles adicionales aquí..."
+                                   styleClass="text-field-small"
+                                   style="-fx-alignment: CENTER_LEFT;"/>
+                    </children>
+                </VBox>
+
+            </children>
+        </VBox>
+
+    </children>
+</VBox>

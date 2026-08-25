@@ -15,6 +15,7 @@ import com.bunshock.note_app_for_it_frontend.models.auth.ADUser;
 import com.bunshock.note_app_for_it_frontend.services.core.ConfigService;
 import com.bunshock.note_app_for_it_frontend.services.core.ServiceLocator;
 import javafx.animation.FadeTransition;
+import javafx.animation.PauseTransition;
 import javafx.animation.Transition;
 import javafx.application.Platform;
 import javafx.collections.FXCollections;
@@ -57,6 +58,59 @@ public class UserNoteController implements AdSearchHost {
     // match exactly what getSelectedNoteType() returns ("ENTREGA"/"DEVOLUCIÓN"/
     // "ENTREGA PERMANENTE"/"PRÉSTAMO"), stored directly in NOTE_REPORT.profile_type.
     private String currentType = "ENTREGA";
+
+    // Feeds NoteTabController's tab label. AD lookup uses lastWord (AD returns "Apellido
+    // Nombre"); manual typing uses firstWord, committed only on blur.
+    private String tabDisplayName;
+    private boolean lastNameFromAd = false;
+    // True only while fillUserData() itself is setting the text, so its own programmatic change
+    // doesn't get mistaken for a manual edit.
+    private boolean suppressManualNameFlag = false;
+    // True for the whole duration of an AD search (including while the multi-result popup is
+    // open), so a blur caused by starting the search doesn't commit incomplete search text as a
+    // manual name.
+    private boolean adSearchPending = false;
+    // Clicking "Buscar en AD" blurs txtUserName before handleADSearch() runs, so the flag above
+    // alone is too late for that path — deferring the commit lets handleADSearch() set the flag
+    // first. Same debounce pattern as setupStockWarningHover()'s hide delay.
+    private static final Duration MANUAL_NAME_COMMIT_DELAY = Duration.millis(80);
+    private final PauseTransition manualNameCommitDelay = new PauseTransition(MANUAL_NAME_COMMIT_DELAY);
+    private Runnable tabNameChangeRequest;
+
+    /** Set by NoteTabController right after this sub-form is loaded. */
+    public void setTabNameChangeListener(Runnable tabNameChangeRequest) {
+        this.tabNameChangeRequest = tabNameChangeRequest;
+    }
+
+    public String getTabDisplayName() { return tabDisplayName; }
+
+    private void notifyTabNameChanged() {
+        if (tabNameChangeRequest != null) tabNameChangeRequest.run();
+    }
+
+    // Extracted so it's testable via reflection without needing real focus events.
+    private void commitManualNameIfNotSearching() {
+        if (!adSearchPending) {
+            tabDisplayName = firstWord(txtUserName.getText());
+            notifyTabNameChanged();
+        }
+    }
+
+    private static String firstWord(String s) {
+        if (s == null) return null;
+        String trimmed = s.trim();
+        if (trimmed.isEmpty()) return null;
+        int idx = trimmed.indexOf(' ');
+        return idx == -1 ? trimmed : trimmed.substring(0, idx);
+    }
+
+    private static String lastWord(String s) {
+        if (s == null) return null;
+        String trimmed = s.trim();
+        if (trimmed.isEmpty()) return null;
+        int idx = trimmed.lastIndexOf(' ');
+        return idx == -1 ? trimmed : trimmed.substring(idx + 1);
+    }
 
     @FXML private VBox vboxMotivo;
     @FXML private ComboBox<String> cmbMotivo;
@@ -165,6 +219,16 @@ public class UserNoteController implements AdSearchHost {
             if (newText.length() > USER_NAME_MAX_LENGTH) return null;
             return newText.isEmpty() || newText.matches("[\\p{L} ]*") ? change : null;
         }));
+        // A manual edit invalidates the AD-sourced flag (fillUserData() suppresses this itself).
+        txtUserName.textProperty().addListener((obs, old, val) -> {
+            if (!suppressManualNameFlag) lastNameFromAd = false;
+        });
+        txtUserName.focusedProperty().addListener((obs, wasFocused, isFocused) -> {
+            if (!isFocused && !lastNameFromAd) {
+                manualNameCommitDelay.setOnFinished(e -> commitManualNameIfNotSearching());
+                manualNameCommitDelay.playFromStart();
+            }
+        });
         txtUserDni.setTextFormatter(new TextFormatter<>(change -> {
             String newText = change.getControlNewText();
             return newText.length() <= 8 && newText.matches("\\d*") ? change : null;
@@ -415,6 +479,7 @@ public class UserNoteController implements AdSearchHost {
             return;
         }
 
+        adSearchPending = true;
         btnBuscarAD.setDisable(true);
         adSearchOriginalText = btnBuscarAD.getText();
         showSearchingState();
@@ -433,26 +498,26 @@ public class UserNoteController implements AdSearchHost {
             boolean searchFailed = failed;
             Platform.runLater(() -> {
                 if (searchFailed) {
+                    adSearchPending = false;
                     btnBuscarAD.setDisable(false);
                     hideSearchingState(adSearchOriginalText);
                     highlightFields("#ef4444");
                     triggerFeedback("No se pudo conectar con AD", "#ef4444");
                 } else if (finalResults.isEmpty()) {
+                    adSearchPending = false;
                     btnBuscarAD.setDisable(false);
                     hideSearchingState(adSearchOriginalText);
                     highlightFields("#ef4444");
                     triggerFeedback("Usuario no encontrado", "#ef4444");
                 } else if (finalResults.size() == 1) {
+                    adSearchPending = false;
                     btnBuscarAD.setDisable(false);
                     hideSearchingState(adSearchOriginalText);
                     fillUserData(finalResults.get(0));
                     highlightFields("#0c8570");
                     triggerFeedback("Usuario cargado", "#0c8570");
                 } else {
-                    // Keep the button disabled and the spinner running — the multi-result
-                    // popup is itself the continuation of this search, not a new idle state.
-                    // onAdSelectionDialogClosed() (called by ADUserSelectionController on
-                    // either selection or cancel) is what restores normal button state.
+                    // adSearchPending stays true until onAdSelectionDialogClosed().
                     showUserSelectionDialog(finalResults);
                 }
             });
@@ -463,6 +528,7 @@ public class UserNoteController implements AdSearchHost {
 
     /** Called by ADUserSelectionController when the multi-result popup closes, however it closed. */
     public void onAdSelectionDialogClosed() {
+        adSearchPending = false;
         btnBuscarAD.setDisable(false);
         hideSearchingState(adSearchOriginalText);
     }
@@ -490,10 +556,16 @@ public class UserNoteController implements AdSearchHost {
     }
 
     public void fillUserData(ADUser user) {
+        suppressManualNameFlag = true;
         txtUserDni.setText(user.getDni());
         txtUserName.setText(user.getFullName());
         txtUserAccount.setText(user.getUsername());
+        suppressManualNameFlag = false;
         lblUserEmail.setText("email: " + user.getEmail());
+
+        lastNameFromAd = true;
+        tabDisplayName = lastWord(user.getFullName());
+        notifyTabNameChanged();
     }
 
     private void showUserSelectionDialog(List<ADUser> results) {
@@ -613,6 +685,10 @@ public class UserNoteController implements AdSearchHost {
         lblUserEmail.setText("email: ");
         resetFieldStyles();
         lblADStatus.setText("");
+
+        lastNameFromAd = false;
+        tabDisplayName = null;
+        notifyTabNameChanged();
     }
 
     public void clearAllFields() {

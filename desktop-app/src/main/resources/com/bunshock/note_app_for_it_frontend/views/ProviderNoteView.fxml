@@ -49,10 +49,13 @@
 
         <Separator style="-fx-opacity: 0.5;"/>
 
-        <!-- Responsible person -->
-        <VBox spacing="18">
+        <!-- Responsible person — trimmed spacing (was 18/14): this is the form's tallest section,
+             and without a ScrollPane anymore (see NoteTabContentView.fxml) its height feeds
+             directly into whether the "Proveedor (Entrega)" tab stays within the fixed window
+             height when switching to it. -->
+        <VBox spacing="10">
             <children>
-                <VBox spacing="10">
+                <VBox spacing="8">
                     <children>
                         <Label text="RECIBE EN REPRESENTACIÓN" styleClass="section-label"/>
                         <CheckBox fx:id="chkEnableResponsible"
@@ -61,7 +64,7 @@
                     </children>
                 </VBox>
 
-                <VBox fx:id="gridResponsibleDetails" disable="true" spacing="14">
+                <VBox fx:id="gridResponsibleDetails" disable="true" spacing="8">
                     <children>
                         <VBox spacing="2">
                             <children>

@@ -70,6 +70,7 @@ public class SettingsController {
     @FXML private Label  lblSaveStatus;
 
     @FXML private org.controlsfx.control.ToggleSwitch toggleAutoClearForm;
+    @FXML private org.controlsfx.control.ToggleSwitch toggleAutoCloseTab;
 
     // ── S/N validation panel fields ───────────────────────────────────
     @FXML private MenuButton                             mnuSnType;
@@ -144,6 +145,10 @@ public class SettingsController {
         toggleAutoClearForm.setSelected(TechnicianSessionService.getInstance().isAutoClearFormAfterGeneration());
         toggleAutoClearForm.selectedProperty().addListener((obs, was, isNow) ->
             TechnicianSessionService.getInstance().setAutoClearFormAfterGeneration(isNow));
+
+        toggleAutoCloseTab.setSelected(TechnicianSessionService.getInstance().isAutoCloseTabAfterGeneration());
+        toggleAutoCloseTab.selectedProperty().addListener((obs, was, isNow) ->
+            TechnicianSessionService.getInstance().setAutoCloseTabAfterGeneration(isNow));
 
         AdminSession.getInstance().addOnActivateListener(this::onAdminStateChanged);
         AdminSession.getInstance().addOnDeactivateListener(this::onAdminStateChanged);

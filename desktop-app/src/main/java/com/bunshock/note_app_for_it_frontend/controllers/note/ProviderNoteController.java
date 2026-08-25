@@ -46,12 +46,27 @@ public class ProviderNoteController {
     @FXML private Label lblResponsibleStatus;
     @FXML private Label lblProviderStatus;
 
+    // Set by NoteTabController right after this sub-form is loaded — notified whenever the
+    // selected provider changes, so the enclosing tab's label (see getProviderName()) stays in
+    // sync. No separate "tab display name" field needed here, unlike UserNoteController — the
+    // provider combobox's own value is already the single source of truth, with no AD-vs-manual
+    // ambiguity to track.
+    private Runnable tabNameChangeRequest;
+
+    public void setTabNameChangeListener(Runnable tabNameChangeRequest) {
+        this.tabNameChangeRequest = tabNameChangeRequest;
+    }
+
     public void initialize() {
         List<String> motivoOptions = ConfigService.getInstance().getConfig()
             .motivoOptions.getOrDefault("proveedor", List.of());
         cmbMotivo.setItems(FXCollections.observableArrayList(motivoOptions));
 
         refreshProviders();
+
+        cmbProviderSearch.valueProperty().addListener((obs, old, val) -> {
+            if (tabNameChangeRequest != null) tabNameChangeRequest.run();
+        });
 
         // Disable-only, deliberately — the fields stay visible (just grayed out) when unchecked,
         // per explicit user direction, so the form's layout doesn't shift when this checkbox is

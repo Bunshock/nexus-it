@@ -1,9 +1,9 @@
 package com.bunshock.note_app_for_it_frontend;
 import com.bunshock.note_app_for_it_frontend.controllers.auth.LoginController;
-
 import com.bunshock.note_app_for_it_frontend.services.core.ConfigService;
 import com.bunshock.note_app_for_it_frontend.services.core.DatabaseService;
 import com.bunshock.note_app_for_it_frontend.services.core.ServiceLocator;
+
 import javafx.application.Application;
 import javafx.fxml.FXMLLoader;
 import javafx.geometry.Insets;
@@ -66,7 +66,7 @@ public class App extends Application {
         instance = this;
         primaryStage = stage;
         stage.getIcons().add(new Image(getClass().getResourceAsStream("images/favicon.png")));
-        stage.setTitle("Universidad Siglo 21 - Soporte IT - Registro de Movimientos y Generación de Notas");
+        stage.setTitle("Nexus IT - Registro de Movimientos y Generación de Notas");
         stage.initStyle(StageStyle.TRANSPARENT);
         showLoginScreen(stage);
     }

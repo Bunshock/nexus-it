@@ -81,7 +81,7 @@
                   <HBox alignment="CENTER_LEFT" spacing="10">
                         <children>
                            <Region prefWidth="4" prefHeight="25" style="-fx-background-color: #4db6ac; -fx-background-radius: 2;"/>
-                           <Label text="MOVIMIENTOS" styleClass="sidebar-title-main"/>
+                           <Label text="Nexus IT" styleClass="sidebar-title-main"/>
                         </children>
                   </HBox>
                   <Label text="SOPORTE IT - SITA - UES21" styleClass="sidebar-title-sub" style="-fx-padding: 0 0 0 14;"/>

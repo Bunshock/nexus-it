@@ -41,6 +41,7 @@ public class TechnicianSessionService {
     private volatile Integer sedeId;
     private volatile String sedeName;
     private volatile Boolean autoClearFormAfterGeneration;
+    private volatile Boolean autoCloseTabAfterGeneration;
 
     private final List<Runnable> onChangeListeners = new ArrayList<>();
     private final List<Runnable> onDisplayNameChangeListeners = new ArrayList<>();
@@ -69,6 +70,7 @@ public class TechnicianSessionService {
         loadDisplayNamePreference();
         loadAssignedSede();
         loadAutoClearFormPreference();
+        loadAutoCloseTabPreference();
         notifyListeners();
     }
 
@@ -83,6 +85,7 @@ public class TechnicianSessionService {
         loadDisplayNamePreference();
         loadAssignedSede();
         loadAutoClearFormPreference();
+        loadAutoCloseTabPreference();
         notifyListeners();
     }
 
@@ -195,6 +198,35 @@ public class TechnicianSessionService {
 
     private static String autoClearFormPreferenceKey(String username) {
         return "auto_clear_form_pref:" + username;
+    }
+
+    /**
+     * Whether a note tab (Generar Nota / Remito de Envío) should close itself automatically
+     * right after a note is successfully generated from it — independent of
+     * isAutoClearFormAfterGeneration() above, which clears the form in place instead. Defaults
+     * to {@code false} (stay open) when nothing has been saved yet — the more conservative
+     * default, since a tab a technician just used shouldn't disappear on them unless they
+     * opt in. Same persisted-preference shape as the display name/auto-clear preferences above.
+     */
+    public boolean isAutoCloseTabAfterGeneration() {
+        Boolean pref = autoCloseTabAfterGeneration;
+        return pref != null && pref;
+    }
+
+    public synchronized void setAutoCloseTabAfterGeneration(boolean value) {
+        if (username == null) return;
+        saveSetting(autoCloseTabPreferenceKey(username), Boolean.toString(value));
+        autoCloseTabAfterGeneration = value;
+    }
+
+    private void loadAutoCloseTabPreference() {
+        if (username == null) { autoCloseTabAfterGeneration = null; return; }
+        String stored = loadSetting(autoCloseTabPreferenceKey(username));
+        autoCloseTabAfterGeneration = stored != null ? Boolean.parseBoolean(stored) : null;
+    }
+
+    private static String autoCloseTabPreferenceKey(String username) {
+        return "auto_close_tab_pref:" + username;
     }
 
     /** The technician's superadmin-assigned Sede (site) display name, or null if not assigned
