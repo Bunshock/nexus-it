@@ -27,15 +27,24 @@
                         -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.6), 24, 0, 0, 6);
                       ">
                     <children>
-                        <ImageView fitWidth="90" preserveRatio="true">
+                        <ImageView fitWidth="280" preserveRatio="true">
                             <image>
-                                <Image url="/com/bunshock/note_app_for_it_frontend/images/logo.png" />
+                                <Image url="/com/bunshock/note_app_for_it_frontend/images/logo-login.png" />
                             </image>
                         </ImageView>
 
-                        <Label text="Registro de Movimientos y Generación de Notas"
-                               style="-fx-font-size: 12px; -fx-text-fill: #64748b; -fx-text-alignment: center;"
-                               wrapText="true" textAlignment="CENTER"/>
+                        <Separator maxWidth="Infinity"/>
+
+                        <VBox alignment="CENTER" spacing="0">
+                            <children>
+                                <Label text="Registro de Movimientos y"
+                                       style="-fx-font-size: 14px; -fx-font-weight: bold; -fx-text-fill: #334155;"/>
+                                <Label text="Generación de Notas"
+                                       style="-fx-font-size: 14px; -fx-font-weight: bold; -fx-text-fill: #334155;"/>
+                            </children>
+                        </VBox>
+
+                        <Separator maxWidth="Infinity"/>
 
                         <Label text="INICIAR SESIÓN" styleClass="section-label">
                             <VBox.margin><Insets top="8"/></VBox.margin>

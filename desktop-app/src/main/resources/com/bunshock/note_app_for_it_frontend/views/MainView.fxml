@@ -67,7 +67,7 @@
                      <children>
                         <ImageView fx:id="imgLogo" fitWidth="180" preserveRatio="true">
                            <image>
-                              <Image url="/com/bunshock/note_app_for_it_frontend/images/logo.png" />
+                              <Image url="/com/bunshock/note_app_for_it_frontend/images/logo.jpg" />
                            </image>
                         </ImageView>
                      </children>
