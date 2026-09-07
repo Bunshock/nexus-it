@@ -32,8 +32,9 @@ Status legend: ✅ resolved · 🟡 recommendation drafted, needs user confirm �
 | N1 backing type | ✅ adapter supports BOTH `Peripheral` and `Consumable`; Consumable return semantics TBD in the adapter build |
 | F1 write identity | ✅ per-user: one shared `App-Token` (admin config), per-technician `user_token`; `PUT /me/glpi-token` + `APP_USER.glpi_token_encrypted` to design |
 
-**What's left is data-gathering only (GLPI admin), not decisions** — see "GLPI-admin
-data still owed" at the bottom.
+**Tier 3/4 is fully DECIDED.** What's left is data-gathering only (GLPI admin) —
+create the "Genérico" rows + look up their ids, and `GET /Location` to build the
+Sede→Location map. See "GLPI-admin data still owed" at the bottom.
 
 ---
 
@@ -70,10 +71,20 @@ both Computer and Peripheral.**
 | `44`/`45`/`46`/`47`/`48` (Obsoleto/En baja/En reciclaje/En donación/Scrap) | **UNAVAILABLE** | | ✅ |
 | `0` / null | **UNAVAILABLE** | verified: the 303 Multimedia items are all `states_id=0`. "Unknown" is not handoutable | ✅ (Q5, user 2026-09-07) |
 
-**Per-`profileType` sync map** (middleware → GLPI on a `sync` step):
-ENTREGA / ENTREGA PERMANENTE → `31`; PRÉSTAMO → `34`; DEVOLUCIÓN / any return
-→ `33`; `lost` → `45` (En baja) or `48` (Scrap); Remito relocation → keep
-state, `PUT /<itemtype>/{id} {"locations_id": <dest>}` (E2a).
+**Write direction — `syncTargets` (middleware → GLPI `states_id` on a `sync`), ✅
+all confirmed 2026-09-07, uniform for assets AND Peripherals:**
+
+```
+ENTREGA:31 · ENTREGA_PERMANENTE:31 · PRESTAMO:34 · DEVOLUCION:33 · RETURN:33 · LOST:45
+```
+
+- `LOST → 45 En baja` (not `48 Scrap` — a lost item may still physically exist).
+- **`PRESTAMO → 34` applies to countables too** — a Préstamo of a Peripheral runs
+  the same `33 (En stock) → 34 (En préstamo) → 33` cycle as an asset loan; no
+  per-itemtype branch. (The doc's §2 Peripheral workflow only spelled out
+  `33 ↔ 31`, which is why 3b was flagged; the org confirmed `34` is used.)
+- Remito relocation → keep state, `PUT /<itemtype>/{id} {"locations_id": <dest>}` (E2a).
+
 Every write also stamps `motivodemovimientofield` (plugin Fields container id 8)
 with the note ref + acting technician + reason.
 
@@ -232,9 +243,9 @@ the `PUT /me/glpi-token` endpoint above.
 2. `GET /Location?range=0-200` — confirm the org's sedes exist as Location
    records; build the Sede→Location-id adapter-config map from the result (create
    any missing sedes).
-3. (adapter build) confirm the exact `states_id` sync targets for `lost`
-   (`45 En baja` vs `48 Scrap`) and whether Peripheral loans really use
-   `34 En préstamo`.
+
+*(Point 3 — `lost` and Préstamo-of-countable state targets — RESOLVED 2026-09-07:
+`LOST → 45`, `PRESTAMO → 34` uniform. See `syncTargets` above.)*
 
 ## Tier 3/4 decisions — fold into
 
