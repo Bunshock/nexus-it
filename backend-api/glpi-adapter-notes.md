@@ -20,6 +20,18 @@ data-cleanup — informs E1b).
 Status legend: ✅ resolved · 🟡 recommendation drafted, needs user confirm ·
 🔴 blocked on a GLPI-admin lookup · ⚪ not started.
 
+### Progress snapshot (2026-09-07)
+
+| Item | State |
+|---|---|
+| E1a status buckets Q1–Q5 | ✅ confirmed by user |
+| E1a Q6 (tie-break) | 🟡 open — user asked for a re-explanation, given; awaiting decision |
+| E1b generic ids | 🟡 config shape = per-itemtype maps (see below); rows don't exist in GLPI yet (org will create); Manufacturer-is-global needs 1-word confirm |
+| E2a Sede = `Location` | 🟡 doc recommendation only — needs explicit user confirm |
+| E2b address + recipients | ✅ decided — address in GLPI `Location`, no middleware `SEDE_SHIPPING_INFO`; recipients = deferred desktop-app feature |
+| N1 backing type | ✅ decided — adapter supports BOTH `Peripheral` and `Consumable`; return semantics for Consumable-backed still to pin down |
+| F1 write identity | ✅ decided — per-user: shared `App-Token` (admin), per-technician `user_token`; supply mechanics still to design |
+
 ---
 
 ## Tier 3 — External facts
@@ -47,13 +59,13 @@ both Computer and Peripheral.**
 | `33` En stock | **AVAILABLE** | verified stock workflow | ✅ |
 | `31` En uso | **IN_USE** | verified stock workflow | ✅ |
 | `40` En uso (dup) | **IN_USE** | duplicate of 31 | ✅ |
-| `34` En préstamo | **IN_USE** (held) | a loan = held by someone | 🟡 Q4 |
-| `35` En tránsito | **UNAVAILABLE** | this is the Remito in-flight state; not handoutable at either end | 🟡 Q3 |
-| `36` Instalado | **IN_USE** (in service) | "installed / deployed" — proposed not available for hand-out | 🟡 Q1 |
+| `34` En préstamo | **IN_USE** (held) | a loan = held; valid for Peripheral too | ✅ (Q4, user 2026-09-07) |
+| `35` En tránsito | **UNAVAILABLE** | Remito in-flight state | ✅ (Q3) |
+| `36` Instalado | **IN_USE** (in service) | "installed / deployed", not handoutable | ✅ (Q1) |
 | `42` En reparación | **UNAVAILABLE** | | ✅ |
-| `43` En garantía | **UNAVAILABLE** | proposed: means "at the vendor on a warranty claim". Warranty *status* is tracked separately in plugin Fields `findegarantafield` (obsolescence container id 6), so the *state* 43 is the physical-return meaning | 🟡 Q2 |
+| `43` En garantía | **UNAVAILABLE** | "at the vendor on a warranty claim"; warranty *status* is the separate plugin field `findegarantafield` | ✅ (Q2) |
 | `44`/`45`/`46`/`47`/`48` (Obsoleto/En baja/En reciclaje/En donación/Scrap) | **UNAVAILABLE** | | ✅ |
-| `0` / null | **UNAVAILABLE** | verified: the 303 Multimedia items are all `states_id=0` ("sin estado cargado"). "Unknown" must not be handoutable | 🟡 Q5 |
+| `0` / null | **UNAVAILABLE** | verified: the 303 Multimedia items are all `states_id=0`. "Unknown" is not handoutable | ✅ (Q5, user 2026-09-07) |
 
 **Per-`profileType` sync map** (middleware → GLPI on a `sync` step):
 ENTREGA / ENTREGA PERMANENTE → `31`; PRÉSTAMO → `34`; DEVOLUCIÓN / any return
@@ -62,69 +74,81 @@ state, `PUT /<itemtype>/{id} {"locations_id": <dest>}` (E2a).
 Every write also stamps `motivodemovimientofield` (plugin Fields container id 8)
 with the note ref + acting technician + reason.
 
-**6 residual questions for the user** (🟡 — need org confirm):
-1. **Q1** `36 Instalado` → IN_USE (in service, not handoutable), AVAILABLE, or other?
-2. **Q2** `43 En garantía` → physically returned to vendor (UNAVAILABLE), or just a
-   flag on a still-usable asset (ignore for availability)?
-3. **Q3** `35 En tránsito` → confirm UNAVAILABLE for hand-out / stock count.
-4. **Q4** `34 En préstamo` — valid for **Peripheral** too (Préstamo carries
-   countables), or Peripheral loans use a different state?
-5. **Q5** `0`/null → UNAVAILABLE — agreed?
-6. **Q6** Tie-break: when `states_id` and `users_id` disagree, the middleware
-   derives *availability* from `states_id`, takes *holder* from `users_id`, and
-   flags the disagreement as reconciliation drift (`HOLDER_MISMATCH` /
-   `STATE_MISMATCH`). Agreed? — **recommended: adopt as stated** (states_id is
-   the authoritative availability signal; this is exactly what D9 exists for).
+**Q6 (tie-break) — STILL OPEN, user asked for a re-explanation 2026-09-07.**
+GLPI stores availability (`states_id`) and holder (`users_id`) separately; they
+can contradict (e.g. `states_id=33` En stock but `users_id` set, or `states_id=31`
+En uso but `users_id` empty). **Proposed rule:** availability from `states_id`,
+holder from `users_id`, and on a contradiction raise a **D9 reconciliation drift
+row** (`HOLDER_MISMATCH` / `STATE_MISMATCH`) rather than silently picking one.
+Alternative would be to make one field override the other outright. Awaiting the
+user's decision.
 
-### E1b · generic model / generic manufacturer  🔴
+### E1b · generic Type / Manufacturer / Model ids  🟡 (config shape decided, rows TBD)
 
-- `config.genericBrandId` — the generic **Manufacturer** id. D5b says it's
-  "confirmed present"; the real id still needs a `GET /Manufacturer` lookup.
-- `config.genericModelId` — `GLPI - normalization details.md` shows ComputerModel
-  has a `-` placeholder row and an explicit "**Para agregar: Genérico**" TODO —
-  i.e. no proper generic model exists yet, the org intends to create one.
-  For **PeripheralModel** (what countables use): still needs `GET /PeripheralModel`
-  to check for an existing generic row.
-- **State**: `config.genericModelId = null` (D5b's documented fallback) until a
-  real "Genérico" model is created in GLPI. Two lookups still owed by the GLPI
-  admin: (a) `GET /Manufacturer` → generic id, (b) `GET /PeripheralModel` →
-  generic row? .
+**Corrected model (user 2026-09-07):** a generic value is needed for **Type,
+Manufacturer, and Model** — and Type & Model are **per GLPI itemtype**, they do
+NOT share a global one. GLPI's `Manufacturer` is a single global dropdown, so one
+generic manufacturer. So the adapter config is **per-itemtype maps**:
 
-### E2a · Sede = GLPI `Location`  ✅
+```
+genericManufacturerId: <id>                                  # one, global
+genericTypeIds:  { Computer: <id>, Peripheral: <id>, Phone: <id>, Monitor: <id>, … }
+genericModelIds: { Computer: <id>, Peripheral: <id>, Phone: <id>, Monitor: <id>, … }
+```
 
-Confirmed by `endpoints-inventario.md` §4 ("Sede (datos para envíos) → Location,
-recomendado"). `Location` carries `name/address/postcode/town/state/country/
-code/alias/building/room/comment/lat/long` and is the `locations_id`(3) FK on
-**every** asset type → per-Sede reports for free. Consequences:
-- `?sedeId=` filters map to `locations_id`.
-- Locations are a **tree** → "at a Sede" = that node OR any descendant
-  (`searchtype=under`).
-- Remito relocation = `PUT /<itemtype>/{id} {"locations_id": <dest>}`.
-- The middleware's Sede→GLPI-id map is a Location-id map (adapter config).
+These live in `adapters/glpi/` config (D1 — field/status maps are adapter config).
+`GET /config` surfaces to the desktop app whatever it needs for the "Genérico /
+Otro" picker option per Type (the label + the ids, or a per-Type flag).
 
-### E2b · where `SEDE_SHIPPING_INFO` lives  🟡 (recommendation: middleware store)
+**Contract impact:** this replaces D5b's flat `genericBrandId` / `genericModelId`
+in §8 with the per-itemtype map above — a real §8 / D5b revision to write.
 
-`Location` holds the **address** half natively. The **recipient person(s)** half
-has no clean native home — GLPI `Contact` exists (0 rows today, clean start) but
-links to Suppliers, not Locations/assets. **Recommendation, evidence-backed:**
-the middleware's own store owns `SEDE_SHIPPING_INFO` in full (label + address +
-recipients), seeded once, edited out-of-band; GLPI `Location` stays SSOT for
-*where an asset is*, the middleware store for *how to address a shipment there*.
-This is already how `backend-api-v1-no-adapter` has it. **Needs user's final
-confirm.**
+**Rows TBD:** the generic Type/Manufacturer/Model rows do not exist in GLPI yet —
+the org will create them ("Genérico" per category). Until then those config
+entries are `null` (D5b's degrade path: item takes the picked GLPI record's real
+type/brand/model; for a not-in-catalog countable, names = `genericLabel`,
+ids = null).
+- **Manufacturer-is-global** reading needs a one-word user confirm.
+- Once the rows exist: `GET /<X>Type` / `GET /Manufacturer` / `GET /<X>Model`
+  lookups to fill the config (GLPI admin).
+
+### E2a · Sede = GLPI `Location`  🟡 (doc recommendation, consistent with E2b, not an explicit decision)
+
+From `endpoints-inventario.md` §4 ("Sede → Location, recomendado") — a *doc
+recommendation*, not a user decision (Claude over-marked this ✅ earlier).
+Consistent with the E2b answer (address lives in GLPI). If adopted: `Location`
+carries `name/address/postcode/town/…/lat/long`, is the `locations_id`(3) FK on
+every asset type; `?sedeId=` → `locations_id`; Locations are a **tree**
+(`searchtype=under` for "at a Sede or below"); Remito relocation =
+`PUT /<itemtype>/{id} {"locations_id": <dest>}`. **Needs explicit user confirm
+that Sede maps to `Location` (vs. some other GLPI concept).**
+
+### E2b · address + recipients  ✅ (decided 2026-09-07) — full design deferred
+
+- **Address**: lives in **GLPI `Location`**. The middleware reads a Sede's address
+  from its `Location` record — there is **no middleware `SEDE_SHIPPING_INFO`
+  table**. (This reverses Claude's earlier "middleware store owns it" lean.)
+- **Recipient person(s)**: a **new desktop-app-side feature**, deferred ("save for
+  later"). Intended behaviour: selecting a Sede on a Remito de Envío auto-fills
+  the address (from GLPI Location, via the middleware) and enables recipient input
+  fields. Where recipients are stored (on the note vs. a per-Sede store) is part
+  of that later design.
+- **Strip impact**: on the v2 branch, `SEDE_SHIPPING_INFO` + the current
+  `NOTE_REMITO_SEDE` / `NOTE_REMITO_OTHER` shape get reworked — Remito destination
+  becomes a GLPI Location id (address derived) or free text; recipients captured
+  on the note by the future feature. Don't design the full thing now.
 
 ### New items surfaced by the investigation (not in the original Tier 3)
 
-- **N1** 🟡 — some "countables" (chargers, paper, toner) fit GLPI **`Consumable`**
-  better than `Peripheral` (`endpoints-inventario.md` §2 note, §10). Both
-  Consumable catalogs are empty today.
-  **Recommendation: the adapter models every countable as a GLPI `Peripheral`
-  (1 record per unit), NOT `Consumable`.** Rationale: the app's countable model
-  is "1 row per unit with return/loss tracking", which maps 1:1 to Peripheral's
-  verified per-unit `states_id`/`users_id` workflow; `Consumable` is one-way
-  (`date_out`, no structured return) and doesn't fit return tracking; the org's
-  Consumable catalogs are unused anyway. Revisit only if a real
-  paper/toner-consumption use case appears. **Needs org confirm.**
+- **N1** ✅ (decided 2026-09-07) — **the adapter handles BOTH backing types:
+  GLPI `Peripheral` AND `Consumable`.** A catalog "type" carries which one it's
+  backed by (adapter config / itemtype metadata). Peripheral = the verified
+  per-unit `states_id`/`users_id` workflow (return/loss tracked). Consumable =
+  the one-way `date_out` model — **open sub-question**: a Consumable-backed
+  countable is *consumed*, not returned, so its note items likely have no RETURN
+  tracking dimension at all (or only a "delivered" state); to be pinned down when
+  the adapter's countable path is designed. Two code paths for
+  countable availability / sync / return.
 - **N2** ✅ (adapter note only) — the Type catalog spans 6+ GLPI itemtypes
   (Computer / Peripheral / Phone / Monitor / Printer + GLPI-11 custom assets
   Multimedia / AudioEquipment / Security / Misc — the last as URL-encoded FQCNs
@@ -157,39 +181,67 @@ confirm.**
 
 ## Tier 4 — Middleware-internal
 
-### F1 · middleware → GLPI identity for writes  🟡 (recommendation: service account)
+### F1 · middleware → GLPI identity for writes  ✅ (decided 2026-09-07) — **per-user**
 
-GLPI auth on this instance = `App-Token` + per-user `user_token` → `Session-Token`
-(not OAuth). So "act as the real technician" vs "one service account" is a real
-fork.
+GLPI auth = `App-Token` + per-user `user_token` → `Session-Token` (not OAuth).
+**Decision:**
+- **`App-Token`** — ONE value, configured middleware-side by an admin, shared by
+  every technician. (F2 territory: how it's stored/rotated.)
+- **`user_token`** — **each technician configures their own.** On a `sync` /
+  `return` / `lost` write, the middleware opens a GLPI session with the shared
+  `App-Token` + that technician's `user_token`, so the write is attributed to the
+  real person in GLPI's native history. The middleware still ALSO stamps the note
+  ref + reason into `motivodemovimientofield` / `comentariosdemovimientofield`,
+  and the recipient into `contact`.
 
-- **(a) Per-user** — the middleware holds each technician's `user_token`, acts as
-  them in GLPI. GLPI's own "modified by" then shows the real actor. Cost: every
-  technician must be provisioned in GLPI with an API token + a Keycloak→GLPI
-  token path. Heavy.
-- **(b) Service account** — the middleware holds ONE `user_token` for a dedicated
-  GLPI service user. All GLPI writes attributed to that account; the real
-  technician is in the middleware's own `AUDIT_*` tables AND stamped into
-  `motivodemovimientofield` / `comentariosdemovimientofield` on every write, and
-  the recipient goes in `contact`.
+**Open mechanics (design when the adapter's auth is built):**
+- **How does a technician supply their `user_token`?** There is no in-app config
+  UI (D3). Proposal: a write-only `PUT /api/v1/me/glpi-token {token}` — the
+  middleware stores it AES-encrypted keyed to the `APP_USER` row (F2 storage).
+  Never returned by `GET`.
+- **A technician with no `user_token` set** cannot perform `SYNC_EXTERNAL` /
+  `VALIDATE_RETURNS` writes — the action returns a clear "configure your GLPI API
+  token first" error. Onboarding step, surfaced by the desktop app.
 
-**Recommendation: (b) service account.** The middleware already has a complete
-per-user audit trail; the movement-reason field carries the acting tech + note
-ref so GLPI history isn't blind; no per-tech GLPI provisioning or token-exchange
-path needed. Only real loss: GLPI's native "modified by" shows the service
-account. **Needs user confirm.**
+### F2 · middleware secret storage/rotation  ⚪ (partly pulled in by F1)
 
-### F2 · middleware secret storage/rotation  ⚪
-
-How the middleware holds/rotates its GLPI `App-Token` + service-account
-`user_token`, AD bind account, SMTP password. Deployment/ops — not a contract
-item. Defer to the deploy phase.
+Holds/rotates: the shared GLPI `App-Token` (middleware config), **each
+technician's `user_token` (AES-encrypted per `APP_USER`)**, the AD API service
+token, SMTP password. Mostly deployment/ops, but the per-user GLPI token store
+is a real schema addition (`APP_USER.glpi_token_encrypted` or a sibling table) +
+the `PUT /me/glpi-token` endpoint above.
 
 ---
 
-## Once Tier 3/4 is confirmed — fold into
+## Still needs the user before the contract can be folded
 
-`backend-contract.md` §3.1 / §3.2 / §3.4 / §7.4 / §13 · `contract-behaviors.md`
-(status buckets, tie-break) · this appendix (field maps, per-instance config).
-Then: the strip (per `decisions-pending.md` D3/D4/D5) + `port/` + `adapters/glpi/`
-+ the §10 write queue + §14 reconciliation.
+1. **E1a Q6** — the tie-break rule (or an override).
+2. **E1b** — confirm "one global generic Manufacturer, per-itemtype generic
+   Type/Model" reading; then the GLPI-admin creates the generic rows and looks up
+   their ids.
+3. **E2a** — explicit "Sede = GLPI `Location`" (vs. another GLPI concept).
+
+## Once confirmed — fold into
+
+- `backend-contract.md`: **§8 / D5b** (flat `genericBrandId`/`genericModelId` →
+  per-itemtype maps + `genericManufacturerId`); **§3.3 / §7.4** (Sede = Location,
+  address read from Location, no middleware `SEDE_SHIPPING_INFO`); **§3.1 / §3.2 /
+  §3.4** (both Peripheral and Consumable backing); **§2.6 / §7** (per-user GLPI
+  identity, `PUT /me/glpi-token`, `APP_USER.glpi_token_encrypted`).
+- `contract-behaviors.md`: status buckets, the Q6 tie-break, "no `user_token` →
+  can't sync".
+- This appendix: field-id maps, per-instance `listSearchOptions` resolution, the
+  two-backing-type countable path.
+
+Then: the strip (per `decisions-pending.md` D3/D4/D5, plus the E2b Remito rework)
+→ `port/` + `adapters/glpi/` → §10 write queue → §14 reconciliation.
+
+## Deferred (noted, not now)
+
+- **Remito recipients feature** (desktop-app-side) — Sede select auto-fills
+  address from GLPI Location + enables recipient input fields. E2b, "save for
+  later".
+- **Consumable-backed countable return semantics** — likely no RETURN dimension
+  (consumed, not returned); pin down when the countable adapter path is designed.
+- **F2** secret storage/rotation details (deploy phase), beyond the per-user GLPI
+  token store F1 forces.
