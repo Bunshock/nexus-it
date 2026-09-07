@@ -61,11 +61,13 @@ reconciliation. Nothing is deployed anywhere yet.
 | E2a | Sede = GLPI `Location` | ✅ confirmed (`locations_id` field 3, tree) |
 | E2b | address + recipients | ✅ **Remito dest = catalog Sede only** (must map to a real GLPI `Location`; no free text / no create-on-the-fly); address read from that `Location`, **no middleware `SEDE_SHIPPING_INFO`**; `destinationRecipients` dropped for v2.0 (deferred desktop feature) |
 | N1 | countable backing | ✅ **v2.0 = `Peripheral`-only** (2026-09-07); `Consumable` path deferred to a later release |
-| N2 / N3 | itemtype flattening / per-instance field ids | ✅ noted (composite ids; resolve via `listSearchOptions` at startup) |
+| N2 | itemtype coverage | ✅ **all 9 in v2.0** (2026-09-07): Core 5 (Computer/Peripheral/Phone/Monitor/Printer) direct; custom assets (Multimedia/AudioEquipment/Security/Misc) also in, each gated on a field/workflow investigation — Multimedia is priority (much delivered gear is Multimedia) |
+| N3 | per-instance field ids | ✅ noted (composite ids; resolve via `listSearchOptions` at startup) |
 
-**GLPI-admin data still owed** (not decisions):
-1. Create the "Genérico" rows in GLPI (one `Manufacturer`; one per `<X>Type`/`<X>Model`) → look up their ids.
-2. `GET /Location?range=0-200` → confirm sedes exist as Location records → build the Sede→Location-id map (create any missing).
+**GLPI-admin data / investigation still owed** (not decisions):
+1. Create the "Genérico" rows in GLPI for the Core 5 (one `Manufacturer`; one per `<X>Type`/`<X>Model`) → look up their ids.
+2. `GET /Location?range=0-200` → confirm sedes exist as Location records → build the Sede→Location-id map (create any missing). Must be complete for every Sede that can be a Remito destination (E2b — unmapped Sede = hard error).
+3. **Custom-asset investigation** (Multimedia/AudioEquipment/Security/Misc) vs dev GLPI: `states_id`/`users_id`/`locations_id` present? Type/Model dropdowns? Fields container 8 attached? Plan for the `states_id=0` Multimedia inventory. Feeds their generic rows + movement path.
 
 ---
 
@@ -135,6 +137,7 @@ feature dropped (D3). Includes the Tier 6 removals (H1–H4).
 |---|---|
 | **Keycloak wiring** — org Keycloak IS deployed; middleware needs: issuer URI, public client id (PKCE, loopback redirects), username claim, groups claim | 🚫 waiting on those values; `middleware.idp.*` still blank |
 | **GLPI generic rows + Sede→Location map** (Tier 3 data above) | 🚫 GLPI admin |
+| **Custom-asset investigation** (Multimedia/AudioEquipment/Security/Misc field set + workflow vs dev GLPI) | 🚫 not started — blocks the custom-asset adapter path, not Core 5 |
 | **SQL Server instance** for the middleware (`sqlserver` profile) | 🚫 not provisioned; dev runs H2 with no real schema |
 | **Middleware deployment** | 🚫 runs only via `mvn spring-boot:run` |
 | **Live GLPI to test the adapter against** | 🚫 dev `<dev-glpi-host>` exists; adapter code not written yet |

@@ -197,12 +197,25 @@ FK on **every** asset itemtype. Consequences:
   dimension) is deferred to a later release** — no per-type "backing" flag, no
   second code path, in v2.0. Revisit when the org has a real consumable
   (toner/cables/etc.) that must flow through a note.
-- **N2** ✅ (adapter note only) — the Type catalog spans 6+ GLPI itemtypes
-  (Computer / Peripheral / Phone / Monitor / Printer + GLPI-11 custom assets
-  Multimedia / AudioEquipment / Security / Misc — the last as URL-encoded FQCNs
-  `Glpi%5CCustomAsset%5C…`). `GET /catalog/types` flattens them; catalog ids
-  carry a composite id (itemtype + local id). Contract already says catalog ids
-  are opaque strings → no contract change.
+- **N2** ✅ (decided 2026-09-07) — v2.0 covers **all 9 itemtypes**:
+  - **Core 5 — Computer / Peripheral / Phone / Monitor / Printer** — standard
+    GLPI core asset schema (`states_id` / `users_id` / `locations_id`, same
+    movement endpoints). Computer + Peripheral verified (E1a); Phone/Monitor/
+    Printer are the same shape → low-risk, in directly.
+  - **Custom assets — Multimedia / AudioEquipment / Security / Misc** (GLPI-11,
+    addressed as URL-encoded FQCNs `Glpi%5CCustomAsset%5C…`) — **also in v2.0**,
+    but each gated behind an **investigation task** (see "GLPI-admin data still
+    owed" / blockers). GLPI-11 custom assets have a *configurable* field set —
+    not guaranteed to carry `states_id` / `users_id` / a Type/Model dropdown, and
+    E1a Q5 already found the 303 Multimedia items all at `states_id=0` (not
+    state-managed today). **Multimedia is priority** — a large share of delivered
+    gear is Multimedia. The investigation must land: do they carry
+    `states_id`/`users_id`/`locations_id`, do they have Type/Model dropdowns, is
+    plugin Fields container 8 attached? — plus a plan for the `states_id=0`
+    inventory (org starts setting states, or the adapter special-cases it).
+  - `GET /catalog/types` flattens all of them; catalog ids carry a composite id
+    (itemtype + local id). Contract already says catalog ids are opaque strings
+    → no contract change.
 - **N3** ✅ (lock in) — `fieldID`s vary per instance (`4=serial` in an old skill
   vs `5=serial` / `6=otherserial` today, per `endpoints-inventario.md` §Nota).
   Field-name maps are adapter config, resolved per instance at startup via
@@ -264,14 +277,24 @@ the `PUT /me/glpi-token` endpoint above.
 ## GLPI-admin data still owed (not decisions — lookups / row creation)
 
 1. Create the generic rows in GLPI: one "Genérico" `Manufacturer`; one "Genérico"
-   in each `<X>Type` and `<X>Model` list (Computer/Peripheral/Phone/Monitor/
-   Printer + the GLPI-11 custom-asset Type/Model lists). Then look up their ids:
-   `GET /Manufacturer`, `GET /ComputerType`/`ComputerModel`, `GET /PeripheralType`/
-   `PeripheralModel`, … → fills `genericManufacturerId` / `genericTypeIds` /
-   `genericModelIds`.
+   in each Core-5 `<X>Type` and `<X>Model` list (Computer/Peripheral/Phone/
+   Monitor/Printer). Then look up their ids: `GET /Manufacturer`,
+   `GET /ComputerType`/`ComputerModel`, `GET /PeripheralType`/`PeripheralModel`,
+   … → fills `genericManufacturerId` / `genericTypeIds` / `genericModelIds`.
+   (Custom-asset generic rows are contingent on task 3's findings.)
 2. `GET /Location?range=0-200` — confirm the org's sedes exist as Location
    records; build the Sede→Location-id adapter-config map from the result (create
-   any missing sedes).
+   any missing sedes). A Remito to a Sede with no Location mapping is a hard
+   `POST /notes` error (E2b) — this map must be complete for every Sede that can
+   be a Remito destination.
+3. **Custom-asset investigation** (Multimedia / AudioEquipment / Security / Misc),
+   against dev `<dev-glpi-host>` — per itemtype: does it carry `states_id` /
+   `users_id` / `locations_id`? does it have Type/Model dropdowns (→ generic
+   rows needed)? is plugin Fields container 8 ("Motivos de Movimientos")
+   attached? Plus: a plan for the existing `states_id=0` Multimedia inventory
+   (org backfills states, or the adapter treats `0` as a managed start state for
+   custom assets). Output feeds `genericTypeIds`/`genericModelIds` for whichever
+   custom types have dropdowns, and the per-itemtype movement path.
 
 *(Point 3 — `lost` and Préstamo-of-countable state targets — RESOLVED 2026-09-07:
 `LOST → 45`, `PRESTAMO → 34` uniform. See `syncTargets` above.)*
