@@ -27,6 +27,18 @@ public class AppUserRepository {
         return rows.stream().findFirst();
     }
 
+    /** The technician's own AES-encrypted GLPI {@code user_token} (F1), empty if never set. */
+    public Optional<String> findGlpiTokenEncrypted(String username) {
+        List<String> rows = jdbc.query(
+                "SELECT glpi_token_encrypted FROM APP_USER WHERE username = ?",
+                (rs, rowNum) -> rs.getString("glpi_token_encrypted"), username);
+        return rows.stream().findFirst().filter(s -> s != null && !s.isBlank());
+    }
+
+    public void setGlpiTokenEncrypted(String username, String encrypted) {
+        jdbc.update("UPDATE APP_USER SET glpi_token_encrypted = ? WHERE username = ?", encrypted, username);
+    }
+
     private static AppUserRecord mapRow(ResultSet rs, int rowNum) throws SQLException {
         // wasNull() reflects only the immediately-preceding getter call, so the null check
         // on sede_id must happen right here — not inline inside the record constructor

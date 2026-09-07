@@ -33,6 +33,38 @@ middleware:
                   # Real value via MIDDLEWARE_DIRECTORY_BASEURL.
     token: ""    # Bearer service token for the directory API. Blank => 503. Real value via
                   # MIDDLEWARE_DIRECTORY_TOKEN, never committed.
+  glpi:
+    # GLPI adapter (Tier 3/4 mapping config — see backend-api/glpi-adapter-notes.md).
+    base-url: ""  # GLPI HL API base, e.g. https://glpi.example/api.php/v1 — blank => 503
+                   # GLPI_NOT_CONFIGURED. Real value via MIDDLEWARE_GLPI_BASEURL.
+    app-token: "" # shared App-Token, one per deployment, admin-set via MIDDLEWARE_GLPI_APPTOKEN.
+                   # (Each technician sets their own user_token via PUT /api/v1/me/glpi-token.)
+    default-bucket: UNAVAILABLE # bucket for states_id = 0 / null / unmapped
+    state-buckets: # GLPI states_id -> availability bucket (E1a, confirmed 2026-09-07)
+      33: AVAILABLE
+      31: IN_USE
+      40: IN_USE
+      34: IN_USE
+      36: IN_USE
+      35: UNAVAILABLE
+      42: UNAVAILABLE
+      43: UNAVAILABLE
+      44: UNAVAILABLE
+      45: UNAVAILABLE
+      46: UNAVAILABLE
+      47: UNAVAILABLE
+      48: UNAVAILABLE
+    sync-targets: # note movement -> GLPI states_id to write (confirmed 2026-09-07; uniform for assets + Peripherals)
+      ENTREGA: 31
+      ENTREGA_PERMANENTE: 31
+      PRESTAMO: 34
+      DEVOLUCION: 33
+      RETURN: 33
+      LOST: 45
+    generic-manufacturer-id:  # one, global — the GLPI "Genérico" Manufacturer id, once the row exists
+    generic-type-ids: {}      # { Computer: <id>, Peripheral: <id>, Phone: <id>, ... } per GLPI itemtype
+    generic-model-ids: {}     # { Computer: <id>, Peripheral: <id>, Phone: <id>, ... }
+    sede-location-ids: {}     # { "<sede name>": <GLPI Location id> } — built from GET /Location
 
 ---
 spring:
