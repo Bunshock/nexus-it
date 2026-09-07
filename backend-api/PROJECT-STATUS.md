@@ -152,7 +152,7 @@ feature dropped (D3). Includes the Tier 6 removals (H1–H4).
 
 | | State |
 |---|---|
-| **Keycloak wiring** — org Keycloak IS deployed; middleware needs: issuer URI, public client id (PKCE, loopback redirects), username claim, groups claim | 🚫 waiting on those values; `middleware.idp.*` still blank |
+| **Keycloak wiring + auth-flow validation** — org Keycloak IS deployed; middleware needs: issuer URI, public client id (PKCE, loopback redirects), username claim, groups claim (+ whether AD groups are even in the token). Then **end-to-end validation**: `GET /auth/config` serves real values, `POST /auth/login` validates a real Keycloak JWT via JWKS, group-claim / `bypass_group_check` / `USER_NOT_REGISTERED` paths all exercised against a live token. Auth code is built but **has never run against a real Keycloak** — see `auth-flow.md`. | 🚫 waiting on those values; `middleware.idp.*` still blank. Interim: stand up a local Keycloak container + realm to validate the flow before the org values land. |
 | **GLPI generic rows + Sede→Location map** (Tier 3 data above) | 🚫 GLPI admin |
 | **Custom-asset investigation** (Multimedia/AudioEquipment/Security/Misc field set + workflow vs dev GLPI) | 🚫 not started — blocks the custom-asset adapter path, not Core 5 |
 | **SQL Server instance** for the middleware (`sqlserver` profile) | 🚫 not provisioned; dev runs H2 with no real schema |
@@ -168,5 +168,6 @@ feature dropped (D3). Includes the Tier 6 removals (H1–H4).
 3. **Real GLPI adapter** — implement `Glpi*Adapter` against dev GLPI (needs the generic rows + Sede map).
 4. **Wire `core/` → ports**; endpoints delegate to the adapter.
 5. **§10 write queue** + **§14 reconciliation**.
-6. **Phase B** — desktop cutover (its own planning pass; re-derive from `wondrous-singing-shannon.md`).
-7. **Deploy** — Keycloak wired, SQL Server provisioned, middleware deployed, `APP_USER`/roles/tokens seeded.
+6. **Keycloak wiring + auth-flow validation** — get the org IdP values, wire `middleware.idp.*`, then validate `GET /auth/config` + `POST /auth/login` (JWKS, group claim, `bypass_group_check`, `USER_NOT_REGISTERED`) end-to-end against a real token. Can start now against a local Keycloak container ahead of the org values. Auth code exists but has never run vs a live Keycloak.
+7. **Phase B** — desktop cutover (its own planning pass; re-derive from `wondrous-singing-shannon.md`).
+8. **Deploy** — Keycloak wired, SQL Server provisioned, middleware deployed, `APP_USER`/roles/tokens seeded.
