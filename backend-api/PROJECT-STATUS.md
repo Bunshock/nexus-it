@@ -112,7 +112,7 @@ H1 remove Base de Datos "CATÁLOGO DE EQUIPOS" · H2 remove Configuración "S/N 
 | **The strip** — remove `catalog/` CRUD, `MODEL_STOCK`, S/N validation, approval-time stock, `NOTE_ITEM_STOCK_EXCEPTION`, catalog FK columns, `Permission` 12→3, `PUT /config` | ⏳ **next after the contract fold** |
 | Real `adapters/glpi/` implementation (catalog reads, asset lookup, movement writes) | 🚫 blocked on GLPI-admin data + a live GLPI to test against |
 | §10 external write queue (`202`, worker, `FAILED`/retry/abandon, admin alert) | 📋 not started — **confirmed IN the v2.0 first release** (2026-09-07), not a fast-follow. Full shape: `202 QUEUED {jobId}`, one worker per model, retry→abandon+alert, `GET .../sync/status`, desktop-side "queued" handling. |
-| §14 reconciliation (`/reconciliation/*`, nightly + on-demand, drift rows) | 📋 not started |
+| §14 reconciliation (`/reconciliation/*`, nightly + on-demand, drift rows) | 📋 not started — **confirmed IN the v2.0 first release** (2026-09-07), full shape: `POST /reconciliation/run` (nightly + manual), `GET /reconciliation/drift`, `POST /{id}/repush` (corrective re-queue via §10), `POST /{id}/acknowledge`, full drift taxonomy incl. the Q6 intra-GLPI contradiction row. |
 | `core/` wired to the ports (endpoints delegate to the adapter instead of local SQL) | 📋 not started |
 | Package move into `core/` per D1 layout | ⚪ optional, with the wiring |
 
