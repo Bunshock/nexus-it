@@ -314,6 +314,64 @@ the `PUT /me/glpi-token` endpoint above.
 Then: the strip (per `decisions-pending.md` D3/D4/D5, plus the E2b Remito rework)
 → `port/` + `adapters/glpi/` → §10 write queue → §14 reconciliation.
 
+## §14 reconciliation — scan scope (Decision 8, 2026-09-07)
+
+`POST /reconciliation/run` is a **read-only detector** (nightly cron + on-demand):
+build the middleware's expectation from the latest SYNCED note-item action → read
+the live GLPI record(s) → diff → write `RECONCILIATION_DRIFT` rows. Never writes
+to GLPI. `GET /reconciliation/drift` lists them; per row the admin `acknowledge`s
+(legacy / handled by hand) or `repush`es (→ corrective write via the §10 queue).
+
+**Scope = (b): direct-claim per-unit check + per-category aggregate.**
+
+1. **Per-unit** — everything the middleware has a direct handle on:
+   - **Serialized assets** (Computer, serialized Peripheral, Phone, Monitor,
+     Printer, serialized Multimedia/custom): handle = `externalItemId` on the note
+     item. Check `states_id` bucket vs expected, `users_id` vs expected holder,
+     `locations_id` vs expected sede → `STATE_MISMATCH` / `HOLDER_MISMATCH` /
+     `LOCATION_MISMATCH`.
+   - **Currently-assigned non-serialized countable units** (a headset/camera handed
+     out on an Entrega/Préstamo): the queue worker picks arbitrary AVAILABLE GLPI
+     rows at write time and **records their ids on `NOTE_ITEM_RETURN_ALLOCATION`**
+     (schema addition — the pick happens in the worker, ids written back on
+     success). While assigned, each such row is individually checkable (holder +
+     state). This is the "user returns a headset and GLPI still shows it on them"
+     case.
+2. **Per-category aggregate** — non-serialized countables that are *unassigned*
+   are individually untrackable (no serial, identical rows). Check them as a
+   population, per (category, sede) — e.g. `Multimedia / type=camera / Sede X`:
+   ```
+   N = live GLPI count in that category+sede
+   K = middleware count of currently-assigned units (open note items w/ recorded id)
+   A = live GLPI count of those rows in an AVAILABLE state
+   expected A = N − K   ;   actual A = A   →   (N−K) − A  units in limbo
+   ```
+   One `COUNT_MISMATCH` per (category, sede) with the breakdown of where the
+   missing units sit (En tránsito / En reparación / `states_id=0` / assigned with
+   no note). One aggregate query per category+sede, not a per-row walk.
+
+**`ORPHAN_ASSIGNMENT`** — GLPI asset has `users_id` set but the middleware has no
+open note item explaining it. **In v2.0.** Drift row only — admin decides
+(`acknowledge` legacy/pre-app, or `repush`), never auto-acted.
+
+**Cadence: nightly-only** for v2.0. No hourly assigned-set pass — the §10 queue
+already precondition-checks GLPI before every write (Decision 7), so same-day
+drift mostly surfaces there.
+
+**No middleware stock number post-strip** — "camera stock" = a live GLPI count
+(`Multimedia rows, type=camera, state ∈ AVAILABLE`), a read, not a reconcilable
+quantity. The only stock-adjacent check is the N−K limbo aggregate above.
+
+**OPEN → next session:**
+- **First-run orphan handling** — run #1 against live GLPI could raise *hundreds*
+  of `ORPHAN_ASSIGNMENT` rows from pre-app history. Options: a bulk-acknowledge
+  "baseline" action, or a go-live cutoff date so only assignments after go-live
+  raise drift. Not decided.
+- **Expected-state derivation** — recompute from note-item history at scan time
+  (no extra table, always consistent) vs. maintain an `ASSET_PROJECTION` table
+  upserted on every successful queue write (cheap scan, another table to keep
+  correct). Not decided.
+
 ## Deferred (noted, not now)
 
 - **Remito recipients feature** (desktop-app-side) — Sede select auto-fills
