@@ -580,6 +580,15 @@ class CatalogRepositoryTest {
         assertEquals("Av. Siempre Viva 123", info.address());
     }
 
+    @Test
+    void getSedeIdsWithShippingInfoReturnsOnlyActiveRows() {
+        int otherSede = insertSede("Campus Norte");
+        jdbc.update("INSERT INTO SEDE_SHIPPING_INFO (sede_id, destination_label) VALUES (?, 'Activo')", sedeId);
+        jdbc.update("INSERT INTO SEDE_SHIPPING_INFO (sede_id, destination_label, deprecated) VALUES (?, 'Viejo', 1)", otherSede);
+
+        assertEquals(java.util.Set.of(sedeId), repository.getSedeIdsWithShippingInfo());
+    }
+
     private int insertProvider(String name) {
         jdbc.update("INSERT INTO PROVIDER (name) VALUES (?)", name);
         return jdbc.queryForObject("SELECT id FROM PROVIDER WHERE name = ?", Integer.class, name);

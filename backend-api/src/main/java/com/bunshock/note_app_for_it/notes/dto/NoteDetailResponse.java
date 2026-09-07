@@ -10,5 +10,6 @@ public record NoteDetailResponse(
         String failureCause, String failureDetails, String areaEvento,
         String providerName, Integer providerId, String cuit, String responsibleName, String responsibleDni,
         boolean stockApplied,
+        Integer destinationSedeId, String destinationLabel, String destinationAddress, String destinationRecipients,
         List<NoteItemResponse> items) {
 }

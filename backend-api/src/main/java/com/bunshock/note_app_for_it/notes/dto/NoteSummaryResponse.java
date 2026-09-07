@@ -6,5 +6,6 @@ public record NoteSummaryResponse(
         String authorName, String authorDni, String recipient, String motivo, String sede, Integer sedeId,
         int assetItemCount, int countableItemCount,
         int pendingItemCount, int syncedItemCount, int rejectedItemCount,
-        int returnPendingItemCount, int returnedItemCount, int lostItemCount) {
+        int returnPendingItemCount, int returnedItemCount, int lostItemCount,
+        String destinationLabel, String destinationAddress, String destinationRecipients) {
 }

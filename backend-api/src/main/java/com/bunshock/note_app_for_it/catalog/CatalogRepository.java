@@ -21,8 +21,10 @@ import java.sql.PreparedStatement;
 import java.sql.Statement;
 import java.sql.Types;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
@@ -677,6 +679,15 @@ public class CatalogRepository {
                         rs.getString("destination_label"), rs.getString("address"), rs.getString("recipients")),
                 sedeId);
         return rows.isEmpty() ? null : rows.get(0);
+    }
+
+    // One query for the whole set — the desktop app filters the Remito destination combo to only
+    // Sedes that actually have active shipping info (an unconfigured Sede can't be a
+    // NOTE_REMITO_SEDE destination, since shipping_info_id is NOT NULL). Ported from
+    // IEquipmentService.getSedeIdsWithShippingInfo().
+    public Set<Integer> getSedeIdsWithShippingInfo() {
+        return new LinkedHashSet<>(jdbc.queryForList(
+                "SELECT DISTINCT sede_id FROM SEDE_SHIPPING_INFO WHERE deprecated = 0", Integer.class));
     }
 
     // ── Generic name-scoped helpers (TYPE/BRAND — uniqueness on `name` holds across a table

@@ -13,8 +13,13 @@ import java.util.List;
  * was never a client-chosen value — every note is always stamped with the creating technician's
  * own assigned {@code APP_USER.sede_id}, mandatory, never picked. Resolving it server-side here
  * matches that real behavior and is also safer (a client can't create a note under an arbitrary
- * Sede). v1 scope: Entrega/Devolución/Entrega Permanente/Préstamo/Entrega-Proveedor only — Remito
- * de Envío is not yet ported (needs the Sede/SEDE_SHIPPING_INFO catalog module first).
+ * Sede).
+ *
+ * <p>For a Remito de Envío the <em>destination</em> IS a real client choice (unlike the
+ * technician's own Sede): either {@code shippingInfoId} (a catalog-Sede destination — the FK of
+ * that Sede's currently-active {@code SEDE_SHIPPING_INFO} row, obtained from
+ * {@code GET /catalog/sedes/{id}/shipping-info}) OR the {@code destination*} free-text trio (a
+ * custom destination with no catalog row). Exactly one applies.
  */
 public record CreateNoteRequest(
         @NotBlank String profileType,
@@ -30,6 +35,10 @@ public record CreateNoteRequest(
         String responsibleName,
         String responsibleDni,
         String observations,
+        Integer shippingInfoId,
+        String destinationLabel,
+        String destinationAddress,
+        String destinationRecipients,
         @NotEmpty List<@Valid NoteItemRequest> items) {
 
     public boolean isProviderNote() {

@@ -25,6 +25,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Set;
 
 /**
  * backend-contract.md §3.1/§3.3/§3.4, v1 shape (see the approved plan's scope table): §3.1
@@ -217,5 +218,12 @@ public class CatalogController {
             throw ApiException.notFound("SHIPPING_INFO_NOT_FOUND", "Esta Sede no tiene información de envío configurada.");
         }
         return info;
+    }
+
+    /** The Sede ids that have active shipping info — the Remito destination combo's allowed set. */
+    @GetMapping("/sedes/shipping-info-ids")
+    public Set<Integer> sedeIdsWithShippingInfo() {
+        currentUser.require();
+        return catalog.getSedeIdsWithShippingInfo();
     }
 }

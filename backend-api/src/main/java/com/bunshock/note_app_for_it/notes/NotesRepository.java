@@ -38,17 +38,14 @@ import java.util.function.BiPredicate;
  * {@code MODEL_STOCK} counter moved at approval, not derived "Model Y") is IN SCOPE for v1, per
  * the approved plan's "restore old MODEL_STOCK + manual-flag behavior" decision.
  *
- * <p><b>Not yet ported (follow-up work, not forgotten):</b> Remito de Envío (needs the Sede/
- * SEDE_SHIPPING_INFO catalog module — {@link CatalogRepository} doesn't have Sede endpoints yet),
- * the {@code GLPI_RETURN} tracking dimension (re-sync after a returnable Provider note's item
- * comes back — niche, deferred), item-type/brand/model and sync/return-status list filters (§5.2's
- * fuller filter set), audit-row writes (§6 — every write here should eventually also insert into
- * {@code AUDIT_STOCK}/{@code AUDIT_ITEM_STATUS}/{@code AUDIT_ADMIN_ACTION}, not done in this pass).
+ * <p><b>Not yet ported (follow-up work, not forgotten):</b> the {@code GLPI_RETURN} tracking
+ * dimension (re-sync after a returnable Provider note's item comes back — niche, deferred).
  */
 @Repository
 public class NotesRepository {
 
     private static final List<String> PRESTAMO_PROFILE_TYPES = List.of("PRÉSTAMO", "PRESTAMO", "Préstamo");
+    private static final List<String> REMITO_PROFILE_TYPES = List.of("REMITO DE ENVÍO", "REMITO DE ENVIO");
 
     private static final List<String> EGRESS_PROFILE_TYPES = List.of(
             "ENTREGA", "ENTREGA PERMANENTE", "FIN DE CONTRATO", "PRÉSTAMO", "PRESTAMO", "ENTREGA - PROVEEDOR");
@@ -56,6 +53,10 @@ public class NotesRepository {
 
     private static boolean isPrestamo(String profileType) {
         return profileType != null && PRESTAMO_PROFILE_TYPES.stream().anyMatch(profileType::equalsIgnoreCase);
+    }
+
+    private static boolean isRemito(String profileType) {
+        return profileType != null && REMITO_PROFILE_TYPES.stream().anyMatch(profileType::equalsIgnoreCase);
     }
 
     // Reads live from ConfigRepository (APP_CONFIG_RETURNABLE_PROVIDER_MOTIVO) now — was a
@@ -72,9 +73,12 @@ public class NotesRepository {
                    r.approval_status, rr.rejection_reason,
                    r.technician_name AS author_name,
                    r.technician_dni AS author_dni,
-                   COALESCE(e.user_name, pv.name, '') AS recipient,
+                   COALESCE(e.user_name, pv.name, rssi.destination_label, rmo.destination_label, '') AS recipient,
                    COALESCE(e.motivo, p.motivo, '') AS motivo,
                    COALESCE(sd.name, '') AS sede,
+                   COALESCE(rssi.destination_label, rmo.destination_label, '') AS destination_label,
+                   COALESCE(rssi.address, rmo.address, '') AS destination_address,
+                   COALESCE(rssi.recipients, rmo.recipients, '') AS destination_recipients,
                    SUM(CASE WHEN g.status = 'PENDING'  THEN 1 ELSE 0 END) AS pending_count,
                    SUM(CASE WHEN g.status = 'SYNCED'   THEN 1 ELSE 0 END) AS synced_count,
                    SUM(CASE WHEN g.status = 'REJECTED' THEN 1 ELSE 0 END) AS rejected_count,
@@ -105,6 +109,9 @@ public class NotesRepository {
             LEFT JOIN NOTE_PROVEEDOR           p  ON p.note_report_id  = r.id
             LEFT JOIN PROVIDER                 pv ON pv.id             = p.provider_id
             LEFT JOIN SEDE                     sd ON sd.id             = r.sede_id
+            LEFT JOIN NOTE_REMITO_SEDE         rms  ON rms.note_report_id  = r.id
+            LEFT JOIN SEDE_SHIPPING_INFO       rssi ON rssi.id             = rms.shipping_info_id
+            LEFT JOIN NOTE_REMITO_OTHER        rmo  ON rmo.note_report_id  = r.id
             LEFT JOIN NOTE_ITEM                i  ON i.note_id         = r.id
             LEFT JOIN NOTE_ITEM_ASSET          ia ON ia.item_id        = i.id
             LEFT JOIN NOTE_ITEM_COUNTABLE      ic ON ic.item_id        = i.id
@@ -164,6 +171,22 @@ public class NotesRepository {
     }
 
     private void insertProfileDetail(int reportId, CreateNoteRequest req) {
+        if (isRemito(req.profileType())) {
+            if (req.shippingInfoId() != null) {
+                jdbc.update("INSERT INTO NOTE_REMITO_SEDE (note_report_id, shipping_info_id) VALUES (?, ?)",
+                        reportId, req.shippingInfoId());
+            } else {
+                if (req.destinationLabel() == null || req.destinationLabel().isBlank()) {
+                    throw ApiException.badRequest("REMITO_DESTINATION_REQUIRED",
+                            "Un remito necesita una Sede de destino o un destino personalizado.");
+                }
+                jdbc.update("""
+                        INSERT INTO NOTE_REMITO_OTHER (note_report_id, destination_label, address, recipients)
+                        VALUES (?, ?, ?, ?)
+                        """, reportId, req.destinationLabel(), req.destinationAddress(), req.destinationRecipients());
+            }
+            return;
+        }
         if (req.isProviderNote()) {
             jdbc.update("""
                     INSERT INTO NOTE_PROVEEDOR (note_report_id, provider_id, cuit, motivo, responsible_name, responsible_dni)
@@ -296,7 +319,9 @@ public class NotesRepository {
 
         sql.append(" GROUP BY r.id, r.created_at, r.profile_type, r.sede_id, r.approval_status, ")
            .append("rr.rejection_reason, r.technician_name, r.technician_dni, e.user_name, pv.name, ")
-           .append("e.motivo, p.motivo, sd.name")
+           .append("e.motivo, p.motivo, sd.name, ")
+           .append("rssi.destination_label, rssi.address, rssi.recipients, ")
+           .append("rmo.destination_label, rmo.address, rmo.recipients")
            .append(" ORDER BY r.created_at DESC");
 
         List<NoteSummaryResponse> rows = jdbc.query(sql.toString(), (rs, rowNum) -> mapSummary(rs), params.toArray());
@@ -392,7 +417,10 @@ public class NotesRepository {
                 rs.getInt("rejected_count"),
                 rs.getInt("return_pending_count"),
                 rs.getInt("returned_count"),
-                rs.getInt("lost_count"));
+                rs.getInt("lost_count"),
+                rs.getString("destination_label"),
+                rs.getString("destination_address"),
+                rs.getString("destination_recipients"));
     }
 
     public NoteDetailResponse getById(int id) {
@@ -415,7 +443,11 @@ public class NotesRepository {
                        COALESCE(p.cuit, '') AS cuit,
                        COALESCE(p.responsible_name, '') AS responsible_name,
                        COALESCE(p.responsible_dni, '')  AS responsible_dni,
-                       r.stock_applied AS stock_applied
+                       r.stock_applied AS stock_applied,
+                       rssi.sede_id AS destination_sede_id,
+                       COALESCE(rssi.destination_label, rmo.destination_label, '') AS destination_label,
+                       COALESCE(rssi.address, rmo.address, '')       AS destination_address,
+                       COALESCE(rssi.recipients, rmo.recipients, '') AS destination_recipients
                 FROM NOTE_REPORT r
                 LEFT JOIN NOTE_REPORT_REJECTION     rr ON rr.note_report_id = r.id
                 LEFT JOIN NOTE_ENTREGA_DEVOLUCION   e  ON e.note_report_id  = r.id
@@ -424,6 +456,9 @@ public class NotesRepository {
                 LEFT JOIN NOTE_PROVEEDOR            p  ON p.note_report_id  = r.id
                 LEFT JOIN PROVIDER                  pv ON pv.id             = p.provider_id
                 LEFT JOIN SEDE                      sd ON sd.id             = r.sede_id
+                LEFT JOIN NOTE_REMITO_SEDE          rms  ON rms.note_report_id  = r.id
+                LEFT JOIN SEDE_SHIPPING_INFO        rssi ON rssi.id             = rms.shipping_info_id
+                LEFT JOIN NOTE_REMITO_OTHER         rmo  ON rmo.note_report_id  = r.id
                 WHERE r.id = ?
                 """;
         List<NoteDetailResponse> rows = jdbc.query(sql, (rs, rowNum) -> {
@@ -453,6 +488,10 @@ public class NotesRepository {
                     rs.getString("responsible_name"),
                     rs.getString("responsible_dni"),
                     rs.getInt("stock_applied") != 0,
+                    (Integer) rs.getObject("destination_sede_id"),
+                    rs.getString("destination_label"),
+                    rs.getString("destination_address"),
+                    rs.getString("destination_recipients"),
                     loadItems(rs.getInt("id")));
         }, id);
         if (rows.isEmpty()) {
@@ -572,8 +611,6 @@ public class NotesRepository {
     private record StockItemKey(int modelId, int brandId, int typeId) {
     }
 
-    // Remito's dual-Sede move is NOT ported yet (see class Javadoc) — only the single-direction
-    // egress/ingress case is handled here.
     private void applyNoteStockIfNeeded(int reportId, String username) {
         Map<String, Object> row = jdbc.queryForMap(
                 "SELECT profile_type, sede_id, stock_applied FROM NOTE_REPORT WHERE id = ?", reportId);
@@ -584,7 +621,9 @@ public class NotesRepository {
         int sedeId = ((Number) row.get("sede_id")).intValue();
 
         boolean applied;
-        if (EGRESS_PROFILE_TYPES.stream().anyMatch(profileType::equalsIgnoreCase)) {
+        if (isRemito(profileType)) {
+            applied = applyRemitoStock(reportId, sedeId, username);
+        } else if (EGRESS_PROFILE_TYPES.stream().anyMatch(profileType::equalsIgnoreCase)) {
             applied = applyDirectionalStock(reportId, sedeId, -1, true, username);
         } else if (INGRESS_PROFILE_TYPES.stream().anyMatch(profileType::equalsIgnoreCase)) {
             applied = applyDirectionalStock(reportId, sedeId, 1, false, username);
@@ -595,6 +634,47 @@ public class NotesRepository {
         if (applied) {
             jdbc.update("UPDATE NOTE_REPORT SET stock_applied = 1 WHERE id = ?", reportId);
         }
+    }
+
+    // Remito's dual-Sede move — the source Sede (the note's own sede_id) always decrements; the
+    // destination Sede increments only when it's a real catalog Sede (a custom/manual destination
+    // in NOTE_REMITO_OTHER has nothing to receive). Ported from the desktop app's applyRemitoStock().
+    private boolean applyRemitoStock(int reportId, int sourceSedeId, String username) {
+        List<Integer> destRows = jdbc.query("""
+                SELECT ssi.sede_id FROM NOTE_REMITO_SEDE rms
+                JOIN SEDE_SHIPPING_INFO ssi ON ssi.id = rms.shipping_info_id
+                WHERE rms.note_report_id = ?
+                """, (rs, rowNum) -> rs.getInt("sede_id"), reportId);
+        Integer destinationSedeId = destRows.isEmpty() ? null : destRows.get(0);
+
+        Map<StockItemKey, Integer> quantities = aggregateItemQuantities(reportId);
+        if (quantities.isEmpty()) {
+            return false;
+        }
+        for (var entry : quantities.entrySet()) {
+            StockItemKey key = entry.getKey();
+            int available = catalog.getModelStock(key.modelId(), key.brandId(), key.typeId(), sourceSedeId);
+            if (available < entry.getValue()) {
+                throw ApiException.conflict("STOCK_WOULD_GO_NEGATIVE",
+                        "Stock insuficiente en la sede de origen para aprobar este remito.");
+            }
+        }
+        String reason = "Aprobación de remito #" + reportId;
+        for (var entry : quantities.entrySet()) {
+            StockItemKey key = entry.getKey();
+            int qty = entry.getValue();
+            int beforeSrc = catalog.getModelStock(key.modelId(), key.brandId(), key.typeId(), sourceSedeId);
+            catalog.adjustModelStock(key.modelId(), key.brandId(), key.typeId(), sourceSedeId, -qty);
+            audit.recordStockChange(key.modelId(), key.brandId(), key.typeId(), sourceSedeId, username,
+                    beforeSrc, beforeSrc - qty, reason);
+            if (destinationSedeId != null) {
+                int beforeDst = catalog.getModelStock(key.modelId(), key.brandId(), key.typeId(), destinationSedeId);
+                catalog.adjustModelStock(key.modelId(), key.brandId(), key.typeId(), destinationSedeId, qty);
+                audit.recordStockChange(key.modelId(), key.brandId(), key.typeId(), destinationSedeId, username,
+                        beforeDst, beforeDst + qty, reason);
+            }
+        }
+        return true;
     }
 
     private boolean applyDirectionalStock(int reportId, int sedeId, int direction, boolean checkAvailability, String username) {

@@ -100,6 +100,7 @@ target — never matches (fail-safe, not fail-open).
 | `GET /api/v1/catalog/providers` | session only |
 | `GET /api/v1/catalog/sedes` | session only |
 | `GET /api/v1/catalog/sedes/{id}/shipping-info` | session only |
+| `GET /api/v1/catalog/sedes/shipping-info-ids` | session only |
 
 - Types/Brands/Models mirror `TYPE`/`BRAND`/`BRAND_TYPE_LINK`/`MODEL` exactly, including the
   global "Genérico / Otro" model (`brandTypeId: null`) UNION'd into every Type+Brand combination
@@ -125,6 +126,10 @@ target — never matches (fail-safe, not fail-open).
 - **Provider/Sede are read-only from the app, by design** — confirmed by reading the desktop
   app's actual current `SqliteEquipmentService`: no `addProvider`/`addSede`/etc. methods exist
   there either. Both are edited directly via SQL, same convention as `APP_USER`.
+- `GET /sedes/shipping-info-ids` → a bare `Set<Integer>` of the Sedes that have active
+  `SEDE_SHIPPING_INFO` — the desktop filters the Remito destination combo to these (an
+  unconfigured Sede can't be a `NOTE_REMITO_SEDE` destination). Ported from
+  `IEquipmentService.getSedeIdsWithShippingInfo()`.
 - **S/N Validation** (`SN_VALIDATION`, regex-per-model rules) — ported from
   `SqliteEquipmentService.getSnValidation()`/`getAllSnValidationRows()`/`upsertSnValidation()` and
   the desktop `SettingsController` S/N edit dialog. `GET /sn-validations` is the admin panel's
@@ -181,7 +186,7 @@ target — never matches (fail-safe, not fail-open).
 
 ---
 
-## Notes / History / Approval + Item Sync/Return (`/api/v1/notes`) — ✅ v1 subset
+## Notes / History / Approval + Item Sync/Return (`/api/v1/notes`) — ✅ (incl. Remito de Envío)
 
 | Method & path | Permission |
 |---|---|
@@ -197,9 +202,20 @@ target — never matches (fail-safe, not fail-open).
 
 ### Create — `POST /notes`
 Body: `{profileType, userName, userDni, userEmail, motivo, areaEvento, failureCause,
-failureDetails, providerId, cuit, responsibleName, responsibleDni, observations, items[]}`. Each
+failureDetails, providerId, cuit, responsibleName, responsibleDni, observations,
+shippingInfoId, destinationLabel, destinationAddress, destinationRecipients, items[]}`. Each
 item: `{kind: "ASSET"|"COUNTABLE", typeId, brandId, modelId, serialNumber, af, quantity,
 observations, modifiesStock, modifiesStockReason}`.
+
+**Remito de Envío** (`profileType: "REMITO DE ENVÍO"`) — the *destination* is a real client
+choice (unlike the technician's own Sede): send **either** `shippingInfoId` (the FK of a catalog
+Sede's active `SEDE_SHIPPING_INFO` row, from `GET /catalog/sedes/{id}/shipping-info`) → row in
+`NOTE_REMITO_SEDE`, **or** the `destination*` free-text trio (a custom CAU with no catalog row) →
+row in `NOTE_REMITO_OTHER`. Neither → `400 REMITO_DESTINATION_REQUIRED`. Items get GLPI-PENDING /
+RETURN-N_A like any non-Préstamo note (unchanged rule). `GET /notes/{id}` returns
+`destinationSedeId` (null for a custom destination) + `destinationLabel`/`destinationAddress`/
+`destinationRecipients`; `GET /notes` summary rows carry the same three plus `recipient` =
+the destination label.
 
 **Deviations from `backend-contract.md` §5.1, both deliberate:**
 - **No `sedeId` in the request at all.** Checked the real desktop-app controllers before building
@@ -244,6 +260,12 @@ Permanente/Préstamo/Entrega-Proveedor) or incremented for Devolución, guarded 
 `backend-contract.md` §5.3/§3.4 ("approval moves no stock... Model Y is always derived") — that
 design assumed an external system existed to derive stock from; v1 doesn't have one.
 
+**Remito** does a **dual-Sede move** instead: the note's own `sede_id` (source) always
+decrements; the destination Sede (resolved via `NOTE_REMITO_SEDE ⋈ SEDE_SHIPPING_INFO.sede_id`)
+increments **only when it's a catalog Sede** — a custom `NOTE_REMITO_OTHER` destination has
+nothing to receive. Source-stock shortage → `409 STOCK_WOULD_GO_NEGATIVE`. Both legs write
+`AUDIT_STOCK`. Ported from the desktop `applyRemitoStock()`.
+
 ### Item sync / return
 **Direct, synchronous status flips — `200`, not `202`/`QUEUED`.** No external write, no §10 queue,
 no D6 holder-mismatch pre-check. This isn't a shortcut so much as an accurate match: the desktop
@@ -262,8 +284,7 @@ in local SQLite.
 
 **Deferred, not built** (🚧): the `GLPI_RETURN` tracking dimension (re-sync after a returnable
 Provider note's item comes back — real feature, but niche; `NOTE_ITEM_STATUS_TRACKING` already
-has the `tracking_type` slot ready for it), Remito de Envío (needs the Sede/`SEDE_SHIPPING_INFO`
-catalog module first — genuinely not started anywhere yet).
+has the `tracking_type` slot ready for it).
 
 **Audit-row writes are wired** (see Audit section below) — approve/reject stock movement writes
 `AUDIT_STOCK` (one row per model actually moved, skipped when nothing moved); sync/reject-sync/
