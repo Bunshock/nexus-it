@@ -21,6 +21,21 @@ reconciliation. Nothing is deployed anywhere yet.
 
 ---
 
+## v2.0 scope decisions (2026-09-07 session)
+
+Working session refining what the first release covers. Each folds into the docs cited.
+
+| # | Decision | Detail |
+|---|---|---|
+| 1 | **Countables = `Peripheral`-only** | Every countable backed by GLPI `Peripheral`, per-unit return/loss unchanged. `Consumable` path deferred to a later release. (N1) |
+| 2 | **Remito dest = catalog Sede only** | Must resolve to a real GLPI `Location` (no free text, no create-on-the-fly); unmapped Sede = hard `POST /notes` error. `destinationRecipients` dropped for v2.0. `SEDE_SHIPPING_INFO` + `NOTE_REMITO_OTHER` removed. (E2b) |
+| 3 | **Async write queue IS in v2.0** | Full shape (`202 QUEUED`, per-model worker, retry→abandon+alert, status polling, desktop "queued" handling) — not a fast-follow. (§10 / D2) |
+| 4 | **Full reconciliation IS in v2.0** | `POST /reconciliation/run` (nightly + manual), `GET /reconciliation/drift`, `POST /{id}/repush`, `POST /{id}/acknowledge`, full drift taxonomy incl. Q6 intra-GLPI contradiction. (§14 / D9) |
+| 5 | **All 9 itemtypes in v2.0** | Core 5 (Computer/Peripheral/Phone/Monitor/Printer) direct; custom assets (Multimedia/AudioEquipment/Security/Misc) also in, each gated on a field/workflow investigation vs dev GLPI — Multimedia is priority. (N2) |
+| 6 | **Config module** | `APP_CONFIG` (+3 child tables) stays as the org-config store; strip drops only the 4 SMTP columns + SMTP encryption/permission branch + generic-id resolution. `GET /config` unchanged; `PUT /config` stays, **SUPERADMIN role-gated** (enum stays 3, no `EDIT_CONFIG`). UI toggles (clear forms / close tab) stay **desktop-local** — no `/me/preferences`, nothing per-user in the middleware. |
+
+---
+
 ## Branches
 
 | Branch | Purpose | State |
@@ -96,11 +111,11 @@ H1 remove Base de Datos "CATÁLOGO DE EQUIPOS" · H2 remove Configuración "S/N 
 |---|---|
 | Scaffold — security chain, `ApiException` envelope, Flyway schema, OpenAPI | ✅ |
 | Auth — `/auth/config`, `/auth/login` (JWKS), `/auth/logout`, `/me` + session store | ✅ (never run vs a live Keycloak) |
-| RBAC — `Permission` enum, `ROLE`/`ROLE_PERMISSION`, `PermissionGuard` (Sede fence) | ✅ — **enum will shrink 12→3 in the strip** |
+| RBAC — `Permission` enum, `ROLE`/`ROLE_PERMISSION`, `PermissionGuard` (Sede fence) | ✅ — **enum shrinks 12→3 in the strip** (`APPROVE_NOTES`/`SYNC_EXTERNAL`/`VALIDATE_RETURNS`); `PUT /config` becomes **SUPERADMIN role-gated**, not a permission |
 | Audit — `AUDIT_LOGIN`/`STOCK`/`ITEM_STATUS`/`ADMIN_ACTION`, reads + all write points | ✅ |
 | Directory — `GET /directory/users` (ports `AdApiService.search` compensation logic) | ✅ |
-| Notes / History / Approval + item sync/return + Remito de Envío | ✅ — **stock movement + `NOTE_ITEM` FKs + "modifica stock" removed in the strip** |
-| Config — `GET`/`PUT /config` | ✅ — **`PUT` + SMTP write + generic-id resolution removed in the strip** |
+| Notes / History / Approval + item sync/return + Remito de Envío | ✅ — **stock movement + `NOTE_ITEM` FKs + "modifica stock" removed in the strip; Remito reworked to `destinationSedeId`-only per E2b** |
+| Config — `GET`/`PUT /config` | ✅ — **strip: drop 4 SMTP columns + SMTP encryption/permission branch + generic-id resolution; `GET`/`PUT` both stay, `PUT` SUPERADMIN-only. UI toggles (clear forms / close tab) stay desktop-local, no `/me/preferences`.** |
 
 ### GLPI-adapter layer
 
@@ -111,7 +126,7 @@ H1 remove Base de Datos "CATÁLOGO DE EQUIPOS" · H2 remove Configuración "S/N 
 | `GlpiClient` (`initSession`/`killSession` shape) + `GlpiUserTokenResolver` | ✅ skeleton (untested vs live GLPI) |
 | `Glpi*Adapter` port implementations | 🔨 `NOT_IMPLEMENTED` stubs |
 | F1 — `PUT /me/glpi-token` + `APP_USER.glpi_token_encrypted` | ✅ built (`c8a81d0`) |
-| **The strip** — remove `catalog/` CRUD, `MODEL_STOCK`, S/N validation, approval-time stock, `NOTE_ITEM_STOCK_EXCEPTION`, catalog FK columns, `Permission` 12→3, `PUT /config` | ⏳ **next after the contract fold** |
+| **The strip** — remove `catalog/` CRUD, `MODEL_STOCK`, S/N validation, approval-time stock, `NOTE_ITEM_STOCK_EXCEPTION`, catalog FK columns, `Permission` 12→3, SMTP columns + email-note feature, `SEDE_SHIPPING_INFO` + `NOTE_REMITO_OTHER`; rework Remito to `destinationSedeId`-only | ⏳ **next after the contract fold** |
 | Real `adapters/glpi/` implementation (catalog reads, asset lookup, movement writes) | 🚫 blocked on GLPI-admin data + a live GLPI to test against |
 | §10 external write queue (`202`, worker, `FAILED`/retry/abandon, admin alert) | 📋 not started — **confirmed IN the v2.0 first release** (2026-09-07), not a fast-follow. Full shape: `202 QUEUED {jobId}`, one worker per model, retry→abandon+alert, `GET .../sync/status`, desktop-side "queued" handling. |
 | §14 reconciliation (`/reconciliation/*`, nightly + on-demand, drift rows) | 📋 not started — **confirmed IN the v2.0 first release** (2026-09-07), full shape: `POST /reconciliation/run` (nightly + manual), `GET /reconciliation/drift`, `POST /{id}/repush` (corrective re-queue via §10), `POST /{id}/acknowledge`, full drift taxonomy incl. the Q6 intra-GLPI contradiction row. |
