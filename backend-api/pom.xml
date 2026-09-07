@@ -34,9 +34,13 @@
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-h2console</artifactId>
 		</dependency>
+		<!-- Plain Spring JDBC, not JPA/Hibernate — the ported SQL (deprecate-not-delete
+		     catalog rows, generic-model union, normalized NOTE_ITEM subtype joins) is
+		     already hand-written and correct in the desktop app; JdbcTemplate lets it be
+		     ported near-verbatim instead of re-derived as entity mappings. -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-data-jpa</artifactId>
+			<artifactId>spring-boot-starter-jdbc</artifactId>
 		</dependency>
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
@@ -46,6 +50,53 @@
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-webmvc</artifactId>
 		</dependency>
+		<!-- Not pulled in transitively by webmvc in this Spring Boot version — JSON support
+		     is its own starter now. Needed for both @RestController bodies and
+		     SecurityConfig's ObjectMapper-based error envelope writer. -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-jackson</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-security</artifactId>
+		</dependency>
+		<!-- Validates the IdP-issued bearer token presented to POST /auth/login
+		     (signature via JWKS, iss/aud/exp) — see auth-flow.md §2.1 step 5. -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-validation</artifactId>
+		</dependency>
+		<!-- Auto-generates OpenAPI 3 spec + Swagger UI from the existing @RestController/DTO
+		     annotations — /v3/api-docs and /swagger-ui/index.html, both permitAll in
+		     SecurityConfig. Complements IMPLEMENTED_ENDPOINTS.md rather than replacing it: this
+		     is always in sync with the code (live schemas, try-it-out) but carries none of the
+		     "why" (deviations from backend-contract.md, what's deferred and why). -->
+		<dependency>
+			<groupId>org.springdoc</groupId>
+			<artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+			<version>3.0.2</version>
+		</dependency>
+		<dependency>
+			<groupId>org.flywaydb</groupId>
+			<artifactId>flyway-core</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.flywaydb</groupId>
+			<artifactId>flyway-sqlserver</artifactId>
+		</dependency>
+		<!-- Same version already proven against SQL Server Express in the desktop app
+		     (desktop-app/pom.xml) — see database/sqlserver/README.md for the
+		     encrypt=true;trustServerCertificate=true connection-string gotcha. -->
+		<dependency>
+			<groupId>com.microsoft.sqlserver</groupId>
+			<artifactId>mssql-jdbc</artifactId>
+			<version>12.8.1.jre11</version>
+		</dependency>
 
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
@@ -53,6 +104,8 @@
 			<scope>runtime</scope>
 			<optional>true</optional>
 		</dependency>
+		<!-- Local/dev-only store when no real SQL Server is reachable yet (H2 in
+		     SQL Server compatibility mode) — production always targets SQL Server. -->
 		<dependency>
 			<groupId>com.h2database</groupId>
 			<artifactId>h2</artifactId>
@@ -65,17 +118,22 @@
 		</dependency>
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-data-jpa-test</artifactId>
-			<scope>test</scope>
-		</dependency>
-		<dependency>
-			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-data-ldap-test</artifactId>
 			<scope>test</scope>
 		</dependency>
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-jdbc-test</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-webmvc-test</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.security</groupId>
+			<artifactId>spring-security-test</artifactId>
 			<scope>test</scope>
 		</dependency>
 	</dependencies>

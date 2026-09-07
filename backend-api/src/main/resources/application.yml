@@ -1,0 +1,58 @@
+spring:
+  application:
+    name: note-app-for-it
+  profiles:
+    active: dev
+  flyway:
+    enabled: false # enabled explicitly under the sqlserver profile below —
+                    # V1__init.sql is real T-SQL (cursors, TRY/CATCH,
+                    # information_schema queries) that H2 cannot run.
+
+# Non-secret app policy — desktop-app-first-release CLAUDE.md §"Config files"
+# equivalents that made sense to keep server-side. Real per-org values belong
+# in an environment-specific application-*.yml or env vars, never here.
+middleware:
+  idp:
+    issuer-uri: "" # OIDC issuer URL, e.g. https://idp.example/realms/xxx — blank
+                    # until Keycloak is reachable; GET /auth/config degrades to
+                    # a 503 rather than crashing startup when unset.
+    client-id: ""
+    allowed-group-name: "" # blank = group-membership gate skipped, matches the
+                            # desktop app's own adAccess.allowedGroupName default
+  session:
+    idle-timeout-minutes: 120
+    absolute-timeout-minutes: 720
+  security:
+    encryption-key: "" # AES-256/GCM key (base64) for smtp_password_encrypted — blank until set;
+                        # generate per-deployment via `openssl rand -base64 32`, never commit a
+                        # real value here. Blank = EncryptionService fails loudly (503), matching
+                        # the idp.issuer-uri "genuinely open" convention above.
+
+---
+spring:
+  config:
+    activate:
+      on-profile: dev
+  datasource:
+    url: jdbc:h2:mem:notesit;MODE=MSSQLServer;DATABASE_TO_LOWER=FALSE
+    driver-class-name: org.h2.Driver
+  h2:
+    console:
+      enabled: true
+  # No Flyway migration runs in dev — V1__init.sql is SQL-Server-only T-SQL.
+  # This profile is for booting the app and exercising the auth/security
+  # wiring only, not for exercising real catalog/notes SQL against H2.
+
+---
+spring:
+  config:
+    activate:
+      on-profile: sqlserver
+  datasource:
+    url: ${DB_URL:jdbc:sqlserver://localhost:1433;databaseName=notesit;encrypt=true;trustServerCertificate=true}
+    username: ${DB_USERNAME:}
+    password: ${DB_PASSWORD:}
+    driver-class-name: com.microsoft.sqlserver.jdbc.SQLServerDriver
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
