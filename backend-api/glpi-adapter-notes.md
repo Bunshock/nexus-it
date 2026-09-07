@@ -36,6 +36,28 @@ Status legend: ✅ resolved · 🟡 recommendation drafted, needs user confirm �
 create the "Genérico" rows + look up their ids, and `GET /Location` to build the
 Sede→Location map. See "GLPI-admin data still owed" at the bottom.
 
+### Skeleton built — 2026-09-07 (commit `c8a81d0`)
+
+`port/` + `adapters/glpi/` scaffolding is in place, nothing wired into `core/` yet:
+- **`port/`** — `CatalogPort` / `AssetPort` / `MovementPort` in generic vocabulary
+  (`Availability`, `MovementKind`, `PortType`/`PortModel`/`PortRef`/`PortAsset`/
+  `AssetQuery`/`MovementCommand`).
+- **`adapters/glpi/GlpiAdapterProperties`** (`middleware.glpi.*`) — `stateBuckets`
+  + `syncTargets` pre-filled in `application.yml` from the decisions above;
+  `genericManufacturerId` / `genericTypeIds` / `genericModelIds` /
+  `sedeLocationIds` ship **empty**, filled later by config, no code change.
+  Helpers `bucketFor(stateId)` / `syncTargetFor(kind)` / `isConfigured()`.
+- **`GlpiClient`** — real `initSession` / `killSession` request shapes (shared
+  `App-Token` + per-user `user_token` → `Session-Token`); untested vs. live GLPI.
+- **`GlpiUserTokenResolver`** — reads `APP_USER.glpi_token_encrypted`, decrypts;
+  `409 GLPI_TOKEN_NOT_SET` if unset.
+- **`GlpiCatalogAdapter` / `GlpiAssetAdapter` / `GlpiMovementAdapter`** — implement
+  the ports, every method `throws 501 NOT_IMPLEMENTED`.
+- **F1 plumbing** — `PUT /api/v1/me/glpi-token` (write-only, `MeController`) +
+  `APP_USER.glpi_token_encrypted` (migration `V3__glpi_user_token.sql`).
+- 122 tests green (`GlpiAdapterPropertiesTest` added); live-boot-verified (yaml
+  binds, `PUT /me/glpi-token` 401 unauth, in `/v3/api-docs`).
+
 ---
 
 ## Tier 3 — External facts
