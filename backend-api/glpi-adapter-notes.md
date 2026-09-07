@@ -20,17 +20,20 @@ data-cleanup — informs E1b).
 Status legend: ✅ resolved · 🟡 recommendation drafted, needs user confirm ·
 🔴 blocked on a GLPI-admin lookup · ⚪ not started.
 
-### Progress snapshot (2026-09-07)
+### Progress snapshot — **Tier 3/4 all DECIDED as of 2026-09-07**
 
 | Item | State |
 |---|---|
-| E1a status buckets Q1–Q5 | ✅ confirmed by user |
-| E1a Q6 (tie-break) | 🟡 open — user asked for a re-explanation, given; awaiting decision |
-| E1b generic ids | 🟡 config shape = per-itemtype maps (see below); rows don't exist in GLPI yet (org will create); Manufacturer-is-global needs 1-word confirm |
-| E2a Sede = `Location` | 🟡 doc recommendation only — needs explicit user confirm |
-| E2b address + recipients | ✅ decided — address in GLPI `Location`, no middleware `SEDE_SHIPPING_INFO`; recipients = deferred desktop-app feature |
-| N1 backing type | ✅ decided — adapter supports BOTH `Peripheral` and `Consumable`; return semantics for Consumable-backed still to pin down |
-| F1 write identity | ✅ decided — per-user: shared `App-Token` (admin), per-technician `user_token`; supply mechanics still to design |
+| E1a status buckets Q1–Q5 | ✅ confirmed |
+| E1a Q6 (tie-break) | ✅ **raise a D9 drift row** when `states_id` and `users_id` contradict — extends D9 to intra-GLPI inconsistency |
+| E1b generic-id config shape | ✅ per-itemtype maps: `genericManufacturerId` (one, global), `genericTypeIds{itemtype→id}`, `genericModelIds{itemtype→id}`. Replaces D5b's flat pair (§8 revision). |
+| E2a Sede = GLPI `Location` | ✅ confirmed |
+| E2b address + recipients | ✅ address in GLPI `Location` (middleware reads it), no middleware `SEDE_SHIPPING_INFO`; recipients = deferred desktop-app feature |
+| N1 backing type | ✅ adapter supports BOTH `Peripheral` and `Consumable`; Consumable return semantics TBD in the adapter build |
+| F1 write identity | ✅ per-user: one shared `App-Token` (admin config), per-technician `user_token`; `PUT /me/glpi-token` + `APP_USER.glpi_token_encrypted` to design |
+
+**What's left is data-gathering only (GLPI admin), not decisions** — see "GLPI-admin
+data still owed" at the bottom.
 
 ---
 
@@ -74,16 +77,16 @@ state, `PUT /<itemtype>/{id} {"locations_id": <dest>}` (E2a).
 Every write also stamps `motivodemovimientofield` (plugin Fields container id 8)
 with the note ref + acting technician + reason.
 
-**Q6 (tie-break) — STILL OPEN, user asked for a re-explanation 2026-09-07.**
-GLPI stores availability (`states_id`) and holder (`users_id`) separately; they
-can contradict (e.g. `states_id=33` En stock but `users_id` set, or `states_id=31`
-En uso but `users_id` empty). **Proposed rule:** availability from `states_id`,
-holder from `users_id`, and on a contradiction raise a **D9 reconciliation drift
-row** (`HOLDER_MISMATCH` / `STATE_MISMATCH`) rather than silently picking one.
-Alternative would be to make one field override the other outright. Awaiting the
-user's decision.
+**Q6 (tie-break) — ✅ DECIDED 2026-09-07.** GLPI stores availability (`states_id`)
+and holder (`users_id`) separately and they can contradict (`states_id=33` En
+stock but `users_id` set, or `states_id=31` En uso but `users_id` empty). Rule:
+availability from `states_id`, holder from `users_id`, and on a contradiction
+**raise a D9 reconciliation drift row** (`HOLDER_MISMATCH` / `STATE_MISMATCH`) —
+never silently pick one. This extends D9 beyond its original app-expected-vs-GLPI
+scope to also cover "GLPI's own two fields disagree." Fold into
+`contract-behaviors.md` §M + `backend-contract.md` §14.
 
-### E1b · generic Type / Manufacturer / Model ids  🟡 (config shape decided, rows TBD)
+### E1b · generic Type / Manufacturer / Model ids  ✅ (config shape decided 2026-09-07; rows TBD in GLPI)
 
 **Corrected model (user 2026-09-07):** a generic value is needed for **Type,
 Manufacturer, and Model** — and Type & Model are **per GLPI itemtype**, they do
@@ -103,25 +106,30 @@ Otro" picker option per Type (the label + the ids, or a per-Type flag).
 **Contract impact:** this replaces D5b's flat `genericBrandId` / `genericModelId`
 in §8 with the per-itemtype map above — a real §8 / D5b revision to write.
 
-**Rows TBD:** the generic Type/Manufacturer/Model rows do not exist in GLPI yet —
-the org will create them ("Genérico" per category). Until then those config
-entries are `null` (D5b's degrade path: item takes the picked GLPI record's real
-type/brand/model; for a not-in-catalog countable, names = `genericLabel`,
-ids = null).
-- **Manufacturer-is-global** reading needs a one-word user confirm.
-- Once the rows exist: `GET /<X>Type` / `GET /Manufacturer` / `GET /<X>Model`
-  lookups to fill the config (GLPI admin).
+**Manufacturer-is-global CONFIRMED 2026-09-07** — one "Genérico" manufacturer, no
+per-category distinction.
 
-### E2a · Sede = GLPI `Location`  🟡 (doc recommendation, consistent with E2b, not an explicit decision)
+**Rows TBD in GLPI:** the generic Type/Manufacturer/Model rows do not exist yet —
+the org will create them ("Genérico" per category for Type/Model, one for
+Manufacturer). Until then those config entries are `null` (D5b's degrade path:
+item takes the picked GLPI record's real type/brand/model; for a not-in-catalog
+countable, names = `genericLabel`, ids = null). GLPI-admin lookups owed once the
+rows exist — see bottom.
 
-From `endpoints-inventario.md` §4 ("Sede → Location, recomendado") — a *doc
-recommendation*, not a user decision (Claude over-marked this ✅ earlier).
-Consistent with the E2b answer (address lives in GLPI). If adopted: `Location`
-carries `name/address/postcode/town/…/lat/long`, is the `locations_id`(3) FK on
-every asset type; `?sedeId=` → `locations_id`; Locations are a **tree**
-(`searchtype=under` for "at a Sede or below"); Remito relocation =
-`PUT /<itemtype>/{id} {"locations_id": <dest>}`. **Needs explicit user confirm
-that Sede maps to `Location` (vs. some other GLPI concept).**
+### E2a · Sede = GLPI `Location`  ✅ CONFIRMED 2026-09-07
+
+`Location` (`GET|POST|PUT|DELETE /api.php/v1/Location`) carries
+`name(14)/address(15)/postcode(17)/town(18)/state(104)/country(105)/building(11)/
+room(12)/alias(107)/lat-long(20-21)`, and is the `locations_id`(**search field 3**)
+FK on **every** asset itemtype. Consequences:
+- `?sedeId=` → `criteria[field]=3`.
+- Locations are a **tree** → "at a Sede or below" = `searchtype=under`.
+- Remito relocation = `PUT /<itemtype>/{id} {"locations_id": <dest>}`.
+- Address for a Remito destination is read from the Sede's `Location` record (E2b).
+- The middleware's Sede→GLPI-id map is a Location-id map (adapter config), built
+  from `GET /Location?range=0-200`.
+- **Owed:** run `GET /Location?range=0-200` to confirm the org's real sedes are
+  already loaded as Location records (else they need creating).
 
 ### E2b · address + recipients  ✅ (decided 2026-09-07) — full design deferred
 
@@ -213,15 +221,22 @@ the `PUT /me/glpi-token` endpoint above.
 
 ---
 
-## Still needs the user before the contract can be folded
+## GLPI-admin data still owed (not decisions — lookups / row creation)
 
-1. **E1a Q6** — the tie-break rule (or an override).
-2. **E1b** — confirm "one global generic Manufacturer, per-itemtype generic
-   Type/Model" reading; then the GLPI-admin creates the generic rows and looks up
-   their ids.
-3. **E2a** — explicit "Sede = GLPI `Location`" (vs. another GLPI concept).
+1. Create the generic rows in GLPI: one "Genérico" `Manufacturer`; one "Genérico"
+   in each `<X>Type` and `<X>Model` list (Computer/Peripheral/Phone/Monitor/
+   Printer + the GLPI-11 custom-asset Type/Model lists). Then look up their ids:
+   `GET /Manufacturer`, `GET /ComputerType`/`ComputerModel`, `GET /PeripheralType`/
+   `PeripheralModel`, … → fills `genericManufacturerId` / `genericTypeIds` /
+   `genericModelIds`.
+2. `GET /Location?range=0-200` — confirm the org's sedes exist as Location
+   records; build the Sede→Location-id adapter-config map from the result (create
+   any missing sedes).
+3. (adapter build) confirm the exact `states_id` sync targets for `lost`
+   (`45 En baja` vs `48 Scrap`) and whether Peripheral loans really use
+   `34 En préstamo`.
 
-## Once confirmed — fold into
+## Tier 3/4 decisions — fold into
 
 - `backend-contract.md`: **§8 / D5b** (flat `genericBrandId`/`genericModelId` →
   per-itemtype maps + `genericManufacturerId`); **§3.3 / §7.4** (Sede = Location,
