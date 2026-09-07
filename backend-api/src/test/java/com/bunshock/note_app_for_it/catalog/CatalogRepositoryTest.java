@@ -7,6 +7,7 @@ import com.bunshock.note_app_for_it.catalog.dto.CatalogProvider;
 import com.bunshock.note_app_for_it.catalog.dto.CatalogSede;
 import com.bunshock.note_app_for_it.catalog.dto.CatalogType;
 import com.bunshock.note_app_for_it.catalog.dto.SedeShippingInfoResponse;
+import com.bunshock.note_app_for_it.catalog.dto.SnValidationRow;
 import com.bunshock.note_app_for_it.common.security.EncryptionService;
 import com.bunshock.note_app_for_it.common.web.ApiException;
 import com.bunshock.note_app_for_it.config.ConfigRepository;
@@ -419,6 +420,127 @@ class CatalogRepositoryTest {
         repository.removeModel(modelId, "tester");
 
         assertTrue(repository.getModelsForBrandAndType(dellBrandId, notebookTypeId).isEmpty());
+    }
+
+    // ── S/N Validation ───────────────────────────────────────────────────────
+
+    @Test
+    void upsertThenGetSnValidationRoundTrips() {
+        int modelId = insertModel(link(notebookTypeId, dellBrandId), "Latitude 5420");
+
+        repository.upsertSnValidation(modelId, "[A-Z]{2}\\d{6}", true, "tester");
+
+        var rule = repository.getSnValidation(modelId);
+        assertNotNull(rule);
+        assertEquals("[A-Z]{2}\\d{6}", rule.regexPattern());
+        assertTrue(rule.active());
+    }
+
+    @Test
+    void upsertSnValidationReplacesTheExistingRowRatherThanDuplicating() {
+        int modelId = insertModel(link(notebookTypeId, dellBrandId), "Latitude 5420");
+
+        repository.upsertSnValidation(modelId, "[A-Z]{2}\\d{6}", true, "tester");
+        repository.upsertSnValidation(modelId, "\\d{8}", true, "tester");
+
+        assertEquals("\\d{8}", repository.getSnValidation(modelId).regexPattern());
+        Integer rowCount = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM SN_VALIDATION WHERE model_id = ?", Integer.class, modelId);
+        assertEquals(1, rowCount);
+    }
+
+    @Test
+    void getSnValidationReturnsNullWhenTheRuleIsInactive() {
+        int modelId = insertModel(link(notebookTypeId, dellBrandId), "Latitude 5420");
+        repository.upsertSnValidation(modelId, "\\d{8}", false, "tester");
+
+        assertNull(repository.getSnValidation(modelId));
+    }
+
+    @Test
+    void getSnValidationReturnsNullWhenNoRowExists() {
+        int modelId = insertModel(link(notebookTypeId, dellBrandId), "Latitude 5420");
+        assertNull(repository.getSnValidation(modelId));
+    }
+
+    @Test
+    void upsertSnValidationRejectsASyntacticallyInvalidRegexAndPersistsNothing() {
+        int modelId = insertModel(link(notebookTypeId, dellBrandId), "Latitude 5420");
+
+        ApiException ex = assertThrows(ApiException.class,
+                () -> repository.upsertSnValidation(modelId, "[A-Z", true, "tester"));
+        assertEquals("INVALID_REGEX", ex.getCode());
+        Integer rowCount = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM SN_VALIDATION WHERE model_id = ?", Integer.class, modelId);
+        assertEquals(0, rowCount, "a rejected pattern must not be persisted");
+    }
+
+    @Test
+    void upsertSnValidationAcceptsABlankRegexAndStoresNoPattern() {
+        int modelId = insertModel(link(notebookTypeId, dellBrandId), "Latitude 5420");
+
+        repository.upsertSnValidation(modelId, "   ", true, "tester");
+
+        var rule = repository.getSnValidation(modelId);
+        assertNotNull(rule);
+        assertNull(rule.regexPattern());
+    }
+
+    @Test
+    void upsertSnValidationRejectsAnUnknownModel() {
+        ApiException ex = assertThrows(ApiException.class,
+                () -> repository.upsertSnValidation(999_999, "\\d{8}", true, "tester"));
+        assertEquals("MODEL_NOT_FOUND", ex.getCode());
+    }
+
+    @Test
+    void upsertSnValidationWritesAnAuditAdminActionRowOnRealChangeOnly() {
+        int modelId = insertModel(link(notebookTypeId, dellBrandId), "Latitude 5420");
+
+        repository.upsertSnValidation(modelId, "\\d{8}", true, "boss1");
+        Integer afterFirst = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM AUDIT_ADMIN_ACTION WHERE action = 'EDIT_SN_VALIDATION'", Integer.class);
+        assertEquals(1, afterFirst);
+        var row = jdbc.queryForMap("SELECT * FROM AUDIT_ADMIN_ACTION WHERE action = 'EDIT_SN_VALIDATION'");
+        assertEquals("SN_VALIDATION", row.get("target_type"));
+        assertEquals(String.valueOf(modelId), row.get("target_id"));
+        assertEquals("regex=, activa=false", row.get("old_value"));
+        assertEquals("regex=\\d{8}, activa=true", row.get("new_value"));
+
+        repository.upsertSnValidation(modelId, "\\d{8}", true, "boss1");
+        Integer afterNoOp = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM AUDIT_ADMIN_ACTION WHERE action = 'EDIT_SN_VALIDATION'", Integer.class);
+        assertEquals(1, afterNoOp, "re-saving identical values writes no second audit row");
+    }
+
+    @Test
+    void getAllSnValidationRowsListsEveryActiveAssetModelLeftJoinedToItsRule() {
+        int linkId = link(notebookTypeId, dellBrandId);
+        int withRule = insertModel(linkId, "Latitude 5420");
+        int withoutRule = insertModel(linkId, "Latitude 7430");
+        repository.upsertSnValidation(withRule, "[A-Z]{2}\\d{6}", true, "tester");
+
+        List<SnValidationRow> rows = repository.getAllSnValidationRows();
+
+        assertEquals(2, rows.size());
+        var ruled = rows.stream().filter(r -> r.modelId() == withRule).findFirst().orElseThrow();
+        assertEquals("[A-Z]{2}\\d{6}", ruled.regexPattern());
+        assertTrue(ruled.active());
+        var unruled = rows.stream().filter(r -> r.modelId() == withoutRule).findFirst().orElseThrow();
+        assertNull(unruled.regexPattern());
+        assertFalse(unruled.active());
+        assertEquals(withRule, rows.get(0).modelId(), "an active rule sorts ahead of models with none");
+    }
+
+    @Test
+    void getAllSnValidationRowsExcludesCountableTypeModels() {
+        int mouseTypeId = insertType("MOUSE", false, false);
+        insertModel(link(mouseTypeId, dellBrandId), "MS-116");
+        insertModel(link(notebookTypeId, dellBrandId), "Latitude 5420");
+
+        List<SnValidationRow> rows = repository.getAllSnValidationRows();
+
+        assertEquals(List.of("Latitude 5420"), rows.stream().map(SnValidationRow::modelName).toList());
     }
 
     // ── Provider / Sede reads ────────────────────────────────────────────────

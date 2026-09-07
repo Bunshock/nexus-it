@@ -7,6 +7,8 @@ import com.bunshock.note_app_for_it.catalog.dto.CatalogProvider;
 import com.bunshock.note_app_for_it.catalog.dto.CatalogSede;
 import com.bunshock.note_app_for_it.catalog.dto.CatalogType;
 import com.bunshock.note_app_for_it.catalog.dto.SedeShippingInfoResponse;
+import com.bunshock.note_app_for_it.catalog.dto.SnValidationResponse;
+import com.bunshock.note_app_for_it.catalog.dto.SnValidationRow;
 import com.bunshock.note_app_for_it.common.web.ApiException;
 import com.bunshock.note_app_for_it.config.ConfigRepository;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -21,6 +23,8 @@ import java.sql.Types;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
+import java.util.regex.PatternSyntaxException;
 
 /**
  * Ported from the desktop app's {@code SqliteEquipmentService} (1015 lines) — browse, per-Sede
@@ -28,10 +32,15 @@ import java.util.Map;
  * the global "Genérico / Otro" model) are all here now. Provider/Sede are READ-ONLY from the app
  * (no CRUD methods exist in the desktop app's own service either, confirmed by reading the real
  * file — Provider/Sede management is direct-SQL-only, same convention as {@code APP_USER}).
- * SN_VALIDATION is NOT ported yet — a secondary feature, deferred.
+ * SN_VALIDATION (regex-per-model S/N rules) is ported too — see the S/N Validation section below.
+ * That feature is expected to be removed once the GLPI adapter lands in v2, but stays for the
+ * first release (GLPI won't be up yet).
  */
 @Repository
 public class CatalogRepository {
+
+    /** Mirrors the desktop app's {@code SettingsController.SN_REGEX_MAX_LENGTH} and the DB column bound. */
+    private static final int SN_REGEX_MAX_LENGTH = 500;
 
     private final JdbcTemplate jdbc;
     private final ConfigRepository config;
@@ -566,6 +575,94 @@ public class CatalogRepository {
     public List<CatalogProvider> getAllProviders() {
         return jdbc.query("SELECT id, name FROM PROVIDER WHERE deprecated = 0 ORDER BY name",
                 (rs, rowNum) -> new CatalogProvider(rs.getInt("id"), rs.getString("name")));
+    }
+
+    // ── S/N Validation (regex-per-model) ─────────────────────────────────────
+    //
+    // Ported from SqliteEquipmentService.getSnValidation()/getAllSnValidationRows()/
+    // upsertSnValidation(). One rule row per model at most (upsert is delete-then-insert). The
+    // global generic model (brand_type_id IS NULL) is never listed — the panel query INNER JOINs
+    // through BRAND_TYPE_LINK, same as the desktop app.
+
+    /** Every active asset-type model, LEFT-joined to its (optional) rule — the S/N Validation panel's table. */
+    public List<SnValidationRow> getAllSnValidationRows() {
+        return jdbc.query("""
+                SELECT t.name AS type_name, b.name AS brand_name,
+                       m.id AS model_id, m.name AS model_name,
+                       sv.regex_pattern, sv.is_active
+                FROM MODEL m
+                JOIN BRAND_TYPE_LINK btl ON btl.id = m.brand_type_id
+                JOIN TYPE t ON t.id = btl.type_id
+                JOIN BRAND b ON b.id = btl.brand_id
+                LEFT JOIN SN_VALIDATION sv ON sv.model_id = m.id
+                WHERE t.is_asset = 1 AND t.deprecated = 0 AND b.deprecated = 0 AND m.deprecated = 0
+                ORDER BY COALESCE(sv.is_active, 0) DESC, t.name, b.name, m.name
+                """,
+                (rs, rowNum) -> new SnValidationRow(rs.getInt("model_id"), rs.getString("type_name"),
+                        rs.getString("brand_name"), rs.getString("model_name"),
+                        rs.getString("regex_pattern"), rs.getInt("is_active") == 1));
+    }
+
+    /** The active rule for one model, or {@code null} if none exists or it's inactive. */
+    public SnValidationResponse getSnValidation(int modelId) {
+        List<SnValidationResponse> rows = jdbc.query(
+                "SELECT model_id, regex_pattern, is_active FROM SN_VALIDATION WHERE model_id = ? AND is_active = 1",
+                (rs, rowNum) -> new SnValidationResponse(rs.getInt("model_id"), rs.getString("regex_pattern"), true),
+                modelId);
+        return rows.isEmpty() ? null : rows.get(0);
+    }
+
+    // Unfiltered read (any is_active value) — only used to build the audit before-image, so a
+    // deactivate/reactivate is recorded accurately, matching what the desktop panel shows.
+    private SnValidationResponse rawSnValidation(int modelId) {
+        List<SnValidationResponse> rows = jdbc.query(
+                "SELECT model_id, regex_pattern, is_active FROM SN_VALIDATION WHERE model_id = ?",
+                (rs, rowNum) -> new SnValidationResponse(rs.getInt("model_id"),
+                        rs.getString("regex_pattern"), rs.getInt("is_active") == 1),
+                modelId);
+        return rows.isEmpty() ? null : rows.get(0);
+    }
+
+    @Transactional
+    public void upsertSnValidation(int modelId, String regex, boolean active, String username) {
+        if (findNameById("MODEL", modelId) == null) {
+            throw ApiException.notFound("MODEL_NOT_FOUND", "Modelo no encontrado.");
+        }
+        String normalized = (regex == null || regex.isBlank()) ? null : regex.trim();
+        if (normalized != null) {
+            // Length is also enforced by SnValidationUpdateRequest's @Size, but this is the real
+            // persistence boundary every caller crosses — same belt-and-braces as setModelStock().
+            if (normalized.length() > SN_REGEX_MAX_LENGTH) {
+                throw ApiException.badRequest("REGEX_TOO_LONG",
+                        "La expresión regular no puede superar los " + SN_REGEX_MAX_LENGTH + " caracteres.");
+            }
+            // The desktop app's SettingsController does exactly this check before saving — a
+            // pattern that only fails at Pattern.compile() time would otherwise throw on every
+            // keystroke a technician makes against this model in ItemDialogController.
+            try {
+                Pattern.compile(normalized);
+            } catch (PatternSyntaxException e) {
+                throw ApiException.badRequest("INVALID_REGEX", "Expresión regular inválida: " + e.getDescription());
+            }
+        }
+
+        SnValidationResponse before = rawSnValidation(modelId);
+        jdbc.update("DELETE FROM SN_VALIDATION WHERE model_id = ?", modelId);
+        jdbc.update("INSERT INTO SN_VALIDATION (model_id, regex_pattern, is_active) VALUES (?, ?, ?)",
+                modelId, normalized, active ? 1 : 0);
+
+        String oldValue = snAuditValue(before == null ? null : before.regexPattern(),
+                before != null && before.active());
+        String newValue = snAuditValue(normalized, active);
+        if (!oldValue.equals(newValue)) {
+            audit.recordAdminAction(username, "EDIT_SN_VALIDATION", "SN_VALIDATION",
+                    String.valueOf(modelId), oldValue, newValue, null);
+        }
+    }
+
+    // Same "regex=…, activa=…" shape SettingsController's own audit call uses.
+    private static String snAuditValue(String regex, boolean active) {
+        return "regex=" + (regex == null ? "" : regex) + ", activa=" + active;
     }
 
     public List<CatalogSede> getAllSedes() {

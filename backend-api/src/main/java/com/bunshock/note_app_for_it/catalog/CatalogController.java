@@ -9,6 +9,9 @@ import com.bunshock.note_app_for_it.catalog.dto.CatalogType;
 import com.bunshock.note_app_for_it.catalog.dto.NameRequest;
 import com.bunshock.note_app_for_it.catalog.dto.RequiresSerialRequest;
 import com.bunshock.note_app_for_it.catalog.dto.SedeShippingInfoResponse;
+import com.bunshock.note_app_for_it.catalog.dto.SnValidationResponse;
+import com.bunshock.note_app_for_it.catalog.dto.SnValidationRow;
+import com.bunshock.note_app_for_it.catalog.dto.SnValidationUpdateRequest;
 import com.bunshock.note_app_for_it.catalog.dto.StockResponse;
 import com.bunshock.note_app_for_it.catalog.dto.StockUpdateRequest;
 import com.bunshock.note_app_for_it.common.security.CallerPrincipal;
@@ -163,6 +166,33 @@ public class CatalogController {
         CallerPrincipal caller = currentUser.require();
         permissionGuard.require(caller, Permission.MANAGE_MODELS);
         catalog.removeModel(id, caller.username());
+    }
+
+    // ── S/N Validation (regex-per-model) ───────────────────────────────────
+
+    @GetMapping("/sn-validations")
+    public List<SnValidationRow> snValidations() {
+        currentUser.require();
+        return catalog.getAllSnValidationRows();
+    }
+
+    @GetMapping("/models/{modelId}/sn-validation")
+    public SnValidationResponse getSnValidation(@PathVariable int modelId) {
+        currentUser.require();
+        SnValidationResponse rule = catalog.getSnValidation(modelId);
+        if (rule == null) {
+            throw ApiException.notFound("SN_VALIDATION_NOT_FOUND",
+                    "Este modelo no tiene una regla de validación de S/N activa.");
+        }
+        return rule;
+    }
+
+    @PutMapping("/models/{modelId}/sn-validation")
+    public void setSnValidation(@PathVariable int modelId,
+            @Valid @RequestBody SnValidationUpdateRequest request) {
+        CallerPrincipal caller = currentUser.require();
+        permissionGuard.require(caller, Permission.EDIT_SN_VALIDATION);
+        catalog.upsertSnValidation(modelId, request.regexPattern(), request.active(), caller.username());
     }
 
     // ── Provider / Sede — read-only from the app ────────────────────────────

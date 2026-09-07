@@ -75,7 +75,7 @@ target — never matches (fail-safe, not fail-open).
 
 ---
 
-## Catalog (`/api/v1/catalog`) — ✅ browse, stock, and full Type/Brand/Model CRUD
+## Catalog (`/api/v1/catalog`) — ✅ browse, stock, full Type/Brand/Model CRUD, and S/N Validation
 
 | Method & path | Permission |
 |---|---|
@@ -94,6 +94,9 @@ target — never matches (fail-safe, not fail-open).
 | `POST /api/v1/catalog/models?typeId=&brandId=` `{name}` | `MANAGE_MODELS` |
 | `PUT /api/v1/catalog/models/{id}` `{name}` | `MANAGE_MODELS` |
 | `DELETE /api/v1/catalog/models/{id}` | `MANAGE_MODELS` |
+| `GET /api/v1/catalog/sn-validations` | session only |
+| `GET /api/v1/catalog/models/{modelId}/sn-validation` | session only |
+| `PUT /api/v1/catalog/models/{modelId}/sn-validation` `{regexPattern?, active}` | `EDIT_SN_VALIDATION` |
 | `GET /api/v1/catalog/providers` | session only |
 | `GET /api/v1/catalog/sedes` | session only |
 | `GET /api/v1/catalog/sedes/{id}/shipping-info` | session only |
@@ -122,10 +125,23 @@ target — never matches (fail-safe, not fail-open).
 - **Provider/Sede are read-only from the app, by design** — confirmed by reading the desktop
   app's actual current `SqliteEquipmentService`: no `addProvider`/`addSede`/etc. methods exist
   there either. Both are edited directly via SQL, same convention as `APP_USER`.
-
-**Not built yet** (🚧, deferred): `SN_VALIDATION` (S/N regex-per-model rules) — a secondary
-feature, not core to note creation. `SqliteEquipmentService`'s full 1015 lines are now ported
-except that one slice.
+- **S/N Validation** (`SN_VALIDATION`, regex-per-model rules) — ported from
+  `SqliteEquipmentService.getSnValidation()`/`getAllSnValidationRows()`/`upsertSnValidation()` and
+  the desktop `SettingsController` S/N edit dialog. `GET /sn-validations` is the admin panel's
+  table (every active asset-type model LEFT-joined to its optional rule; `regexPattern: null` /
+  `active: false` = no rule). `GET /models/{modelId}/sn-validation` is the single active rule
+  `ItemDialogController` needs while a technician types a serial (`404 SN_VALIDATION_NOT_FOUND`
+  when none). `PUT` is a delete-then-insert upsert (one row per model), gated by
+  `EDIT_SN_VALIDATION` (**not** Sede-scoped — a rule is global to the model). Server-side
+  validation matches the desktop dialog: blank `regexPattern` clears the pattern but keeps the
+  rule row; a non-blank pattern must compile (`400 INVALID_REGEX`, with
+  `PatternSyntaxException.getDescription()`) and be ≤ 500 chars (`400 REGEX_TOO_LONG`, also
+  enforced by the DTO's `@Size`); unknown model → `404 MODEL_NOT_FOUND`. Writes one
+  `AUDIT_ADMIN_ACTION` row (`EDIT_SN_VALIDATION`, old/new `"regex=…, activa=…"`) only when the
+  stored value actually changes — same no-op-writes-no-audit-row convention as stock/rename.
+- **This feature is expected to be removed in v2 once the GLPI adapter lands** (it's on the
+  contract's Tier 6 desktop feature-removal list), but stays for the first release — GLPI won't
+  be up, so the app still needs it.
 
 ---
 
@@ -317,7 +333,7 @@ sites now take the acting caller's `username` as a parameter.
   no MySQL/Postgres-only LIMIT/OFFSET syntax). Default page size 50, hard-clamped to 200 max
   (`oversizedPageSizeIsClampedNotRejected` — never a 400, just silently capped).
 
-## SN Validation — — not started (see Catalog section above)
+## SN Validation — ✅ built (folded into the Catalog module — see the Catalog section above)
 
 ---
 
