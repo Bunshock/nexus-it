@@ -60,7 +60,7 @@ reconciliation. Nothing is deployed anywhere yet.
 | E1b | generic Type/Manufacturer/Model ids | ✅ config shape = per-itemtype maps (`genericTypeIds`/`genericModelIds`) + one global `genericManufacturerId`. **Rows don't exist in GLPI yet.** |
 | E2a | Sede = GLPI `Location` | ✅ confirmed (`locations_id` field 3, tree) |
 | E2b | address + recipients | ✅ address read from GLPI `Location`; **no middleware `SEDE_SHIPPING_INFO`**; recipients = a deferred desktop-app feature |
-| N1 | countable backing | ✅ adapter supports **both** `Peripheral` and `Consumable` |
+| N1 | countable backing | ✅ **v2.0 = `Peripheral`-only** (2026-09-07); `Consumable` path deferred to a later release |
 | N2 / N3 | itemtype flattening / per-instance field ids | ✅ noted (composite ids; resolve via `listSearchOptions` at startup) |
 
 **GLPI-admin data still owed** (not decisions):

@@ -29,7 +29,7 @@ Status legend: ✅ resolved · 🟡 recommendation drafted, needs user confirm �
 | E1b generic-id config shape | ✅ per-itemtype maps: `genericManufacturerId` (one, global), `genericTypeIds{itemtype→id}`, `genericModelIds{itemtype→id}`. Replaces D5b's flat pair (§8 revision). |
 | E2a Sede = GLPI `Location` | ✅ confirmed |
 | E2b address + recipients | ✅ address in GLPI `Location` (middleware reads it), no middleware `SEDE_SHIPPING_INFO`; recipients = deferred desktop-app feature |
-| N1 backing type | ✅ adapter supports BOTH `Peripheral` and `Consumable`; Consumable return semantics TBD in the adapter build |
+| N1 backing type | ✅ **v2.0 = `Peripheral`-only** (decided 2026-09-07); every countable backed by GLPI `Peripheral`, per-unit return/loss tracking unchanged. `Consumable` path deferred to a later release. |
 | F1 write identity | ✅ per-user: one shared `App-Token` (admin config), per-technician `user_token`; `PUT /me/glpi-token` + `APP_USER.glpi_token_encrypted` to design |
 
 **Tier 3/4 is fully DECIDED.** What's left is data-gathering only (GLPI admin) —
@@ -181,15 +181,13 @@ FK on **every** asset itemtype. Consequences:
 
 ### New items surfaced by the investigation (not in the original Tier 3)
 
-- **N1** ✅ (decided 2026-09-07) — **the adapter handles BOTH backing types:
-  GLPI `Peripheral` AND `Consumable`.** A catalog "type" carries which one it's
-  backed by (adapter config / itemtype metadata). Peripheral = the verified
-  per-unit `states_id`/`users_id` workflow (return/loss tracked). Consumable =
-  the one-way `date_out` model — **open sub-question**: a Consumable-backed
-  countable is *consumed*, not returned, so its note items likely have no RETURN
-  tracking dimension at all (or only a "delivered" state); to be pinned down when
-  the adapter's countable path is designed. Two code paths for
-  countable availability / sync / return.
+- **N1** ✅ (decided 2026-09-07) — **v2.0 backs every countable with GLPI
+  `Peripheral` only.** The verified per-unit `states_id`/`users_id` workflow;
+  RETURN tracking dimension stays exactly as it is today (`33 → 31/34 → 33`,
+  `PRESTAMO → 34`). **`Consumable` (one-way `date_out`, likely no RETURN
+  dimension) is deferred to a later release** — no per-type "backing" flag, no
+  second code path, in v2.0. Revisit when the org has a real consumable
+  (toner/cables/etc.) that must flow through a note.
 - **N2** ✅ (adapter note only) — the Type catalog spans 6+ GLPI itemtypes
   (Computer / Peripheral / Phone / Monitor / Printer + GLPI-11 custom assets
   Multimedia / AudioEquipment / Security / Misc — the last as URL-encoded FQCNs
@@ -289,7 +287,9 @@ Then: the strip (per `decisions-pending.md` D3/D4/D5, plus the E2b Remito rework
 - **Remito recipients feature** (desktop-app-side) — Sede select auto-fills
   address from GLPI Location + enables recipient input fields. E2b, "save for
   later".
-- **Consumable-backed countable return semantics** — likely no RETURN dimension
-  (consumed, not returned); pin down when the countable adapter path is designed.
+- **`Consumable` backing entirely** (N1) — deferred to a later release. v2.0 is
+  `Peripheral`-only for countables. When picked up: add a per-type backing flag,
+  the one-way `date_out` write path, and decide whether consumable note-items
+  carry a RETURN dimension at all (likely not — consumed, not returned).
 - **F2** secret storage/rotation details (deploy phase), beyond the per-user GLPI
   token store F1 forces.
