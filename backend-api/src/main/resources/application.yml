@@ -27,6 +27,12 @@ middleware:
                         # generate per-deployment via `openssl rand -base64 32`, never commit a
                         # real value here. Blank = EncryptionService fails loudly (503), matching
                         # the idp.issuer-uri "genuinely open" convention above.
+  directory:
+    base-url: "" # org directory (Active Directory) REST API base, e.g. http://ad-api-host:8099 —
+                  # blank => GET /api/v1/directory/users returns 503 DIRECTORY_NOT_CONFIGURED.
+                  # Real value via MIDDLEWARE_DIRECTORY_BASEURL.
+    token: ""    # Bearer service token for the directory API. Blank => 503. Real value via
+                  # MIDDLEWARE_DIRECTORY_TOKEN, never committed.
 
 ---
 spring:

@@ -145,6 +145,42 @@ target — never matches (fail-safe, not fail-open).
 
 ---
 
+## Directory (`/api/v1/directory`) — ✅ built (Phase B gap #1)
+
+| Method & path | Permission |
+|---|---|
+| `GET /api/v1/directory/users?name=&dni=&username=` | session only |
+
+- Replaces the desktop app's direct `IADService.search()` (contract §7.6 / D8). Any authenticated
+  session; no permission, not Sede-scoped. AND-combined criteria, **at least one required**
+  (`400 MISSING_SEARCH_CRITERIA` otherwise). No match → `200 {results: []}`, never `404`.
+- Response item: `{username, fullName, email, dni, ou}` — the contract's literal shape is the
+  first four; `ou` (the account's OU / distinguished-name path) is kept as a **lossless
+  extension**, since the desktop app's AD user-selection popup displays it.
+- **`DirectoryService` is a port of the desktop `AdApiService.search()` logic, not a thin proxy**
+  — the org's directory API does loose substring matching and does **not** reliably AND its
+  params, so the middleware still has to: fan the query into digit + dotted-DNI variants and
+  comma-reordered name variants ("Nombre Apellido" typed vs. "Apellido, Nombre" stored), merge
+  by `samAccountName` preferring the more complete record, run a per-word fallback round only
+  when the precise variants found nothing, then **re-verify every supplied field client-side**
+  (any candidate failing one field is dropped). Results are normalized at the boundary: `dni` →
+  digits only, `fullName` → comma stripped.
+- **Config**: `middleware.directory.base-url` / `.token` (`application.yml`, real values via
+  `MIDDLEWARE_DIRECTORY_BASEURL` / `MIDDLEWARE_DIRECTORY_TOKEN`). Blank →
+  `503 DIRECTORY_NOT_CONFIGURED` (same "genuinely open" convention as `idp.issuer-uri` /
+  `security.encryption-key`). Directory unreachable / non-200 → `502 DIRECTORY_UNAVAILABLE`.
+- **Not ported**: `validateCredentials()` (Keycloak owns auth under the OIDC login) and
+  `testConnection()` (was for the desktop Settings dialog, which is going away).
+- **Tests**: `DirectoryServiceTest` — plain unit test, a scriptable fake `AdApiClient` (no HTTP,
+  no Spring): unconfigured→503, no-criteria→empty-and-no-call, exact-name-one-round + normalize,
+  DNI-only match dropped by name re-verification, variant merge prefers fuller record, word
+  fallback runs only after precise fails, both DNI forms queried, separator-agnostic username.
+  The HTTP client (`HttpAdApiClient`) has no test — same "no live external service / never leave
+  a real-network test in the suite" precedent; verified by live boot (`401` unauthenticated,
+  registered in `/v3/api-docs`).
+
+---
+
 ## Notes / History / Approval + Item Sync/Return (`/api/v1/notes`) — ✅ v1 subset
 
 | Method & path | Permission |
