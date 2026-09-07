@@ -25,6 +25,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.BiPredicate;
 
 /**
  * Ported from the desktop app's {@code SqliteHistoryService} (1165 lines — this is a v1 subset,
@@ -285,17 +286,31 @@ public class NotesRepository {
             sql.append(" AND COALESCE(r.technician_name, '') LIKE ?");
             params.add("%" + filter.authorSearch().trim() + "%");
         }
+        if (hasValues(filter.itemTypes()) || hasValues(filter.itemBrands()) || hasValues(filter.itemModels())) {
+            sql.append(" AND r.id IN (SELECT DISTINCT ni.note_id FROM NOTE_ITEM ni WHERE 1=1");
+            appendInViaCatalog(sql, params, "ni.type_id", "TYPE", filter.itemTypes());
+            appendInViaCatalog(sql, params, "ni.brand_id", "BRAND", filter.itemBrands());
+            appendInViaCatalog(sql, params, "ni.model_id", "MODEL", filter.itemModels());
+            sql.append(")");
+        }
 
         sql.append(" GROUP BY r.id, r.created_at, r.profile_type, r.sede_id, r.approval_status, ")
            .append("rr.rejection_reason, r.technician_name, r.technician_dni, e.user_name, pv.name, ")
            .append("e.motivo, p.motivo, sd.name")
            .append(" ORDER BY r.created_at DESC");
 
-        return jdbc.query(sql.toString(), (rs, rowNum) -> mapSummary(rs), params.toArray());
+        List<NoteSummaryResponse> rows = jdbc.query(sql.toString(), (rs, rowNum) -> mapSummary(rs), params.toArray());
+
+        // sync/return status is a per-note aggregate over the counts already on each summary row,
+        // not a SQL predicate — filtered here in Java, same as the desktop app's
+        // filterByGlpiStatus(). Multi-select is any-of.
+        rows = applyAggregateStatusFilter(rows, filter.syncStatuses(), NotesRepository::matchesSyncStatus);
+        rows = applyAggregateStatusFilter(rows, filter.returnStatuses(), NotesRepository::matchesReturnStatus);
+        return rows;
     }
 
     private void appendIn(StringBuilder sql, List<Object> params, String column, List<String> values) {
-        if (values == null || values.isEmpty()) return;
+        if (!hasValues(values)) return;
         sql.append(" AND ").append(column).append(" IN (");
         for (int i = 0; i < values.size(); i++) {
             if (i > 0) sql.append(",");
@@ -303,6 +318,56 @@ public class NotesRepository {
         }
         sql.append(")");
         params.addAll(values);
+    }
+
+    // Matches by catalog name regardless of deprecated status, so filtering by a name a
+    // type/brand/model was later renamed away from still finds the notes that used it then.
+    // Ported from the desktop app's appendInViaCatalog().
+    private void appendInViaCatalog(StringBuilder sql, List<Object> params, String idColumn,
+            String catalogTable, List<String> names) {
+        if (!hasValues(names)) return;
+        sql.append(" AND ").append(idColumn).append(" IN (SELECT id FROM ").append(catalogTable)
+           .append(" WHERE name IN (");
+        for (int i = 0; i < names.size(); i++) {
+            if (i > 0) sql.append(",");
+            sql.append("?");
+        }
+        sql.append("))");
+        params.addAll(names);
+    }
+
+    private static boolean hasValues(List<?> list) {
+        return list != null && !list.isEmpty();
+    }
+
+    private static List<NoteSummaryResponse> applyAggregateStatusFilter(List<NoteSummaryResponse> rows,
+            List<String> statuses, BiPredicate<NoteSummaryResponse, String> matcher) {
+        if (!hasValues(statuses)) return rows;
+        return rows.stream().filter(r -> statuses.stream().anyMatch(s -> matcher.test(r, s))).toList();
+    }
+
+    // "N_A" is deliberately NOT "no asset items" — a Préstamo note's assets are all N_A, so the
+    // count of GLPI-tracked items (pending+synced+rejected) is the right zero-check.
+    private static boolean matchesSyncStatus(NoteSummaryResponse r, String status) {
+        int tracked = r.pendingItemCount() + r.syncedItemCount() + r.rejectedItemCount();
+        return switch (status) {
+            case "N_A" -> tracked == 0;
+            case "PENDING" -> r.pendingItemCount() > 0;
+            case "SYNCED" -> r.syncedItemCount() > 0;
+            case "REJECTED" -> r.rejectedItemCount() > 0;
+            default -> true;
+        };
+    }
+
+    private static boolean matchesReturnStatus(NoteSummaryResponse r, String status) {
+        int tracked = r.returnPendingItemCount() + r.returnedItemCount() + r.lostItemCount();
+        return switch (status) {
+            case "N_A" -> tracked == 0;
+            case "PENDING" -> r.returnPendingItemCount() > 0;
+            case "RETURNED" -> r.returnedItemCount() > 0;
+            case "LOST" -> r.lostItemCount() > 0;
+            default -> true;
+        };
     }
 
     private NoteSummaryResponse mapSummary(ResultSet rs) throws SQLException {

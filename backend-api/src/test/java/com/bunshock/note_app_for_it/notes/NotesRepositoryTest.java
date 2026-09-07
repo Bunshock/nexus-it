@@ -300,14 +300,98 @@ class NotesRepositoryTest {
         notes.updateApprovalStatus(a, "APPROVED", null, "tester");
 
         List<NoteSummaryResponse> onlyEntrega = notes.getFiltered(
-                new NotesFilter(List.of("ENTREGA"), null, null, null, null, null, null));
+                new NotesFilter(List.of("ENTREGA"), null, null, null, null, null, null, null, null, null, null, null));
         assertEquals(1, onlyEntrega.size());
         assertEquals(a, onlyEntrega.get(0).id());
 
         List<NoteSummaryResponse> onlyPending = notes.getFiltered(
-                new NotesFilter(null, List.of("PENDING"), null, null, null, null, null));
+                new NotesFilter(null, List.of("PENDING"), null, null, null, null, null, null, null, null, null, null));
         assertEquals(1, onlyPending.size());
         assertEquals(b, onlyPending.get(0).id());
+    }
+
+    @Test
+    void getFilteredByItemType() {
+        int notebookNote = notes.createNote(entregaRequest("ENTREGA"), "tech1", null, sedeId);
+        NoteItemRequest cable = new NoteItemRequest("COUNTABLE", cableTypeId, cableBrandId, cableModelId,
+                null, null, 3, null, true, null);
+        int cableNote = notes.createNote(new CreateNoteRequest("ENTREGA", "Ana Diaz", "22222222", null,
+                null, null, null, null, null, null, null, null, null, List.of(cable)), "tech1", null, sedeId);
+
+        List<NoteSummaryResponse> onlyNotebooks = notes.getFiltered(new NotesFilter(
+                null, null, null, null, null, null, null, List.of("NOTEBOOK"), null, null, null, null));
+
+        assertEquals(List.of(notebookNote), onlyNotebooks.stream().map(NoteSummaryResponse::id).toList());
+        assertTrue(notes.getFiltered(new NotesFilter(
+                null, null, null, null, null, null, null, List.of("CABLE"), null, null, null, null))
+                .stream().map(NoteSummaryResponse::id).toList().contains(cableNote));
+    }
+
+    @Test
+    void getFilteredByItemTypeAndBrandRequiresOneItemToMatchBoth() {
+        int hpBrandId = insertBrand("HP");
+        int hpLink = link(notebookTypeId, hpBrandId);
+        int hpModelId = insertModel(hpLink, "EliteBook 840");
+        catalog.setModelStock(hpModelId, hpBrandId, notebookTypeId, sedeId, 5, "Ajuste de prueba", "tester");
+
+        int dellNote = notes.createNote(entregaRequest("ENTREGA"), "tech1", null, sedeId); // NOTEBOOK/DELL
+        NoteItemRequest hpAsset = new NoteItemRequest("ASSET", notebookTypeId, hpBrandId, hpModelId,
+                "SNHP1", "IT-SNHP1", null, null, true, null);
+        int hpNote = notes.createNote(new CreateNoteRequest("ENTREGA", "Ana Diaz", "22222222", null,
+                null, null, null, null, null, null, null, null, null, List.of(hpAsset)), "tech1", null, sedeId);
+
+        List<NoteSummaryResponse> notebookAndDell = notes.getFiltered(new NotesFilter(
+                null, null, null, null, null, null, null, List.of("NOTEBOOK"), List.of("DELL"), null, null, null));
+
+        assertEquals(List.of(dellNote), notebookAndDell.stream().map(NoteSummaryResponse::id).toList());
+        assertFalse(notebookAndDell.stream().anyMatch(r -> r.id() == hpNote));
+    }
+
+    @Test
+    void getFilteredBySyncStatus() {
+        int entrega = notes.createNote(entregaRequest("ENTREGA"), "tech1", null, sedeId); // asset -> GLPI PENDING
+        NoteItemRequest cable = new NoteItemRequest("COUNTABLE", cableTypeId, cableBrandId, cableModelId,
+                null, null, 2, null, true, null);
+        int cableOnly = notes.createNote(new CreateNoteRequest("ENTREGA", "Ana Diaz", "22222222", null,
+                null, null, null, null, null, null, null, null, null, List.of(cable)), "tech1", null, sedeId); // GLPI N_A
+
+        List<NoteSummaryResponse> pending = notes.getFiltered(new NotesFilter(
+                null, null, null, null, null, null, null, null, null, null, List.of("PENDING"), null));
+        assertEquals(List.of(entrega), pending.stream().map(NoteSummaryResponse::id).toList());
+
+        List<NoteSummaryResponse> na = notes.getFiltered(new NotesFilter(
+                null, null, null, null, null, null, null, null, null, null, List.of("N_A"), null));
+        assertEquals(List.of(cableOnly), na.stream().map(NoteSummaryResponse::id).toList());
+
+        // after syncing the asset, the ENTREGA note moves out of PENDING and into SYNCED
+        int itemId = notes.getById(entrega).items().get(0).id();
+        notes.updateItemGlpiStatus(itemId, "SYNCED", null, "tester");
+        assertTrue(notes.getFiltered(new NotesFilter(
+                null, null, null, null, null, null, null, null, null, null, List.of("PENDING"), null)).isEmpty());
+        assertEquals(List.of(entrega), notes.getFiltered(new NotesFilter(
+                null, null, null, null, null, null, null, null, null, null, List.of("SYNCED"), null))
+                .stream().map(NoteSummaryResponse::id).toList());
+    }
+
+    @Test
+    void getFilteredByReturnStatus() {
+        int prestamo = notes.createNote(entregaRequest("PRÉSTAMO"), "tech1", null, sedeId); // RETURN PENDING
+        int entrega = notes.createNote(entregaRequest("ENTREGA"), "tech1", null, sedeId);   // RETURN N_A
+
+        List<NoteSummaryResponse> returnPending = notes.getFiltered(new NotesFilter(
+                null, null, null, null, null, null, null, null, null, null, null, List.of("PENDING")));
+        assertEquals(List.of(prestamo), returnPending.stream().map(NoteSummaryResponse::id).toList());
+
+        List<NoteSummaryResponse> returnNa = notes.getFiltered(new NotesFilter(
+                null, null, null, null, null, null, null, null, null, null, null, List.of("N_A")));
+        assertEquals(List.of(entrega), returnNa.stream().map(NoteSummaryResponse::id).toList());
+
+        notes.updateApprovalStatus(prestamo, "APPROVED", null, "tester");
+        int itemId = notes.getById(prestamo).items().get(0).id();
+        notes.updateItemReturnStatus(itemId, "RETURNED", null, "tester");
+        assertEquals(List.of(prestamo), notes.getFiltered(new NotesFilter(
+                null, null, null, null, null, null, null, null, null, null, null, List.of("RETURNED")))
+                .stream().map(NoteSummaryResponse::id).toList());
     }
 
     @Test

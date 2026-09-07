@@ -69,10 +69,16 @@ public class NotesController {
             @RequestParam(required = false) String authorSearch,
             @RequestParam(required = false) String recipientSearch,
             @RequestParam(required = false) LocalDate dateFrom,
-            @RequestParam(required = false) LocalDate dateTo) {
+            @RequestParam(required = false) LocalDate dateTo,
+            @RequestParam(required = false) List<String> itemTypes,
+            @RequestParam(required = false) List<String> itemBrands,
+            @RequestParam(required = false) List<String> itemModels,
+            @RequestParam(required = false) List<String> syncStatuses,
+            @RequestParam(required = false) List<String> returnStatuses) {
         currentUser.require();
         return notes.getFiltered(new NotesFilter(
-                profileTypes, approvalStatuses, sedes, authorSearch, recipientSearch, dateFrom, dateTo));
+                profileTypes, approvalStatuses, sedes, authorSearch, recipientSearch, dateFrom, dateTo,
+                itemTypes, itemBrands, itemModels, syncStatuses, returnStatuses));
     }
 
     @GetMapping("/{id}")

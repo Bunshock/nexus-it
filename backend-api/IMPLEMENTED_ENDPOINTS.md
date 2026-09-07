@@ -186,7 +186,7 @@ target — never matches (fail-safe, not fail-open).
 | Method & path | Permission |
 |---|---|
 | `POST /api/v1/notes` | session only |
-| `GET /api/v1/notes?profileTypes=&approvalStatuses=&sedes=&authorSearch=&recipientSearch=&dateFrom=&dateTo=` | session only |
+| `GET /api/v1/notes?profileTypes=&approvalStatuses=&sedes=&authorSearch=&recipientSearch=&dateFrom=&dateTo=&itemTypes=&itemBrands=&itemModels=&syncStatuses=&returnStatuses=` | session only |
 | `GET /api/v1/notes/{id}` | session only |
 | `PUT /api/v1/notes/{id}/approve` | `APPROVE_NOTES`, Sede-scoped |
 | `PUT /api/v1/notes/{id}/reject` `{reason}` | `APPROVE_NOTES`, Sede-scoped |
@@ -219,9 +219,21 @@ observations, modifiesStock, modifiesStockReason}`.
 - Response: `201 {id, approvalStatus: "PENDING", createdAt}`.
 
 ### List / Get
-`GET /notes` filter set is a v1 subset — **no item-type/brand/model filter, no
-`syncStatuses`/`returnStatuses` filter yet** (🚧, §5.2's fuller set). `GET /notes/{id}` returns
-the full detail shape incl. `items[]` with per-item `glpiStatus`/`returnStatus`/etc.
+`GET /notes` filter set is complete (§5.2 / D7, Phase B gap #2 — extended 2026-09-07):
+
+- `itemTypes` / `itemBrands` / `itemModels` — match a note whose `NOTE_ITEM` rows include **one
+  item** satisfying all supplied criteria at once (`AND`ed within the subquery, ported from the
+  desktop app's `appendInViaCatalog`). Matched by **catalog name regardless of `deprecated`**, so
+  filtering by a name a type/brand/model was later renamed away from still finds the old notes.
+- `syncStatuses` (`PENDING`/`SYNCED`/`REJECTED`/`N_A`) / `returnStatuses`
+  (`PENDING`/`RETURNED`/`LOST`/`N_A`) — a **per-note aggregate** over the summary-row counts, not
+  a SQL predicate: filtered in Java after the query (mirrors the desktop `filterByGlpiStatus` /
+  `matchesGlpiStatus`). `N_A` = "nothing tracked" (`pending+synced+rejected == 0`, resp.
+  `returnPending+returned+lost == 0`) — deliberately **not** "no asset items", since a Préstamo
+  note's assets are all `N_A`. Multi-select is any-of.
+
+`GET /notes/{id}` returns the full detail shape incl. `items[]` with per-item
+`glpiStatus`/`returnStatus`/etc.
 
 ### Approve / Reject
 Approving **moves real stock** — the old, pre-redesign model, restored on purpose (see Catalog
