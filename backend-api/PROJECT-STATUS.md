@@ -59,7 +59,7 @@ reconciliation. Nothing is deployed anywhere yet.
 | E1a write | `syncTargets` (movement → state) | ✅ ENTREGA→31, PRESTAMO→34 (assets + countables), DEVOLUCION/RETURN→33, LOST→45 |
 | E1b | generic Type/Manufacturer/Model ids | ✅ config shape = per-itemtype maps (`genericTypeIds`/`genericModelIds`) + one global `genericManufacturerId`. **Rows don't exist in GLPI yet.** |
 | E2a | Sede = GLPI `Location` | ✅ confirmed (`locations_id` field 3, tree) |
-| E2b | address + recipients | ✅ address read from GLPI `Location`; **no middleware `SEDE_SHIPPING_INFO`**; recipients = a deferred desktop-app feature |
+| E2b | address + recipients | ✅ **Remito dest = catalog Sede only** (must map to a real GLPI `Location`; no free text / no create-on-the-fly); address read from that `Location`, **no middleware `SEDE_SHIPPING_INFO`**; `destinationRecipients` dropped for v2.0 (deferred desktop feature) |
 | N1 | countable backing | ✅ **v2.0 = `Peripheral`-only** (2026-09-07); `Consumable` path deferred to a later release |
 | N2 / N3 | itemtype flattening / per-instance field ids | ✅ noted (composite ids; resolve via `listSearchOptions` at startup) |
 

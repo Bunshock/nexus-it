@@ -28,7 +28,7 @@ Status legend: ✅ resolved · 🟡 recommendation drafted, needs user confirm �
 | E1a Q6 (tie-break) | ✅ **raise a D9 drift row** when `states_id` and `users_id` contradict — extends D9 to intra-GLPI inconsistency |
 | E1b generic-id config shape | ✅ per-itemtype maps: `genericManufacturerId` (one, global), `genericTypeIds{itemtype→id}`, `genericModelIds{itemtype→id}`. Replaces D5b's flat pair (§8 revision). |
 | E2a Sede = GLPI `Location` | ✅ confirmed |
-| E2b address + recipients | ✅ address in GLPI `Location` (middleware reads it), no middleware `SEDE_SHIPPING_INFO`; recipients = deferred desktop-app feature |
+| E2b address + recipients | ✅ **Remito dest = catalog Sede only** (must map to a real GLPI `Location`; no free text, no create-on-the-fly). Address read from that `Location`, no middleware `SEDE_SHIPPING_INFO`. `destinationRecipients` dropped for v2.0 (deferred desktop-app feature). |
 | N1 backing type | ✅ **v2.0 = `Peripheral`-only** (decided 2026-09-07); every countable backed by GLPI `Peripheral`, per-unit return/loss tracking unchanged. `Consumable` path deferred to a later release. |
 | F1 write identity | ✅ per-user: one shared `App-Token` (admin config), per-technician `user_token`; `PUT /me/glpi-token` + `APP_USER.glpi_token_encrypted` to design |
 
@@ -164,20 +164,29 @@ FK on **every** asset itemtype. Consequences:
 - **Owed:** run `GET /Location?range=0-200` to confirm the org's real sedes are
   already loaded as Location records (else they need creating).
 
-### E2b · address + recipients  ✅ (decided 2026-09-07) — full design deferred
+### E2b · address + recipients  ✅ (decided 2026-09-07)
 
-- **Address**: lives in **GLPI `Location`**. The middleware reads a Sede's address
-  from its `Location` record — there is **no middleware `SEDE_SHIPPING_INFO`
-  table**. (This reverses Claude's earlier "middleware store owns it" lean.)
-- **Recipient person(s)**: a **new desktop-app-side feature**, deferred ("save for
-  later"). Intended behaviour: selecting a Sede on a Remito de Envío auto-fills
-  the address (from GLPI Location, via the middleware) and enables recipient input
-  fields. Where recipients are stored (on the note vs. a per-Sede store) is part
-  of that later design.
-- **Strip impact**: on the v2 branch, `SEDE_SHIPPING_INFO` + the current
-  `NOTE_REMITO_SEDE` / `NOTE_REMITO_OTHER` shape get reworked — Remito destination
-  becomes a GLPI Location id (address derived) or free text; recipients captured
-  on the note by the future feature. Don't design the full thing now.
+- **Destination = a catalog Sede, always.** No free-text / custom-CAU
+  destination in v2.0. The chosen Sede must resolve to a real GLPI `Location`
+  via the Sede→Location adapter map; if it doesn't, `POST /notes` fails at
+  create time (new error, e.g. `409 SEDE_NOT_MAPPED_TO_LOCATION`) — the
+  middleware never invents a Location on the fly (avoids dirty GLPI location
+  rows). Rationale: the relocation write needs a real `locations_id` target, and
+  GLPI stays the single source of truth for where an asset is.
+- **Address**: lives in **GLPI `Location`**. The middleware reads the
+  destination Sede's address from its `Location` record — there is **no
+  middleware `SEDE_SHIPPING_INFO` table**.
+- **Recipient person(s)**: **dropped from v2.0.** `destinationRecipients` leaves
+  the `POST /notes` payload entirely. Re-introduced with a later desktop-app
+  feature (Sede select auto-fills address + enables recipient inputs); where
+  recipients get stored is part of that later design.
+- **Strip impact**: `SEDE_SHIPPING_INFO` and `NOTE_REMITO_OTHER` tables removed.
+  `NOTE_REMITO_SEDE` keeps just the destination Sede id (→ resolved to a GLPI
+  `locations_id` at approval). `POST /notes` Remito fields collapse to a single
+  required `destinationSedeId` — `shippingInfoId` / `destinationLabel` /
+  `destinationAddress` / `destinationRecipients` all removed.
+  `GET /catalog/sedes/{id}/shipping-info` + `/sedes/shipping-info-ids` removed;
+  the destination picker lists Sedes that have a Location mapping.
 
 ### New items surfaced by the investigation (not in the original Tier 3)
 
@@ -286,7 +295,7 @@ Then: the strip (per `decisions-pending.md` D3/D4/D5, plus the E2b Remito rework
 
 - **Remito recipients feature** (desktop-app-side) — Sede select auto-fills
   address from GLPI Location + enables recipient input fields. E2b, "save for
-  later".
+  later". `destinationRecipients` is out of the v2.0 payload until then.
 - **`Consumable` backing entirely** (N1) — deferred to a later release. v2.0 is
   `Peripheral`-only for countables. When picked up: add a per-type backing flag,
   the one-way `date_out` write path, and decide whether consumable note-items
