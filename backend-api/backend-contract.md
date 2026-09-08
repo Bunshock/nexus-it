@@ -103,6 +103,16 @@ adapters/
   no countable/consumable notion → `/catalog/countables/availability`
   served from a middleware counter table. No server-generated inventory
   number → `af` is `null`.
+- **Every adapter read of a collection MUST exhaust the backend's
+  pagination.** No adapter call may act on a first page as if it were the
+  whole result — asset search, availability counts, an asset's
+  history/`Log`, the `Location` list, the reconciliation asset walk,
+  directory search, `listSearchOptions`, any `GET /{itemtype}` collection.
+  Where only a **count or existence** is needed, use the backend's own
+  reported total (e.g. GLPI search's `totalcount`) rather than fetching all
+  rows and counting them. A partial page silently treated as complete is a
+  correctness bug (a wrong stock number, a missed drift row, a stale
+  holder) — see `contract-behaviors.md` K4.
 
 Rule of thumb: ~90% of a new backend is its adapter; the ~10% that isn't
 is a deliberate, reviewed `core/` change shared by every deployment —
@@ -192,7 +202,7 @@ Authorization: Bearer <IdP access token>
   "role": "USER" | "ADMIN" | "SUPERADMIN",
   "sedeId": "integer | null",
   "displayName": "string",
-  "permissions": ["MANAGE_STOCK", "APPROVE_NOTES", "..."]  // see §7.3
+  "permissions": ["APPROVE_NOTES", "SYNC_EXTERNAL", "VALIDATE_RETURNS"]  // see §7.3
 }
 
 // Response 401 — missing / invalid / expired IdP token
@@ -264,25 +274,33 @@ from the session identity and snapshots them onto the note. Response bodies
 still carry those snapshotted values (History displays them); only the
 create *request* omits them.
 
-### 2.6 Open items for this section
+### 2.6 Resolved / deployment notes for this section
 
-- **Middleware → GLPI per-user identity propagation** (companion §4.7 /
-  §10.9): when the middleware performs a write against GLPI (asset
-  assignment, status change), does it act as the real technician's own
-  GLPI account (requires every technician provisioned in GLPI + a
-  token-exchange / impersonation path from the IdP), or as one shared GLPI
-  service account while recording the real actor only in its own audit
-  (§6)? The parallel contract's "authenticate as the real end user to
-  GLPI" implies the former. GLPI-adapter detail, invisible to this
-  app-facing contract, but the middleware build needs the answer.
-- **IdP client registration** — a deployment prerequisite, not a design
-  open: register a public OIDC client (Auth Code + PKCE, loopback redirect
-  `http://127.0.0.1:*`), enable the Kerberos/SPNEGO browser flow and
-  Kerberos user federation. Checklist item for whoever administers
-  Keycloak.
+- **Middleware → GLPI per-user identity — RESOLVED (F1, §7.1.1).** The
+  middleware holds one shared GLPI `App-Token` for reads; each technician
+  provides **their own** GLPI `user_token` via `PUT /me/glpi-token`
+  (write-only, `APP_USER.glpi_token_encrypted`). Every external write is
+  made as that technician, so it lands in GLPI's native history under their
+  name and stamps the movement-reason field (N3). A technician with no
+  token set → `409 GLPI_TOKEN_NOT_SET` on any write step; reads are
+  unaffected. No shared-service-account write fallback.
+- **IdP deployment values** (issuer URI, client id, realm, allowed group) live
+  in the deployment's own Keycloak integration doc, kept **out of the repo**.
+  The public OIDC client is registered as Auth Code + PKCE `S256`, no secret.
+  **Loopback redirect: register the path only** (`/callback`) — Keycloak
+  applies RFC 8252 and **ignores the port** on `127.0.0.1` / `localhost`, so
+  any ephemeral listener port matches. Do **not** register
+  `http://127.0.0.1:*`; a literal `*` in the port position never matches. The
+  middleware must also validate `aud` (the realm stamps `aud` = the client
+  id) — a build task; `IdpTokenValidator` currently checks only
+  `iss` / `exp` / signature.
+- **Still a deployment prerequisite:** the Kerberos/SPNEGO browser flow +
+  Kerberos user federation on the IdP, so a domain-joined machine shows no
+  login page. Until then, login falls back to the IdP's own
+  username/password page — no app or contract change either way.
 - Non-domain login path — **no action needed**: the fleet is 100%
-  domain-joined, and if that ever changes the IdP's own login page covers
-  it with no change to this contract.
+  domain-joined; the IdP's own login page covers any exception with no
+  contract change.
 
 ---
 
@@ -292,6 +310,24 @@ Backend-neutral replacement for `IEquipmentService`'s Type/Brand/Model/Stock
 surface. GLPI is the concrete backend today (Peripherals for countables,
 whatever GLPI's asset types are for serialized items) — the middleware
 does the translation; this contract never sees GLPI's own field names.
+
+**Backend facts (GLPI, v2.0 — detail in `glpi-adapter-notes.md`):**
+- **Itemtype coverage (N2).** `GET /catalog/types` flattens GLPI's five
+  core physical itemtypes (Computer, Peripheral, Phone, Monitor, Printer)
+  **plus the four GLPI-11 custom-asset itemtypes** (Multimedia,
+  AudioEquipment, Security, Misc). The Core 5 are wired directly; the
+  custom four are in v2.0 scope but each **gated on a per-itemtype
+  investigation** against the real instance — whether it carries
+  `states_id` / `users_id` / `locations_id`, a Type/Model dropdown, and the
+  movement-stamp field. Multimedia is the priority. Catalog ids stay opaque
+  strings (composite `itemtype` + local id), so this needs no contract
+  change.
+- **Countables are backed by GLPI `Peripheral` only (N1)** for v2.0; the
+  `Consumable` path is deferred to a later release (§3.3).
+- **Field ids are per-instance (N3).** `serial`, the inventory-number
+  field, `users_id` (holder), and the movement-stamp field are resolved
+  once at adapter startup via GLPI's `listSearchOptions` — never named in
+  this contract.
 
 ### 3.1 Browse catalog (Type → Brand → Model cascade)
 
@@ -313,26 +349,38 @@ query params. **Ids here are external-system ids** (strings, not
 necessarily numeric — GLPI's own ids, opaque to the app) — not the
 desktop app's old local `TYPE.id`/`BRAND.id`/`MODEL.id` integers.
 
-**"Genérico / Otro" (decision D5b).** Not a stored catalog row — a
-config-driven fallback. `GET /config` (§8) carries `genericLabel`,
-`genericBrandId` (`string | null`), `genericModelId` (`string | null`).
-The desktop app appends a "Genérico / Otro" option (labeled `genericLabel`,
+**"Genérico / Otro" (decision D5b; config shape revised by E1b).** Not a
+stored catalog row — a config-driven fallback. `GET /config` (§8) carries a
+`generic` block:
+- `label` — the display string ("Genérico / Otro").
+- `manufacturerId` (`string | null`) — the backend's **one global**
+  generic manufacturer id. GLPI Manufacturers are global (not per-itemtype),
+  so this is a single id — the "generic brand".
+- `typeIds` / `modelIds` (`{ "<itemtype>": "string | null" }`) —
+  **per-itemtype** generic `<X>Type` / `<X>Model` ids. A generic
+  `PeripheralModel` is a different row in a different id space from a
+  generic `ComputerModel`, so these are maps keyed by itemtype, not single
+  values.
+
+The desktop app appends a "Genérico / Otro" option (labeled `generic.label`,
 sorted last, fallback styling) to the Brand and Model pickers **for every
 Type**, asset or countable:
-- **countable** — it's the "not in the catalog" fallback. Picking it
-  stores `brandId`/`modelId` = the config value (may be `null`) and
-  `brandName`/`modelName` = `genericLabel` (matches §5.1's null-able id /
-  label name). Availability, `sync` allocation and reconciliation resolve
-  against "records of this Type with the generic manufacturer" (and the
-  generic model if `genericModelId` is set) — all Model-Y derived (§3.4),
-  no middleware counter.
+- **countable** — the "not in the catalog" fallback. Picking it stores
+  `brandId` = `generic.manufacturerId` and `modelId` =
+  `generic.modelIds[itemtype]` (either may be `null`), `brandName` /
+  `modelName` = `generic.label` (matches §5.1's null-able id / label name).
+  Availability, `sync` allocation and reconciliation resolve against
+  records of this Type under the generic manufacturer (and the generic
+  model where its id is set) — Model-Y derived (§3.4), no middleware
+  counter.
 - **asset** — Brand/Model are optional **search filters** (§3.2); picking
   "Genérico / Otro" narrows the serial search to generic-manufacturer
-  assets. The item's actual brand/model always come from the picked
-  record, generic or not.
+  assets. The item's actual brand/model always come from the picked record.
 
-Today: `genericBrandId` is a real GLPI manufacturer id; `genericModelId`
-is pending a GLPI check (§13).
+**Degrade path (unchanged from D5b).** Every id in `generic` may be `null`
+until the GLPI admin creates the rows (Tier 3 data owed). A `null` id means
+the generic option resolves to "no id, `generic.label` name", and a
+generic-countable count falls back to a Type-scoped count.
 
 ### 3.2 Search assets (serial-numbered items)
 
@@ -371,13 +419,18 @@ dialog spec (§5.2) — the middleware owns the actual matching logic against
 whatever the backend supports (GLPI's own search API, most likely a
 "contains" filter on the serial field).
 
-The `state` enum's exact GLPI-value mapping is still open (companion §10.3)
-— someone needs to go look at the real GLPI instance's configured status
-list. Suggested default bucketing until that's confirmed:
-- `AVAILABLE` — GLPI "disponible"/"nuevo"/unassigned-and-not-broken states
-- `IN_USE` — GLPI "en uso"/assigned-to-someone states
-- `UNAVAILABLE` — GLPI "de baja"/"roto"/"perdido"/"robado" or similar
-  permanently-unavailable states
+**`state` bucket mapping — CONFIRMED (E1a, against the dev GLPI instance).**
+The middleware maps GLPI `states_id` to the generic enum:
+- `AVAILABLE` — `33` (En stock).
+- `IN_USE` — `31` (En uso), `34` (En préstamo), `36` (Instalado), `40`.
+- `UNAVAILABLE` — everything else, including `35` (En tránsito), `42`–`48`
+  (reparación / garantía / obsoleto / baja / reciclaje / donación / scrap),
+  and `0` / `null`.
+
+`states_id` and `users_id` are independent GLPI fields and can disagree
+(e.g. `33` with a holder set): availability is taken from `states_id`,
+holder from `users_id`, and the disagreement raises a `GLPI_CONTRADICTION`
+reconciliation row (§14) — never silently resolved (E1a Q6).
 
 ### 3.3 Countable availability (aggregate)
 
@@ -390,12 +443,23 @@ GET /api/v1/catalog/countables/availability?typeId={typeId}&brandId={brandId}&mo
 { "available": 12 }
 ```
 
-A single aggregate number — computed server-side by counting
-GLPI Peripheral records matching Type/Brand/Model with state = AVAILABLE
-(companion doc §4.5). The app never sees or selects individual Peripheral
-records for a countable item. `sedeId` scopes the count to one site,
-though whether GLPI's own data model has a Sede-equivalent location field
-to filter on is itself unconfirmed — placeholder param, tied to E2 (§13).
+A single aggregate number — computed server-side from the backend's own
+**reported total** for a filtered search (GLPI search `totalcount`), **not**
+by fetching all matching records and counting them (§1.1 / K4). The filter:
+`Peripheral` records matching Type/Brand/Model with `states_id` in the
+AVAILABLE bucket (`33` — §3.2) and `locations_id` under the `sedeId`'s GLPI
+Location subtree (E2a — `sedeId` resolves to a Location id; Locations are a
+tree, so "at a Sede" = that node or any descendant, `searchtype = under`;
+§7.4). The app never sees or selects individual records for a countable
+item.
+
+**Backing type (N1).** For the v2.0 first release, **every countable is
+backed by GLPI `Peripheral`** — no per-Type "backing kind" flag, no second
+code path. The GLPI `Consumable` model (one-way `date_out`, no return
+dimension) is **deferred to a later release**; when it lands it adds a
+per-Type backing flag and its own allocation path. Until then a countable
+that is really consumable (toner, cable, adapter) is modelled as a
+`Peripheral` like any other.
 
 ### 3.4 Stock model (derived — "Model Y")
 
@@ -413,9 +477,11 @@ per Sede — never a number the middleware stores and mutates. Consequences:
 - Whether the middleware truly derives the count or keeps an internal
   counter for backends that can't be counted cleanly is an **adapter
   detail** (§1.1) — the contract only promises "read availability; `sync`;
-  availability follows." **Generic-brand countables are still real backend
-  records** (under the generic manufacturer — §3.1 / D5b), so they are
-  Model-Y derived like anything else; no counter is needed for this org.
+  availability follows." For GLPI in v2.0, every countable is a `Peripheral`
+  (N1, §3.3), which counts cleanly, so **no counter is ever used**.
+  **Generic-brand countables are still real backend records** (under the
+  generic manufacturer — §3.1 / D5b), so they are Model-Y derived like
+  anything else.
 - **Dual SSOT:** the external system is authoritative for *stock &
   current state*; the app's own note history is authoritative for
   *assignments* ("who was assigned what, by which note"). Every legitimate
@@ -499,14 +565,18 @@ Flow selection, by predicate (first match wins), not a flat
 [
   { "match": { "profileTypes": ["ENTREGA", "ENTREGA PERMANENTE", "DEVOLUCIÓN"] },
     "steps": ["sync"] },
+  { "match": { "profileTypes": ["REMITO DE ENVÍO"] },
+    "steps": ["sync"] },   // sync = relocate (locations_id → dest Location, §4.1)
   { "match": { "profileTypes": ["PRÉSTAMO"] },
     "steps": ["sync", "return"] },
-  { "match": { "profileTypes": ["ENTREGA - PROVEEDOR"], "motivoIn": ["Garantía", "Reparación"] },
+  { "match": { "profileTypes": ["ENTREGA - PROVEEDOR"], "motivoIn": ["<returnableMotivosProveedor>"] },
     "steps": ["sync", "return"] },
   { "match": { "profileTypes": ["ENTREGA - PROVEEDOR"] },
     "steps": ["sync"] }   // fallback: non-returnable Motivo
 ]
 ```
+(`motivoIn` is fed from the `returnableMotivosProveedor` config list, not a
+hardcoded pair — today that list is `["Garantía", "Reparación"]`.)
 This predicate is the generalized, config-driven form of today's
 `needsReturnTracking = isPrestamo(profileType) ||
 isProviderReturnable(profileType, motivo)` check
@@ -525,6 +595,10 @@ there's nothing left for a third step to track.
 Engine rules (apply uniformly — not re-declared per flow):
 - A step only becomes actionable once the note is `APPROVED` and every
   prior step in its flow has reached a terminal success state.
+- **A write step (`SYNC` or `RETURN` kind) requires the acting technician
+  to have a personal GLPI token set** (F1, §7.1.1) — otherwise
+  `409 GLPI_TOKEN_NOT_SET`, nothing enqueued. `reject-sync` (no external
+  write) is exempt.
 - **Per-step status vocabulary** (queue mechanics in §10): `PENDING` →
   `REJECTED` (admin, pre-write, terminal) **or** `QUEUED` (write enqueued)
   → `SYNCED` / `RETURNED` / … (terminal success) **or** `FAILED` (write
@@ -579,8 +653,56 @@ on an unrecoverable conflict. On success, for an asset the ONE record the
 technician picked via search (§3.2) is assigned to the recipient and its
 state flipped; for a countable the middleware picks WHICH specific N
 records to allocate (companion §4.5 — not the app's concern) and persists
-their ids against the note item, so a later `/return` (§4.3) knows what to
-release without the app tracking them.
+their ids against the note item (`NOTE_ITEM_RETURN_ALLOCATION`), so a later
+`/return` (§4.3) — and reconciliation (§14) — know what to release without
+the app tracking them.
+
+**`states_id` write target on `sync` success (E1a `syncTargets` — CONFIRMED
+for asset *and* countable):**
+
+| note `profileType` (· Motivo) | `sync` sets `states_id` → | holder |
+|---|---|---|
+| ENTREGA / ENTREGA PERMANENTE | `31` En uso | recipient |
+| PRÉSTAMO | `34` En préstamo | recipient |
+| DEVOLUCIÓN (its single `sync` step *is* the return) | `33` En stock | cleared |
+| ENTREGA - PROVEEDOR · Garantía | `43` En garantía | cleared; `contact` ← provider name + CUIT |
+| ENTREGA - PROVEEDOR · Reparación | `42` En reparación | cleared; `contact` ← provider name + CUIT |
+| ENTREGA - PROVEEDOR · Devolución de préstamo | `45` En baja † | cleared; `contact` ← provider name + CUIT |
+| ENTREGA - PROVEEDOR · Otro | `42` En reparación | cleared; `contact` ← provider name + CUIT |
+| REMITO DE ENVÍO | *unchanged* | *unchanged* — `sync` sets `locations_id` → destination Sede's GLPI Location (E2a); no `states_id` / holder change |
+
+`PRÉSTAMO → 34` is uniform for assets and countables — a loaned Peripheral
+runs `33 → 34 → 33`, no per-itemtype branch. Every `sync` write also stamps
+GLPI's movement-reason field (N3) with the note reference; provider syncs
+also clear `users_id` and write the provider name + CUIT into GLPI's
+free-text `contact` field (the provider is a company, not a GLPI user). The
+`return` step for a returnable provider Motivo (Garantía / Reparación)
+resolves generically to `33` and clears `contact` (§4.3).
+
+**Provider targets are per-Motivo** — a `syncTargets.proveedor` config map
+from each `motivoOptions.proveedor` value to a `states_id` **or** the
+sentinel `NONE`:
+- `Garantía → 43`, `Reparación → 42` — equipment is temporarily at the
+  vendor; these Motivos are in `returnableMotivosProveedor`, so the note's
+  `return` step brings the item back to `33`.
+- `Otro → 42` En reparación — a general "being worked on at the vendor"
+  action (system analysis, diagnostics, etc.). `Otro` is **not** in
+  `returnableMotivosProveedor` (its flow is `["sync"]` only), so the asset
+  sits at `42` with no in-app return path — a later corrective Devolución
+  note or a manual GLPI edit brings it back. Accepted, not a bug.
+- `Devolución de préstamo → 45` — a **vendor-owned** asset the org held on
+  long-term loan (tracked in GLPI while in the org's hands) is returned to
+  the vendor for good; it leaves the org's inventory. **†** The GLPI admin
+  *may* create a dedicated "Devuelto a proveedor" state and remap this —
+  `45 En baja` carries a written-off connotation that doesn't fit "returned
+  in good order"; bucket is `UNAVAILABLE` either way.
+- A map value may also be the sentinel **`NONE`** (the `sync` step
+  completes with no external write) — no current Motivo uses it, but it's
+  available for a future paperwork-only Motivo an org might add.
+- **Every `motivoOptions.proveedor` value must have an entry** (a state or
+  `NONE`). An unmapped Motivo makes `POST /notes` fail —
+  `422 PROVIDER_MOTIVO_NOT_CONFIGURED` (§5.1), same "fail at creation, not
+  at sign-time" principle as E2b's unmapped-Sede rejection.
 
 **Over-allocation race — RESOLVED 2026-08-31 (decision D2).** If, by the
 time the queued job runs, availability is below the note's quantity
@@ -639,10 +761,11 @@ PUT /api/v1/notes/{noteId}/items/{itemId}/return
 //   external holder ≠ the note's recipient. Nothing enqueued; re-call with
 //   acknowledgeHolderMismatch:true to proceed (decision D6b, §4.1).
 // On success (via GET /notes/{id}): releases what this item's sync (§4.1)
-//   allocated. An asset that was IN_USE → AVAILABLE; an asset that was
-//   UNAVAILABLE (broken/lost — a legitimate DEVOLUCIÓN, decision D6a) →
-//   holder cleared, state STAYS UNAVAILABLE. Unrecoverable conflict → step
-//   FAILED, resolvable by retry or RETURN_ABANDONED (§10.2).
+//   allocated. holder cleared; states_id → 33 (En stock) — the syncTargets
+//   RETURN target. EXCEPTION (D6a): a record that was UNAVAILABLE
+//   (broken/lost — a legitimate DEVOLUCIÓN) has its holder cleared but
+//   states_id left as-is, never forced back to 33. Unrecoverable conflict
+//   → step FAILED, resolvable by retry or RETURN_ABANDONED (§10.2).
 ```
 
 ### 4.4 Lost / not received ("No devuelto" / "No recibido")
@@ -657,7 +780,8 @@ PUT /api/v1/notes/{noteId}/items/{itemId}/lost
                                                          // partial-batch
                                                          // meaning as §4.3
 // Response 202 Accepted — ENQUEUED (§10); step → QUEUED.
-// On success: flips state to UNAVAILABLE, NOT back to AVAILABLE.
+// On success: holder cleared; states_id → 45 (En baja) — NOT 48 (Scrap),
+//   and never back to 33/AVAILABLE. (syncTargets LOST target, E1a.)
 // Unrecoverable conflict → step FAILED, resolvable by retry or
 // <STEP>_ABANDONED (§10.2).
 ```
@@ -682,11 +806,15 @@ POST /api/v1/notes
 // CLAUDE.md's extensive schema history) — no reason to redesign it, just
 // re-host it behind REST instead of a local DB write.
 {
-  "profileType": "ENTREGA" | "DEVOLUCIÓN" | "ENTREGA PERMANENTE" | "PRÉSTAMO" | "ENTREGA - PROVEEDOR",
+  "profileType": "ENTREGA" | "DEVOLUCIÓN" | "ENTREGA PERMANENTE" | "PRÉSTAMO"
+               | "ENTREGA - PROVEEDOR" | "REMITO DE ENVÍO",
   "recipientName": "string", "recipientDni": "string", "recipientEmail": "string | null",
   // technician identity is NOT sent — the middleware derives and snapshots
   // it from the session token (§2.5); it still comes back on GET responses
-  "sedeId": "integer",
+  "sedeId": "integer",                    // the note's own Sede (source, for REMITO)
+  "destinationSedeId": "integer | null",  // REMITO DE ENVÍO only — a catalog Sede id that
+                                          // MUST map to a GLPI Location (E2b). No free-text /
+                                          // custom destination, no destinationRecipients.
   "motivo": "string | null",              // or expected-return-date for Préstamo
   "areaEvento": "string | null",          // Préstamo only
   "failureCause": "string | null", "failureDetails": "string | null",  // Devolución+Falla only
@@ -725,10 +853,18 @@ client-settable, same as today's `NoteReport.approvalStatus` default.
 **Create-time validation (server-enforced; see `contract-behaviors.md`
 §B, §F). RESOLVED 2026-08-31, decision D6:**
 - A note with zero items → `400` (min 1 item).
-- **DEVOLUCIÓN — the only hard block:** an asset item whose current
-  external state is `AVAILABLE` (in stock, held by no one) →
+- **DEVOLUCIÓN — the only asset-state hard block:** an asset item whose
+  current external state is `AVAILABLE` (in stock, held by no one) →
   `409 ASSET_NOT_IN_USE`, note not created. A user cannot "return" an
   asset that isn't out.
+- **REMITO DE ENVÍO** — missing `destinationSedeId`, or one that has no
+  GLPI `Location` mapping (E2b) → `422 SEDE_LOCATION_NOT_MAPPED`, note not
+  created.
+- **ENTREGA - PROVEEDOR** — a `motivo` with no `syncTargets.proveedor`
+  entry (neither a `states_id` nor `NONE`) → `422
+  PROVIDER_MOTIVO_NOT_CONFIGURED`, note not created. Both `422`s follow the
+  "fail at creation, not at sign-time" principle — an already printed +
+  signed note must never be un-syncable.
 - Everything else at create time is a **soft `warnings[]` entry** (`201`,
   allowed; the client warns + confirms at item-add time, never blocks):
   - **DEVOLUCIÓN**, asset state `UNAVAILABLE` (broken / lost / scrapped) —
@@ -845,11 +981,11 @@ built, descoped, and partially rebuilt) has somewhere to read from.
 
 ## 7. Users, Roles, Permissions, Sedes
 
-Backend-neutral successor to `IUserRoleService` + the `Sede`/
-`SEDE_SHIPPING_INFO` half of `IEquipmentService`. **Read-only from the
-app's side, by design** — mirrors today's explicit "no in-app CRUD for
-APP_USER/ROLE_PERMISSION, direct-SQL-only" convention (companion doc
-carries this forward; someone still administers users/roles/permissions
+Backend-neutral successor to `IUserRoleService` + the `Sede` half of
+`IEquipmentService` (there is no more `SEDE_SHIPPING_INFO` — E2b, §7.4).
+**Read-only from the app's side, by design** — mirrors today's explicit
+"no in-app CRUD for APP_USER/ROLE_PERMISSION, direct-SQL-only" convention
+(companion doc carries this forward; someone still administers users/roles/permissions
 directly against the middleware's own store, not through the desktop app).
 
 ### 7.1 Current caller
@@ -864,9 +1000,10 @@ GET /api/v1/me
   "role": "USER" | "ADMIN" | "SUPERADMIN",
   "sedeId": "integer | null",
   "displayName": "string",
-  "permissions": ["MANAGE_STOCK", "APPROVE_NOTES", "..."],
+  "permissions": ["APPROVE_NOTES", "SYNC_EXTERNAL", "VALIDATE_RETURNS"],
   "registered": true,
-  "bypassGroupCheck": false
+  "bypassGroupCheck": false,
+  "glpiTokenSet": true            // F1 — whether this user has a personal GLPI token stored
 }
 ```
 
@@ -875,6 +1012,34 @@ login — lets the app refresh its UI gate after a mid-session role / Sede /
 permission change. Identity is the token subject, never a parameter (§2.5).
 The client gate is **cosmetic**; every endpoint enforces its own permission
 server-side regardless of what the app renders (§7.5).
+
+### 7.1.1 Personal GLPI token (F1 — per-user write identity)
+
+```
+PUT /api/v1/me/glpi-token
+```
+```jsonc
+// Request
+{ "token": "string" }   // the caller's own GLPI user_token
+// Response 204 — stored (encrypted) in APP_USER.glpi_token_encrypted
+```
+
+**RESOLVED (Tier 4 F1) — per-user, not a shared service account.** The
+middleware holds one shared GLPI `App-Token` (deploy config); each
+technician configures **their own** `user_token` here. Every external
+write (`sync` / `return` / `lost`) is then made as that technician in
+GLPI — it lands in GLPI's native history under their name, and still
+stamps the movement-reason field (N3) with the note ref.
+
+- **Write-only.** The token is never returned by any endpoint; `GET /me`
+  only reports `glpiTokenSet` (boolean).
+- **No token → no external writes.** A technician who hasn't set one gets
+  `409 GLPI_TOKEN_NOT_SET` on `sync` / `return` / `lost` (§4.1, §4.3,
+  §4.4). Read endpoints (catalog, search, availability, `GET /notes`) are
+  unaffected — those use the shared `App-Token`.
+- Any authenticated session may set **its own** token; there is no
+  admin-sets-another-user's-token path (that would defeat the "acts as the
+  real technician" point).
 
 ### 7.2 Look up a user
 
@@ -921,20 +1086,38 @@ implicitly scoped to their own `sedeId` everywhere (§7.5 H2–H4).
 
 ```
 GET /api/v1/sedes
-GET /api/v1/sedes/{id}/shipping-info
 ```
-Same shape/purpose as today's `SEDE` / `SEDE_SHIPPING_INFO` tables.
-**Read-only from the app** (decision D3) — no in-app add/edit/delete for
-Sedes or Providers; both are lists the app only reads, edited out-of-band
-like `APP_USER` / roles.
+```jsonc
+{ "results": [ { "id": 3, "name": "Campus Norte", "locationMapped": true } ] }
+```
 
-**Where `SEDE_SHIPPING_INFO` lives is OPEN (§13, tied to E2/§3.3).** GLPI
-holds only equipment + providers, not Sede addresses, and the desktop
-app's local DB is being eliminated. Options: (a) the **middleware's own
-store** owns `SEDE` + `SEDE_SHIPPING_INFO` (app-domain data, not
-asset-of-record — the lean), (b) a GLPI-side custom section, (c) drop the
-Remito shipping pre-fill and make the destination always free text.
-Flagged as needing research.
+The middleware keeps its own `SEDE` catalog (id + name) — the target of
+`APP_USER.sedeId`, `NOTE_REPORT.sedeId`, and a Remito's
+`destinationSedeId`. **Read-only from the app** (decision D3): no in-app
+add/edit/delete; administered out-of-band like `APP_USER` / roles.
+(Providers, §7.x, are the same — read-only.)
+
+**E2a — a Sede *is* a GLPI `Location`.** The GLPI adapter holds a
+`sede → locations_id` map (middleware-internal config, §8). GLPI Locations
+are a **tree**, so "at a Sede" = that node or any descendant
+(`searchtype = under`). The map drives:
+- per-Sede countable availability (§3.3) — filter `locations_id` under the
+  Sede's Location subtree;
+- Remito relocation (§4.1) — `sync` sets the item's `locations_id` to the
+  destination Sede's Location;
+- the printed Remito's destination address — read server-side from the
+  GLPI Location's own address fields.
+
+`locationMapped` tells the app which Sedes may be a Remito destination; an
+unmapped one is rejected at `POST /notes` (`422 SEDE_LOCATION_NOT_MAPPED`,
+§5.1).
+
+**E2b — no middleware `SEDE_SHIPPING_INFO`.** GLPI's `Location` holds the
+address; the middleware reads it. There is **no** middleware shipping-info
+table, **no** `GET /sedes/{id}/shipping-info` endpoint, **no** free-text /
+custom Remito destination, and **no** `destinationRecipients` in the v2.0
+payload — a deferred desktop feature (Sede-select address auto-fill +
+recipient inputs), built later.
 
 ### 7.5 Authorization — acceptance criteria
 
@@ -1010,71 +1193,141 @@ GET /api/v1/config
 {
   "afFormat": { "enabled": true, "prefix": "IT", "separator": "-" } | { "enabled": false },
   // "enabled": false covers "maybe some organizations don't implement A/F"
-  "smtp": { "host": "string", "port": 587, "senderAddress": "string" },
-  // password NOT included — see §9, this is config, not secret
+  // no "smtp" block — SMTP is middleware-internal now (alert emails only,
+  // §10.3); the in-app SMTP settings screen is removed (Decision 6 / D3)
   "noteItemLimit": "integer",
   "returnableMotivosProveedor": ["Garantía", "Reparación"],
   "failureTriggerMotivo": "Falla",
   "motivoOptions": { "entrega": ["..."], "finDeContrato": ["..."], "proveedor": ["..."], "devolucion": ["..."] },
   "fallaOptions": ["..."],
-  "genericLabel": "Genérico / Otro",       // §3.1 fallback (decision D5b)
-  "genericBrandId": "string | null",       // external id of the backend's generic manufacturer
-  "genericModelId": "string | null"        // external id of a generic model, if the backend has one
+  "generic": {                             // §3.1 fallback (D5b; shape revised by E1b)
+    "label": "Genérico / Otro",
+    "manufacturerId": "string | null",     // one global generic manufacturer (the "generic brand")
+    "typeIds":  { "Computer": "string | null", "Peripheral": "string | null" /* … per itemtype */ },
+    "modelIds": { "Computer": "string | null", "Peripheral": "string | null" /* … per itemtype */ }
+  }
   // may grow a "branding": { "appName", "logoUrl", "themeTokens": {...} }
   // block later (§1.2) — additive, non-breaking
 }
 ```
 
-This is the per-organisation policy surface (§1.2 — instance-per-org). A
-second organisation runs its own deployment with its own `config`.
+This is the per-organisation policy surface (§1.2 — instance-per-org) — the
+values the **desktop app** consumes. A second organisation runs its own
+deployment with its own `config`.
+
+**Middleware-internal config — NOT in `GET /config`.** Deploy-time settings
+the app never sees, held in the middleware's own configuration
+(`application.yml` / adapter properties):
+- **GLPI adapter** — the E1a `states_id` → bucket map, `syncTargets`
+  (incl. `syncTargets.proveedor`, §4.1), the Sede → GLPI `Location` id map
+  (§7.4), per-instance field-id resolution (N3).
+- **Reconciliation** — `reconciliation.orphanCutoff`,
+  `reconciliation.suppressApproximateOrphans` (§14.4).
+- **IdP** — `idp.issuer-uri`, `idp.client-id`, `idp.username-claim`,
+  `idp.groups-claim`, `idp.allowed-group-name` (§2).
+- **SMTP** — `smtp.host` / `smtp.port` / `smtp.senderAddress` /
+  `smtp.password`, used **only** for §10.3 queue-failure alert emails. No
+  app-facing surface at all (Decision 6); the password is never in any
+  config response (§9).
+- **Secrets** — the GLPI `App-Token`, per-user GLPI `user_token`s
+  (`APP_USER.glpi_token_encrypted`, §7.1), and the IdP client details:
+  never in any config response (§9).
 
 ```
 PUT /api/v1/config
 ```
-Admin/Superadmin-only (exact permission TBD alongside §7.3's enum
-cleanup). Same "confirm this app-side" pattern as today's `SettingsController`
-— **RESOLVED 2026-08-28**: no desktop Configuración screen for this at all.
-Same decision as §9 — config/secrets administration is a middleware-only
-admin surface, no app-facing UI.
+**`SUPERADMIN` role-gated (Decision 6)** — checked directly against the
+caller's `role`, **not** a permission. The `Permission` enum stays at
+three (§7.3); **no `EDIT_CONFIG` is added**. `smtpPassword` is no longer a
+`PUT /config` field (SMTP is middleware-internal — above). No desktop
+Configuración screen exists for this (RESOLVED 2026-08-28) — config
+administration is a middleware-only admin surface.
+
+**No `/me/preferences`.** The per-user UI toggles the desktop app has today
+(clear the form on submit, close the tab on submit) stay **desktop-local**
+— the app stores them on the client, never round-tripped through the
+middleware (Decision 6). Nothing per-user lives in `config` or any other
+endpoint.
 
 ---
 
 ## 9. Secrets / credential custody
 
-**Genuinely open — not designed** (companion doc §4.7/§10.4/§10.5).
-What's clear:
-- GLPI API key and AD service-account credentials are held **only** by the
-  middleware, never transmitted to or stored by the desktop app.
-- SMTP password's fate is grouped in here per this session ("global
-  configs like smtp") — likely also middleware-only custody, not returned
-  by `GET /config` above (config = policy, secret = never leaves the
-  middleware).
+**Middleware-held, never app-held:**
+- The GLPI **`App-Token`** (one, deploy config) and the middleware's AD /
+  directory service credentials — used for every read, and as the outer
+  token for writes (F1).
+- The **SMTP password** — deploy config, used only for §10.3 alert emails.
+  Dropped from `APP_CONFIG` and `PUT /config` (Decision 6).
+- The IdP client details (§2) — deploy config.
 
-**RESOLVED 2026-08-28**: the desktop app gets NO endpoint here at all.
-Secret configuration is entirely an out-of-band, middleware-only admin
-concern (an admin editing the middleware's own config/environment
-directly) — today's `SettingsController` in-app UI is dropped, not
-re-pointed. Rationale, as stated by the user: nothing that could be
-reverse-engineered out of the client binary should exist there in the
-first place — nothing changes that calculus, so the app-facing surface
-for secrets is simply absent, not merely reduced.
+None of these are returned by any endpoint.
+
+**RESOLVED 2026-08-28**: the desktop app gets **no config/secrets admin
+endpoint at all**. `SettingsController`'s in-app UI is dropped, not
+re-pointed — nothing that could be reverse-engineered out of the client
+binary should exist there.
+
+**One deliberate exception — the per-user GLPI `user_token` (F1, §7.1.1).**
+`PUT /me/glpi-token` lets a technician store **their own** GLPI token
+(`APP_USER.glpi_token_encrypted`, encrypted at rest). It is write-only
+(never read back; `GET /me` reports only `glpiTokenSet`), sets only the
+caller's own token, and is a personal credential — not organization
+config. This is not a re-opening of the "no in-app secrets UI" decision:
+it's each user provisioning their own write identity, the same way they'd
+paste a token into GLPI itself.
 
 Still **not** decided:
 - Storage/rotation mechanics for the middleware's own credentials (its
-  GLPI key, its AD bind account) — a deployment/ops concern more than an
-  API contract concern, but still fully unaddressed.
-
-No endpoint is specified here — and none is planned for this section.
+  GLPI `App-Token`, its directory bind account, the SMTP password, the
+  at-rest encryption key for `glpi_token_encrypted`) — a deployment/ops
+  concern, still unaddressed (F2).
 
 ---
 
 ## 10. External write queue
 
-**RESOLVED 2026-08-31 (decisions D2 + E3).** Every item-level external
-write — `sync` (§4.1), `return` (§4.3), `lost` (§4.4) — is **enqueued on
-the middleware, not executed in the request**. The action endpoint checks
-permissions (§7.5) and the flow state, enqueues a job, and returns
-`202 Accepted` with the step now `QUEUED`.
+**RESOLVED 2026-08-31 (D2 + E3); durability + scope confirmed 2026-09-07
+(Decisions 3 + 7). In the v2.0 first release — not deferred.** Every
+external write — item `sync` (§4.1), `return` (§4.3), `lost` (§4.4), and a
+reconciliation `repush` (§14.2) — is **enqueued on the middleware, not
+executed in the request**. The action endpoint checks permissions (§7.5),
+the flow state, and the caller's GLPI token (§7.1.1), enqueues a job, and
+returns `202 Accepted` with the step now `QUEUED`. **Note approval itself
+enqueues nothing** (D4 / §5.3) — only a manual step action or a `repush`
+ever produces a write.
+
+**Three distinct concepts, kept separate:**
+
+| | |
+|---|---|
+| **domain item status** (`REJECTED` / `SYNC_ABANDONED` / …) | the permanent flow-step record — never rewound |
+| **`glpiStatus`** (`PENDING` → `SYNCED` \| `FAILED`) | a mirror flag: does the external record reflect this step yet |
+| **the queue row** (§10.0) | the pending job that will try to make `glpiStatus` true |
+
+**No optimistic `glpiStatus`** (Decision 7) — it stays `PENDING` until the
+worker confirms the external write landed; the app never shows a step as
+`SYNCED` before that.
+
+### 10.0 Durability — `EXTERNAL_WRITE_QUEUE` (Decision 7)
+
+One row per owed external write:
+`{ id, model_key, command (write payload — itemtype, external id(s), target
+states_id / users_id / locations_id, note ref), status (PENDING /
+IN_PROGRESS / DONE / FAILED), attempt_count, last_error, next_retry_at,
+lease_until }`.
+
+- A **`@Scheduled` poller** claims due rows, **serialised per `model_key`**
+  (a per-model lock — two jobs never race for the same external stock),
+  taking a **lease** (`lease_until`). A crash mid-job lets the lease expire
+  and another poller reclaims the row — **restart-safe**, no lost or
+  double-run jobs.
+- Before writing, the worker **reads the live external record and
+  precondition-checks it** against what the job expects. On a mismatch it
+  raises a **§14 reconciliation drift row** and does **not** blind-write
+  (ties D6 / E1a Q6).
+- All enqueuing paths (`sync` / `return` / `lost` / `repush`) create rows
+  the same way — no separate code path per note type or item kind.
 
 ### 10.1 Processing
 
@@ -1133,11 +1386,13 @@ last error. Sede-scoped per the caller's role.
 ### 10.4 UI feel (desktop app)
 
 "Sincronizar" / "Devuelto" / etc. show the step as **"En cola"** on click.
-The app may optimistically poll `GET /notes/{id}` for a few seconds so the
-common (fast, no-conflict) case still reads as instant, falling back to
-"en proceso — ver cola" if it's slow. `FAILED` and `<STEP>_ABANDONED` are
-each a **visually distinct** state on the item card, separate from
-`SYNCED` and from `REJECTED`.
+The app polls `GET /notes/{id}` for a few seconds so the common (fast,
+no-conflict) case flips to `SYNCED` quickly once the worker confirms it —
+but the card **never shows `SYNCED` before `GET /notes` reports it** (no
+optimistic flip, Decision 7). Still `QUEUED` after the poll window → the
+card shows "en proceso — ver cola". `FAILED` and `<STEP>_ABANDONED` are
+each a **visually distinct** state on the item card, separate from `SYNCED`
+and from `REJECTED`.
 
 ---
 
@@ -1222,26 +1477,29 @@ breaking change is on the table.
 5. RESOLVED 2026-08-28 — no Configuración/secrets-entry UI in the desktop
    app at all. Config/secrets administration moves entirely out-of-band
    to a middleware-only admin surface. See §8/§9 for the resolved framing.
-6. §9 — secret storage/rotation mechanics, fully unaddressed.
-7. RESOLVED 2026-08-31 (decisions D2 + E3) — §10 is now the "external
-   write queue": all item-level external writes (`sync` / `return` /
-   `lost`) are enqueued, consumed serially per model, auto-retried on
-   transient failure, and land in `FAILED` + a two-channel admin alert
-   (in-app queue view + email) on an unrecoverable conflict, resolvable by
-   `retry` or `<STEP>_ABANDONED`.
-8. Companion doc's still-open items block parts of this contract from being
-   final: (a) real GLPI status list → the `AVAILABLE`/`IN_USE`/`UNAVAILABLE`
-   map (§3.2); (b) exact Sede↔GLPI-location mapping for per-Sede countable
-   availability (§3.3) — **and, tied to it, where `SEDE_SHIPPING_INFO`
-   lives** (§7.4: middleware store vs. GLPI custom section vs. drop the
-   pre-fill); (c) does GLPI have a generic *model* entry →
-   `config.genericModelId` real id or `null` (§3.1 / D5b — generic
-   *manufacturer* is confirmed to exist). (GSSAPI wire mechanics: RESOLVED
-   2026-08-31 — OIDC/Keycloak, §2.)
-9. §2.6 — middleware → GLPI per-user identity propagation (act as the real
-   technician's own GLPI account vs. one shared service account + attributed
-   audit). GLPI-adapter detail; does not block the app-facing contract, but
-   the middleware build needs the answer.
+6. **OPEN (F2)** — secret storage / rotation mechanics for the middleware's
+   own credentials (GLPI `App-Token`, directory bind account, SMTP
+   password, the at-rest key for `glpi_token_encrypted`). Deployment/ops,
+   still unaddressed. §9.
+7. RESOLVED 2026-08-31 (D2 + E3); **durability + scope confirmed 2026-09-07
+   (Decisions 3 + 7)** — §10 is the external write queue, **in the v2.0
+   first release**. Durable as an `EXTERNAL_WRITE_QUEUE` table; a
+   `@Scheduled` poller claims rows serialised per `model_key` under a lease
+   (restart-safe); the worker precondition-checks the live record and
+   raises a §14 drift row on mismatch instead of blind-writing; no
+   optimistic `glpiStatus`. `repush` (§14.2) enqueues the same way;
+   approval enqueues nothing.
+8. RESOLVED — all three sub-items folded 2026-09-08: (a) GLPI status
+   buckets confirmed (E1a — §3.2); (b) Sede = GLPI `Location`, adapter
+   holds the `sede → locations_id` map, **no middleware `SEDE_SHIPPING_INFO`**
+   (E2a / E2b — §7.4); (c) generic ids are the per-itemtype
+   `config.generic.{manufacturerId,typeIds,modelIds}` block (E1b — §3.1 /
+   §8), all `null` until the GLPI admin creates the rows.
+9. RESOLVED (F1, 2026-09-07) — middleware → GLPI writes act as the real
+   technician's own `user_token` (`PUT /me/glpi-token`,
+   `APP_USER.glpi_token_encrypted`); shared `App-Token` for reads; no token
+   → `409 GLPI_TOKEN_NOT_SET` on writes. No shared-service-account write
+   fallback. §7.1.1, §2.6.
 10. RESOLVED 2026-08-31 (decision D6a) — only `AVAILABLE` hard-blocks a
     DEVOLUCIÓN. `UNAVAILABLE` (broken/lost) is a soft warning — the return
     is recorded and the asset's state stays `UNAVAILABLE`. §5.1, §4.3.
@@ -1253,99 +1511,199 @@ breaking change is on the table.
     client-side from it.
 13. RESOLVED 2026-08-31 (decision D8) — `GET /api/v1/directory/users`
     (§7.6) replaces `IADService.search()` for the recipient picker.
+14. RESOLVED 2026-09-07/08 (Tier 3/4 + v2.0 scope fold) —
+    (a) **N1**: countables are GLPI `Peripheral` only for v2.0; `Consumable`
+    deferred (§3.3);
+    (b) **N2**: catalog covers all 9 itemtypes — Core 5 direct, the 4
+    custom assets (Multimedia / AudioEquipment / Security / Misc) in scope
+    but each gated on a per-itemtype investigation vs the real instance
+    (§3 intro);
+    (c) **E2b**: Remito destination = a catalog Sede that maps to a GLPI
+    `Location` (`destinationSedeId`), no free text / custom destination, no
+    `destinationRecipients`; unmapped Sede → `422 SEDE_LOCATION_NOT_MAPPED`
+    at `POST /notes` (§5.1 / §7.4);
+    (d) **Provider `syncTargets`**: Garantía → `43`, Reparación → `42`,
+    Devolución de préstamo → `45`, Otro → `42`; unmapped Motivo →
+    `422 PROVIDER_MOTIVO_NOT_CONFIGURED` (§4.1 / §5.1);
+    (e) **Decision 6**: `APP_CONFIG` stays; SMTP is middleware-internal
+    (dropped from `GET`/`PUT /config`); `PUT /config` is `SUPERADMIN`
+    role-gated (no `EDIT_CONFIG`); no `/me/preferences` (§8 / §9).
+
+**Still open:** F2 (item 6). Provider "Devuelto a proveedor" dedicated GLPI
+state (optional — default maps to `45`). Custom-asset field/workflow
+investigation vs dev GLPI (blocks the custom-asset adapter path only).
+`GET /Location` → the Sede → Location map (GLPI-admin data).
 
 ---
 
 ## 14. Reconciliation (drift detection)
 
-**RESOLVED 2026-08-31 (decision D9). In v1.** The dual-SSOT model (§3.4 —
-external system authoritative for stock/state, app note history
-authoritative for assignments) only holds if the two actually agree.
+**RESOLVED 2026-08-31 (D9); redesigned for v2.0 2026-09-07 (Decision 8) —
+full rationale + GLPI-log mechanics in `reconciliation-endpoint.md`.** The
+dual-SSOT model (§3.4 — external system authoritative for stock/state, app
+note history authoritative for assignments) only holds if the two agree.
 Reconciliation is the read-only check that surfaces where they don't. It
 **never auto-fixes** — which side is right is a human call.
 
-**Scope:** assets and countable models the app has touched (≥ 1 approved
-note). There is no pre-app baseline — GLPI and the app go live together —
-so a countable count delta is real signal, not noise. An asset the app has
-never touched is out of scope entirely.
+**In the v2.0 first release.**
 
-**Runs:** nightly scheduled + `POST /reconciliation/run` on-demand + a
-quick per-asset re-check right after that asset's sync job completes
-(catches "sync reported OK but the external system didn't take it" fast).
+**Scope — "scope (b)", two passes:**
+- **(i) Per-unit, everything the app has a direct claim on:** serialized
+  assets (matched via `externalItemId` on the note item) and
+  currently-assigned non-serialized countable units (matched via the
+  external ids the §10 worker records on `NOTE_ITEM_RETURN_ALLOCATION` at
+  assignment). Each checked for `states_id` bucket, holder, and location.
+- **(ii) Per-(category, Sede) aggregate** over *unassigned* non-serialized
+  countables (individually untrackable — no serial, identical rows):
+  `expected AVAILABLE = N(total in category+Sede) − K(assigned per open
+  note)` vs `actual AVAILABLE` → one `COUNT_MISMATCH` per (category, Sede)
+  with a limbo breakdown.
+
+Unlike D9's original assumption, there **is** pre-app history in the
+external system — see §14.4 for how legacy `ORPHAN_ASSIGNMENT` noise is
+kept out of the default view.
+
+**Expected state is derived on-the-fly** from the latest SYNCED note-item
+action for each unit (ENTREGA → holder + IN_USE + note Sede's location;
+PRÉSTAMO → holder + `34`; DEVOLUCIÓN/return → no holder + AVAILABLE; LOST →
+no holder + `45`; REMITO → destination location). **No `ASSET_PROJECTION`
+table** (`reconciliation-endpoint.md §6`).
+
+**Runs:** nightly scheduled + `POST /api/v1/reconciliation/run` on-demand.
+**No per-sync re-check** — the §10 queue precondition-checks the external
+record before every write (§10.1), so same-day drift surfaces there first.
 Every response carries a `scannedAt`.
 
 **Sede-scoped** (§7.5): a plain `ADMIN` sees / acts on their own Sede's
-rows only; `SUPERADMIN` all. A nav-badge count, like the sync-queue badge.
+rows only; `SUPERADMIN` all. A nav-badge count (excludes pre-cutoff rows —
+§14.4), like the sync-queue badge.
 
 ### 14.1 Reads
 
 ```
-GET /api/v1/reconciliation/assets?sedeId=&driftKind=&acknowledged=&page=&size=
+GET /api/v1/reconciliation/drift
+      ?sedeId=&driftKind=&acknowledged=&includePreCutoff=&page=&size=
 ```
+One feed, mixed row shapes discriminated by `target.kind`.
+
 ```jsonc
 {
   "scannedAt": "ISO-8601",
-  "rows": [{
-    "id": "string",
-    "externalItemId": "string", "serialNumber": "string",
-    "typeName": "...", "brandName": "...", "modelName": "...",
-    "sedeId": 3,
-    "driftKind": "HOLDER_MISMATCH" | "STATE_MISMATCH"
-               | "UNTRACKED_ASSIGNMENT" | "STALE_RETURN",
-    "expected": { "holder": "maria", "state": "IN_USE",
-                  "fromNoteId": 412, "syncedAt": "..." },
-    "actual":   { "holder": "juan",  "state": "IN_USE" },
-    "acknowledged": { "by": "...", "at": "...", "reason": "..." } | null,
-    "detectedAt": "..."
-  }]
+  "rows": [
+    {                                   // per-unit row
+      "id": "string",
+      "driftKind": "STATE_MISMATCH" | "HOLDER_MISMATCH" | "LOCATION_MISMATCH"
+                 | "ORPHAN_ASSIGNMENT" | "GLPI_CONTRADICTION",
+      "target": {
+        "kind": "ASSET_UNIT",
+        "externalItemId": "string", "itemtype": "Computer",
+        "serialNumber": "string",
+        "typeName": "...", "brandName": "...", "modelName": "..."
+      },
+      "sedeId": 3,
+      "expected": { "holder": "maria", "stateBucket": "IN_USE",
+                    "sedeLocationId": 91, "fromNoteId": 412, "syncedAt": "..." }
+                  | null,               // null for ORPHAN_ASSIGNMENT / GLPI_CONTRADICTION
+      "actual":   { "holder": "juan", "stateBucket": "IN_USE", "locationId": 91 },
+
+      // ORPHAN_ASSIGNMENT only:
+      "assignmentDate": "2026-09-08 12:51:57",
+      "assignmentDateSource": "LOG" | "DATE_MOD",
+      "assignedBy": "jdoe (7)" | null,     // GLPI display name (id) of who set the holder
+      "preCutoff": false,
+
+      "acknowledged": { "by": "...", "at": "...", "reason": "..." } | null,
+      "detectedAt": "..."
+    },
+    {                                   // per-(category, Sede) aggregate row
+      "id": "string",
+      "driftKind": "COUNT_MISMATCH",
+      "target": {
+        "kind": "CATEGORY_SEDE",
+        "categoryKey": "Peripheral/headset",
+        "typeName": "...", "brandName": "...", "modelName": "...",
+        "sedeId": 3
+      },
+      "sedeId": 3,
+      "expectedAvailable": 40, "actualAvailable": 37, "delta": -3,
+      "limbo": { "enTransito": 1, "enReparacion": 1,
+                 "stateZero": 1, "assignedNoNote": 0 },
+      "acknowledged": { ... } | null,
+      "detectedAt": "..."
+    }
+  ]
 }
 ```
 
-```
-GET /api/v1/reconciliation/countables?sedeId=&driftKind=&acknowledged=&page=&size=
-```
-```jsonc
-{
-  "scannedAt": "ISO-8601",
-  "rows": [{
-    "id": "string",
-    "typeName": "...", "brandName": "...", "modelName": "...",
-    "sedeId": 3,
-    "driftKind": "COUNT_MISMATCH"       // per (model, Sede)
-               | "USER_COUNT_MISMATCH", // per (model, user) — the "who has what" check
-    "scope": { "sedeId": 3 } | { "sedeId": 3, "username": "maria" },
-    "expectedCount": 40, "actualCount": 42, "delta": 2,
-    "acknowledged": { ... } | null,
-    "detectedAt": "..."
-  }]
-}
-```
-Countable rows are always a **count** comparison — with no per-unit
-identity there is no "which unit" or "which note", only a delta for that
-(model, Sede) or (model, user).
+**Drift kinds:**
+
+| kind | meaning |
+|---|---|
+| `STATE_MISMATCH` | unit's `states_id` bucket ≠ expected |
+| `HOLDER_MISMATCH` | unit's holder ≠ expected (covers "user returned a unit, GLPI still shows it on them") |
+| `LOCATION_MISMATCH` | unit's location ≠ expected Sede's GLPI Location |
+| `COUNT_MISMATCH` | per-(category, Sede) `expectedAvailable` ≠ `actualAvailable` |
+| `ORPHAN_ASSIGNMENT` | external asset has a holder but no open note explains it — §14.4 |
+| `GLPI_CONTRADICTION` | GLPI's own fields disagree — `states_id` says AVAILABLE but a holder is set, or vice versa (E1a Q6). Availability is taken from `states_id`, holder from `users_id`; the disagreement is flagged, not silently resolved. |
+
+`USER_COUNT_MISMATCH` and `STALE_RETURN` from the D9 draft are gone —
+assigned countable units are now checked individually as `HOLDER_MISMATCH`
+(pass (i)), and a stale return is a `STATE_MISMATCH`.
 
 ### 14.2 Resolving a drift row
 
-- **`POST /api/v1/reconciliation/{id}/repush`** — **assets only (v1)**.
-  Re-asserts the app's `expected` holder/state onto the external system,
-  through the §10 queue (same `QUEUED` → `SYNCED` / `FAILED` → retry /
-  abandon path). Bypasses the flow-step state guard — the originating
-  note's sync step may already be terminal. Needs `SYNC_EXTERNAL`. On a
-  countable row → `400` (no countable repush yet; a v2 candidate where the
-  middleware adjusts records to match the app's count).
-- **Manual external edit** — an admin corrects the external system by hand
-  (e.g. a state the app can't set); the next scan clears the row. No
-  endpoint.
-- **Corrective note** — for the "reality changed, the app missed it" case:
-  create a normal Entrega / Devolución; once approved + synced, history
-  matches reality and the row clears. No special endpoint.
+- **`POST /api/v1/reconciliation/{id}/repush`** — for `STATE_MISMATCH` /
+  `HOLDER_MISMATCH` / `LOCATION_MISMATCH` only. Re-asserts `expected` onto
+  the external system through the §10 queue (`QUEUED` → `SYNCED` /
+  `FAILED`). Bypasses the flow-step guard (the originating note's sync step
+  may already be terminal). Needs `SYNC_EXTERNAL`. On `COUNT_MISMATCH` /
+  `ORPHAN_ASSIGNMENT` / `GLPI_CONTRADICTION` → `400` (no single
+  deterministic write to re-assert — a bulk records-adjust for
+  `COUNT_MISMATCH` is a post-v2.0 candidate).
 - **`POST /api/v1/reconciliation/{id}/acknowledge`** `{ "reason": "string" }`
   — accept a known-OK discrepancy. `reason` mandatory, audited. Scoped to
-  the exact `expected` / `actual` pair: if either value later changes, the
-  row **re-surfaces un-acknowledged**.
+  the exact `expected` / `actual` pair (for an aggregate row, the
+  `delta` + `limbo` shape): if either later changes, the row
+  **re-surfaces un-acknowledged**. The path for a legacy `ORPHAN_ASSIGNMENT`
+  an admin has reviewed and accepts.
+- **Manual external edit** — an admin fixes GLPI by hand (a state the app
+  can't set, or a `GLPI_CONTRADICTION`); the next scan clears the row. No
+  endpoint.
+- **Corrective note** — for "reality changed, the app missed it": create a
+  normal Entrega / Devolución; once approved + synced, history matches
+  reality and the row clears. No special endpoint.
 
 ### 14.3 Auto-clear
 
 A drift row is removed as soon as any scan finds `expected == actual`
-again — whether that came from a `repush`, a manual edit, or a corrective
-note. No manual "close" step.
+again — from a `repush`, a manual edit, or a corrective note. No manual
+"close" step. Scans `upsert` by `(driftKind, target)` so a re-run never
+duplicates an unresolved row.
+
+### 14.4 Pre-app assignments (`ORPHAN_ASSIGNMENT` cutoff)
+
+The external system is a live instance with years of history; run #1 could
+raise hundreds of `ORPHAN_ASSIGNMENT` rows for assignments predating the
+app. Handled by a go-live cutoff — **applies to `ORPHAN_ASSIGNMENT` only**,
+never the other kinds:
+
+- **`reconciliation.orphanCutoff`** (config, ISO date; default = the
+  earliest `NOTE_REPORT` timestamp). Every orphan row is stamped
+  `preCutoff = assignmentDate < cutoff`.
+- **`GET /reconciliation/drift` and the nav-badge count exclude
+  `preCutoff = true` by default.** `?includePreCutoff=true` returns them —
+  for an admin auditing the legacy backlog. They are real rows:
+  `acknowledge` works on them normally. `run` **stores** them (doesn't skip
+  at scan time), so the count is known without a re-scan and a later cutoff
+  change just recomputes `preCutoff`.
+- **`assignmentDate`** — the middleware reads the asset's GLPI history
+  (per-item `Log` sub-resource, filtered to holder-field changes:
+  `id_search_option` = the holder search option, `linked_action = 0`,
+  newest wins, `new_id` must equal the asset's current holder), giving an
+  exact date with `assignmentDateSource = "LOG"`. If no such entry survives
+  (GLPI purges history), it falls back to the asset's `date_mod` with
+  `assignmentDateSource = "DATE_MOD"` (an upper bound, not the real date —
+  the UI marks these "fecha aproximada"). Mechanics: `reconciliation-endpoint.md §5.6`.
+- **`reconciliation.suppressApproximateOrphans`** (config, default `true`)
+  — when `true`, `preCutoff` suppression applies regardless of source; set
+  `false` to always show `DATE_MOD`-sourced orphans in the default view.
