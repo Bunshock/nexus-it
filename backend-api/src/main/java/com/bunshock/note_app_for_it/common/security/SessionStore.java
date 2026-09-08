@@ -23,9 +23,10 @@ import java.util.concurrent.ConcurrentHashMap;
 @Component
 public class SessionStore {
 
-    private record Session(String username, String role, Integer sedeId, Instant createdAt, Instant lastSeenAt) {
+    private record Session(String username, String role, Integer sedeId, String displayName, String dni,
+            Instant createdAt, Instant lastSeenAt) {
         Session touch(Instant now) {
-            return new Session(username, role, sedeId, createdAt, now);
+            return new Session(username, role, sedeId, displayName, dni, createdAt, now);
         }
     }
 
@@ -51,10 +52,15 @@ public class SessionStore {
         this.clock = clock;
     }
 
+    /** Authorization-only session (tests, internal) — profile fields default to the username. */
     public String create(String username, String role, Integer sedeId) {
+        return create(username, role, sedeId, username, null);
+    }
+
+    public String create(String username, String role, Integer sedeId, String displayName, String dni) {
         String token = randomToken();
         Instant now = clock.instant();
-        sessions.put(token, new Session(username, role, sedeId, now, now));
+        sessions.put(token, new Session(username, role, sedeId, displayName, dni, now, now));
         return token;
     }
 
@@ -83,7 +89,7 @@ public class SessionStore {
             return Optional.empty();
         }
         sessions.put(token, s.touch(now));
-        return Optional.of(new CallerPrincipal(s.username(), s.role(), s.sedeId()));
+        return Optional.of(new CallerPrincipal(s.username(), s.role(), s.sedeId(), s.displayName(), s.dni()));
     }
 
     public void invalidate(String token) {

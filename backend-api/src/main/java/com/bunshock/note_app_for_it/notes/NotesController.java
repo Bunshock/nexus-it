@@ -52,10 +52,11 @@ public class NotesController {
             throw ApiException.badRequest("SEDE_NOT_ASSIGNED",
                     "El técnico no tiene una Sede asignada. Contacte a un administrador.");
         }
-        // TODO(Phase B / AD integration): technicianName/Dni are placeholders (session username,
-        // no DNI) until the middleware has a real directory-derived profile — see MeController's
-        // matching TODO.
-        int id = notes.createNote(request, caller.username(), null, caller.sedeId());
+        // technician_name / technician_dni are snapshotted from the caller's login-time
+        // directory profile (§7.6) — the real full name + DNI, or the username + null if the
+        // directory was unreachable at login. Same "snapshot, don't reference" rule the desktop
+        // app uses for these two columns.
+        int id = notes.createNote(request, caller.displayName(), caller.dni(), caller.sedeId());
         NoteDetailResponse created = notes.getById(id);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(new CreateNoteResponse(created.id(), created.approvalStatus(), created.createdAt()));

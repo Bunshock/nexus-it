@@ -78,6 +78,24 @@ public class DirectoryService {
         return merged.values().stream().map(DirectoryService::toDirectoryUser).toList();
     }
 
+    /**
+     * Exact single-account resolution for a login-time profile snapshot. Never a substring
+     * match — {@code search()}'s username matching is deliberately loose (a partial username
+     * can hit several accounts), so we run it and then keep only a case-insensitive exact hit,
+     * mirroring the desktop app's own {@code containsExactUsernameMatch} guard against the
+     * username-substring login bug. Empty if the directory has no exact account. Propagates the
+     * same {@code 503}/{@code 502} as {@code search()} when the directory is unconfigured /
+     * unreachable — a caller that must not fail on that (login) catches it.
+     */
+    public java.util.Optional<DirectoryUser> findExactByUsername(String username) {
+        if (isBlank(username)) {
+            return java.util.Optional.empty();
+        }
+        return search(null, null, username).stream()
+                .filter(u -> username.equalsIgnoreCase(u.username()))
+                .findFirst();
+    }
+
     private Map<String, AdApiUser> runQueries(List<String> dniVariants, List<String> nameVariants, String usernameValue) {
         Map<String, AdApiUser> merged = new LinkedHashMap<>();
         for (String d : dniVariants) {

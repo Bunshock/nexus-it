@@ -39,15 +39,25 @@ uses the §11 envelope: `{"error": {"code", "message", "details"}}`.
   authBackendDisplayName}`.
 - `POST /auth/login` — body: none, `Authorization: Bearer <IdP access token>`. Validates via
   `JwtDecoders.fromIssuerLocation`, checks `APP_USER` registration (`403 USER_NOT_REGISTERED`) and
-  the allowed-group claim unless `bypass_group_check` (`403 NOT_IN_ALLOWED_GROUP`), mints an
-  opaque session token, writes `AUDIT_LOGIN`. Returns `{sessionToken, expiresAt, role, sedeId,
-  displayName, permissions[]}`.
-  - **v1 gap, not yet fixed**: `displayName` is just the session username — no real AD-derived
-    profile (name/DNI) is resolved yet. Same for every note's snapshotted `technicianName`
-    (see Notes below).
+  the allowed-group claim unless `bypass_group_check` (`403 NOT_IN_ALLOWED_GROUP`), **resolves the
+  technician's directory profile** (see next bullet), mints an opaque session token, writes
+  `AUDIT_LOGIN`. Returns `{sessionToken, expiresAt, role, sedeId, displayName, permissions[]}`.
+  - **Directory profile snapshot** — after the registration/group gates pass, `login` calls
+    `DirectoryService.findExactByUsername(username)` and stamps the resolved `fullName` +
+    `dni` onto the session (`SessionStore`/`CallerPrincipal` now carry `displayName`/`dni`).
+    `displayName` in the response is that real name. **Best-effort**: a directory outage
+    (`503 DIRECTORY_NOT_CONFIGURED` / `502 DIRECTORY_UNAVAILABLE`) is caught — login still
+    succeeds, `displayName` degrades to the username and `dni` to `null`. **Exact match only**
+    — a substring username hit is never treated as the caller's own account (same guard as the
+    desktop app's `containsExactUsernameMatch`). Mirrors the desktop `TechnicianSessionService`
+    resolving identity once at session start, not per action.
+  - The user-editable "Nombre para mostrar" greeting *preference* (a separate, per-user stored
+    override on top of the AD name) is still not ported — a small follow-up, needs its own
+    table + endpoint.
 - `POST /auth/logout` — invalidates the session token server-side.
 - `GET /me` — re-fetchable identity/permission snapshot: `{username, role, sedeId, displayName,
-  permissions[], registered, bypassGroupCheck}`.
+  permissions[], registered, bypassGroupCheck}`. `displayName` is the session's
+  directory-resolved name (no fresh directory call).
 - `GET /health` → `{"status": "UP"}`, always unauthenticated.
 
 **Session model**: opaque, server-side, in-memory (`SessionStore`) — sliding ~2h idle / ~12h
@@ -174,6 +184,9 @@ target — never matches (fail-safe, not fail-open).
   `MIDDLEWARE_DIRECTORY_BASEURL` / `MIDDLEWARE_DIRECTORY_TOKEN`). Blank →
   `503 DIRECTORY_NOT_CONFIGURED` (same "genuinely open" convention as `idp.issuer-uri` /
   `security.encryption-key`). Directory unreachable / non-200 → `502 DIRECTORY_UNAVAILABLE`.
+- **`findExactByUsername(username)`** (not an endpoint — used by `AuthController.login`): runs
+  `search(null, null, username)` then keeps only a case-insensitive **exact** username match.
+  Empty when nothing matches exactly; propagates the same `503`/`502` as `search()`.
 - **Not ported**: `validateCredentials()` (Keycloak owns auth under the OIDC login) and
   `testConnection()` (was for the desktop Settings dialog, which is going away).
 - **Tests**: `DirectoryServiceTest` — plain unit test, a scriptable fake `AdApiClient` (no HTTP,
@@ -216,6 +229,11 @@ RETURN-N_A like any non-Préstamo note (unchanged rule). `GET /notes/{id}` retur
 `destinationSedeId` (null for a custom destination) + `destinationLabel`/`destinationAddress`/
 `destinationRecipients`; `GET /notes` summary rows carry the same three plus `recipient` =
 the destination label.
+
+**`technicianName` / `technicianDni`** are stamped from the caller's **login-time directory
+profile** (`CallerPrincipal.displayName()` / `.dni()`) — the real full name + DNI, or the
+username + `null` if the directory was unreachable at login. Same "snapshot, don't reference"
+rule the desktop app uses for `NOTE_REPORT.technician_name`/`technician_dni`.
 
 **Deviations from `backend-contract.md` §5.1, both deliberate:**
 - **No `sedeId` in the request at all.** Checked the real desktop-app controllers before building

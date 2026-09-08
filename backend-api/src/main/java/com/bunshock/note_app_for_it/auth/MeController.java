@@ -37,9 +37,8 @@ public class MeController {
                 caller.username(),
                 caller.role(),
                 caller.sedeId(),
-                caller.username(), // TODO(Phase B): real display-name preference, ported from
-                                    // TechnicianSessionService.getDisplayName() — the session
-                                    // only carries username/role/sedeId today.
+                caller.displayName(), // directory-resolved full name from login (falls back to
+                                       // the username if the directory was unreachable then)
                 permissions,
                 record.isPresent(),
                 record.map(AppUserRecord::bypassGroupCheck).orElse(false));
