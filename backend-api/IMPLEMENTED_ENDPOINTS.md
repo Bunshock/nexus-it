@@ -214,6 +214,8 @@ target — never matches (fail-safe, not fail-open).
 | `PUT /api/v1/notes/{id}/reject` `{reason}` | `APPROVE_NOTES`, Sede-scoped |
 | `POST /api/v1/notes/{noteId}/items/{itemId}/sync` | `SYNC_GLPI`, Sede-scoped |
 | `POST /api/v1/notes/{noteId}/items/{itemId}/reject-sync` `{reason}` | `SYNC_GLPI`, Sede-scoped |
+| `POST /api/v1/notes/{noteId}/items/{itemId}/sync-return` | `SYNC_GLPI`, Sede-scoped |
+| `POST /api/v1/notes/{noteId}/items/{itemId}/reject-sync-return` `{reason}` | `SYNC_GLPI`, Sede-scoped |
 | `PUT /api/v1/notes/{noteId}/items/{itemId}/return` `{quantity?}` | `VALIDATE_RETURNS`, Sede-scoped |
 | `PUT /api/v1/notes/{noteId}/items/{itemId}/lost` `{reason, quantity?}` | `VALIDATE_RETURNS`, Sede-scoped |
 
@@ -304,9 +306,19 @@ in local SQLite.
   (skipped entirely if the item was flagged `modifiesStock: false` at creation). `LOST` never
   credits stock back, on either shape.
 
-**Deferred, not built** (🚧): the `GLPI_RETURN` tracking dimension (re-sync after a returnable
-Provider note's item comes back — real feature, but niche; `NOTE_ITEM_STATUS_TRACKING` already
-has the `tracking_type` slot ready for it).
+**`GLPI_RETURN` tracking dimension — ✅ built.** A returnable Provider note's asset needs its
+return re-synced into GLPI (the original sync-out is one-way/no-revert, so this is a separate
+flag, not a revert). The moment such an asset's `RETURN` step reaches `RETURNED`,
+`NotesRepository` seeds a `GLPI_RETURN` tracking row at `PENDING`
+(`seedGlpiReturnIfProviderAsset` — only for an asset that had a `GLPI` row, on a Provider note
+with a returnable Motivo; idempotent). It's then driven by **`POST .../sync-return`** →
+`SYNCED` and **`POST .../reject-sync-return` `{reason}`** → `REJECTED` (both `SYNC_GLPI`,
+Sede-scoped; `updateItemGlpiReturnStatus`, `AUDIT_ITEM_STATUS` `status_kind = 'GLPI_RETURN'`). A
+`sync-return` before the return is validated → `409 RETURN_NOT_VALIDATED`. In the History
+summary counts, `COALESCE(gr.status, g.status)` makes the `GLPI_RETURN` status **supersede** the
+original `GLPI` status once it exists (after a return, what matters is whether GLPI reflects the
+item being back). `GET /notes/{id}` already returned `glpiReturnStatus`/`glpiReturnRejectionReason`/
+`glpiReturnStatusUpdatedAt` on the item — only the write path + summary aggregate were missing.
 
 **Audit-row writes are wired** (see Audit section below) — approve/reject stock movement writes
 `AUDIT_STOCK` (one row per model actually moved, skipped when nothing moved); sync/reject-sync/

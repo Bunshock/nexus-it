@@ -38,8 +38,12 @@ import java.util.function.BiPredicate;
  * {@code MODEL_STOCK} counter moved at approval, not derived "Model Y") is IN SCOPE for v1, per
  * the approved plan's "restore old MODEL_STOCK + manual-flag behavior" decision.
  *
- * <p><b>Not yet ported (follow-up work, not forgotten):</b> the {@code GLPI_RETURN} tracking
- * dimension (re-sync after a returnable Provider note's item comes back — niche, deferred).
+ * <p>The {@code GLPI_RETURN} tracking dimension (re-sync into GLPI after a returnable Provider
+ * note's asset comes back — GLPI sync is one-way/no-revert, so the return is a separate flag,
+ * not a revert of the original) is seeded to {@code PENDING} the moment such an asset's
+ * {@code RETURN} step reaches {@code RETURNED}, and driven from there by
+ * {@code /items/{id}/sync-return} + {@code /reject-sync-return}. Its status supersedes the
+ * original {@code GLPI} status in the history summary counts once it exists.
  */
 @Repository
 public class NotesRepository {
@@ -79,9 +83,12 @@ public class NotesRepository {
                    COALESCE(rssi.destination_label, rmo.destination_label, '') AS destination_label,
                    COALESCE(rssi.address, rmo.address, '') AS destination_address,
                    COALESCE(rssi.recipients, rmo.recipients, '') AS destination_recipients,
-                   SUM(CASE WHEN g.status = 'PENDING'  THEN 1 ELSE 0 END) AS pending_count,
-                   SUM(CASE WHEN g.status = 'SYNCED'   THEN 1 ELSE 0 END) AS synced_count,
-                   SUM(CASE WHEN g.status = 'REJECTED' THEN 1 ELSE 0 END) AS rejected_count,
+                   -- effective GLPI status: once a returnable Provider asset's return is
+                   -- validated, its GLPI_RETURN row supersedes the original sync-out (what
+                   -- matters after a return is whether GLPI reflects the item being back)
+                   SUM(CASE WHEN COALESCE(gr.status, g.status) = 'PENDING'  THEN 1 ELSE 0 END) AS pending_count,
+                   SUM(CASE WHEN COALESCE(gr.status, g.status) = 'SYNCED'   THEN 1 ELSE 0 END) AS synced_count,
+                   SUM(CASE WHEN COALESCE(gr.status, g.status) = 'REJECTED' THEN 1 ELSE 0 END) AS rejected_count,
                    SUM(CASE WHEN ia.item_id IS NOT NULL THEN 1 ELSE 0 END) AS asset_count,
                    SUM(CASE WHEN ia.item_id IS NULL THEN 1 ELSE 0 END) AS countable_count,
                    SUM(
@@ -116,6 +123,7 @@ public class NotesRepository {
             LEFT JOIN NOTE_ITEM_ASSET          ia ON ia.item_id        = i.id
             LEFT JOIN NOTE_ITEM_COUNTABLE      ic ON ic.item_id        = i.id
             LEFT JOIN NOTE_ITEM_STATUS_TRACKING g  ON g.item_id  = i.id AND g.tracking_type  = 'GLPI'
+            LEFT JOIN NOTE_ITEM_STATUS_TRACKING gr ON gr.item_id = i.id AND gr.tracking_type = 'GLPI_RETURN'
             LEFT JOIN NOTE_ITEM_STATUS_TRACKING ir ON ir.item_id = i.id AND ir.tracking_type = 'RETURN'
             LEFT JOIN (
                 SELECT item_id,
@@ -760,9 +768,68 @@ public class NotesRepository {
             if (info != null && info.modifiesStock()) {
                 catalog.adjustModelStock(info.modelId(), info.brandId(), info.typeId(), info.sedeId(), 1);
             }
+            seedGlpiReturnIfProviderAsset(itemId);
         }
         audit.recordItemStatusChange(itemId, "RETURN", previousStatus == null ? "N_A" : previousStatus,
                 status, reason, 1, username);
+    }
+
+    /**
+     * A returnable Provider note's asset, once received back, needs its return re-synced into
+     * GLPI (the original sync-out is one-way). Seed the {@code GLPI_RETURN} row at {@code PENDING}
+     * so {@code /items/{id}/sync-return} becomes available — mirrors the desktop's
+     * {@code handleProviderReceived}. Only for an asset that was actually GLPI-eligible (has a
+     * {@code GLPI} row) on a Provider note whose Motivo is returnable; a no-op otherwise, and
+     * idempotent (never a second row).
+     */
+    private void seedGlpiReturnIfProviderAsset(int itemId) {
+        if (!isAssetItem(itemId)
+                || currentTrackingStatus(itemId, "GLPI") == null
+                || currentTrackingStatus(itemId, "GLPI_RETURN") != null
+                || !isProviderReturnableItem(itemId)) {
+            return;
+        }
+        jdbc.update("""
+                INSERT INTO NOTE_ITEM_STATUS_TRACKING (item_id, tracking_type, status, rejection_reason, status_updated_at)
+                VALUES (?, 'GLPI_RETURN', 'PENDING', NULL, ?)
+                """, itemId, LocalDateTime.now().toString());
+    }
+
+    private boolean isProviderReturnableItem(int itemId) {
+        List<String[]> rows = jdbc.query("""
+                SELECT r.profile_type, p.motivo
+                FROM NOTE_ITEM i
+                JOIN NOTE_REPORT r ON r.id = i.note_id
+                LEFT JOIN NOTE_PROVEEDOR p ON p.note_report_id = r.id
+                WHERE i.id = ?
+                """, (rs, n) -> new String[] { rs.getString("profile_type"), rs.getString("motivo") }, itemId);
+        return !rows.isEmpty() && isProviderReturnable(rows.get(0)[0], rows.get(0)[1]);
+    }
+
+    // ── Item return re-sync (GLPI_RETURN dimension) ─────────────────────────
+
+    /**
+     * Drive the {@code GLPI_RETURN} flag for a Provider-return asset. Only valid once the row
+     * exists (seeded by the {@code RETURN → RETURNED} transition) — a {@code sync-return} before
+     * the return is validated is a {@code 409}.
+     */
+    @Transactional
+    public void updateItemGlpiReturnStatus(int itemId, String status, String reason, String username) {
+        String previousStatus = currentTrackingStatus(itemId, "GLPI_RETURN");
+        if (previousStatus == null) {
+            throw ApiException.conflict("RETURN_NOT_VALIDATED",
+                    "El ítem no tiene una devolución validada para sincronizar con GLPI.");
+        }
+        int updated = jdbc.update("""
+                UPDATE NOTE_ITEM_STATUS_TRACKING
+                SET status = ?, rejection_reason = ?, status_updated_at = ?
+                WHERE item_id = ? AND tracking_type = 'GLPI_RETURN'
+                """, status, reason, LocalDateTime.now().toString(), itemId);
+        if (updated == 0) {
+            throw ApiException.conflict("RETURN_NOT_VALIDATED",
+                    "El ítem no tiene una devolución validada para sincronizar con GLPI.");
+        }
+        audit.recordItemStatusChange(itemId, "GLPI_RETURN", previousStatus, status, reason, 1, username);
     }
 
     private String currentTrackingStatus(int itemId, String trackingType) {

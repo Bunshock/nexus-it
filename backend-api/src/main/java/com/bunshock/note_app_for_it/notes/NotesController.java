@@ -123,6 +123,27 @@ public class NotesController {
         return notes.getById(noteId);
     }
 
+    // ── Item return re-sync (GLPI_RETURN dimension) ─────────────────────────
+    // Only for a returnable Provider asset whose return has been validated — the row is
+    // seeded by that RETURN → RETURNED transition; a call before then is a 409.
+
+    @PostMapping("/{noteId}/items/{itemId}/sync-return")
+    public NoteDetailResponse syncReturn(@PathVariable int noteId, @PathVariable int itemId) {
+        CallerPrincipal caller = currentUser.require();
+        permissionGuard.requireSedeScoped(caller, Permission.SYNC_GLPI, notes.getSedeIdForNote(noteId));
+        notes.updateItemGlpiReturnStatus(itemId, "SYNCED", null, caller.username());
+        return notes.getById(noteId);
+    }
+
+    @PostMapping("/{noteId}/items/{itemId}/reject-sync-return")
+    public NoteDetailResponse rejectSyncReturn(@PathVariable int noteId, @PathVariable int itemId,
+            @Valid @RequestBody ReasonRequest request) {
+        CallerPrincipal caller = currentUser.require();
+        permissionGuard.requireSedeScoped(caller, Permission.SYNC_GLPI, notes.getSedeIdForNote(noteId));
+        notes.updateItemGlpiReturnStatus(itemId, "REJECTED", request.reason(), caller.username());
+        return notes.getById(noteId);
+    }
+
     // ── Item return (RETURN dimension) ──────────────────────────────────────
 
     @PutMapping("/{noteId}/items/{itemId}/return")

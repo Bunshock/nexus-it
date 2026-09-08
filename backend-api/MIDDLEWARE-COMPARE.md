@@ -13,7 +13,7 @@ as either version changes.
 Status key: **=** same · **≠** diverges · **v2‑only** · **v1‑only** · **gap**
 (planned, not built) · **fix** (a known inconsistency to reconcile).
 
-_Last updated: 2026-09-08 — after v1 gap #3 (`GET /roles/{role}/permissions`)._
+_Last updated: 2026-09-08 — after v1 gap #4 (`GLPI_RETURN` dimension)._
 
 ---
 
@@ -85,7 +85,7 @@ _Last updated: 2026-09-08 — after v1 gap #3 (`GET /roles/{role}/permissions`).
 | `sync` / `reject-sync` | **synchronous status flip** (`200`) — no external write, no queue, no holder check. Matches the old desktop GLPI-sync (manual, one-way, no-revert) | **enqueued** (`202 QUEUED`) → real GLPI write via `EXTERNAL_WRITE_QUEUE`; holder-mismatch gate (`409`); `syncTargets` state write; requires the caller's GLPI `user_token` | ≠ |
 | `return` / `lost` | synchronous flip; countable partial-batch via `NOTE_ITEM_RETURN_ALLOCATION`; `RETURNED` credits `MODEL_STOCK` back, `LOST` doesn't | enqueued; `states_id → 33` / `45` writes; same partial-batch mechanic; no stock counter to credit | ≠ |
 | Holder-mismatch pre-check | none | `409 HOLDER_MISMATCH` + `acknowledgeHolderMismatch` (D6b) | v2‑only |
-| `GLPI_RETURN` tracking dimension (re-sync a returned Provider item) | **deferred** | full | gap (v1 #4) |
+| `GLPI_RETURN` dimension (re-sync a returned Provider asset into GLPI) | **built** — seeded `PENDING` when the asset's `RETURN` reaches `RETURNED`; driven by `POST .../sync-return` / `.../reject-sync-return`; supersedes the original `GLPI` status in summary counts. Flip is a flag (no external write). | same shape, but a real GLPI re-sync write via the §10 queue | ≈ |
 | External write queue (retry / abandon / alert / `GET /sync-queue`) | none | full — `EXTERNAL_WRITE_QUEUE`, `@Scheduled` poller, per-`model_key` lease, no optimistic `glpiStatus` | v2‑only |
 
 ## Reconciliation

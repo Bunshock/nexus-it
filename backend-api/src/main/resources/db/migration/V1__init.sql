@@ -396,7 +396,7 @@ BEGIN
     CREATE TABLE NOTE_ITEM_STATUS_TRACKING (
         id                INT IDENTITY(1,1) PRIMARY KEY,
         item_id           INT NOT NULL REFERENCES NOTE_ITEM(id),
-        tracking_type     NVARCHAR(20) NOT NULL CHECK (tracking_type IN ('GLPI', 'RETURN', 'GLPI_RETURN')),
+        tracking_type     NVARCHAR(20) NOT NULL CHECK (tracking_type IN ('GLPI', 'RETURN', 'GLPI_RETURN')),  -- GLPI_RETURN = re-sync of a validated Provider-return into GLPI
         status            NVARCHAR(50) NOT NULL,
         rejection_reason  NVARCHAR(300),
         status_updated_at DATETIME2,
@@ -426,7 +426,7 @@ BEGIN
     CREATE TABLE AUDIT_ITEM_STATUS (
         id          INT IDENTITY(1,1) PRIMARY KEY,
         item_id     INT NOT NULL REFERENCES NOTE_ITEM(id),
-        status_kind NVARCHAR(20) NOT NULL CHECK (status_kind IN ('GLPI', 'RETURN')),
+        status_kind NVARCHAR(20) NOT NULL CHECK (status_kind IN ('GLPI', 'RETURN', 'GLPI_RETURN')),
         old_status  NVARCHAR(50) NOT NULL,
         new_status  NVARCHAR(50) NOT NULL,
         reason      NVARCHAR(500),

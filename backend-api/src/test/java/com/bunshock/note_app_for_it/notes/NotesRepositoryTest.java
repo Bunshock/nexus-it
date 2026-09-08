@@ -293,6 +293,73 @@ class NotesRepositoryTest {
         assertEquals("PENDING", detail.items().get(0).returnStatus(), "Garantía is a returnable Motivo");
     }
 
+    private int providerReturnableNote(String motivo, String serial) {
+        int providerId = insertProvider("ACME Corp");
+        NoteItemRequest asset = new NoteItemRequest("ASSET", notebookTypeId, dellBrandId, laptopModelId,
+                serial, "IT-" + serial, null, null, true, null);
+        return notes.createNote(new CreateNoteRequest("ENTREGA - PROVEEDOR", null, null, null,
+                motivo, null, null, null, providerId, "30-12345678-9", "Resp", "87654321",
+                null, null, null, null, null, List.of(asset)), "tech1", null, sedeId);
+    }
+
+    private NoteSummaryResponse summaryOf(int noteId) {
+        return notes.getFiltered(new NotesFilter(null, null, null, null, null, null, null, null, null, null, null, null))
+                .stream().filter(r -> r.id() == noteId).findFirst().orElseThrow();
+    }
+
+    @Test
+    void returnableProviderAssetSeedsGlpiReturnPendingWhenItsReturnIsValidated() {
+        int id = providerReturnableNote("Garantía", "SNP1");
+        int itemId = notes.getById(id).items().get(0).id();
+        assertEquals("N_A", notes.getById(id).items().get(0).glpiReturnStatus(),
+                "no GLPI_RETURN dimension before the return is validated");
+
+        notes.updateItemReturnStatus(itemId, "RETURNED", null, "tester");
+
+        NoteItemResponse item = notes.getById(id).items().get(0);
+        assertEquals("RETURNED", item.returnStatus());
+        assertEquals("PENDING", item.glpiReturnStatus(), "return validated -> GLPI_RETURN seeded PENDING");
+    }
+
+    @Test
+    void syncReturnDrivesTheGlpiReturnFlagAndSupersedesTheOriginalGlpiStatusInSummaryCounts() {
+        int id = providerReturnableNote("Reparación", "SNP2");
+        int itemId = notes.getById(id).items().get(0).id();
+        notes.updateItemGlpiStatus(itemId, "SYNCED", null, "tester");     // original sync-out
+        notes.updateItemReturnStatus(itemId, "RETURNED", null, "tester"); // seeds GLPI_RETURN PENDING
+
+        // Effective GLPI status is now the GLPI_RETURN row (PENDING), not the original GLPI (SYNCED).
+        assertEquals(1, summaryOf(id).pendingItemCount());
+        assertEquals(0, summaryOf(id).syncedItemCount());
+
+        notes.updateItemGlpiReturnStatus(itemId, "SYNCED", null, "tester");
+        assertEquals("SYNCED", notes.getById(id).items().get(0).glpiReturnStatus());
+        assertEquals(1, summaryOf(id).syncedItemCount());
+        assertEquals(0, summaryOf(id).pendingItemCount());
+    }
+
+    @Test
+    void syncReturnBeforeTheReturnIsValidatedIs409() {
+        int id = notes.createNote(entregaRequest("ENTREGA"), "tech1", null, sedeId);
+        int itemId = notes.getById(id).items().get(0).id();
+
+        ApiException ex = assertThrows(ApiException.class,
+                () -> notes.updateItemGlpiReturnStatus(itemId, "SYNCED", null, "tester"));
+        assertEquals("RETURN_NOT_VALIDATED", ex.getCode());
+    }
+
+    @Test
+    void prestamoReturnDoesNotSeedAGlpiReturnRow() {
+        int id = notes.createNote(entregaRequest("PRÉSTAMO"), "tech1", null, sedeId);
+        notes.updateApprovalStatus(id, "APPROVED", null, "tester");
+        int itemId = notes.getById(id).items().get(0).id();
+
+        notes.updateItemReturnStatus(itemId, "RETURNED", null, "tester");
+
+        assertEquals("N_A", notes.getById(id).items().get(0).glpiReturnStatus(),
+                "a Préstamo asset was never GLPI-synced, so there is nothing to re-sync");
+    }
+
     @Test
     void getFilteredByProfileTypeAndApprovalStatus() {
         int a = notes.createNote(entregaRequest("ENTREGA"), "tech1", null, sedeId);
