@@ -96,7 +96,7 @@ public class AuditRepository {
         } else {
             sql.append(" WHERE 1=1");
         }
-        sql.append(" ORDER BY a.changed_at DESC");
+        sql.append(" ORDER BY a.changed_at DESC, a.id DESC");
         appendPaging(sql, params, page, size);
 
         return jdbc.query(sql.toString(), (rs, rowNum) -> new AuditItemStatusEntry(
@@ -114,7 +114,7 @@ public class AuditRepository {
             sql.append(" AND username = ?");
             params.add(username);
         }
-        sql.append(" ORDER BY attempted_at DESC");
+        sql.append(" ORDER BY attempted_at DESC, id DESC");
         appendPaging(sql, params, page, size);
 
         return jdbc.query(sql.toString(), (rs, rowNum) -> new AuditLoginEntry(
@@ -137,7 +137,7 @@ public class AuditRepository {
             sql.append(" AND target_type = ?");
             params.add(targetType);
         }
-        sql.append(" ORDER BY performed_at DESC");
+        sql.append(" ORDER BY performed_at DESC, id DESC");
         appendPaging(sql, params, page, size);
 
         return jdbc.query(sql.toString(), (rs, rowNum) -> new AuditAdminActionEntry(
