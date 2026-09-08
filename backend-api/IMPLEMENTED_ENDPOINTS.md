@@ -65,12 +65,16 @@ absolute cap (`middleware.session.*`), matches §2.4 exactly.
 
 ---
 
-## RBAC (`/api/v1/roles/{role}/permissions`) — 🚧 enforcement built, no read endpoint yet
+## RBAC (`/api/v1/roles/{role}/permissions`) — ✅ built
 
 `PermissionGuard.require()`/`requireSedeScoped()` enforce every permission check server-side
-(H1–H3 all covered by `PermissionGuardTest`) — but there's no `GET /roles/{role}/permissions`
-endpoint exposed yet; the app would need to read `permissions[]` off the login/`/me` response
-instead for now.
+(H1–H3 all covered by `PermissionGuardTest`). **`GET /api/v1/roles/{role}/permissions`**
+(`RolesController`, session-only) returns a role's granted permission names, sorted — the app
+uses it to render the UI gate for a role other than the caller's own (the caller's own set is
+already on the login / `/me` response). Read-only; `ROLE_PERMISSION` is edited by direct SQL.
+An unknown role or one with no grants → `[]` (a valid deny-by-default state, not `404`). A
+stray permission string from hand-edited SQL is silently dropped. `RolePermissionRepositoryTest`
+gives `getPermissionsForRole` its first direct DB coverage (was only mocked before).
 
 **Permission enum — the OLD, full 12-value set, not the contract's trimmed 3-permission enum**:
 `MANAGE_TYPES`, `MANAGE_BRANDS`, `MANAGE_MODELS`, `MANAGE_STOCK`, `EDIT_SN_VALIDATION`,

@@ -13,7 +13,7 @@ as either version changes.
 Status key: **=** same · **≠** diverges · **v2‑only** · **v1‑only** · **gap**
 (planned, not built) · **fix** (a known inconsistency to reconcile).
 
-_Last updated: 2026-09-08 — after v1 gap #2 (directory profile at login)._
+_Last updated: 2026-09-08 — after v1 gap #3 (`GET /roles/{role}/permissions`)._
 
 ---
 
@@ -44,7 +44,7 @@ _Last updated: 2026-09-08 — after v1 gap #2 (directory profile at login)._
 | `Permission` enum | **12** — `MANAGE_TYPES/BRANDS/MODELS/STOCK`, `EDIT_SN_VALIDATION`, `EDIT_SMTP/GLPI/AD/AF_FORMAT_CONFIG`, `APPROVE_NOTES`, `SYNC_GLPI`, `VALIDATE_RETURNS` | **3** — `APPROVE_NOTES`, `SYNC_EXTERNAL`, `VALIDATE_RETURNS` (`SYNC_GLPI` renamed) | ≠ |
 | `PUT /config` gate | per-field-group permission (`EDIT_AF_FORMAT_CONFIG` / `EDIT_SMTP_CONFIG`) | `SUPERADMIN` role check, no permission | ≠ |
 | Sede fence | plain `ADMIN` scoped to own `sede_id`; `SUPERADMIN` bypasses | same | = |
-| `GET /roles/{role}/permissions` | enforcement built, **endpoint not exposed** | exposed (§7.3) | gap (v1 #3) |
+| `GET /roles/{role}/permissions` | **exposed** (`RolesController`, session-only, sorted names, `[]` for unknown role) | exposed (§7.3) | = |
 | Deny-by-default, server-side enforcement | yes | yes | = |
 
 ## Catalog
