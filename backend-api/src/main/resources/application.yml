@@ -66,3 +66,12 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
+
+# The OpenAPI spec + Swagger UI are a dev convenience only — not published on the
+# deployed instance. The contract lives in backend-contract.md; the running API
+# shape shouldn't be an unauthenticated endpoint in production.
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
