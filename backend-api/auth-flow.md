@@ -61,7 +61,7 @@ sequenceDiagram
     MW->>KC: fetch JWKS (cached)
     KC-->>MW: signing keys
     MW->>MW: validate JWT (sig, iss, aud, exp), extract username,<br/>resolve role / Sede / permissions from own store,<br/>check registration and allowed-group / bypass flag
-    MW-->>App: 200 sessionToken, expiresAt, role, sedeId, displayName, permissions<br/>(or 403 not registered / not in group)
+    MW-->>App: 200 sessionToken, expiresAt, role, sedeId, fullName, permissions<br/>(or 403 not registered / not in group)
     Note over App: hold sessionToken in memory only
 ```
 

@@ -37,8 +37,8 @@ public class MeController {
                 caller.username(),
                 caller.role(),
                 caller.sedeId(),
-                caller.displayName(), // directory-resolved full name from login (falls back to
-                                       // the username if the directory was unreachable then)
+                caller.fullName(), // AD full name from login (username fallback if the directory
+                                    // was unreachable then). The greeting override, if any, is client-local.
                 permissions,
                 record.isPresent(),
                 record.map(AppUserRecord::bypassGroupCheck).orElse(false));

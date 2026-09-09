@@ -9,6 +9,6 @@ public record LoginResponse(
         Instant expiresAt,
         String role,
         Integer sedeId,
-        String displayName,
+        String fullName, // AD full name (username fallback); any cosmetic greeting override is client-local
         List<String> permissions) {
 }

@@ -191,7 +191,8 @@ Authorization: Bearer <IdP access token>
   "expiresAt": "ISO-8601 datetime",
   "role": "USER" | "ADMIN" | "SUPERADMIN",
   "sedeId": "integer | null",
-  "displayName": "string",
+  "fullName": "string",           // AD full name (username fallback). Default name to greet with;
+                                  // any cosmetic "call me X" override is a client-local preference.
   "permissions": ["MANAGE_STOCK", "APPROVE_NOTES", "..."]  // see §7.3
 }
 
@@ -863,7 +864,7 @@ GET /api/v1/me
   "username": "string",
   "role": "USER" | "ADMIN" | "SUPERADMIN",
   "sedeId": "integer | null",
-  "displayName": "string",
+  "fullName": "string",           // AD full name (username fallback); greeting override is client-local
   "permissions": ["MANAGE_STOCK", "APPROVE_NOTES", "..."],
   "registered": true,
   "bypassGroupCheck": false

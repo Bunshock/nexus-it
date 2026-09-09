@@ -6,14 +6,16 @@ package com.bunshock.note_app_for_it.common.security;
  * is always the token subject, never a request parameter.
  *
  * <p>{@code username}/{@code role}/{@code sedeId} drive authorization.
- * {@code displayName}/{@code dni} are the directory-resolved profile snapshot
- * taken at login (§7.6 / the desktop app's {@code TechnicianSessionService}) —
- * used for the greeting and for stamping {@code technician_name}/{@code technician_dni}
- * onto a note. Both fall back to the username / {@code null} when the directory
- * was unreachable at login.
+ * {@code fullName}/{@code dni} are the Active Directory identity snapshot taken
+ * at login (§7.6 / the desktop app's {@code TechnicianSessionService}): the real
+ * AD full name + DNI, or the username / {@code null} when the directory was
+ * unreachable at login. {@code fullName} is what gets stamped onto a note as
+ * {@code technician_name}, and it's also returned to the client as the default
+ * name to greet with — but any <em>cosmetic</em> greeting override ("call me X")
+ * is a desktop-client-local preference and never reaches the middleware.
  */
 public record CallerPrincipal(String username, String role, Integer sedeId,
-        String displayName, String dni) {
+        String fullName, String dni) {
 
     /** Authorization-only construction (tests, internal call sites that don't carry a profile). */
     public CallerPrincipal(String username, String role, Integer sedeId) {

@@ -83,17 +83,20 @@ public class AuthController {
                     "No tiene permisos para usar esta aplicación.");
         }
 
-        // Directory-resolved profile snapshot, taken once here (§7.6 — mirrors the desktop app's
+        // Active Directory identity snapshot, taken once here (§7.6 — mirrors the desktop app's
         // TechnicianSessionService resolving identity at session start, not per action). Stamped
-        // into the session so note creation reads a real name/DNI without a per-note lookup.
+        // into the session so note creation reads a real name/DNI without a per-note lookup, and
+        // returned to the client as the default greeting name. A cosmetic greeting override
+        // ("call me X") is a desktop-client-local preference — it never reaches the middleware,
+        // and technician_name on a note is always this AD value.
         // Best-effort: a directory outage must never block login — degrade to username + no DNI.
-        String displayName = user.username();
+        String fullName = user.username();
         String dni = null;
         try {
             DirectoryUser profile = directoryService.findExactByUsername(username).orElse(null);
             if (profile != null) {
                 if (profile.fullName() != null && !profile.fullName().isBlank()) {
-                    displayName = profile.fullName();
+                    fullName = profile.fullName();
                 }
                 dni = profile.dni();
             }
@@ -101,13 +104,13 @@ public class AuthController {
             // DIRECTORY_NOT_CONFIGURED (503) / DIRECTORY_UNAVAILABLE (502) — login still succeeds.
         }
 
-        String token = sessionStore.create(user.username(), user.role(), user.sedeId(), displayName, dni);
+        String token = sessionStore.create(user.username(), user.role(), user.sedeId(), fullName, dni);
         auditRepository.recordLogin(username, true, null);
 
         List<String> permissions = rolePermissions.getPermissionsForRole(user.role()).stream()
                 .map(Enum::name).toList();
         return new LoginResponse(token, sessionStore.expiresAt(token), user.role(), user.sedeId(),
-                displayName, permissions);
+                fullName, permissions);
     }
 
     @PostMapping("/logout")

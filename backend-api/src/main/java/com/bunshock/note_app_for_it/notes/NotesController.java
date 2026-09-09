@@ -52,11 +52,11 @@ public class NotesController {
             throw ApiException.badRequest("SEDE_NOT_ASSIGNED",
                     "El técnico no tiene una Sede asignada. Contacte a un administrador.");
         }
-        // technician_name / technician_dni are snapshotted from the caller's login-time
-        // directory profile (§7.6) — the real full name + DNI, or the username + null if the
-        // directory was unreachable at login. Same "snapshot, don't reference" rule the desktop
-        // app uses for these two columns.
-        int id = notes.createNote(request, caller.displayName(), caller.dni(), caller.sedeId());
+        // technician_name / technician_dni are snapshotted from the caller's login-time AD
+        // identity (§7.6) — the real full name + DNI, or the username + null if the directory
+        // was unreachable at login. Always the AD value, never a client-chosen display name.
+        // Same "snapshot, don't reference" rule the desktop app uses for these two columns.
+        int id = notes.createNote(request, caller.fullName(), caller.dni(), caller.sedeId());
         NoteDetailResponse created = notes.getById(id);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(new CreateNoteResponse(created.id(), created.approvalStatus(), created.createdAt()));

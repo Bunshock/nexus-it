@@ -37,10 +37,10 @@ public class SessionStore {
 
     private static final Logger log = LoggerFactory.getLogger(SessionStore.class);
 
-    private record Session(String username, String role, Integer sedeId, String displayName, String dni,
+    private record Session(String username, String role, Integer sedeId, String fullName, String dni,
             Instant createdAt, Instant lastSeenAt) {
         Session touch(Instant now) {
-            return new Session(username, role, sedeId, displayName, dni, createdAt, now);
+            return new Session(username, role, sedeId, fullName, dni, createdAt, now);
         }
     }
 
@@ -79,7 +79,7 @@ public class SessionStore {
         return create(username, role, sedeId, username, null);
     }
 
-    public String create(String username, String role, Integer sedeId, String displayName, String dni) {
+    public String create(String username, String role, Integer sedeId, String fullName, String dni) {
         Instant now = clock.instant();
         if (sessions.size() >= maxSessions) {
             sweep();
@@ -88,7 +88,7 @@ public class SessionStore {
             }
         }
         String token = randomToken();
-        sessions.put(token, new Session(username, role, sedeId, displayName, dni, now, now));
+        sessions.put(token, new Session(username, role, sedeId, fullName, dni, now, now));
         return token;
     }
 
@@ -115,7 +115,7 @@ public class SessionStore {
             return Optional.empty();
         }
         sessions.put(token, s.touch(now));
-        return Optional.of(new CallerPrincipal(s.username(), s.role(), s.sedeId(), s.displayName(), s.dni()));
+        return Optional.of(new CallerPrincipal(s.username(), s.role(), s.sedeId(), s.fullName(), s.dni()));
     }
 
     public void invalidate(String token) {
