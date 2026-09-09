@@ -32,5 +32,10 @@ build/
 ### VS Code ###
 .vscode/
 
-# Local progress/resume doc — never committed (see v2 worktree convention)
-backend-api/NEXT-SESSION.md
+# Local reference/status docs — working notes, kept on disk but out of git.
+# Anchored to this (backend-api/) directory; the old un-anchored pattern here
+# was double-prefixed and never actually matched.
+/NEXT-SESSION.md
+/DB-SCHEMA.md
+/IMPLEMENTED_ENDPOINTS.md
+/MIDDLEWARE-COMPARE.md
