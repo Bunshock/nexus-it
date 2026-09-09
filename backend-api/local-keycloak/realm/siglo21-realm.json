@@ -1,0 +1,117 @@
+{
+  "realm": "siglo21",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "accessTokenLifespan": 300,
+  "comment": "Local stand-in for the org realm auth.21.ar/realms/siglo21. Only what the middleware auth flow needs: a public PKCE client that stamps groups + aud, plus an unrelated client for the aud-rejection test. NOT a mirror of the org realm's users/roles/policies.",
+  "groups": [
+    { "name": "nexus-it-users", "path": "/nexus-it-users" }
+  ],
+  "clients": [
+    {
+      "clientId": "nexus-it",
+      "name": "Nexus IT desktop (public, PKCE)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "redirectUris": [
+        "http://localhost/callback",
+        "http://127.0.0.1/callback"
+      ],
+      "webOrigins": ["+"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "+"
+      },
+      "protocolMappers": [
+        {
+          "name": "groups (bare names)",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "consentRequired": false,
+          "config": {
+            "full.path": "false",
+            "claim.name": "groups",
+            "access.token.claim": "true",
+            "id.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "audience: nexus-it",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "nexus-it",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "other-app",
+      "name": "Unrelated realm client (aud-check negative test only)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "redirectUris": ["http://localhost/*"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      },
+      "protocolMappers": [
+        {
+          "name": "audience: other-app",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "other-app",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "emanuel.arias",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Emanuel",
+      "lastName": "Arias",
+      "email": "emanuel.arias@example.test",
+      "credentials": [{ "type": "password", "value": "test", "temporary": false }],
+      "groups": ["/nexus-it-users"]
+    },
+    {
+      "username": "no.role",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Nora",
+      "lastName": "Role",
+      "email": "no.role@example.test",
+      "credentials": [{ "type": "password", "value": "test", "temporary": false }],
+      "groups": ["/nexus-it-users"]
+    },
+    {
+      "username": "outsider",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Otto",
+      "lastName": "Sider",
+      "email": "outsider@example.test",
+      "credentials": [{ "type": "password", "value": "test", "temporary": false }],
+      "groups": []
+    }
+  ]
+}

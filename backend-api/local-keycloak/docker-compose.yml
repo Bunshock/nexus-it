@@ -1,0 +1,36 @@
+# Local Keycloak for validating the middleware auth flow end-to-end before the org IdP is wired.
+# See README.md in this directory for the full runbook.
+#
+#   docker compose up -d      # brings up Keycloak, auto-imports the siglo21 realm
+#   docker compose down -v     # tears it down, wipes the realm data
+#
+# Issuer once up: http://localhost:8081/realms/siglo21
+# Admin console:  http://localhost:8081/  (admin / admin)  — not needed for the runbook
+
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.4       # any recent 26.x is fine
+    container_name: nexus-it-keycloak
+    command: ["start-dev", "--import-realm", "--http-port=8081"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_HEALTH_ENABLED: "true"                  # exposes /health on the mgmt port (9000, in-container)
+    ports:
+      - "8081:8081"
+    volumes:
+      - ./realm:/opt/keycloak/data/import:ro     # every *.json here is imported on start
+    healthcheck:
+      # The KC image ships a JDK but no curl/wget — compile a 3-line HTTP probe once, then reuse it.
+      test:
+        - CMD-SHELL
+        - >-
+          [ -f /tmp/HealthCheck.java ] ||
+          echo 'public class HealthCheck { public static void main(String[] a) throws Exception {
+          System.exit(((java.net.HttpURLConnection) new java.net.URL(a[0]).openConnection())
+          .getResponseCode() == 200 ? 0 : 1); } }' > /tmp/HealthCheck.java &&
+          java /tmp/HealthCheck.java http://localhost:9000/health/ready
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 20s

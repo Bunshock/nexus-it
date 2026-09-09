@@ -13,7 +13,7 @@ as either version changes.
 Status key: **=** same · **≠** diverges · **v2‑only** · **v1‑only** · **gap**
 (planned, not built) · **fix** (a known inconsistency to reconcile).
 
-_Last updated: 2026-09-08 — after v1 gap #4 (`GLPI_RETURN` dimension)._
+_Last updated: 2026-09-09 — after v1 `aud`-check (gap #5 code) + `local-keycloak/` harness._
 
 ---
 
@@ -34,7 +34,7 @@ _Last updated: 2026-09-08 — after v1 gap #4 (`GLPI_RETURN` dimension)._
 | Session store | in-memory, sliding ~2h idle / ~12h absolute | same | = |
 | `GET /auth/config` | issuer / clientId / scopes; `503` until configured | same | = |
 | Directory profile at login | **yes (added 2026-09-08)** — `AuthController` resolves the caller's real name + DNI via `DirectoryService.findExactByUsername`, stamps them on the session; degrades to username on a directory outage | same intent (§2.4); F1 also adds `glpiTokenSet` to `GET /me` | = (v2 also carries `glpiTokenSet`) |
-| `aud` token validation | not enforced (`JwtDecoders.fromIssuerLocation` only) | flagged as a required build task | gap (both) |
+| `aud` token validation | **enforced (2026-09-09)** — `IdpTokenValidator` adds a `JwtClaimValidator` requiring `aud` to contain `middleware.idp.client-id`; skipped only when `client-id` is blank (logged). `local-keycloak/` harness covers the reject path | flagged as a required build task, not yet built | ≠ (v1 ahead) |
 | "Nombre para mostrar" greeting override | not ported (needs its own table + endpoint) | not in scope yet | gap (both) |
 
 ## RBAC
@@ -139,3 +139,4 @@ a fork the design explicitly left open:
 | # | Item |
 |---|---|
 | 1 | v2 `backend-contract.md`/`MIDDLEWARE.md` §5.1 still shows `sedeId` in the `POST /notes` request — should switch to v1's server-resolve. |
+| 2 | v2 should port v1's `aud` `JwtClaimValidator` (`IdpTokenValidator`, 2026-09-09) when its Keycloak wiring is done — v2 still only has it "flagged as a build task". |

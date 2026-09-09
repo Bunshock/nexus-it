@@ -37,11 +37,16 @@ uses the §11 envelope: `{"error": {"code", "message", "details"}}`.
 - `GET /auth/config` → `503 IDP_NOT_CONFIGURED` if `middleware.idp.issuer-uri` is blank (real
   case today — no Keycloak reachable yet in dev). Otherwise `{issuer, clientId, scopes,
   authBackendDisplayName}`.
-- `POST /auth/login` — body: none, `Authorization: Bearer <IdP access token>`. Validates via
-  `JwtDecoders.fromIssuerLocation`, checks `APP_USER` registration (`403 USER_NOT_REGISTERED`) and
-  the allowed-group claim unless `bypass_group_check` (`403 NOT_IN_ALLOWED_GROUP`), **resolves the
-  technician's directory profile** (see next bullet), mints an opaque session token, writes
-  `AUDIT_LOGIN`. Returns `{sessionToken, expiresAt, role, sedeId, displayName, permissions[]}`.
+- `POST /auth/login` — body: none, `Authorization: Bearer <IdP access token>`. Validates the token
+  (`IdpTokenValidator`): JWKS signature + `iss` + `exp` via `JwtDecoders.fromIssuerLocation`, **plus
+  an `aud` check** — the token's `aud` must contain `middleware.idp.client-id`, so a valid
+  same-realm token minted for a *different* client is rejected `401 INVALID_IDP_TOKEN` (added
+  2026-09-09; enforced only when `client-id` is set — blank skips it with a logged warning, same
+  "blank = check off" convention as `allowed-group-name`). Then checks `APP_USER` registration
+  (`403 USER_NOT_REGISTERED`) and the allowed-group claim unless `bypass_group_check` (`403
+  NOT_IN_ALLOWED_GROUP`), **resolves the technician's directory profile** (see next bullet), mints
+  an opaque session token, writes `AUDIT_LOGIN`. Returns `{sessionToken, expiresAt, role, sedeId,
+  displayName, permissions[]}`.
   - **Directory profile snapshot** — after the registration/group gates pass, `login` calls
     `DirectoryService.findExactByUsername(username)` and stamps the resolved `fullName` +
     `dni` onto the session (`SessionStore`/`CallerPrincipal` now carry `displayName`/`dni`).
