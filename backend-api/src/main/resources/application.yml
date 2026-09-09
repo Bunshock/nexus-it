@@ -5,8 +5,9 @@ spring:
     active: dev
   flyway:
     enabled: false # enabled explicitly under the sqlserver profile below —
-                    # V1__init.sql is real T-SQL (cursors, TRY/CATCH,
-                    # information_schema queries) that H2 cannot run.
+                    # V1/V2 are SQL-Server T-SQL (IF OBJECT_ID, IDENTITY,
+                    # filtered indexes) that H2 cannot run. Repository tests use
+                    # hand-maintained H2 stand-in schemas instead.
 
 # Non-secret app policy — desktop-app-first-release CLAUDE.md §"Config files"
 # equivalents that made sense to keep server-side. Real per-org values belong

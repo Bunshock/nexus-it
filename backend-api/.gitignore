@@ -31,3 +31,6 @@ build/
 
 ### VS Code ###
 .vscode/
+
+# Local progress/resume doc — never committed (see v2 worktree convention)
+backend-api/NEXT-SESSION.md

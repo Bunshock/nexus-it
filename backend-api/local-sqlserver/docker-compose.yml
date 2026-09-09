@@ -1,0 +1,51 @@
+# Local SQL Server for validating the `sqlserver` Spring profile + the real Flyway
+# migrations (V1__init.sql / V2__config.sql) — see README.md for the runbook.
+#
+#   docker compose up -d          # starts SQL Server, creates an empty `notesit` DB
+#   docker compose down -v         # tears it down, wipes the data volume
+#
+# JDBC once up: jdbc:sqlserver://localhost:1433;databaseName=notesit;encrypt=true;trustServerCertificate=true
+# Credentials:  sa / Local_Dev_Pass123   (dev-only; never a real password)
+
+services:
+  mssql:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: nexus-it-mssql
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "Local_Dev_Pass123"
+      MSSQL_PID: "Developer"
+    ports:
+      - "1433:1433"
+    volumes:
+      - mssql-data:/var/opt/mssql
+    healthcheck:
+      # sqlcmd 18 defaults to encrypt+validate; -C trusts the instance's self-signed cert.
+      test:
+        - CMD-SHELL
+        - /opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P "$$MSSQL_SA_PASSWORD" -Q "SELECT 1" -b -o /dev/null
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 15s
+
+  # One-shot: waits for the server to be healthy, then idempotently creates the `notesit`
+  # database. Flyway creates tables *within* a database, never the database itself.
+  mssql-init:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: nexus-it-mssql-init
+    depends_on:
+      mssql:
+        condition: service_healthy
+    environment:
+      MSSQL_SA_PASSWORD: "Local_Dev_Pass123"
+    entrypoint:
+      - /bin/bash
+      - -c
+      - >
+        /opt/mssql-tools18/bin/sqlcmd -C -S mssql -U sa -P "$$MSSQL_SA_PASSWORD" -b
+        -Q "IF DB_ID('notesit') IS NULL BEGIN CREATE DATABASE notesit; PRINT 'created notesit'; END ELSE PRINT 'notesit already exists';"
+    restart: "no"
+
+volumes:
+  mssql-data:
