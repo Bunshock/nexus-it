@@ -23,6 +23,9 @@ middleware:
   session:
     idle-timeout-minutes: 120
     absolute-timeout-minutes: 720
+    sweep-interval-minutes: 5 # SessionStore.scheduledSweep cadence — proactively evict
+                              # expired in-memory sessions instead of only on next access
+    max-sessions: 50000       # last-resort ceiling; create() prunes then evicts LRU past this
   security:
     encryption-key: "" # AES-256/GCM key (base64) for smtp_password_encrypted — blank until set;
                         # generate per-deployment via `openssl rand -base64 32`, never commit a

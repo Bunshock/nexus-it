@@ -90,6 +90,73 @@ class SessionStoreTest {
         assertTrue(store.validateAndTouch(token).isEmpty());
     }
 
+    @Test
+    void sweepEvictsExpiredSessionsWithoutAnyoneTouchingThem() {
+        Instant t0 = Instant.parse("2026-09-04T10:00:00Z");
+        TestClock clock = new TestClock(t0);
+        SessionStore store = new SessionStore(30, 720, clock);
+        store.create("a", "USER", null);
+        store.create("b", "USER", null);
+        store.create("c", "USER", null);
+        assertEquals(3, store.size());
+
+        clock.advanceMinutes(31); // past the idle bound for all three
+
+        assertEquals(3, store.sweep(), "all three expired sessions evicted");
+        assertEquals(0, store.size());
+    }
+
+    @Test
+    void sweepLeavesStillLiveSessionsAlone() {
+        Instant t0 = Instant.parse("2026-09-04T10:00:00Z");
+        TestClock clock = new TestClock(t0);
+        SessionStore store = new SessionStore(30, 720, clock);
+        String stale = store.create("stale", "USER", null);
+        String live = store.create("live", "USER", null);
+
+        clock.advanceMinutes(20);
+        store.validateAndTouch(live);   // slides 'live' forward, 'stale' untouched
+        clock.advanceMinutes(15);        // stale: 35m idle (expired); live: 15m since touch (ok)
+
+        assertEquals(1, store.sweep());
+        assertTrue(store.validateAndTouch(stale).isEmpty());
+        assertTrue(store.validateAndTouch(live).isPresent());
+    }
+
+    @Test
+    void createEvictsTheLeastRecentlyUsedSessionWhenAtTheCeiling() {
+        Instant t0 = Instant.parse("2026-09-04T10:00:00Z");
+        TestClock clock = new TestClock(t0);
+        SessionStore store = new SessionStore(120, 720, 2, clock); // ceiling of 2, none expired
+
+        String a = store.create("a", "USER", null);
+        clock.advanceMinutes(1);
+        String b = store.create("b", "USER", null);
+        clock.advanceMinutes(1);
+        String c = store.create("c", "USER", null); // ceiling hit — 'a' is the LRU, drops
+
+        assertEquals(2, store.size());
+        assertTrue(store.validateAndTouch(a).isEmpty(), "oldest live session evicted to make room");
+        assertTrue(store.validateAndTouch(b).isPresent());
+        assertTrue(store.validateAndTouch(c).isPresent());
+    }
+
+    @Test
+    void createPrunesExpiredBeforeEvictingAnyLiveSessionAtTheCeiling() {
+        Instant t0 = Instant.parse("2026-09-04T10:00:00Z");
+        TestClock clock = new TestClock(t0);
+        SessionStore store = new SessionStore(30, 720, 2, clock);
+
+        store.create("expired", "USER", null);
+        clock.advanceMinutes(31);                 // 'expired' is now past the idle bound but still in the map
+        String live = store.create("live", "USER", null); // size back at the ceiling of 2
+        String fresh = store.create("fresh", "USER", null); // create() sweeps 'expired' first, so no live eviction
+
+        assertEquals(2, store.size());
+        assertTrue(store.validateAndTouch(live).isPresent());
+        assertTrue(store.validateAndTouch(fresh).isPresent());
+    }
+
     /** A mutable {@link Clock} so a single test can move time forward deterministically. */
     private static final class TestClock extends Clock {
         private Instant now;
