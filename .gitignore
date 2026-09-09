@@ -33,3 +33,6 @@ buildNumber.properties
 .classpath
 
 .vscode/
+
+# Local Phase B planning/resume doc — working notes, not a deliverable
+desktop-app/PHASE-B-PLAN.md
