@@ -198,6 +198,59 @@ public class CatalogRepository {
         }
     }
 
+    // ── Stock rollups (Base de Datos Type/Brand/Model list totals) ──────────
+    // One query per list refresh, not one per row. Map key is the Type / Brand / Model id; a
+    // missing key means 0. sedeId null = every Sede combined (SUPERADMIN's default view);
+    // non-null scopes to that one Sede. Ported verbatim from the desktop app's
+    // SqliteEquipmentService.getStockTotalsBy*.
+
+    public Map<Integer, Integer> getStockTotalsByType(Integer sedeId) {
+        if (sedeId == null) {
+            return queryStockMap(
+                    "SELECT btl.type_id, SUM(ms.stock) FROM MODEL_STOCK ms " +
+                    "JOIN BRAND_TYPE_LINK btl ON btl.id = ms.brand_type_id GROUP BY btl.type_id");
+        }
+        return queryStockMap(
+                "SELECT btl.type_id, SUM(ms.stock) FROM MODEL_STOCK ms " +
+                "JOIN BRAND_TYPE_LINK btl ON btl.id = ms.brand_type_id " +
+                "WHERE ms.sede_id = ? GROUP BY btl.type_id", sedeId);
+    }
+
+    public Map<Integer, Integer> getStockTotalsByBrandForType(int typeId, Integer sedeId) {
+        if (sedeId == null) {
+            return queryStockMap(
+                    "SELECT btl.brand_id, SUM(ms.stock) FROM MODEL_STOCK ms " +
+                    "JOIN BRAND_TYPE_LINK btl ON btl.id = ms.brand_type_id WHERE btl.type_id = ? " +
+                    "GROUP BY btl.brand_id", typeId);
+        }
+        return queryStockMap(
+                "SELECT btl.brand_id, SUM(ms.stock) FROM MODEL_STOCK ms " +
+                "JOIN BRAND_TYPE_LINK btl ON btl.id = ms.brand_type_id " +
+                "WHERE btl.type_id = ? AND ms.sede_id = ? GROUP BY btl.brand_id", typeId, sedeId);
+    }
+
+    public Map<Integer, Integer> getStockTotalsByModelForBrandAndType(int brandId, int typeId, Integer sedeId) {
+        String base = """
+                SELECT ms.model_id, SUM(ms.stock) FROM MODEL_STOCK ms
+                WHERE ms.model_id IN (
+                    SELECT m.id FROM MODEL m JOIN BRAND_TYPE_LINK btl ON btl.id = m.brand_type_id
+                    WHERE btl.type_id = ? AND btl.brand_id = ? AND m.deprecated = 0
+                    UNION
+                    SELECT m.id FROM MODEL m WHERE m.brand_type_id IS NULL AND m.deprecated = 0
+                )
+                """;
+        if (sedeId == null) {
+            return queryStockMap(base + " GROUP BY ms.model_id", typeId, brandId);
+        }
+        return queryStockMap(base + " AND ms.sede_id = ? GROUP BY ms.model_id", typeId, brandId, sedeId);
+    }
+
+    private Map<Integer, Integer> queryStockMap(String sql, Object... args) {
+        Map<Integer, Integer> out = new java.util.HashMap<>();
+        jdbc.query(sql, (java.sql.ResultSet rs) -> { out.put(rs.getInt(1), rs.getInt(2)); }, args);
+        return out;
+    }
+
     // ── Type CRUD ────────────────────────────────────────────────────────────
 
     public void addType(String name, boolean isAsset, String username) {

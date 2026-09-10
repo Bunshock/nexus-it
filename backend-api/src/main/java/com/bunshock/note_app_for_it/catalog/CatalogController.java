@@ -25,6 +25,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -53,9 +54,9 @@ public class CatalogController {
     }
 
     @GetMapping("/brands")
-    public List<CatalogBrand> brands(@RequestParam int typeId) {
+    public List<CatalogBrand> brands(@RequestParam(required = false) Integer typeId) {
         currentUser.require();
-        return catalog.getBrandsForType(typeId);
+        return typeId != null ? catalog.getBrandsForType(typeId) : catalog.getAllBrands();
     }
 
     @GetMapping("/models")
@@ -69,6 +70,30 @@ public class CatalogController {
             @RequestParam int brandId, @RequestParam int typeId, @RequestParam int sedeId) {
         currentUser.require();
         return new StockResponse(catalog.getModelStock(modelId, brandId, typeId, sedeId));
+    }
+
+    // Batched rollup totals for the Base de Datos Type/Brand/Model lists — one call per list
+    // refresh. Key = the Type/Brand/Model id; `sedeId` optional (omitted = every Sede combined,
+    // SUPERADMIN's default view). Session-only: viewing totals doesn't need MANAGE_STOCK.
+
+    @GetMapping("/stock-totals/by-type")
+    public Map<Integer, Integer> stockTotalsByType(@RequestParam(required = false) Integer sedeId) {
+        currentUser.require();
+        return catalog.getStockTotalsByType(sedeId);
+    }
+
+    @GetMapping("/stock-totals/by-brand")
+    public Map<Integer, Integer> stockTotalsByBrand(@RequestParam int typeId,
+            @RequestParam(required = false) Integer sedeId) {
+        currentUser.require();
+        return catalog.getStockTotalsByBrandForType(typeId, sedeId);
+    }
+
+    @GetMapping("/stock-totals/by-model")
+    public Map<Integer, Integer> stockTotalsByModel(@RequestParam int typeId, @RequestParam int brandId,
+            @RequestParam(required = false) Integer sedeId) {
+        currentUser.require();
+        return catalog.getStockTotalsByModelForBrandAndType(brandId, typeId, sedeId);
     }
 
     @PutMapping("/models/{modelId}/stock")

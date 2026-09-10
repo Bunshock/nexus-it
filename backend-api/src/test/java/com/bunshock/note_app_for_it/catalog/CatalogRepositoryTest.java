@@ -21,6 +21,7 @@ import org.springframework.test.context.jdbc.Sql;
 
 import java.util.Base64;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -587,6 +588,67 @@ class CatalogRepositoryTest {
         jdbc.update("INSERT INTO SEDE_SHIPPING_INFO (sede_id, destination_label, deprecated) VALUES (?, 'Viejo', 1)", otherSede);
 
         assertEquals(java.util.Set.of(sedeId), repository.getSedeIdsWithShippingInfo());
+    }
+
+    // ── all-brands + stock rollups ─────────────────────────────────────────
+
+    @Test
+    void getAllBrandsReturnsEveryActiveBrandRegardlessOfType() {
+        int hp = insertBrand("HP");
+        insertBrand("Deprecated Co");
+        jdbc.update("UPDATE BRAND SET deprecated = 1 WHERE name = 'Deprecated Co'");
+        // DELL is only linked to NOTEBOOK; HP is linked to nothing — both must still come back.
+
+        List<String> names = repository.getAllBrands().stream().map(CatalogBrand::name).toList();
+
+        assertTrue(names.contains("DELL"));
+        assertTrue(names.contains("HP"));
+        assertFalse(names.contains("Deprecated Co"));
+        assertEquals(hp, repository.getAllBrands().stream()
+                .filter(b -> b.name().equals("HP")).findFirst().orElseThrow().id());
+    }
+
+    @Test
+    void stockRollupsAggregateAndScopeBySede() {
+        int monitorType = insertType("MONITOR", true, false);
+        int hp = insertBrand("HP");
+        int otherSede = insertSede("Campus Norte");
+
+        int dellNb = insertModel(link(notebookTypeId, dellBrandId), "Latitude 5420");
+        int hpNb   = insertModel(link(notebookTypeId, hp), "EliteBook");
+        int dellMon = insertModel(link(monitorType, dellBrandId), "P2419H");
+
+        repository.setModelStock(dellNb, dellBrandId, notebookTypeId, sedeId, 10, "seed", "tester");
+        repository.setModelStock(hpNb, hp, notebookTypeId, sedeId, 4, "seed", "tester");
+        repository.setModelStock(dellMon, dellBrandId, monitorType, sedeId, 7, "seed", "tester");
+        repository.setModelStock(dellNb, dellBrandId, notebookTypeId, otherSede, 100, "seed", "tester");
+
+        // by type, scoped to sedeId: NOTEBOOK = 10 + 4, MONITOR = 7
+        assertEquals(14, repository.getStockTotalsByType(sedeId).get(notebookTypeId));
+        assertEquals(7, repository.getStockTotalsByType(sedeId).get(monitorType));
+        // by type, all Sedes combined: NOTEBOOK = 14 + 100
+        assertEquals(114, repository.getStockTotalsByType(null).get(notebookTypeId));
+
+        // by brand within NOTEBOOK, scoped: DELL = 10, HP = 4
+        assertEquals(10, repository.getStockTotalsByBrandForType(notebookTypeId, sedeId).get(dellBrandId));
+        assertEquals(4, repository.getStockTotalsByBrandForType(notebookTypeId, sedeId).get(hp));
+
+        // by model within (NOTEBOOK, DELL), scoped: the Latitude = 10
+        assertEquals(10, repository.getStockTotalsByModelForBrandAndType(dellBrandId, notebookTypeId, sedeId).get(dellNb));
+    }
+
+    @Test
+    void stockRollupByModelIncludesTheGlobalGenericModel() {
+        int link = link(notebookTypeId, dellBrandId);
+        int scoped = insertModel(link, "Latitude 5420");
+        int generic = insertGlobalGenericModel("Genérico / Otro");
+
+        repository.setModelStock(scoped, dellBrandId, notebookTypeId, sedeId, 3, "seed", "tester");
+        repository.setModelStock(generic, dellBrandId, notebookTypeId, sedeId, 5, "seed", "tester");
+
+        Map<Integer, Integer> totals = repository.getStockTotalsByModelForBrandAndType(dellBrandId, notebookTypeId, sedeId);
+        assertEquals(3, totals.get(scoped));
+        assertEquals(5, totals.get(generic));
     }
 
     private int insertProvider(String name) {
