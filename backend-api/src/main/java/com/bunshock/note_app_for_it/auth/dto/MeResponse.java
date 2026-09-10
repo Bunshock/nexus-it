@@ -7,7 +7,9 @@ public record MeResponse(
         String username,
         String role,
         Integer sedeId,
+        String sedeName, // nullable — no Sede assigned
         String fullName, // AD full name (username fallback); any cosmetic greeting override is client-local
+        String dni,      // nullable
         List<String> permissions,
         boolean registered,
         boolean bypassGroupCheck) {

@@ -13,8 +13,9 @@ import java.util.Optional;
 public class AppUserRepository {
 
     private static final String SELECT_BASE =
-            "SELECT u.username, r.name AS role, u.sede_id, u.bypass_group_check " +
-            "FROM APP_USER u JOIN ROLE r ON r.id = u.role_id ";
+            "SELECT u.username, r.name AS role, u.sede_id, s.name AS sede_name, u.bypass_group_check " +
+            "FROM APP_USER u JOIN ROLE r ON r.id = u.role_id " +
+            "LEFT JOIN SEDE s ON s.id = u.sede_id ";
 
     private final JdbcTemplate jdbc;
 
@@ -35,7 +36,8 @@ public class AppUserRepository {
         String role = rs.getString("role");
         int sedeIdRaw = rs.getInt("sede_id");
         Integer sedeId = rs.wasNull() ? null : sedeIdRaw;
+        String sedeName = rs.getString("sede_name"); // null when sede_id is null (LEFT JOIN)
         boolean bypassGroupCheck = rs.getInt("bypass_group_check") != 0;
-        return new AppUserRecord(username, role, sedeId, bypassGroupCheck);
+        return new AppUserRecord(username, role, sedeId, sedeName, bypassGroupCheck);
     }
 }

@@ -83,7 +83,7 @@ public class DevAuthController {
 
         List<String> permissions = rolePermissions.getPermissionsForRole(user.role()).stream()
                 .map(Enum::name).toList();
-        return new LoginResponse(token, sessionStore.expiresAt(token), user.role(), user.sedeId(),
-                fullName, permissions);
+        return new LoginResponse(token, sessionStore.expiresAt(token), user.username(), user.role(),
+                user.sedeId(), user.sedeName(), fullName, dni, permissions);
     }
 }

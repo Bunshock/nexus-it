@@ -37,8 +37,10 @@ public class MeController {
                 caller.username(),
                 caller.role(),
                 caller.sedeId(),
+                record.map(AppUserRecord::sedeName).orElse(null),
                 caller.fullName(), // AD full name from login (username fallback if the directory
                                     // was unreachable then). The greeting override, if any, is client-local.
+                caller.dni(),
                 permissions,
                 record.isPresent(),
                 record.map(AppUserRecord::bypassGroupCheck).orElse(false));

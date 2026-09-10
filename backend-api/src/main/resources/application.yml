@@ -1,8 +1,12 @@
 spring:
   application:
     name: note-app-for-it
-  profiles:
-    active: dev
+  # No default active profile — deliberate. A profile MUST be chosen explicitly:
+  #   - production: SPRING_PROFILES_ACTIVE=sqlserver (the datasource only exists there;
+  #     forgetting it now fails startup loudly instead of silently falling back to dev).
+  #   - local dev:  pinned to `dev` by the spring-boot-maven-plugin config (mvn spring-boot:run)
+  #     and by the surefire config (test run). The `dev` profile is what enables H2 + the
+  #     dev seed + POST /auth/dev-login, so it must never be the default a package could inherit.
   flyway:
     enabled: false # enabled explicitly under the sqlserver profile below —
                     # V1/V2 are SQL-Server T-SQL (IF OBJECT_ID, IDENTITY,
