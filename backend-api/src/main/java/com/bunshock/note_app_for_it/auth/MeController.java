@@ -44,9 +44,8 @@ public class MeController {
                 caller.username(),
                 caller.role(),
                 caller.sedeId(),
-                caller.username(), // TODO(Phase B): real display-name preference, ported from
-                                    // TechnicianSessionService.getDisplayName() — the session
-                                    // only carries username/role/sedeId today.
+                caller.fullName(), // AD full name from login (username fallback if the directory
+                                    // was unreachable then). The greeting override, if any, is client-local.
                 permissions,
                 record.isPresent(),
                 record.map(AppUserRecord::bypassGroupCheck).orElse(false));

@@ -160,4 +160,51 @@ class DirectoryServiceTest {
         assertEquals(1, results.size(), "'juan.perez' typed must still match stored 'juan-perez'");
         assertEquals("juan-perez", results.get(0).username());
     }
+
+    // ── findExactByUsername (login-time profile snapshot) ────────────────────
+
+    @Test
+    void findExactByUsernameReturnsOnlyTheCaseInsensitiveExactAccount() {
+        FakeAdApiClient fake = new FakeAdApiClient();
+        // The loose API returns the real account plus a substring neighbour.
+        fake.responder = k -> List.of(
+                user("jperez", "Perez, Juan", "45933368", "jp@x.com", "OU=Cau"),
+                user("jpereznandez", "Pereznandez, Jose", "11111111", "jn@x.com", null));
+        DirectoryService service = new DirectoryService(fake, configured());
+
+        var resolved = service.findExactByUsername("JPEREZ");
+
+        assertTrue(resolved.isPresent());
+        assertEquals("jperez", resolved.get().username());
+        assertEquals("Perez Juan", resolved.get().fullName());
+        assertEquals("45933368", resolved.get().dni());
+    }
+
+    @Test
+    void findExactByUsernameIsEmptyWhenOnlySubstringMatchesComeBack() {
+        FakeAdApiClient fake = new FakeAdApiClient();
+        fake.responder = k -> List.of(user("jpereznandez", "Pereznandez, Jose", "11111111", "jn@x.com", null));
+        DirectoryService service = new DirectoryService(fake, configured());
+
+        assertTrue(service.findExactByUsername("jperez").isEmpty(),
+                "a substring hit must never be mistaken for the caller's own account");
+    }
+
+    @Test
+    void findExactByUsernameIsEmptyForBlankAndNeverHitsTheDirectory() {
+        FakeAdApiClient fake = new FakeAdApiClient();
+        DirectoryService service = new DirectoryService(fake, configured());
+
+        assertTrue(service.findExactByUsername("  ").isEmpty());
+        assertTrue(fake.calls.isEmpty());
+    }
+
+    @Test
+    void findExactByUsernamePropagatesTheDirectoryUnavailableError() {
+        // AuthController relies on this being an ApiException it can catch to degrade gracefully.
+        DirectoryService service = new DirectoryService(new FakeAdApiClient(), new DirectoryProperties());
+
+        ApiException ex = assertThrows(ApiException.class, () -> service.findExactByUsername("jperez"));
+        assertEquals("DIRECTORY_NOT_CONFIGURED", ex.getCode());
+    }
 }

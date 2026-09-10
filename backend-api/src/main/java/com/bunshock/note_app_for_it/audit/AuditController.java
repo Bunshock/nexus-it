@@ -16,10 +16,16 @@ import java.util.List;
 /**
  * §6 — read-only. No dedicated {@code VIEW_AUDIT} permission exists in the ported 12-value
  * {@code Permission} enum (audit reading was never an in-app UI feature in the desktop app's own
- * history — see the "Audit logging and SUPERADMIN role" / "Audit trail" sections of its
- * CLAUDE.md), so this gates on role directly (`ADMIN`/`SUPERADMIN`) rather than a permission.
- * **Not Sede-scoped in v1** — any admin sees every Sede's audit rows; revisit if that turns out
- * to matter once there's a real audit-reading UI to try it against.
+ * history), so this gates on role directly rather than a permission.
+ *
+ * <p><b>v1: SUPERADMIN only.</b> The target contract (§7.5 H4) wants a plain ADMIN to see their
+ * own Sede's audit rows and a SUPERADMIN to see all. But only {@code /audit/item-status} has a
+ * clean Sede link ({@code NOTE_ITEM} → {@code NOTE_REPORT.sede_id}); {@code /audit/login} (an
+ * auth event, username only) and {@code /audit/admin-actions} (generic {@code target_type}/
+ * {@code target_id} text) have no reliable per-row Sede. Rather than invent a fuzzy Sede
+ * inference for an audit-reading UI that doesn't exist yet, v1 restricts all three to
+ * SUPERADMIN — which also makes the "plain ADMIN never reads another Sede's data" invariant
+ * hold trivially. Per-endpoint Sede scoping is the intended end state once there's a real UI.
  */
 @RestController
 @RequestMapping("/api/v1/audit")
@@ -39,7 +45,7 @@ public class AuditController {
             @RequestParam(required = false) Integer itemId,
             @RequestParam(required = false) Integer page,
             @RequestParam(required = false) Integer size) {
-        requireAdmin();
+        requireSuperadmin();
         return audit.getItemStatusAudit(noteId, itemId, page, size);
     }
 
@@ -48,7 +54,7 @@ public class AuditController {
             @RequestParam(required = false) String username,
             @RequestParam(required = false) Integer page,
             @RequestParam(required = false) Integer size) {
-        requireAdmin();
+        requireSuperadmin();
         return audit.getLoginAudit(username, page, size);
     }
 
@@ -58,13 +64,13 @@ public class AuditController {
             @RequestParam(required = false) String targetType,
             @RequestParam(required = false) Integer page,
             @RequestParam(required = false) Integer size) {
-        requireAdmin();
+        requireSuperadmin();
         return audit.getAdminActionAudit(actor, targetType, page, size);
     }
 
-    private void requireAdmin() {
+    private void requireSuperadmin() {
         CallerPrincipal caller = currentUser.require();
-        if (!"ADMIN".equals(caller.role()) && !"SUPERADMIN".equals(caller.role())) {
+        if (!caller.isSuperadmin()) {
             throw ApiException.forbidden("PERMISSION_DENIED", "No tiene permiso para ver la auditoría.");
         }
     }

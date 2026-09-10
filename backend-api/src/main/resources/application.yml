@@ -1,12 +1,17 @@
 spring:
   application:
     name: note-app-for-it
-  profiles:
-    active: dev
+  # No default active profile — deliberate. A profile MUST be chosen explicitly:
+  #   - production: SPRING_PROFILES_ACTIVE=sqlserver (the datasource only exists there;
+  #     forgetting it now fails startup loudly instead of silently falling back to dev).
+  #   - local dev:  pinned to `dev` by the spring-boot-maven-plugin config (mvn spring-boot:run)
+  #     and by the surefire config (test run). The `dev` profile is what enables H2 + the
+  #     dev seed + POST /auth/dev-login, so it must never be the default a package could inherit.
   flyway:
     enabled: false # enabled explicitly under the sqlserver profile below —
-                    # V1__init.sql is real T-SQL (cursors, TRY/CATCH,
-                    # information_schema queries) that H2 cannot run.
+                    # V1/V2 are SQL-Server T-SQL (IF OBJECT_ID, IDENTITY,
+                    # filtered indexes) that H2 cannot run. Repository tests use
+                    # hand-maintained H2 stand-in schemas instead.
 
 # Non-secret app policy — desktop-app-first-release CLAUDE.md §"Config files"
 # equivalents that made sense to keep server-side. Real per-org values belong
@@ -22,6 +27,9 @@ middleware:
   session:
     idle-timeout-minutes: 120
     absolute-timeout-minutes: 720
+    sweep-interval-minutes: 5 # SessionStore.scheduledSweep cadence — proactively evict
+                              # expired in-memory sessions instead of only on next access
+    max-sessions: 50000       # last-resort ceiling; create() prunes then evicts LRU past this
   security:
     encryption-key: "" # AES-256/GCM key (base64) for smtp_password_encrypted — blank until set;
                         # generate per-deployment via `openssl rand -base64 32`, never commit a
@@ -94,3 +102,12 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
+
+# The OpenAPI spec + Swagger UI are a dev convenience only — not published on the
+# deployed instance. The contract lives in backend-contract.md; the running API
+# shape shouldn't be an unauthenticated endpoint in production.
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false

@@ -144,12 +144,28 @@
 				<groupId>org.springframework.boot</groupId>
 				<artifactId>spring-boot-maven-plugin</artifactId>
 				<configuration>
+					<!-- `mvn spring-boot:run` uses the dev profile locally. application.yml has no
+					     default profile, so a packaged jar / a prod launch does NOT inherit this. -->
+					<profiles>
+						<profile>dev</profile>
+					</profiles>
 					<excludes>
 						<exclude>
 							<groupId>org.projectlombok</groupId>
 							<artifactId>lombok</artifactId>
 						</exclude>
 					</excludes>
+				</configuration>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-surefire-plugin</artifactId>
+				<configuration>
+					<!-- Tests run under the dev profile (H2 + the test @Sql stand-in schemas).
+					     application.yml no longer defaults to it, so pin it here for the test JVM. -->
+					<systemPropertyVariables>
+						<spring.profiles.active>dev</spring.profiles.active>
+					</systemPropertyVariables>
 				</configuration>
 			</plugin>
 			<plugin>

@@ -7,7 +7,7 @@ public record MeResponse(
         String username,
         String role,
         Integer sedeId,
-        String displayName,
+        String fullName, // AD full name (username fallback); any cosmetic greeting override is client-local
         List<String> permissions,
         boolean registered,
         boolean bypassGroupCheck) {

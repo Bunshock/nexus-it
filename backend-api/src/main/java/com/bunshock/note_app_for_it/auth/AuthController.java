@@ -5,6 +5,8 @@ import com.bunshock.note_app_for_it.auth.dto.AuthConfigResponse;
 import com.bunshock.note_app_for_it.auth.dto.LoginResponse;
 import com.bunshock.note_app_for_it.common.security.SessionStore;
 import com.bunshock.note_app_for_it.common.web.ApiException;
+import com.bunshock.note_app_for_it.directory.DirectoryService;
+import com.bunshock.note_app_for_it.directory.dto.DirectoryUser;
 import com.bunshock.note_app_for_it.rbac.AppUserRecord;
 import com.bunshock.note_app_for_it.rbac.AppUserRepository;
 import com.bunshock.note_app_for_it.rbac.RolePermissionRepository;
@@ -26,16 +28,19 @@ public class AuthController {
     private final RolePermissionRepository rolePermissions;
     private final SessionStore sessionStore;
     private final AuditRepository auditRepository;
+    private final DirectoryService directoryService;
 
     public AuthController(IdpProperties idpProperties, IdpTokenValidator tokenValidator,
             AppUserRepository appUsers, RolePermissionRepository rolePermissions,
-            SessionStore sessionStore, AuditRepository auditRepository) {
+            SessionStore sessionStore, AuditRepository auditRepository,
+            DirectoryService directoryService) {
         this.idpProperties = idpProperties;
         this.tokenValidator = tokenValidator;
         this.appUsers = appUsers;
         this.rolePermissions = rolePermissions;
         this.sessionStore = sessionStore;
         this.auditRepository = auditRepository;
+        this.directoryService = directoryService;
     }
 
     @GetMapping("/config")
@@ -78,15 +83,34 @@ public class AuthController {
                     "No tiene permisos para usar esta aplicación.");
         }
 
-        String token = sessionStore.create(user.username(), user.role(), user.sedeId());
+        // Active Directory identity snapshot, taken once here (§7.6 — mirrors the desktop app's
+        // TechnicianSessionService resolving identity at session start, not per action). Stamped
+        // into the session so note creation reads a real name/DNI without a per-note lookup, and
+        // returned to the client as the default greeting name. A cosmetic greeting override
+        // ("call me X") is a desktop-client-local preference — it never reaches the middleware,
+        // and technician_name on a note is always this AD value.
+        // Best-effort: a directory outage must never block login — degrade to username + no DNI.
+        String fullName = user.username();
+        String dni = null;
+        try {
+            DirectoryUser profile = directoryService.findExactByUsername(username).orElse(null);
+            if (profile != null) {
+                if (profile.fullName() != null && !profile.fullName().isBlank()) {
+                    fullName = profile.fullName();
+                }
+                dni = profile.dni();
+            }
+        } catch (ApiException directoryUnavailable) {
+            // DIRECTORY_NOT_CONFIGURED (503) / DIRECTORY_UNAVAILABLE (502) — login still succeeds.
+        }
+
+        String token = sessionStore.create(user.username(), user.role(), user.sedeId(), fullName, dni);
         auditRepository.recordLogin(username, true, null);
 
         List<String> permissions = rolePermissions.getPermissionsForRole(user.role()).stream()
                 .map(Enum::name).toList();
-        // displayName is just the username for now — see MeController's matching TODO for the
-        // real "Nombre para mostrar" preference, not yet ported (Phase B).
         return new LoginResponse(token, sessionStore.expiresAt(token), user.role(), user.sedeId(),
-                user.username(), permissions);
+                fullName, permissions);
     }
 
     @PostMapping("/logout")
