@@ -12,6 +12,7 @@ import com.bunshock.note_app_for_it_frontend.services.auth.AdApiService;
 import com.bunshock.note_app_for_it_frontend.services.auth.IADService;
 import com.bunshock.note_app_for_it_frontend.services.catalog.CachingEquipmentService;
 import com.bunshock.note_app_for_it_frontend.services.catalog.IEquipmentService;
+import com.bunshock.note_app_for_it_frontend.services.catalog.RestEquipmentService;
 import com.bunshock.note_app_for_it_frontend.services.catalog.SqliteEquipmentService;
 import com.bunshock.note_app_for_it_frontend.services.history.CachingHistoryService;
 import com.bunshock.note_app_for_it_frontend.services.history.GLPIServiceStub;
@@ -29,6 +30,11 @@ public class ServiceLocator {
     // volatile: retryRemoteConnectionIfDown() can reassign these from the status-monitor's
     // background thread while the FX thread reads them.
     private volatile IEquipmentService equipmentService;
+    // Phase B bridge: the Base de Datos admin section + Settings' S/N panel talk to the middleware
+    // catalog now, while note generation still reads the local `equipmentService` for one more
+    // slice (the note-item type/brand/model ids must match the local NOTE_ITEM FK targets until
+    // notes move too). Both go away in the notes slice — equipmentService becomes the REST one.
+    private IEquipmentService catalogAdminService;
     private IADService adService;
     private IGLPIService glpiService;
     private IEmailService emailService;
@@ -55,8 +61,9 @@ public class ServiceLocator {
         SqliteEquipmentService localEquipment = new SqliteEquipmentService();
         SqliteHistoryService localHistory     = new SqliteHistoryService();
 
-        equipmentService = localEquipment;
-        historyService   = localHistory;
+        equipmentService     = localEquipment;
+        catalogAdminService  = new RestEquipmentService(MiddlewareClient.getInstance());
+        historyService       = localHistory;
         // Local-only, deliberately — no remote-first CachingAuditService wrapper yet, same
         // reasoning as APP_SETTINGS staying local-only regardless of remote config. See
         // IAuditService's Javadoc.
@@ -182,6 +189,9 @@ public class ServiceLocator {
     }
 
     public IEquipmentService getEquipmentService() { return equipmentService; }
+    /** Phase B bridge — the middleware-backed catalog, used by Base de Datos admin + Settings' S/N
+     * panel while note generation still uses the local {@link #getEquipmentService()}. */
+    public IEquipmentService getCatalogAdminService() { return catalogAdminService; }
     public IADService        getAdService()         { return adService; }
     public IGLPIService      getGlpiService()       { return glpiService; }
     public IEmailService     getEmailService()      { return emailService; }
@@ -191,6 +201,7 @@ public class ServiceLocator {
     public boolean           isRemoteConnected()    { return remoteConnected; }
 
     public void setEquipmentService(IEquipmentService s) { equipmentService = s; }
+    public void setCatalogAdminService(IEquipmentService s) { catalogAdminService = s; }
     public void setAdService(IADService s)               { adService = s; }
     public void setHistoryService(IHistoryService s)     { historyService = s; }
     public void setAuditService(IAuditService s)         { auditService = s; }

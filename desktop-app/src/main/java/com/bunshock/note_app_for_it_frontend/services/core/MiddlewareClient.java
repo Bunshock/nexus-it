@@ -7,6 +7,7 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -80,26 +81,40 @@ public class MiddlewareClient {
     // ── typed calls ─────────────────────────────────────────────────────────
 
     public <T> T get(String path, Class<T> responseType) {
-        return exchange("GET", path, null, responseType, null);
+        return parse(send("GET", path, null, null), responseType);
+    }
+
+    public <T> T get(String path, TypeReference<T> responseType) {
+        return parse(send("GET", path, null, null), responseType);
     }
 
     public <T> T post(String path, Object body, Class<T> responseType) {
-        return exchange("POST", path, body, responseType, null);
+        return parse(send("POST", path, body, null), responseType);
     }
 
     public void post(String path, Object body) {
-        exchange("POST", path, body, Void.class, null);
+        send("POST", path, body, null);
+    }
+
+    public void put(String path, Object body) {
+        send("PUT", path, body, null);
+    }
+
+    public void delete(String path) {
+        send("DELETE", path, null, null);
     }
 
     /** For {@code POST /auth/login}: authenticates with a caller-supplied bearer (the IdP access
      * token), not the session token — there is no session yet. */
     public <T> T postWithBearer(String path, Object body, Class<T> responseType, String bearer) {
-        return exchange("POST", path, body, responseType, bearer);
+        return parse(send("POST", path, body, bearer), responseType);
     }
 
     // ── core ───────────────────────────────────────────────────────────────
 
-    private <T> T exchange(String method, String path, Object body, Class<T> responseType, String bearerOverride) {
+    /** Builds and fires the request, applies the 401→re-login hook, and throws the §11 envelope
+     * exception on any non-2xx. Returns the raw 2xx body ({@code null}/blank for a no-content response). */
+    private String send(String method, String path, Object body, String bearerOverride) {
         if (baseUrl == null) {
             throw new MiddlewareException(0, "NOT_CONFIGURED", "El servidor no está configurado (middleware.baseUrl).");
         }
@@ -130,17 +145,8 @@ public class MiddlewareClient {
         }
 
         int status = response.statusCode();
-        String raw = response.body();
-
         if (status >= 200 && status < 300) {
-            if (responseType == Void.class || raw == null || raw.isBlank()) {
-                return null;
-            }
-            try {
-                return mapper.readValue(raw, responseType);
-            } catch (Exception e) {
-                throw new MiddlewareException(status, "PARSE", "Respuesta del servidor ilegible.", e);
-            }
+            return response.body();
         }
 
         if (status == 401 && sessionAttached) {
@@ -150,8 +156,29 @@ public class MiddlewareClient {
                 Platform.runLater(hook);
             }
         }
+        throw toEnvelopeException(status, response.body());
+    }
 
-        throw toEnvelopeException(status, raw);
+    private <T> T parse(String raw, Class<T> type) {
+        if (type == Void.class || raw == null || raw.isBlank()) {
+            return null;
+        }
+        try {
+            return mapper.readValue(raw, type);
+        } catch (Exception e) {
+            throw new MiddlewareException(0, "PARSE", "Respuesta del servidor ilegible.", e);
+        }
+    }
+
+    private <T> T parse(String raw, TypeReference<T> type) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        try {
+            return mapper.readValue(raw, type);
+        } catch (Exception e) {
+            throw new MiddlewareException(0, "PARSE", "Respuesta del servidor ilegible.", e);
+        }
     }
 
     private MiddlewareException toEnvelopeException(int status, String raw) {

@@ -75,6 +75,15 @@ public interface IEquipmentService {
 
     void setModelStock(int modelId, int brandId, int typeId, int sedeId, int stock);
 
+    /**
+     * Stock write with a change reason. The middleware requires one (it writes the AUDIT_STOCK
+     * row itself); the local SQLite implementation ignores it here because the Base de Datos
+     * dialogs record the audit row separately. Overridden by {@code RestEquipmentService}.
+     */
+    default void setModelStock(int modelId, int brandId, int typeId, int sedeId, int stock, String reason) {
+        setModelStock(modelId, brandId, typeId, sedeId, stock);
+    }
+
     // Delta-based, unlike setModelStock()'s absolute value — used by a Remito's stock movement on
     // approval (decrement the source Sede, increment the destination Sede). Implementations must
     // read-then-write inside one transaction so two concurrent adjustments to the same
