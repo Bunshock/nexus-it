@@ -13,6 +13,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -27,7 +28,12 @@ public class HttpAdApiClient implements AdApiClient {
     private static final String USERS_PATH = "/api/v1/ad/users";
 
     private final DirectoryProperties properties;
-    private final HttpClient http = HttpClient.newHttpClient();
+    // Bounded so an unreachable directory host fails fast (a hang would stall GET /status and
+    // GET /directory/users) — a transport timeout surfaces as DIRECTORY_UNAVAILABLE like any
+    // other connection failure.
+    private final HttpClient http = HttpClient.newBuilder()
+            .connectTimeout(Duration.ofSeconds(5))
+            .build();
     private final ObjectMapper mapper = new ObjectMapper();
 
     public HttpAdApiClient(DirectoryProperties properties) {
@@ -49,6 +55,7 @@ public class HttpAdApiClient implements AdApiClient {
 
             HttpRequest request = HttpRequest.newBuilder(URI.create(url))
                     .header("Authorization", "Bearer " + properties.getToken())
+                    .timeout(Duration.ofSeconds(8))
                     .GET()
                     .build();
 
