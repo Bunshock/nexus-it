@@ -26,6 +26,7 @@ public class AppConfig {
     public CatalogConfig catalog = new CatalogConfig();
     public AdAccessConfig adAccess = new AdAccessConfig();
     public UpdatesConfig updates;
+    public MiddlewareConfig middleware;
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class AfFormat {
@@ -115,5 +116,16 @@ public class AppConfig {
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class UpdatesConfig {
         public String manifestPath;
+    }
+
+    /**
+     * The one backend the app talks to (Phase B — REST client). {@code baseUrl} is the middleware
+     * root, e.g. {@code http://localhost:8080} or {@code https://nexus-it.example.org}. Not a
+     * secret. Everything else the app used to configure locally (AD/GLPI/SMTP/DB credentials)
+     * lives server-side in the middleware now.
+     */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class MiddlewareConfig {
+        public String baseUrl;
     }
 }

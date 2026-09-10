@@ -32,6 +32,9 @@
     "port" : 1433,
     "dbName" : ""
   },
+  "middleware" : {
+    "baseUrl" : "http://localhost:8080"
+  },
   "noteItemLimit" : 8,
   "catalog" : {
     "genericLabel" : "Genérico / Otro"
