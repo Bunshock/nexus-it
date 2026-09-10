@@ -87,7 +87,10 @@ public class DatabaseSectionController {
     private boolean suppressSelectionListeners = false;
 
     public void initialize() {
-        equipmentService = ServiceLocator.getInstance().getEquipmentService();
+        // Phase B: Base de Datos admin talks to the middleware catalog (audits server-side,
+        // enforces permissions/Sede-scoping server-side). Note generation still reads the local
+        // catalog for one more slice — see ServiceLocator's bridge note.
+        equipmentService = ServiceLocator.getInstance().getCatalogAdminService();
         loadConnectionDisplay();
         initStockSedeSelector();
         refreshTypes();
@@ -658,7 +661,6 @@ public class DatabaseSectionController {
         if (sel == null) return;
         requirePermission(Permission.MANAGE_BRANDS, () -> openRenameDialog(sel.getName(), newName -> {
             equipmentService.renameBrand(sel.getId(), newName);
-            auditCatalogAction("RENAME_BRAND", "BRAND", String.valueOf(sel.getId()), sel.getName(), newName);
             EquipmentType type = listTypes.getSelectionModel().getSelectedItem();
             if (type != null) refreshBrandsForType(type.getId());
         }));
@@ -696,7 +698,6 @@ public class DatabaseSectionController {
             if (!confirmDelete(sel.getName())) return;
             try {
                 equipmentService.removeType(sel.getId());
-                auditCatalogAction("REMOVE_TYPE", "TYPE", String.valueOf(sel.getId()), sel.getName(), null);
                 refreshTypes();
             }
             catch (Exception e) { showErrorDialog("Error al eliminar", e.getMessage()); }
@@ -711,7 +712,6 @@ public class DatabaseSectionController {
             if (!confirmDelete(sel.getName())) return;
             try {
                 equipmentService.removeBrand(sel.getId());
-                auditCatalogAction("REMOVE_BRAND", "BRAND", String.valueOf(sel.getId()), sel.getName(), null);
                 EquipmentType type = listTypes.getSelectionModel().getSelectedItem();
                 if (type != null) refreshBrandsForType(type.getId());
             } catch (Exception e) { showErrorDialog("Error al eliminar", e.getMessage()); }
@@ -726,7 +726,6 @@ public class DatabaseSectionController {
             if (!confirmDelete(sel.getName())) return;
             try {
                 equipmentService.removeModel(sel.getId());
-                auditCatalogAction("REMOVE_MODEL", "MODEL", String.valueOf(sel.getId()), sel.getName(), null);
                 EquipmentType  type  = listTypes.getSelectionModel().getSelectedItem();
                 EquipmentBrand brand = listBrands.getSelectionModel().getSelectedItem();
                 if (type != null && brand != null) refreshModelsForBrandType(brand.getId(), type.getId());
@@ -856,7 +855,6 @@ public class DatabaseSectionController {
                 triggerFieldError(lblError, ex.getMessage());
                 return;
             }
-            auditCatalogAction("ADD_TYPE", "TYPE", name, null, name);
             if (isAsset && chkRequiresSerial.isSelected()) {
                 equipmentService.getAllTypes().stream()
                     .filter(t -> t.getName().equalsIgnoreCase(name))
@@ -911,12 +909,9 @@ public class DatabaseSectionController {
                     triggerFieldError(lblError, ex.getMessage());
                     return;
                 }
-                auditCatalogAction("RENAME_TYPE", "TYPE", String.valueOf(type.getId()), type.getName(), newName);
             }
             if (type.isAsset() && chkRequiresSerial.isSelected() != type.isRequiresSerial()) {
                 equipmentService.setRequiresSerial(type.getId(), chkRequiresSerial.isSelected());
-                auditCatalogAction("SET_REQUIRES_SERIAL", "TYPE", String.valueOf(type.getId()),
-                    String.valueOf(type.isRequiresSerial()), String.valueOf(chkRequiresSerial.isSelected()));
             }
             refreshTypes();
             stage.close();
@@ -979,7 +974,6 @@ public class DatabaseSectionController {
                 triggerFieldError(lblErrorName, ex.getMessage());
                 return;
             }
-            auditCatalogAction("ADD_BRAND", "BRAND", name, null, name, "Tipo: " + type.getName());
             EquipmentType selType = listTypes.getSelectionModel().getSelectedItem();
             if (selType != null && selType.getId() == type.getId())
                 refreshBrandsForType(type.getId());
@@ -1078,19 +1072,18 @@ public class DatabaseSectionController {
                 triggerFieldError(lblErrorName, ex.getMessage());
                 return;
             }
-            auditCatalogAction("ADD_MODEL", "MODEL", name, null, name,
-                "Tipo: " + type.getName() + ", Marca: " + brand.getName());
             // addModel() doesn't return the new/reactivated row's id — resolve it the same way
             // the catalog itself would (name match within this brand+type scope) rather than
             // guessing at what id it landed on.
-            equipmentService.getModelsForBrandAndType(brand.getId(), type.getId()).stream()
-                .filter(m -> m.getName().equalsIgnoreCase(name))
-                .mapToInt(EquipmentModel::getId)
-                .findFirst()
-                .ifPresent(newModelId -> {
-                    int stock = tfStock.getText().isBlank() ? 0 : Integer.parseInt(tfStock.getText().trim());
-                    equipmentService.setModelStock(newModelId, brand.getId(), type.getId(), currentStockSedeId, stock);
-                });
+            int initialStock = tfStock.getText().isBlank() ? 0 : Integer.parseInt(tfStock.getText().trim());
+            if (initialStock > 0 && currentStockSedeId != null) {
+                equipmentService.getModelsForBrandAndType(brand.getId(), type.getId()).stream()
+                    .filter(m -> m.getName().equalsIgnoreCase(name))
+                    .mapToInt(EquipmentModel::getId)
+                    .findFirst()
+                    .ifPresent(newModelId -> equipmentService.setModelStock(
+                        newModelId, brand.getId(), type.getId(), currentStockSedeId, initialStock, "Stock inicial"));
+            }
             EquipmentType  selT = listTypes.getSelectionModel().getSelectedItem();
             EquipmentBrand selB = listBrands.getSelectionModel().getSelectedItem();
             if (selT != null && selB != null
@@ -1169,20 +1162,17 @@ public class DatabaseSectionController {
                     triggerFieldError(lblErrorName, ex.getMessage());
                     return;
                 }
-                auditCatalogAction("RENAME_MODEL", "MODEL", String.valueOf(model.getId()), model.getName(), newName);
             }
-            // A rename swaps to a different MODEL row id (renameModel() deprecates the old one
-            // and creates/reactivates a replacement) — resolve the current id fresh rather than
-            // reusing model.getId(), or the stock below would land on the now-deprecated row.
-            int targetModelId = equipmentService.getModelsForBrandAndType(brandId, typeId).stream()
-                .filter(m -> m.getName().equalsIgnoreCase(newName))
-                .mapToInt(EquipmentModel::getId)
-                .findFirst()
-                .orElse(model.getId());
-            equipmentService.setModelStock(targetModelId, brandId, typeId, currentStockSedeId, newStock);
             if (newStock != oldStock) {
-                ServiceLocator.getInstance().getAuditService().recordStockChange(brandId, typeId, targetModelId,
-                    currentStockSedeId, TechnicianSessionService.getInstance().getUsername(), oldStock, newStock, reason);
+                // A rename swaps to a different MODEL row id (renameModel() deprecates the old one
+                // and creates/reactivates a replacement) — resolve the current id fresh rather than
+                // reusing model.getId(), or the stock below would land on the now-deprecated row.
+                int targetModelId = equipmentService.getModelsForBrandAndType(brandId, typeId).stream()
+                    .filter(m -> m.getName().equalsIgnoreCase(newName))
+                    .mapToInt(EquipmentModel::getId)
+                    .findFirst()
+                    .orElse(model.getId());
+                equipmentService.setModelStock(targetModelId, brandId, typeId, currentStockSedeId, newStock, reason);
             }
             refreshModelsForBrandType(brandId, typeId);
             refreshStockRollupsOnly(typeId);
@@ -1242,10 +1232,8 @@ public class DatabaseSectionController {
                 triggerFieldError(lblErrorReason, "Debe indicar el motivo del cambio de stock");
                 return;
             }
-            equipmentService.setModelStock(model.getId(), brandId, typeId, currentStockSedeId, newStock);
             if (newStock != oldStock) {
-                ServiceLocator.getInstance().getAuditService().recordStockChange(brandId, typeId, model.getId(),
-                    currentStockSedeId, TechnicianSessionService.getInstance().getUsername(), oldStock, newStock, reason);
+                equipmentService.setModelStock(model.getId(), brandId, typeId, currentStockSedeId, newStock, reason);
             }
             refreshModelsForBrandType(brandId, typeId);
             refreshStockRollupsOnly(typeId);
@@ -1269,21 +1257,6 @@ public class DatabaseSectionController {
     private TextFormatter<String> stockReasonFormatter() {
         return new TextFormatter<>(change ->
             change.getControlNewText().length() <= STOCK_REASON_MAX_LENGTH ? change : null);
-    }
-
-    // Shared within this file only — every catalog CRUD action (Type/Brand/Model add/rename/
-    // remove) funnels through here so the 9 call sites stay one-liners instead of repeating
-    // ServiceLocator/TechnicianSessionService lookups each time.
-    private void auditCatalogAction(String action, String targetType, String targetId,
-            String oldValue, String newValue) {
-        auditCatalogAction(action, targetType, targetId, oldValue, newValue, null);
-    }
-
-    private void auditCatalogAction(String action, String targetType, String targetId,
-            String oldValue, String newValue, String reason) {
-        ServiceLocator.getInstance().getAuditService().recordAdminAction(
-            TechnicianSessionService.getInstance().getUsername(), action, targetType, targetId,
-            oldValue, newValue, reason);
     }
 
     private void openRenameDialog(String currentName, java.util.function.Consumer<String> onSave) {

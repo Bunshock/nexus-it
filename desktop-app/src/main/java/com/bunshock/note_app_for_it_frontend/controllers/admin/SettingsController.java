@@ -108,7 +108,9 @@ public class SettingsController {
     private FilteredList<SnValidationRow>   filteredSnRows;
 
     public void initialize() {
-        equipmentService = ServiceLocator.getInstance().getEquipmentService();
+        // Phase B: the S/N Validation panel (the only thing here that touches the catalog) reads
+        // and writes through the middleware; it audits the EDIT_SN_VALIDATION action server-side.
+        equipmentService = ServiceLocator.getInstance().getCatalogAdminService();
 
         AppConfig config = ConfigService.getInstance().getConfig();
         txtAfPrefix.setText(config.afFormat.prefix);
@@ -717,11 +719,6 @@ public class SettingsController {
             }
             equipmentService.upsertSnValidation(row.getModelId(),
                 newRegex.isEmpty() ? null : newRegex, chkActive.isSelected());
-            ServiceLocator.getInstance().getAuditService().recordAdminAction(
-                TechnicianSessionService.getInstance().getUsername(), "EDIT_SN_VALIDATION", "SN_VALIDATION",
-                String.valueOf(row.getModelId()),
-                "regex=" + row.getRegex() + ", activa=" + row.isActive(),
-                "regex=" + newRegex + ", activa=" + chkActive.isSelected(), null);
             saved[0] = true;
             stage.close();
         });

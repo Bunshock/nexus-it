@@ -33,6 +33,7 @@ class SettingsViewFxmlTest {
         // setupSnTable() never dereferenced equipmentService synchronously during
         // initialize(), so this test never needed one.
         ServiceLocator.getInstance().setEquipmentService(new MockEquipmentService());
+        ServiceLocator.getInstance().setCatalogAdminService(new MockEquipmentService());
     }
 
     @Test
