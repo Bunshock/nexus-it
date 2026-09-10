@@ -49,9 +49,17 @@ spring:
   h2:
     console:
       enabled: true
-  # No Flyway migration runs in dev — V1__init.sql is SQL-Server-only T-SQL.
-  # This profile is for booting the app and exercising the auth/security
-  # wiring only, not for exercising real catalog/notes SQL against H2.
+  # Flyway (V1/V2) is SQL-Server-only T-SQL and can't run on H2. Instead, dev boots against a
+  # hand-maintained H2 mirror + a small seed so `mvn spring-boot:run` (and the Phase B desktop
+  # client that develops against it) has a real, populated DB with no Docker. Both scripts are
+  # idempotent. This is dev-only — @JdbcTest slices ignore spring.sql.init and keep using their
+  # own @Sql stand-in schemas; the one full-context test (@SpringBootTest, dev profile) does run
+  # these, which doubles as a smoke check that the mirror stays H2-valid.
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:dev-schema.sql
+      data-locations: classpath:dev-seed.sql
 
 ---
 spring:

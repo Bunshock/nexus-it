@@ -41,6 +41,9 @@ public class SecurityConfig {
                         .requestMatchers(
                                 "/api/v1/auth/config",
                                 "/api/v1/auth/login",
+                                // dev profile only — DevAuthController is @Profile("dev"),
+                                // so this route simply doesn't exist in a prod build.
+                                "/api/v1/auth/dev-login",
                                 "/api/v1/health",
                                 // OpenAPI/Swagger UI — permitAll for now (dev convenience); revisit
                                 // before a real deployment if the API shape shouldn't be public.
