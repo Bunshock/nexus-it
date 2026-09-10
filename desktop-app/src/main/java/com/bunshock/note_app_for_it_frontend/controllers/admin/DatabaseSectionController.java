@@ -22,7 +22,7 @@ import com.bunshock.note_app_for_it_frontend.services.core.AppKeyEncryptionServi
 import com.bunshock.note_app_for_it_frontend.services.core.ConfigService;
 import com.bunshock.note_app_for_it_frontend.services.core.DatabaseService;
 import com.bunshock.note_app_for_it_frontend.services.catalog.IEquipmentService;
-import com.bunshock.note_app_for_it_frontend.services.admin.IUserRoleService;
+import com.bunshock.note_app_for_it_frontend.models.auth.Roles;
 import com.bunshock.note_app_for_it_frontend.services.core.RemoteDatabaseService;
 import com.bunshock.note_app_for_it_frontend.services.core.ServiceLocator;
 import com.bunshock.note_app_for_it_frontend.services.auth.TechnicianSessionService;
@@ -575,7 +575,7 @@ public class DatabaseSectionController {
             @Override public String toString(Sede s) { return s == null ? "Todas" : s.getName(); }
             @Override public Sede fromString(String s) { return null; }
         });
-        boolean isSuperadmin = IUserRoleService.ROLE_SUPERADMIN
+        boolean isSuperadmin = Roles.SUPERADMIN
             .equals(TechnicianSessionService.getInstance().getRole());
         if (isSuperadmin) {
             List<Sede> items = new ArrayList<>();
@@ -616,7 +616,7 @@ public class DatabaseSectionController {
         String sedeLabel;
         if (sel != null) {
             sedeLabel = sel.getName();
-        } else if (IUserRoleService.ROLE_SUPERADMIN.equals(TechnicianSessionService.getInstance().getRole())) {
+        } else if (Roles.SUPERADMIN.equals(TechnicianSessionService.getInstance().getRole())) {
             sedeLabel = "Todas las sedes";
         } else {
             sedeLabel = "Sede no asignada";

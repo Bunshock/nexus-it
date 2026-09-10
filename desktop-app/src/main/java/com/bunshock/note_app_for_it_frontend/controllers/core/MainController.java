@@ -7,8 +7,9 @@ import com.bunshock.note_app_for_it_frontend.App;
 import com.bunshock.note_app_for_it_frontend.models.history.HistoryFilter;
 import com.bunshock.note_app_for_it_frontend.models.history.NoteReport;
 import com.bunshock.note_app_for_it_frontend.services.auth.AdminSession;
+import com.bunshock.note_app_for_it_frontend.services.auth.MiddlewareAuthService;
 import com.bunshock.note_app_for_it_frontend.services.history.IHistoryService;
-import com.bunshock.note_app_for_it_frontend.services.admin.IUserRoleService;
+import com.bunshock.note_app_for_it_frontend.models.auth.Roles;
 import com.bunshock.note_app_for_it_frontend.services.history.PendingCountsService;
 import com.bunshock.note_app_for_it_frontend.services.core.RemoteDatabaseService;
 import com.bunshock.note_app_for_it_frontend.services.core.ServiceLocator;
@@ -507,7 +508,7 @@ public class MainController {
         // hidden, throwing off the welcome block's vertical centering.
         lblAdminIndicator.setManaged(active);
 
-        boolean superadmin = IUserRoleService.ROLE_SUPERADMIN.equals(AdminSession.getInstance().getEffectiveRole());
+        boolean superadmin = Roles.SUPERADMIN.equals(AdminSession.getInstance().getEffectiveRole());
         lblAdminIndicator.setText(superadmin ? "MODO SUPERADMINISTRADOR" : "MODO ADMINISTRADOR");
         lblAdminIndicator.getStyleClass().setAll(superadmin ? "title-bar-superadmin-badge" : "title-bar-admin-badge");
     }
@@ -550,7 +551,7 @@ public class MainController {
             try {
                 IHistoryService historyService = ServiceLocator.getInstance().getHistoryService();
                 String effectiveRole = AdminSession.getInstance().getEffectiveRole();
-                boolean scopeToOwnSede = IUserRoleService.ROLE_ADMIN.equals(effectiveRole);
+                boolean scopeToOwnSede = Roles.ADMIN.equals(effectiveRole);
                 String mySede = scopeToOwnSede ? TechnicianSessionService.getInstance().getSede() : null;
 
                 List<NoteReport> glpiSync = historyService.getPendingGlpiSync();
@@ -1034,6 +1035,9 @@ public class MainController {
     @FXML
     private void handleLogout() {
         if (!confirmLogout()) return;
+
+        // Best-effort server-side revocation before tearing down the local session.
+        new Thread(() -> MiddlewareAuthService.getInstance().logout(), "logout").start();
 
         AdminSession.getInstance().deactivate();
         AdminSession.getInstance().clearListenersForLogout();

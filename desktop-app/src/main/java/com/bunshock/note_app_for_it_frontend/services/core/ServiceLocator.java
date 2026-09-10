@@ -6,9 +6,6 @@ import java.sql.ResultSet;
 
 import com.bunshock.note_app_for_it_frontend.models.core.AppConfig;
 
-import com.bunshock.note_app_for_it_frontend.services.admin.CachingUserRoleService;
-import com.bunshock.note_app_for_it_frontend.services.admin.IUserRoleService;
-import com.bunshock.note_app_for_it_frontend.services.admin.SqliteUserRoleService;
 import com.bunshock.note_app_for_it_frontend.services.audit.IAuditService;
 import com.bunshock.note_app_for_it_frontend.services.audit.SqliteAuditService;
 import com.bunshock.note_app_for_it_frontend.services.auth.AdApiService;
@@ -36,7 +33,6 @@ public class ServiceLocator {
     private IGLPIService glpiService;
     private IEmailService emailService;
     private volatile IHistoryService historyService;
-    private volatile IUserRoleService userRoleService;
     private IAuditService auditService;
     private IUpdateService updateService;
 
@@ -54,13 +50,13 @@ public class ServiceLocator {
     public void initialize(AppConfig config) {
         provisionDefaultSecrets(config);
 
+        MiddlewareClient.getInstance().configure(config.middleware != null ? config.middleware.baseUrl : null);
+
         SqliteEquipmentService localEquipment = new SqliteEquipmentService();
         SqliteHistoryService localHistory     = new SqliteHistoryService();
-        SqliteUserRoleService localUserRole   = new SqliteUserRoleService();
 
         equipmentService = localEquipment;
         historyService   = localHistory;
-        userRoleService  = localUserRole;
         // Local-only, deliberately — no remote-first CachingAuditService wrapper yet, same
         // reasoning as APP_SETTINGS staying local-only regardless of remote config. See
         // IAuditService's Javadoc.
@@ -112,15 +108,11 @@ public class ServiceLocator {
             IHistoryService remoteHistory = new SqliteHistoryService(() -> {
                 try { return remote.getConnection(); } catch (java.sql.SQLException e) { throw new RuntimeException(e); }
             });
-            IUserRoleService remoteUserRole = new SqliteUserRoleService(() -> {
-                try { return remote.getConnection(); } catch (java.sql.SQLException e) { throw new RuntimeException(e); }
-            });
 
             // Safe only because remoteConnected is still false here — these fields are guaranteed
             // to still be the plain local instances, never an already-wrapped Caching*Service.
             equipmentService = new CachingEquipmentService(remoteEquipment, equipmentService);
             historyService   = new CachingHistoryService(remoteHistory, historyService);
-            userRoleService  = new CachingUserRoleService(remoteUserRole, userRoleService);
             remoteConnected  = true;
         } catch (Exception e) {
             remoteConnected = false;
@@ -194,14 +186,12 @@ public class ServiceLocator {
     public IGLPIService      getGlpiService()       { return glpiService; }
     public IEmailService     getEmailService()      { return emailService; }
     public IHistoryService   getHistoryService()    { return historyService; }
-    public IUserRoleService  getUserRoleService()   { return userRoleService; }
     public IAuditService     getAuditService()      { return auditService; }
     public IUpdateService    getUpdateService()     { return updateService; }
     public boolean           isRemoteConnected()    { return remoteConnected; }
 
     public void setEquipmentService(IEquipmentService s) { equipmentService = s; }
     public void setAdService(IADService s)               { adService = s; }
-    public void setUserRoleService(IUserRoleService s)   { userRoleService = s; }
     public void setHistoryService(IHistoryService s)     { historyService = s; }
     public void setAuditService(IAuditService s)         { auditService = s; }
     public void setUpdateService(IUpdateService s)       { updateService = s; }

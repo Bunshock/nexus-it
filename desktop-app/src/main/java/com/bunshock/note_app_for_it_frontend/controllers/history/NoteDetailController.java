@@ -9,7 +9,7 @@ import com.bunshock.note_app_for_it_frontend.models.admin.Permission;
 import com.bunshock.note_app_for_it_frontend.models.history.ReturnAllocationBatch;
 import com.bunshock.note_app_for_it_frontend.models.history.ReturnStatus;
 import com.bunshock.note_app_for_it_frontend.services.auth.AdminSession;
-import com.bunshock.note_app_for_it_frontend.services.admin.IUserRoleService;
+import com.bunshock.note_app_for_it_frontend.models.auth.Roles;
 import com.bunshock.note_app_for_it_frontend.services.history.IHistoryService;
 import com.bunshock.note_app_for_it_frontend.services.note.NoteGenerationService;
 import com.bunshock.note_app_for_it_frontend.services.history.PendingCountsService;
@@ -158,7 +158,7 @@ public class NoteDetailController {
     // approval.
     private boolean isSedeMismatchForAdmin() {
         if (!adminMode || !AdminSession.getInstance().isActive()) return false;
-        if (IUserRoleService.ROLE_SUPERADMIN.equals(AdminSession.getInstance().getEffectiveRole())) return false;
+        if (Roles.SUPERADMIN.equals(AdminSession.getInstance().getEffectiveRole())) return false;
         Integer mySedeId = TechnicianSessionService.getInstance().getSedeId();
         Integer noteSedeId = noteSedeIdOrNull();
         return mySedeId == null || noteSedeId == null || !mySedeId.equals(noteSedeId);

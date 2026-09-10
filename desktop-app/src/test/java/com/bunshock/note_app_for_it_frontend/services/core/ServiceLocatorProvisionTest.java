@@ -11,7 +11,6 @@ import com.bunshock.note_app_for_it_frontend.models.core.AppConfig;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import com.bunshock.note_app_for_it_frontend.services.admin.SqliteUserRoleService;
 import com.bunshock.note_app_for_it_frontend.services.catalog.SqliteEquipmentService;
 import com.bunshock.note_app_for_it_frontend.services.history.SqliteHistoryService;
 import static org.junit.jupiter.api.Assertions.*;
@@ -142,7 +141,6 @@ class ServiceLocatorProvisionTest {
         writeSetting("db_name", "doesnotexist");
         locator.setEquipmentService(new SqliteEquipmentService());
         locator.setHistoryService(new SqliteHistoryService());
-        locator.setUserRoleService(new SqliteUserRoleService());
 
         assertFalse(locator.isRemoteConnected());
         locator.retryRemoteConnectionIfDown();

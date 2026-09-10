@@ -8,13 +8,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import com.bunshock.note_app_for_it_frontend.models.history.NoteReport;
-import com.bunshock.note_app_for_it_frontend.models.admin.Permission;
 import com.bunshock.note_app_for_it_frontend.services.catalog.CachingEquipmentService;
 import com.bunshock.note_app_for_it_frontend.services.history.CachingHistoryService;
-import com.bunshock.note_app_for_it_frontend.services.admin.CachingUserRoleService;
-import com.bunshock.note_app_for_it_frontend.services.admin.IUserRoleService;
 import com.bunshock.note_app_for_it_frontend.services.catalog.MockEquipmentService;
-import com.bunshock.note_app_for_it_frontend.services.admin.MockUserRoleService;
 import com.bunshock.note_app_for_it_frontend.services.history.IHistoryService;
 class CachingServiceTest {
 
@@ -180,93 +176,10 @@ class CachingServiceTest {
         assertTrue(failingPrimary.getSedeIdsWithShippingInfo().contains(SEDE_ID));
     }
 
-    // ── User role / permissions ─────────────────────────────────────
-
-    @Test
-    void userRoleReadsReturnPrimaryData() {
-        MockUserRoleService primaryU = new MockUserRoleService();
-        MockUserRoleService localU   = new MockUserRoleService();
-        primaryU.setRole("jperez", IUserRoleService.ROLE_ADMIN);
-        CachingUserRoleService cachingU = new CachingUserRoleService(primaryU, localU);
-
-        assertEquals(IUserRoleService.ROLE_ADMIN, cachingU.getRole("jperez"));
-    }
-
-    @Test
-    void userRoleReadsFallBackToLocalWhenPrimaryThrows() {
-        MockUserRoleService localU = new MockUserRoleService();
-        localU.setRole("jperez", IUserRoleService.ROLE_SUPERADMIN);
-        CachingUserRoleService cachingU = new CachingUserRoleService(new FailingUserRoleService(), localU);
-
-        assertEquals(IUserRoleService.ROLE_SUPERADMIN, cachingU.getRole("jperez"));
-    }
-
-    @Test
-    void getSedeIdReadsReturnPrimaryData() {
-        MockUserRoleService primaryU = new MockUserRoleService();
-        MockUserRoleService localU   = new MockUserRoleService();
-        primaryU.setSedeId("jperez", 5);
-        CachingUserRoleService cachingU = new CachingUserRoleService(primaryU, localU);
-
-        assertEquals(5, cachingU.getSedeId("jperez"));
-    }
-
-    @Test
-    void getSedeIdFallsBackToLocalWhenPrimaryThrows() {
-        MockUserRoleService localU = new MockUserRoleService();
-        localU.setSedeId("jperez", 3);
-        CachingUserRoleService cachingU = new CachingUserRoleService(new FailingUserRoleService(), localU);
-
-        assertEquals(3, cachingU.getSedeId("jperez"));
-    }
-
-    @Test
-    void getPermissionsForRoleReadsReturnPrimaryData() {
-        MockUserRoleService primaryU = new MockUserRoleService();
-        MockUserRoleService localU   = new MockUserRoleService();
-        primaryU.setPermissionsForRole(IUserRoleService.ROLE_ADMIN, java.util.Set.of(Permission.MANAGE_TYPES));
-        CachingUserRoleService cachingU = new CachingUserRoleService(primaryU, localU);
-
-        assertEquals(java.util.Set.of(Permission.MANAGE_TYPES), cachingU.getPermissionsForRole(IUserRoleService.ROLE_ADMIN));
-    }
-
-    @Test
-    void getPermissionsForRoleFallsBackToLocalWhenPrimaryThrows() {
-        MockUserRoleService localU = new MockUserRoleService();
-        localU.setPermissionsForRole(IUserRoleService.ROLE_ADMIN, java.util.Set.of(Permission.MANAGE_STOCK));
-        CachingUserRoleService cachingU = new CachingUserRoleService(new FailingUserRoleService(), localU);
-
-        assertEquals(java.util.Set.of(Permission.MANAGE_STOCK), cachingU.getPermissionsForRole(IUserRoleService.ROLE_ADMIN));
-    }
-
-    @Test
-    void hasGroupCheckBypassReadsReturnPrimaryData() {
-        MockUserRoleService primaryU = new MockUserRoleService();
-        MockUserRoleService localU   = new MockUserRoleService();
-        primaryU.setGroupCheckBypass("intern1", true);
-        CachingUserRoleService cachingU = new CachingUserRoleService(primaryU, localU);
-
-        assertTrue(cachingU.hasGroupCheckBypass("intern1"));
-    }
-
-    @Test
-    void hasGroupCheckBypassFallsBackToLocalWhenPrimaryThrows() {
-        MockUserRoleService localU = new MockUserRoleService();
-        localU.setGroupCheckBypass("intern1", true);
-        CachingUserRoleService cachingU = new CachingUserRoleService(new FailingUserRoleService(), localU);
-
-        assertTrue(cachingU.hasGroupCheckBypass("intern1"));
-    }
+    // (User-role caching coverage lived here until IUserRoleService was retired in Phase B —
+    // role/Sede/permissions come from the middleware login response now.)
 
     // ── Minimal failing stubs ────────────────────────────────────────
-
-    private static class FailingUserRoleService implements IUserRoleService {
-        @Override public String getRole(String username) { throw new RuntimeException("primary down"); }
-        @Override public boolean isRegistered(String username) { throw new RuntimeException("primary down"); }
-        @Override public Integer getSedeId(String username) { throw new RuntimeException("primary down"); }
-        @Override public java.util.Set<Permission> getPermissionsForRole(String role) { throw new RuntimeException("primary down"); }
-        @Override public boolean hasGroupCheckBypass(String username) { throw new RuntimeException("primary down"); }
-    }
 
     private static class FailingEquipmentService extends MockEquipmentService {
         @Override public java.util.List<com.bunshock.note_app_for_it_frontend.models.catalog.EquipmentType> getAllTypes() { throw new RuntimeException("primary down"); }

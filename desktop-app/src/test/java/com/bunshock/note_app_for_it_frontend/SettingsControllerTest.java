@@ -7,8 +7,7 @@ import java.util.concurrent.TimeUnit;
 
 import com.bunshock.note_app_for_it_frontend.controllers.admin.SettingsController;
 import com.bunshock.note_app_for_it_frontend.services.auth.AdminSession;
-import com.bunshock.note_app_for_it_frontend.services.admin.IUserRoleService;
-import com.bunshock.note_app_for_it_frontend.services.admin.MockUserRoleService;
+import com.bunshock.note_app_for_it_frontend.models.auth.Roles;
 import com.bunshock.note_app_for_it_frontend.services.core.ServiceLocator;
 import javafx.application.Platform;
 import javafx.scene.control.Button;
@@ -24,14 +23,14 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class SettingsControllerTest {
 
-    // EDIT_SMTP_CONFIG and EDIT_AF_FORMAT_CONFIG are deliberately SUPERADMIN-only (see
-    // MockUserRoleService's default grant set) — their fields are excluded from the plain-ADMIN
-    // list and checked separately.
+    // Only EDIT_SMTP_CONFIG is SUPERADMIN-only (see SettingsController.handleSave()'s own comment
+    // and TestPermissions.ADMIN_GRANTS = "all except EDIT_SMTP_CONFIG"). AF-format / GLPI / AD
+    // config is editable by a plain ADMIN.
     private static final String[] PLAIN_ADMIN_FIELD_NAMES = {
-        "txtGlpiUrl", "pfGlpiApiKey", "txtAdUrl", "pfAdApiToken"
+        "txtAfPrefix", "txtAfSeparator", "txtGlpiUrl", "pfGlpiApiKey", "txtAdUrl", "pfAdApiToken"
     };
     private static final String[] SUPERADMIN_ONLY_FIELD_NAMES = {
-        "txtAfPrefix", "txtAfSeparator", "txtSmtpSender", "pfSmtpPassword"
+        "txtSmtpSender", "pfSmtpPassword"
     };
 
     private final AdminSession session = AdminSession.getInstance();
@@ -48,7 +47,6 @@ class SettingsControllerTest {
 
     @BeforeEach
     void setUp() throws Exception {
-        ServiceLocator.getInstance().setUserRoleService(new MockUserRoleService());
         session.deactivate();
         waitForFxEvents();
 
@@ -110,7 +108,7 @@ class SettingsControllerTest {
 
     @Test
     void plainAdminFieldsAreEnabledForPlainAdmin() throws Exception {
-        session.activatePermanently(IUserRoleService.ROLE_ADMIN);
+        session.activatePermanently(Roles.ADMIN, TestPermissions.ADMIN_GRANTS);
         updateFieldEditability();
         for (String name : PLAIN_ADMIN_FIELD_NAMES) {
             assertFalse(getField(name).isDisabled(), name + " should be enabled for a plain ADMIN");
@@ -120,10 +118,9 @@ class SettingsControllerTest {
 
     @Test
     void superadminOnlyFieldsStayDisabledForPlainAdmin() throws Exception {
-        // EDIT_SMTP_CONFIG and EDIT_AF_FORMAT_CONFIG are SUPERADMIN-only — this is the whole
-        // point of the "prohibit-all, grant per permission" redesign: a plain ADMIN (even via a
-        // real, non-fallback login) must never be able to edit these org-wide config fields.
-        session.activatePermanently(IUserRoleService.ROLE_ADMIN);
+        // EDIT_SMTP_CONFIG is SUPERADMIN-only — a plain ADMIN (even via a real, non-fallback
+        // login) must never be able to edit the org-wide SMTP fields.
+        session.activatePermanently(Roles.ADMIN, TestPermissions.ADMIN_GRANTS);
         updateFieldEditability();
         for (String name : SUPERADMIN_ONLY_FIELD_NAMES) {
             assertTrue(getField(name).isDisabled(), name + " should stay disabled for a plain ADMIN");
@@ -132,7 +129,7 @@ class SettingsControllerTest {
 
     @Test
     void allFieldsIncludingSmtpAreEnabledForSuperadmin() throws Exception {
-        session.activatePermanently(IUserRoleService.ROLE_SUPERADMIN);
+        session.activatePermanently(Roles.SUPERADMIN, TestPermissions.SUPERADMIN_GRANTS);
         updateFieldEditability();
         for (String name : PLAIN_ADMIN_FIELD_NAMES) {
             assertFalse(getField(name).isDisabled(), name + " should be enabled for SUPERADMIN");
@@ -145,7 +142,7 @@ class SettingsControllerTest {
 
     @Test
     void fieldsRevertToDisabledAfterAdminModeDeactivates() throws Exception {
-        session.activatePermanently(IUserRoleService.ROLE_SUPERADMIN);
+        session.activatePermanently(Roles.SUPERADMIN, TestPermissions.SUPERADMIN_GRANTS);
         updateFieldEditability();
         session.deactivate();
         updateFieldEditability();

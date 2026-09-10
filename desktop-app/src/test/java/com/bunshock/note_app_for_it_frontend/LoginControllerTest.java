@@ -2,28 +2,25 @@ package com.bunshock.note_app_for_it_frontend;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.function.BooleanSupplier;
 
 import com.bunshock.note_app_for_it_frontend.controllers.auth.LoginController;
-import com.bunshock.note_app_for_it_frontend.models.auth.ADUser;
-import com.bunshock.note_app_for_it_frontend.models.auth.AdCredentialResult;
+import com.bunshock.note_app_for_it_frontend.models.auth.AuthConfig;
+import com.bunshock.note_app_for_it_frontend.models.auth.Roles;
+import com.bunshock.note_app_for_it_frontend.models.auth.SessionInfo;
 import com.bunshock.note_app_for_it_frontend.services.auth.AdminSession;
-import com.bunshock.note_app_for_it_frontend.services.core.ConfigService;
-import com.bunshock.note_app_for_it_frontend.services.auth.IADService;
-import com.bunshock.note_app_for_it_frontend.services.admin.IUserRoleService;
-import com.bunshock.note_app_for_it_frontend.services.auth.MockADService;
-import com.bunshock.note_app_for_it_frontend.services.audit.MockAuditService;
-import com.bunshock.note_app_for_it_frontend.services.admin.MockUserRoleService;
-import com.bunshock.note_app_for_it_frontend.services.core.ServiceLocator;
+import com.bunshock.note_app_for_it_frontend.services.auth.MiddlewareAuthService;
 import com.bunshock.note_app_for_it_frontend.services.auth.TechnicianSessionService;
-import java.util.List;
+import com.bunshock.note_app_for_it_frontend.services.core.MiddlewareException;
 
 import javafx.application.Platform;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
-import javafx.scene.control.PasswordField;
 import javafx.scene.control.TextField;
+import javafx.scene.layout.VBox;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -31,25 +28,23 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
-// Exercises the real handleLogin() flow (MockADService stands in for the AD API's
-// validate-credentials endpoint, which doesn't exist yet — see IADService.validateCredentials)
-// via reflection-injected fields, no real Stage/Scene — same "no Stage.show() in the permanent
-// suite" convention already established elsewhere in this suite for ComboBox/Skin flakiness,
-// which doesn't even apply here since LoginController touches no ComboBox, but a real window is
-// unnecessary for what this test needs to prove.
+/**
+ * Exercises the Phase B LoginController against a fake {@link MiddlewareAuthService} (all auth is
+ * server-side now — no AD / group / role logic here). Reflection-injected FXML fields, no real
+ * Stage. The system-browser OIDC flow (prod mode) isn't unit-testable — those tests only check the
+ * UI it puts the screen into; the dev-login path is covered end to end.
+ */
 class LoginControllerTest {
 
-    private static final String MOCK_PASSWORD = "password123";
-
     private LoginController controller;
+    private VBox devUsernameBox;
     private TextField txtUsername;
-    private PasswordField pfPassword;
+    private Label lblModeHint;
     private Label lblLoginStatus;
-    // IUserRoleService is read-only in production (a superadmin edits APP_USER via SQL, not app
-    // code) — kept as its concrete Mock type here so tests can still seed a role, via
-    // MockUserRoleService's own test-only setRole(), not part of the interface.
-    private MockUserRoleService mockUserRoleService;
-    private MockAuditService mockAuditService;
+    private Button btnLogin;
+    private Button btnExit;
+
+    private FakeAuth fakeAuth;
 
     @BeforeAll
     static void initFx() {
@@ -62,267 +57,163 @@ class LoginControllerTest {
 
     @BeforeEach
     void setUp() throws Exception {
-        ServiceLocator.getInstance().setAdService(new MockADService());
-        mockUserRoleService = new MockUserRoleService();
-        ServiceLocator.getInstance().setUserRoleService(mockUserRoleService);
-        mockAuditService = new MockAuditService();
-        ServiceLocator.getInstance().setAuditService(mockAuditService);
-
-        ConfigService.getInstance().load();
-        // Deterministic regardless of whatever's in this machine's real app-config.json — the
-        // group-gate tests below set this explicitly per case instead.
-        ConfigService.getInstance().getConfig().adAccess.allowedGroupName = null;
+        fakeAuth = new FakeAuth();
+        MiddlewareAuthService.setInstanceForTest(fakeAuth);
 
         controller = new LoginController();
+        devUsernameBox = new VBox();
         txtUsername = new TextField();
-        pfPassword = new PasswordField();
+        lblModeHint = new Label();
         lblLoginStatus = new Label();
+        btnLogin = new Button();
+        btnExit = new Button();
+        setField("devUsernameBox", devUsernameBox);
         setField("txtUsername", txtUsername);
-        setField("pfPassword", pfPassword);
+        setField("lblModeHint", lblModeHint);
         setField("lblLoginStatus", lblLoginStatus);
-        setField("btnLogin", new Button());
-        setField("btnExit", new Button());
+        setField("btnLogin", btnLogin);
+        setField("btnExit", btnExit);
     }
 
     @AfterEach
     void tearDown() {
-        TechnicianSessionService.getInstance().applyManualOverride(null, null, null, null);
+        MiddlewareAuthService.setInstanceForTest(null);
+        TechnicianSessionService.getInstance().clearSessionForLogout();
         AdminSession.getInstance().deactivate();
     }
 
+    // ── dev mode (auth/config -> 503) ──────────────────────────────────────
+
     @Test
-    void successfulLoginWithAdminRolePopulatesSessionAndActivatesAdminMode() throws Exception {
-        mockUserRoleService.setRole("jperez", IUserRoleService.ROLE_ADMIN);
-        CountDownLatch latch = new CountDownLatch(1);
+    void devModeShowsUsernameFieldWhenIdpNotConfigured() throws Exception {
+        fakeAuth.configError = new MiddlewareException(503, "IDP_NOT_CONFIGURED", "sin IdP");
 
-        runOnFx(() -> {
-            txtUsername.setText("jperez");
-            pfPassword.setText(MOCK_PASSWORD);
-            controller.setOnLoginSuccess(latch::countDown);
-            invoke("handleLogin");
-        });
-
-        assertTrue(latch.await(5, TimeUnit.SECONDS), "login did not complete in time");
-        assertEquals("jperez", TechnicianSessionService.getInstance().getUsername());
-        assertEquals(IUserRoleService.ROLE_ADMIN, TechnicianSessionService.getInstance().getRole());
-        assertTrue(AdminSession.getInstance().isActive());
-        assertEquals(IUserRoleService.ROLE_ADMIN, AdminSession.getInstance().getEffectiveRole());
+        runOnFx(() -> controller.initialize());
+        // read every field on the FX thread and wait for all of it to settle
+        waitUntil(() -> devUsernameBox.isManaged()
+                && devUsernameBox.isVisible()
+                && lblModeHint.getText() != null
+                && lblModeHint.getText().toLowerCase().contains("desarrollo"));
     }
 
     @Test
-    void successfulLoginWithSuperadminRoleActivatesSuperadminSession() throws Exception {
-        mockUserRoleService.setRole("jperez", IUserRoleService.ROLE_SUPERADMIN);
-        CountDownLatch latch = new CountDownLatch(1);
+    void devLoginWithAdminRolePopulatesSessionAndActivatesAdminMode() throws Exception {
+        fakeAuth.configError = new MiddlewareException(503, "IDP_NOT_CONFIGURED", "sin IdP");
+        fakeAuth.devLoginResult = session("dev.admin", Roles.ADMIN, List.of("APPROVE_NOTES", "MANAGE_TYPES"));
 
+        CountDownLatch done = new CountDownLatch(1);
+        runOnFx(() -> controller.initialize());
+        waitUntil(() -> devUsernameBox.isManaged());
         runOnFx(() -> {
-            txtUsername.setText("jperez");
-            pfPassword.setText(MOCK_PASSWORD);
-            controller.setOnLoginSuccess(latch::countDown);
+            txtUsername.setText("dev.admin");
+            controller.setOnLoginSuccess(done::countDown);
             invoke("handleLogin");
         });
 
-        assertTrue(latch.await(5, TimeUnit.SECONDS), "login did not complete in time");
-        assertEquals(IUserRoleService.ROLE_SUPERADMIN, TechnicianSessionService.getInstance().getRole());
+        assertTrue(done.await(5, TimeUnit.SECONDS), "login did not complete");
+        assertEquals("dev.admin", TechnicianSessionService.getInstance().getUsername());
+        assertEquals(Roles.ADMIN, TechnicianSessionService.getInstance().getRole());
         assertTrue(AdminSession.getInstance().isActive());
-        assertEquals(IUserRoleService.ROLE_SUPERADMIN, AdminSession.getInstance().getEffectiveRole());
+        assertEquals(Roles.ADMIN, AdminSession.getInstance().getEffectiveRole());
     }
 
     @Test
-    void successfulLoginWithUserRoleDoesNotActivateAdminMode() throws Exception {
-        mockUserRoleService.setRole("jperez", IUserRoleService.ROLE_USER);
-        CountDownLatch latch = new CountDownLatch(1);
+    void devLoginWithUserRoleDoesNotActivateAdminMode() throws Exception {
+        fakeAuth.configError = new MiddlewareException(503, "IDP_NOT_CONFIGURED", "sin IdP");
+        fakeAuth.devLoginResult = session("dev.user", Roles.USER, List.of());
 
+        CountDownLatch done = new CountDownLatch(1);
+        runOnFx(() -> controller.initialize());
+        waitUntil(() -> devUsernameBox.isManaged());
         runOnFx(() -> {
-            txtUsername.setText("jperez");
-            pfPassword.setText(MOCK_PASSWORD);
-            controller.setOnLoginSuccess(latch::countDown);
+            txtUsername.setText("dev.user");
+            controller.setOnLoginSuccess(done::countDown);
             invoke("handleLogin");
         });
 
-        assertTrue(latch.await(5, TimeUnit.SECONDS), "login did not complete in time");
+        assertTrue(done.await(5, TimeUnit.SECONDS), "login did not complete");
         assertFalse(AdminSession.getInstance().isActive());
     }
 
     @Test
-    void wrongPasswordShowsErrorAndDoesNotPopulateSession() throws Exception {
-        runOnFx(() -> {
-            txtUsername.setText("jperez");
-            pfPassword.setText("wrong-password");
-            invoke("handleLogin");
-        });
+    void devLoginBlankUsernameShowsError() throws Exception {
+        fakeAuth.configError = new MiddlewareException(503, "IDP_NOT_CONFIGURED", "sin IdP");
+        runOnFx(() -> controller.initialize());
+        waitUntil(() -> devUsernameBox.isManaged());
 
-        waitUntilStatusContains("incorrectos");
+        runOnFx(() -> { txtUsername.setText("  "); invoke("handleLogin"); });
+        waitUntilStatusContains("Ingrese un usuario");
         assertFalse(TechnicianSessionService.getInstance().isResolved());
     }
 
     @Test
-    void validAdCredentialsButNotRegisteredInAppUserIsRejected() throws Exception {
-        // "jperez" is a real MockADService account (so credentials + AD group + profile lookup
-        // all succeed), but mockUserRoleService.setRole() is deliberately never called for it —
-        // reproduces a real AD account with no APP_USER row at all, which must be rejected
-        // outright, not silently defaulted to a normal USER-role login.
-        CountDownLatch latch = new CountDownLatch(1);
+    void devLoginServerRejectionShowsTheServerMessage() throws Exception {
+        fakeAuth.configError = new MiddlewareException(503, "IDP_NOT_CONFIGURED", "sin IdP");
+        fakeAuth.devLoginError = new MiddlewareException(403, "USER_NOT_REGISTERED",
+                "Usuario no registrado en la aplicación. Solicite acceso a un administrador.");
 
-        runOnFx(() -> {
-            txtUsername.setText("jperez");
-            pfPassword.setText(MOCK_PASSWORD);
-            controller.setOnLoginSuccess(latch::countDown);
-            invoke("handleLogin");
-        });
+        runOnFx(() -> controller.initialize());
+        waitUntil(() -> devUsernameBox.isManaged());
+        runOnFx(() -> { txtUsername.setText("ghost"); invoke("handleLogin"); });
 
         waitUntilStatusContains("no registrado");
         assertFalse(TechnicianSessionService.getInstance().isResolved());
         assertFalse(AdminSession.getInstance().isActive());
-        assertEquals(1, latch.getCount(), "onLoginSuccess must not fire for an unregistered account");
     }
 
+    // ── prod mode (auth/config OK) ────────────────────────────────────────
+
     @Test
-    void partialUsernameNeverResolvesToADifferentRealAccount() throws Exception {
-        // Defense-in-depth: even if some IADService.validateCredentials() implementation were
-        // laxer than it should be about what counts as a "known" username (mockValidateCredentials()
-        // in AdApiService used to have exactly this flaw — see AdApiServiceTest's
-        // containsExactUsernameMatch coverage for that fix), LoginController's own profile
-        // resolution must still never accept a search() hit that's merely a substring of what was
-        // typed — it must resolve to the exact account, or fail, never silently pick a different
-        // real person because their username happens to contain the typed fragment.
-        mockUserRoleService.setRole("lgarcia", IUserRoleService.ROLE_USER);
-        ServiceLocator.getInstance().setAdService(new IADService() {
-            @Override public List<ADUser> search(String dni, String name, String username) {
-                // Simulates search()'s real substring behavior: "garcia" matches stored "lgarcia".
-                if (username != null && "lgarcia".contains(username.toLowerCase())) {
-                    return List.of(new ADUser("38987654", "Leandro Garcia", "lgarcia",
-                        "lgarcia@ues21.edu.ar", "OU=BuenosAires,OU=Docentes,DC=ues21"));
-                }
-                return List.of();
-            }
-            @Override public AdCredentialResult validateCredentials(String username, String password) {
-                return new AdCredentialResult(true, List.of());
-            }
-        });
+    void prodModeHidesUsernameFieldWhenIdpIsConfigured() throws Exception {
+        fakeAuth.config = new AuthConfig("https://idp.example/realms/x", "nexus-it",
+                List.of("openid", "profile"), "Keycloak");
 
-        runOnFx(() -> {
-            txtUsername.setText("garcia");
-            pfPassword.setText("anything");
-            invoke("handleLogin");
-        });
+        runOnFx(() -> controller.initialize());
+        waitUntil(() -> !btnLogin.isDisabled() && lblLoginStatus.getText().isEmpty());
 
-        waitUntilStatusContains("perfil");
-        assertFalse(TechnicianSessionService.getInstance().isResolved(),
-            "must never resolve the session to \"lgarcia\" just because their username contains what was typed");
+        assertFalse(devUsernameBox.isVisible());
+        assertFalse(devUsernameBox.isManaged());
+        assertEquals("Iniciar sesión", btnLogin.getText());
     }
 
-    @Test
-    void unknownUsernameShowsErrorAndDoesNotPopulateSession() throws Exception {
-        runOnFx(() -> {
-            txtUsername.setText("nobody");
-            pfPassword.setText(MOCK_PASSWORD);
-            invoke("handleLogin");
-        });
+    // ── probe failure ────────────────────────────────────────────────────
 
-        waitUntilStatusContains("incorrectos");
-        assertFalse(TechnicianSessionService.getInstance().isResolved());
+    @Test
+    void serverUnreachableAtProbeShowsRetryAffordance() throws Exception {
+        fakeAuth.configError = new MiddlewareException(0, "TRANSPORT", "No se pudo conectar con el servidor.");
+
+        runOnFx(() -> controller.initialize());
+        waitUntilStatusContains("No se pudo conectar");
+
+        String[] label = {null};
+        runOnFx(() -> label[0] = btnLogin.getText());
+        assertEquals("Reintentar", label[0]);
     }
 
-    @Test
-    void validCredentialsButNotInAllowedGroupIsRejected() throws Exception {
-        ConfigService.getInstance().getConfig().adAccess.allowedGroupName = "SomeOtherGroup";
+    // ── helpers ──────────────────────────────────────────────────────────
 
-        runOnFx(() -> {
-            txtUsername.setText("jperez");
-            pfPassword.setText(MOCK_PASSWORD);
-            invoke("handleLogin");
-        });
-
-        waitUntilStatusContains("permisos");
-        assertFalse(TechnicianSessionService.getInstance().isResolved());
+    private static SessionInfo session(String username, String role, List<String> permissions) {
+        return new SessionInfo("tok-" + username, "2099-01-01T00:00:00Z", username, role,
+                1, "Casa Central", username, null, permissions);
     }
 
-    @Test
-    void accountWithGroupCheckBypassLogsInDespiteNotBeingInTheAllowedGroup() throws Exception {
-        // Models an intern technician: not in the org's IT-support AD group, but explicitly
-        // excepted via APP_USER.bypass_group_check (set by a superadmin via direct SQL in
-        // production; MockUserRoleService.setGroupCheckBypass() here is the test-only equivalent).
-        // Still must be registered like anyone else — setRole() below covers that.
-        ConfigService.getInstance().getConfig().adAccess.allowedGroupName = "SomeOtherGroup";
-        mockUserRoleService.setRole("jperez", IUserRoleService.ROLE_USER);
-        mockUserRoleService.setGroupCheckBypass("jperez", true);
-        CountDownLatch latch = new CountDownLatch(1);
+    /** A MiddlewareAuthService double — scripted per test, no HTTP. */
+    private static class FakeAuth extends MiddlewareAuthService {
+        AuthConfig config;
+        MiddlewareException configError;
+        SessionInfo devLoginResult;
+        MiddlewareException devLoginError;
 
-        runOnFx(() -> {
-            txtUsername.setText("jperez");
-            pfPassword.setText(MOCK_PASSWORD);
-            controller.setOnLoginSuccess(latch::countDown);
-            invoke("handleLogin");
-        });
-
-        assertTrue(latch.await(5, TimeUnit.SECONDS), "login did not complete in time");
-        assertEquals("jperez", TechnicianSessionService.getInstance().getUsername());
-    }
-
-    @Test
-    void profileLookupFailureShowsError() throws Exception {
-        // A custom IADService double whose validateCredentials() always passes but search()
-        // always comes back empty — reproduces the "credentials fine, but AD has no matching
-        // profile" branch, which MockADService's own fixed user list can never trigger since
-        // search() there always finds the same user validateCredentials() just approved.
-        ServiceLocator.getInstance().setAdService(new IADService() {
-            @Override public List<ADUser> search(String dni, String name, String username) { return List.of(); }
-            @Override public AdCredentialResult validateCredentials(String username, String password) {
-                return new AdCredentialResult(true, List.of());
-            }
-        });
-
-        runOnFx(() -> {
-            txtUsername.setText("jperez");
-            pfPassword.setText(MOCK_PASSWORD);
-            invoke("handleLogin");
-        });
-
-        waitUntilStatusContains("perfil");
-        assertFalse(TechnicianSessionService.getInstance().isResolved());
-    }
-
-    @Test
-    void tooManyFailedAttemptsBlocksFurtherLoginsWithoutHittingAdOrLoggingMore() throws Exception {
-        // Seed 5 prior failures directly (mirrors real usage without needing to actually fail 5
-        // real logins first) — MAX_FAILED_ATTEMPTS in LoginController.
-        for (int i = 0; i < 5; i++) {
-            mockAuditService.recordLoginAttempt("jperez", false, "Credenciales inválidas");
+        @Override public AuthConfig fetchAuthConfig() {
+            if (configError != null) throw configError;
+            return config;
         }
-        int countBefore = mockAuditService.loginAttemptCount();
-
-        runOnFx(() -> {
-            txtUsername.setText("jperez");
-            pfPassword.setText(MOCK_PASSWORD); // correct credentials — must still be blocked
-            invoke("handleLogin");
-        });
-
-        waitUntilStatusContains("Demasiados intentos");
-        assertFalse(TechnicianSessionService.getInstance().isResolved());
-        assertEquals(countBefore, mockAuditService.loginAttemptCount(),
-            "a blocked attempt must not insert another AUDIT_LOGIN row — that's what bounds the table's growth");
+        @Override public SessionInfo devLogin(String username) {
+            if (devLoginError != null) throw devLoginError;
+            return devLoginResult;
+        }
+        @Override public void logout() { /* no-op */ }
     }
-
-    @Test
-    void adUnreachableShowsError() throws Exception {
-        ServiceLocator.getInstance().setAdService(new IADService() {
-            @Override public List<ADUser> search(String dni, String name, String username) { return List.of(); }
-            @Override public AdCredentialResult validateCredentials(String username, String password) {
-                throw new RuntimeException("AD API unreachable");
-            }
-        });
-
-        runOnFx(() -> {
-            txtUsername.setText("jperez");
-            pfPassword.setText(MOCK_PASSWORD);
-            invoke("handleLogin");
-        });
-
-        waitUntilStatusContains("Active Directory");
-        assertFalse(TechnicianSessionService.getInstance().isResolved());
-    }
-
-    // ── helpers ──────────────────────────────────────────────────────
 
     private void setField(String name, Object value) throws Exception {
         Field f = LoginController.class.getDeclaredField(name);
@@ -343,18 +234,22 @@ class LoginControllerTest {
     private void runOnFx(Runnable action) throws Exception {
         CountDownLatch latch = new CountDownLatch(1);
         Platform.runLater(() -> {
-            try {
-                action.run();
-            } finally {
-                latch.countDown();
-            }
+            try { action.run(); } finally { latch.countDown(); }
         });
         assertTrue(latch.await(5, TimeUnit.SECONDS), "FX action did not complete in time");
     }
 
-    // handleLogin() runs its network/service call on a background thread and reports back via
-    // Platform.runLater — for the error paths (no onLoginSuccess callback fires), poll the
-    // status label until it settles instead of guessing a fixed sleep duration.
+    private void waitUntil(BooleanSupplier condition) throws Exception {
+        long deadline = System.currentTimeMillis() + 5000;
+        while (System.currentTimeMillis() < deadline) {
+            boolean[] ok = {false};
+            runOnFx(() -> ok[0] = condition.getAsBoolean());
+            if (ok[0]) return;
+            Thread.sleep(50);
+        }
+        fail("condition not met within timeout");
+    }
+
     private void waitUntilStatusContains(String expectedSubstring) throws Exception {
         long deadline = System.currentTimeMillis() + 5000;
         while (System.currentTimeMillis() < deadline) {

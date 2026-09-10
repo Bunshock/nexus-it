@@ -25,11 +25,16 @@ public class MiddlewareAuthService {
 
     private static MiddlewareAuthService instance;
 
-    private MiddlewareAuthService() {}
+    protected MiddlewareAuthService() {}
 
     public static MiddlewareAuthService getInstance() {
         if (instance == null) instance = new MiddlewareAuthService();
         return instance;
+    }
+
+    /** Test seam — install a double (a subclass overriding the calls). Pass {@code null} to reset. */
+    public static void setInstanceForTest(MiddlewareAuthService replacement) {
+        instance = replacement;
     }
 
     private MiddlewareClient client() {

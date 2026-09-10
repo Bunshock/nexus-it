@@ -8,11 +8,11 @@ import java.util.ArrayList;
 import java.util.List;
 
 import com.bunshock.note_app_for_it_frontend.models.auth.ADUser;
+import com.bunshock.note_app_for_it_frontend.models.auth.SessionInfo;
 
 import javafx.application.Platform;
 
 import com.bunshock.note_app_for_it_frontend.services.core.DatabaseService;
-import com.bunshock.note_app_for_it_frontend.services.core.ServiceLocator;
 /**
  * Holds the current technician's identity for this app session only — never persisted to
  * disk. Populated once at login (LoginController.loginResolved(), after AD credentials, group
@@ -51,30 +51,32 @@ public class TechnicianSessionService {
     public static TechnicianSessionService getInstance() { return INSTANCE; }
 
     /**
-     * Populates the session from an already-authenticated login (LoginController): the AD
-     * credential check and group-membership gate already ran, and {@code user} is the result
-     * of the existing {@code search(null, null, username)} profile lookup — this method does
-     * no AD I/O of its own. {@code role} is the login-time APP_USER lookup
-     * ("USER"/"ADMIN"/"SUPERADMIN"). Sede is resolved here too — it's a superadmin-assigned
-     * attribute (APP_USER.sede_id), not a self-service preference, so it can only ever change
-     * between logins, never mid-session.
+     * Populates the session from the middleware login response (Phase B). Everything —
+     * name/username/dni/role/Sede/permissions — was resolved server-side; this method just
+     * unpacks it. {@code email} is not carried by the middleware session (nothing on a note or in
+     * the sidebar needs it), so it stays null. Sede is a superadmin-assigned attribute that can
+     * only change between logins, never mid-session. {@code permissions} on the {@link SessionInfo}
+     * are handed to {@link AdminSession} separately by {@code LoginController}.
      */
-    public synchronized void loginResolved(ADUser user, String role) {
-        name = user.getFullName();
-        username = user.getUsername();
-        email = user.getEmail();
-        dni = user.getDni();
-        this.role = role;
+    public synchronized void loginResolved(SessionInfo info) {
+        name = info.fullName();
+        username = info.username();
+        email = null;
+        dni = info.dni();
+        role = info.role();
+        sedeId = info.sedeId();
+        sedeName = info.sedeName();
         lastError = null;
         lastUpdateSource = UpdateSource.AD;
         loadDisplayNamePreference();
-        loadAssignedSede();
         loadAutoClearFormPreference();
         loadAutoCloseTabPreference();
         notifyListeners();
     }
 
-    /** Admin-mode manual override. Session-only — lost on next refresh/restart. */
+    /** Admin-mode manual override of the identity fields. Session-only — lost on next refresh or
+     * restart. Sede is not touched: it's the superadmin-assigned value from the login response,
+     * not something a manual profile edit can change. */
     public synchronized void applyManualOverride(String name, String username, String email, String dni) {
         this.name = name;
         this.username = username;
@@ -83,7 +85,6 @@ public class TechnicianSessionService {
         this.lastError = null;
         this.lastUpdateSource = UpdateSource.MANUAL;
         loadDisplayNamePreference();
-        loadAssignedSede();
         loadAutoClearFormPreference();
         loadAutoCloseTabPreference();
         notifyListeners();
@@ -229,49 +230,14 @@ public class TechnicianSessionService {
         return "auto_close_tab_pref:" + username;
     }
 
-    /** The technician's superadmin-assigned Sede (site) display name, or null if not assigned
-     * yet. Resolved from APP_USER.sede_id at login time — see loadAssignedSede(). */
+    /** The technician's superadmin-assigned Sede (site) display name, or null if not assigned yet.
+     * Comes straight from the middleware login response ({@link #loginResolved(SessionInfo)}). */
     public String getSede() { return sedeName; }
 
     /** The technician's superadmin-assigned Sede id, or null if not assigned yet — this is what
      * gets persisted onto NOTE_REPORT.sede_id at note-generation time, and what an ADMIN-role
      * session's Sede-scoped permission checks are compared against (see AdminSession). */
     public Integer getSedeId() { return sedeId; }
-
-    // Sede is no longer a self-service preference — it's assigned by a superadmin directly via
-    // SQL against APP_USER.sede_id, read here at login (or manual-override) time, same as role
-    // itself. Resolves regardless of deprecated status — a technician's assigned Sede should
-    // still display *something* even if an admin renamed/deprecated that Sede since, rather than
-    // silently going blank (which would also block note generation, since Sede is mandatory). If
-    // the row was genuinely deleted, or no Sede has been assigned at all, this leaves both fields
-    // null, same as never having one.
-    private void loadAssignedSede() {
-        if (username == null) {
-            sedeId = null;
-            sedeName = null;
-            return;
-        }
-        Integer assigned;
-        try {
-            assigned = ServiceLocator.getInstance().getUserRoleService().getSedeId(username);
-        } catch (Exception e) {
-            assigned = null;
-        }
-        sedeId = assigned;
-        sedeName = assigned != null ? resolveSedeName(assigned) : null;
-    }
-
-    private String resolveSedeName(int sedeId) {
-        try (Connection c = DatabaseService.getInstance().getConnection();
-             PreparedStatement ps = c.prepareStatement("SELECT name FROM SEDE WHERE id = ?")) {
-            ps.setInt(1, sedeId);
-            try (ResultSet rs = ps.executeQuery()) {
-                return rs.next() ? rs.getString("name") : null;
-            }
-        } catch (SQLException e) {
-            return null;
-        }
-    }
 
     private String loadSetting(String key) {
         try (Connection c = DatabaseService.getInstance().getConnection();

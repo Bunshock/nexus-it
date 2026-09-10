@@ -2,9 +2,11 @@ package com.bunshock.note_app_for_it_frontend;
 import com.bunshock.note_app_for_it_frontend.controllers.auth.LoginController;
 import com.bunshock.note_app_for_it_frontend.services.core.ConfigService;
 import com.bunshock.note_app_for_it_frontend.services.core.DatabaseService;
+import com.bunshock.note_app_for_it_frontend.services.core.MiddlewareClient;
 import com.bunshock.note_app_for_it_frontend.services.core.ServiceLocator;
 
 import javafx.application.Application;
+import javafx.application.Platform;
 import javafx.fxml.FXMLLoader;
 import javafx.geometry.Insets;
 import javafx.geometry.Rectangle2D;
@@ -65,6 +67,10 @@ public class App extends Application {
     public void start(Stage stage) throws Exception {
         instance = this;
         primaryStage = stage;
+        // A middleware call that 401s once a session was attached means the session expired
+        // server-side — bounce straight back to the login screen (fired on the FX thread by
+        // MiddlewareClient).
+        MiddlewareClient.getInstance().setOnSessionExpired(this::showLoginAgain);
         stage.getIcons().add(new Image(getClass().getResourceAsStream("images/favicon.png")));
         stage.setTitle("Nexus IT - Registro de Movimientos y Generación de Notas");
         stage.initStyle(StageStyle.TRANSPARENT);
@@ -72,6 +78,11 @@ public class App extends Application {
     }
 
     public static App getInstance() { return instance; }
+
+    /** Opens a URL in the user's default browser (the OIDC authorize URL). */
+    public void openInBrowser(String url) {
+        Platform.runLater(() -> getHostServices().showDocument(url));
+    }
 
     /**
      * Returns to the login screen from an active session — MainController's "Cerrar sesión"

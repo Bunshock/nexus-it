@@ -1,15 +1,13 @@
 package com.bunshock.note_app_for_it_frontend.services.auth;
 
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.sql.Statement;
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import com.bunshock.note_app_for_it_frontend.models.auth.ADUser;
+import com.bunshock.note_app_for_it_frontend.models.auth.Roles;
+import com.bunshock.note_app_for_it_frontend.models.auth.SessionInfo;
 
 import javafx.application.Platform;
 
@@ -17,10 +15,6 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import com.bunshock.note_app_for_it_frontend.services.admin.IUserRoleService;
-import com.bunshock.note_app_for_it_frontend.services.admin.MockUserRoleService;
-import com.bunshock.note_app_for_it_frontend.services.core.DatabaseService;
-import com.bunshock.note_app_for_it_frontend.services.core.ServiceLocator;
 import static org.junit.jupiter.api.Assertions.*;
 
 class TechnicianSessionServiceTest {
@@ -38,13 +32,13 @@ class TechnicianSessionServiceTest {
 
     @BeforeEach
     void resetSession() throws Exception {
-        session.applyManualOverride(null, null, null, null);
+        session.clearSessionForLogout();
         waitForFxEvents();
     }
 
     @AfterEach
     void cleanupSession() throws Exception {
-        session.applyManualOverride(null, null, null, null);
+        session.clearSessionForLogout();
         waitForFxEvents();
     }
 
@@ -52,6 +46,13 @@ class TechnicianSessionServiceTest {
         CountDownLatch latch = new CountDownLatch(1);
         Platform.runLater(latch::countDown);
         assertTrue(latch.await(2, TimeUnit.SECONDS), "FX event queue did not drain in time");
+    }
+
+    /** A middleware login response, the way LoginController hands it to loginResolved(). */
+    private static SessionInfo sessionInfo(String fullName, String username, String dni, String role,
+            Integer sedeId, String sedeName) {
+        return new SessionInfo("tok", "2099-01-01T00:00:00Z", username, role, sedeId, sedeName,
+                fullName, dni, List.of());
     }
 
     @Test
@@ -78,22 +79,22 @@ class TechnicianSessionServiceTest {
 
     @Test
     void loginResolvedSetsIdentityRoleAndUpdateSourceAd() {
-        ADUser user = new ADUser("27555111", "Marcos Tecnico", "mtecnico", "mtecnico@ues21.edu.ar", null);
-        session.loginResolved(user, IUserRoleService.ROLE_ADMIN);
+        session.loginResolved(sessionInfo("Marcos Tecnico", "mtecnico", "27555111", Roles.ADMIN, 4, "Casa Central"));
 
         assertEquals("Marcos Tecnico", session.getName());
         assertEquals("mtecnico", session.getUsername());
-        assertEquals("mtecnico@ues21.edu.ar", session.getEmail());
+        assertNull(session.getEmail()); // the middleware session doesn't carry email
         assertEquals("27555111", session.getDni());
-        assertEquals(IUserRoleService.ROLE_ADMIN, session.getRole());
+        assertEquals(Roles.ADMIN, session.getRole());
+        assertEquals(4, session.getSedeId());
+        assertEquals("Casa Central", session.getSede());
         assertNull(session.getLastError());
         assertEquals(TechnicianSessionService.UpdateSource.AD, session.getLastUpdateSource());
     }
 
     @Test
     void refreshProfileFromAdUpdatesNameEmailDniButNotUsernameOrRole() {
-        ADUser original = new ADUser("27555111", "Marcos Tecnico", "mtecnico", "mtecnico@ues21.edu.ar", null);
-        session.loginResolved(original, IUserRoleService.ROLE_ADMIN);
+        session.loginResolved(sessionInfo("Marcos Tecnico", "mtecnico", "27555111", Roles.ADMIN, null, null));
 
         ADUser refreshed = new ADUser("27555112", "Marcos T. Tecnico", "mtecnico", "new@ues21.edu.ar", null);
         session.refreshProfileFromAd(refreshed);
@@ -102,13 +103,12 @@ class TechnicianSessionServiceTest {
         assertEquals("new@ues21.edu.ar", session.getEmail());
         assertEquals("27555112", session.getDni());
         assertEquals("mtecnico", session.getUsername());
-        assertEquals(IUserRoleService.ROLE_ADMIN, session.getRole());
+        assertEquals(Roles.ADMIN, session.getRole());
     }
 
     @Test
     void reportProfileRefreshErrorLeavesExistingSessionIntact() {
-        ADUser user = new ADUser("27555111", "Marcos Tecnico", "mtecnico", "mtecnico@ues21.edu.ar", null);
-        session.loginResolved(user, IUserRoleService.ROLE_USER);
+        session.loginResolved(sessionInfo("Marcos Tecnico", "mtecnico", "27555111", Roles.USER, null, null));
 
         session.reportProfileRefreshError("No se pudo conectar con Active Directory.");
 
@@ -147,8 +147,7 @@ class TechnicianSessionServiceTest {
 
     @Test
     void clearSessionForLogoutResetsAllFieldsAndRemovesEveryListener() throws Exception {
-        session.loginResolved(new ADUser("27555111", "Marcos Tecnico", "mtecnico", "mtecnico@ues21.edu.ar", null),
-            IUserRoleService.ROLE_ADMIN);
+        session.loginResolved(sessionInfo("Marcos Tecnico", "mtecnico", "27555111", Roles.ADMIN, 4, "Casa Central"));
 
         AtomicBoolean changeFired = new AtomicBoolean(false);
         AtomicBoolean displayNameFired = new AtomicBoolean(false);
@@ -293,104 +292,28 @@ class TechnicianSessionServiceTest {
         }
     }
 
-    // Sede is no longer a self-service preference — it's assigned by a superadmin directly via
-    // SQL against APP_USER.sede_id, and resolved here (loadAssignedSede()) at login/manual-
-    // override time by reading IUserRoleService.getSedeId(username), same as role itself. Tests
-    // arrange the assignment via MockUserRoleService.setSedeId() rather than calling any
-    // TechnicianSessionService setter directly — there isn't one anymore.
+    // Sede now comes straight from the middleware login response (SessionInfo.sedeId / .sedeName),
+    // resolved server-side from APP_USER.sede_id. There is no client-side lookup any more.
 
     @Test
-    void getSedeNullWhenNoneAssigned() {
-        ServiceLocator.getInstance().setUserRoleService(new MockUserRoleService());
-        session.applyManualOverride("Rodriguez Joaquin", "test-tss-sede-1", "x@x.com", "45933368");
-        assertNull(session.getSede());
+    void sedeComesFromTheLoginResponse() {
+        session.loginResolved(sessionInfo("Rodriguez Joaquin", "jrodriguez", "45933368", Roles.ADMIN, 7, "Sucursal Norte"));
+        assertEquals(7, session.getSedeId());
+        assertEquals("Sucursal Norte", session.getSede());
+    }
+
+    @Test
+    void sedeNullWhenTheLoginResponseHasNoneAssigned() {
+        session.loginResolved(sessionInfo("Rodriguez Joaquin", "jrodriguez", "45933368", Roles.USER, null, null));
         assertNull(session.getSedeId());
-    }
-
-    @Test
-    void getSedeNullWhenUsernameUnresolved() {
-        ServiceLocator.getInstance().setUserRoleService(new MockUserRoleService());
-        session.applyManualOverride(null, null, null, null);
         assertNull(session.getSede());
-        assertNull(session.getSedeId());
     }
 
     @Test
-    void assignedSedeIsResolvedFromUserRoleServiceOnManualOverride() throws SQLException {
-        // Unlike this file's other real-DB-touching tests (APP_SETTINGS existed long before
-        // this feature), SEDE only exists once DatabaseService.initialize() has actually run —
-        // no other test in this suite calls it against the real data/noteapp.db, so this test
-        // can't assume it's already there. initialize() is safe/idempotent to call here, same
-        // as every real app startup.
-        DatabaseService.getInstance().initialize();
-        int sedeId = insertTestSede("Campus (test)");
-        MockUserRoleService mockRoles = new MockUserRoleService();
-        ServiceLocator.getInstance().setUserRoleService(mockRoles);
-        try {
-            mockRoles.setSedeId("test-tss-sede-2", sedeId);
-            session.applyManualOverride("Rodriguez Joaquin", "test-tss-sede-2", "x@x.com", "45933368");
-            assertEquals("Campus (test)", session.getSede());
-            assertEquals(sedeId, session.getSedeId());
-        } finally {
-            deleteTestSede(sedeId);
-        }
-    }
-
-    @Test
-    void assignedSedeIsReResolvedOnEveryRefresh() throws SQLException {
-        DatabaseService.getInstance().initialize();
-        int sedeId = insertTestSede("Campus (test 2)");
-        MockUserRoleService mockRoles = new MockUserRoleService();
-        ServiceLocator.getInstance().setUserRoleService(mockRoles);
-        try {
-            session.applyManualOverride("Rodriguez Joaquin", "test-tss-sede-3", "x@x.com", "45933368");
-            assertNull(session.getSede());
-
-            // Simulate a superadmin assigning a Sede between two refreshes of the same
-            // username (e.g. a later "Actualizar Perfil desde AD" or re-login) — the session
-            // must re-resolve from IUserRoleService each time, not cache the first result.
-            mockRoles.setSedeId("test-tss-sede-3", sedeId);
-            session.applyManualOverride("Rodriguez Joaquin", "test-tss-sede-3", "x@x.com", "45933368");
-            assertEquals("Campus (test 2)", session.getSede());
-            assertEquals(sedeId, session.getSedeId());
-        } finally {
-            deleteTestSede(sedeId);
-        }
-    }
-
-    @Test
-    void getSedeNullWhenUserRoleServiceThrows() {
-        ServiceLocator.getInstance().setUserRoleService(new IUserRoleService() {
-            @Override public String getRole(String username) { throw new RuntimeException("unreachable"); }
-            @Override public boolean isRegistered(String username) { throw new RuntimeException("unreachable"); }
-            @Override public Integer getSedeId(String username) { throw new RuntimeException("unreachable"); }
-            @Override public java.util.Set<com.bunshock.note_app_for_it_frontend.models.admin.Permission>
-                getPermissionsForRole(String role) { throw new RuntimeException("unreachable"); }
-            @Override public boolean hasGroupCheckBypass(String username) { throw new RuntimeException("unreachable"); }
-        });
-        session.applyManualOverride("Rodriguez Joaquin", "test-tss-sede-4", "x@x.com", "45933368");
-        assertNull(session.getSede());
-        assertNull(session.getSedeId());
-    }
-
-    private int insertTestSede(String name) throws SQLException {
-        try (Connection c = DatabaseService.getInstance().getConnection();
-             PreparedStatement ps = c.prepareStatement(
-                 "INSERT INTO SEDE (name, deprecated) VALUES (?, 0)", Statement.RETURN_GENERATED_KEYS)) {
-            ps.setString(1, name);
-            ps.executeUpdate();
-            try (ResultSet keys = ps.getGeneratedKeys()) {
-                keys.next();
-                return keys.getInt(1);
-            }
-        }
-    }
-
-    private void deleteTestSede(int id) throws SQLException {
-        try (Connection c = DatabaseService.getInstance().getConnection();
-             PreparedStatement ps = c.prepareStatement("DELETE FROM SEDE WHERE id = ?")) {
-            ps.setInt(1, id);
-            ps.executeUpdate();
-        }
+    void manualOverrideDoesNotTouchSede() {
+        session.loginResolved(sessionInfo("Rodriguez Joaquin", "jrodriguez", "45933368", Roles.ADMIN, 7, "Sucursal Norte"));
+        session.applyManualOverride("Otro Nombre", "jrodriguez", "x@x.com", "11222333");
+        assertEquals(7, session.getSedeId());
+        assertEquals("Sucursal Norte", session.getSede());
     }
 }

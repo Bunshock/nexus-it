@@ -6,9 +6,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import com.bunshock.note_app_for_it_frontend.models.admin.Permission;
 import com.bunshock.note_app_for_it_frontend.services.auth.AdminSession;
-import com.bunshock.note_app_for_it_frontend.services.admin.IUserRoleService;
-import com.bunshock.note_app_for_it_frontend.services.admin.MockUserRoleService;
-import com.bunshock.note_app_for_it_frontend.services.core.ServiceLocator;
+import com.bunshock.note_app_for_it_frontend.models.auth.Roles;
 import javafx.application.Platform;
 
 import org.junit.jupiter.api.AfterEach;
@@ -36,7 +34,6 @@ class AdminSessionTest {
 
     @BeforeEach
     void resetSession() throws Exception {
-        ServiceLocator.getInstance().setUserRoleService(new MockUserRoleService());
         session.deactivate();
         waitForFxEvents();
     }
@@ -60,20 +57,20 @@ class AdminSessionTest {
 
     @Test
     void activatePermanentlyMakesSessionActive() {
-        session.activatePermanently(IUserRoleService.ROLE_ADMIN);
+        session.activatePermanently(Roles.ADMIN, TestPermissions.ADMIN_GRANTS);
         assertTrue(session.isActive());
     }
 
     @Test
     void deactivateMakesSessionInactive() {
-        session.activatePermanently(IUserRoleService.ROLE_ADMIN);
+        session.activatePermanently(Roles.ADMIN, TestPermissions.ADMIN_GRANTS);
         session.deactivate();
         assertFalse(session.isActive());
     }
 
     @Test
     void refreshActivityIsANoOpAndDoesNotThrow() {
-        session.activatePermanently(IUserRoleService.ROLE_ADMIN);
+        session.activatePermanently(Roles.ADMIN, TestPermissions.ADMIN_GRANTS);
         session.refreshActivity();
         assertTrue(session.isActive());
     }
@@ -84,7 +81,7 @@ class AdminSessionTest {
         Runnable listener = () -> fired.set(true);
         session.addOnActivateListener(listener);
         try {
-            session.activatePermanently(IUserRoleService.ROLE_ADMIN);
+            session.activatePermanently(Roles.ADMIN, TestPermissions.ADMIN_GRANTS);
             waitForFxEvents();
             assertTrue(fired.get());
         } finally {
@@ -98,7 +95,7 @@ class AdminSessionTest {
         Runnable listener = () -> fired.set(true);
         session.addOnDeactivateListener(listener);
         try {
-            session.activatePermanently(IUserRoleService.ROLE_ADMIN);
+            session.activatePermanently(Roles.ADMIN, TestPermissions.ADMIN_GRANTS);
             waitForFxEvents();
             session.deactivate();
             waitForFxEvents();
@@ -110,7 +107,7 @@ class AdminSessionTest {
 
     @Test
     void activatePermanentlyNeverExpiresEvenAfterCheckingRepeatedly() {
-        session.activatePermanently(IUserRoleService.ROLE_ADMIN);
+        session.activatePermanently(Roles.ADMIN, TestPermissions.ADMIN_GRANTS);
         for (int i = 0; i < 5; i++) {
             assertTrue(session.isActive());
         }
@@ -118,8 +115,8 @@ class AdminSessionTest {
 
     @Test
     void activatePermanentlyEffectiveRoleMatchesLoggedInRole() {
-        session.activatePermanently(IUserRoleService.ROLE_SUPERADMIN);
-        assertEquals(IUserRoleService.ROLE_SUPERADMIN, session.getEffectiveRole());
+        session.activatePermanently(Roles.SUPERADMIN, TestPermissions.SUPERADMIN_GRANTS);
+        assertEquals(Roles.SUPERADMIN, session.getEffectiveRole());
     }
 
     @Test
@@ -129,7 +126,7 @@ class AdminSessionTest {
 
     @Test
     void effectiveRoleIsClearedOnDeactivate() {
-        session.activatePermanently(IUserRoleService.ROLE_SUPERADMIN);
+        session.activatePermanently(Roles.SUPERADMIN, TestPermissions.SUPERADMIN_GRANTS);
         session.deactivate();
         assertNull(session.getEffectiveRole());
     }
@@ -141,21 +138,21 @@ class AdminSessionTest {
 
     @Test
     void hasPermissionReflectsGrantedRolePermissions() {
-        session.activatePermanently(IUserRoleService.ROLE_ADMIN);
+        session.activatePermanently(Roles.ADMIN, TestPermissions.ADMIN_GRANTS);
         assertTrue(session.hasPermission(Permission.MANAGE_TYPES));
         assertFalse(session.hasPermission(Permission.EDIT_SMTP_CONFIG));
     }
 
     @Test
     void sedeScopedHasPermissionAllowsSuperadminRegardlessOfSede() {
-        session.activatePermanently(IUserRoleService.ROLE_SUPERADMIN);
+        session.activatePermanently(Roles.SUPERADMIN, TestPermissions.SUPERADMIN_GRANTS);
         assertTrue(session.hasPermission(Permission.APPROVE_NOTES, 999));
         assertTrue(session.hasPermission(Permission.APPROVE_NOTES, (Integer) null));
     }
 
     @Test
     void sedeScopedHasPermissionDeniesAdminWhenNoteSedeIsNull() {
-        session.activatePermanently(IUserRoleService.ROLE_ADMIN);
+        session.activatePermanently(Roles.ADMIN, TestPermissions.ADMIN_GRANTS);
         assertFalse(session.hasPermission(Permission.APPROVE_NOTES, (Integer) null));
     }
 
@@ -168,7 +165,7 @@ class AdminSessionTest {
 
         session.clearListenersForLogout();
 
-        session.activatePermanently(IUserRoleService.ROLE_ADMIN);
+        session.activatePermanently(Roles.ADMIN, TestPermissions.ADMIN_GRANTS);
         waitForFxEvents();
         session.deactivate();
         waitForFxEvents();

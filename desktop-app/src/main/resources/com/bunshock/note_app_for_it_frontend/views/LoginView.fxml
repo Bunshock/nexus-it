@@ -50,19 +50,19 @@
                             <VBox.margin><Insets top="8"/></VBox.margin>
                         </Label>
 
-                        <VBox spacing="2" maxWidth="Infinity">
+                        <Label fx:id="lblModeHint" text="" wrapText="true" textAlignment="CENTER"
+                               visible="false" managed="false"
+                               style="-fx-font-size: 11px; -fx-text-fill: #94a3b8;"/>
+
+                        <!-- Shown only when the middleware is running its dev profile (no Keycloak) —
+                             see LoginController.enterDevMode(). Production hides this entirely and the
+                             button runs the system-browser OIDC flow. -->
+                        <VBox fx:id="devUsernameBox" spacing="2" maxWidth="Infinity"
+                              visible="false" managed="false">
                             <children>
                                 <Label text="USUARIO" styleClass="input-label-small"/>
                                 <TextField fx:id="txtUsername" styleClass="form-input-main" maxWidth="Infinity"
                                            promptText="usuario.dominio" onAction="#handleLogin"/>
-                            </children>
-                        </VBox>
-
-                        <VBox spacing="2" maxWidth="Infinity">
-                            <children>
-                                <Label text="CONTRASEÑA" styleClass="input-label-small"/>
-                                <PasswordField fx:id="pfPassword" styleClass="form-input-main" maxWidth="Infinity"
-                                               onAction="#handleLogin"/>
                             </children>
                         </VBox>
 
