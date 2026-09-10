@@ -1,7 +1,6 @@
 package com.bunshock.note_app_for_it_frontend.controllers.core;
 
 import java.util.List;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import com.bunshock.note_app_for_it_frontend.App;
 import com.bunshock.note_app_for_it_frontend.models.history.HistoryFilter;
@@ -11,7 +10,8 @@ import com.bunshock.note_app_for_it_frontend.services.auth.MiddlewareAuthService
 import com.bunshock.note_app_for_it_frontend.services.history.IHistoryService;
 import com.bunshock.note_app_for_it_frontend.models.auth.Roles;
 import com.bunshock.note_app_for_it_frontend.services.history.PendingCountsService;
-import com.bunshock.note_app_for_it_frontend.services.core.RemoteDatabaseService;
+import com.bunshock.note_app_for_it_frontend.models.auth.MiddlewareStatus;
+import com.bunshock.note_app_for_it_frontend.services.core.MiddlewareException;
 import com.bunshock.note_app_for_it_frontend.services.core.ServiceLocator;
 import com.bunshock.note_app_for_it_frontend.services.auth.TechnicianSessionService;
 import com.bunshock.note_app_for_it_frontend.utils.core.DialogChrome;
@@ -78,19 +78,19 @@ public class MainController {
     @FXML private Label lblPrestamosApprovalBadge;
     @FXML private Label lblEnviosApprovalBadge;
 
-    @FXML private Circle circleAD;
-    @FXML private Circle circleGLPI;
-    @FXML private Circle circleDB;
-    @FXML private Tooltip tooltipAD;
-    @FXML private Tooltip tooltipGLPI;
-    @FXML private Tooltip tooltipDB;
+    @FXML private Circle circleMiddleware;
+    @FXML private Circle circleDirectory;
+    @FXML private Circle circleDb;
+    @FXML private Tooltip tooltipMiddleware;
+    @FXML private Tooltip tooltipDirectory;
+    @FXML private Tooltip tooltipDb;
 
     // Title-bar status preview (see setupTitleBarStatusHover()) — mini circles mirror
-    // circleAD/circleGLPI/circleDB, reparented into a PopOver on hover.
+    // circleMiddleware/circleDirectory/circleDb, reparented into a PopOver on hover.
     @FXML private HBox statusPreview;
-    @FXML private Circle circleADMini;
-    @FXML private Circle circleGLPIMini;
-    @FXML private Circle circleDBMini;
+    @FXML private Circle circleMiddlewareMini;
+    @FXML private Circle circleDirectoryMini;
+    @FXML private Circle circleDbMini;
     @FXML private VBox statusPanel;
     private final org.controlsfx.control.PopOver statusPopOver = new org.controlsfx.control.PopOver();
     private static final Duration STATUS_HOVER_DELAY = Duration.millis(400);
@@ -204,8 +204,9 @@ public class MainController {
     }
 
     /**
-     * Runs the AD/DB/GLPI checks in parallel behind a blurred, non-dismissable loading overlay
-     * and feeds the same sidebar dots the periodic monitor updates later.
+     * One {@code GET /status} call behind a blurred, non-dismissable loading overlay — the
+     * middleware is now the only backend. The dot reads Middleware (reachable from the client),
+     * plus Database and Directory as the middleware reports them.
      */
     private void runStartupChecks() {
         GaussianBlur blur = new GaussianBlur(20);
@@ -215,14 +216,14 @@ public class MainController {
         spinner.setMaxSize(40, 40);
         spinner.setStyle("-fx-progress-color: #0c8570;");
 
-        Label lblTitle = new Label("Verificando conexiones...");
+        Label lblTitle = new Label("Verificando conexión...");
         lblTitle.getStyleClass().add("section-label");
 
-        StartupRow rowAD   = buildPendingRow("Active Directory");
-        StartupRow rowDB   = buildPendingRow("Base de Datos");
-        StartupRow rowGLPI = buildPendingRow("GLPI");
+        StartupRow rowMw  = buildPendingRow("Middleware");
+        StartupRow rowDir = buildPendingRow("Directorio (AD)");
+        StartupRow rowDb  = buildPendingRow("Base de Datos");
 
-        VBox statusRows = new VBox(8, rowAD.container, rowDB.container, rowGLPI.container);
+        VBox statusRows = new VBox(8, rowMw.container, rowDir.container, rowDb.container);
         statusRows.setStyle("-fx-padding: 10 0 0 0;");
 
         VBox root = DialogChrome.buildDialogRoot(320, "#1a1a1a");
@@ -234,95 +235,38 @@ public class MainController {
         loadingStage.setScene(DialogChrome.buildDialogScene(root));
         loadingStage.show();
 
-        AtomicInteger remaining = new AtomicInteger(3);
-        Runnable onCheckDone = () -> {
-            if (remaining.decrementAndGet() == 0) {
-                PauseTransition pause = new PauseTransition(Duration.seconds(3));
+        Thread t = new Thread(() -> {
+            boolean mwUp = false;
+            MiddlewareStatus status = null;
+            for (int attempt = 1; attempt <= MAX_CONNECTION_ATTEMPTS && !mwUp; attempt++) {
+                try {
+                    status = MiddlewareAuthService.getInstance().status();
+                    mwUp = true;
+                } catch (MiddlewareException e) {
+                    if (attempt < MAX_CONNECTION_ATTEMPTS) sleepBetweenAttempts();
+                }
+            }
+            boolean finalMwUp = mwUp;
+            MiddlewareStatus finalStatus = status;
+            Platform.runLater(() -> {
+                applyStatusSnapshot(finalMwUp, finalStatus);
+                resolveRow(rowMw, "Middleware", true, finalMwUp);
+                resolveRowFromStatus(rowDir, "Directorio (AD)", componentOrNull(finalMwUp, finalStatus, true));
+                resolveRowFromStatus(rowDb, "Base de Datos", componentOrNull(finalMwUp, finalStatus, false));
+                PauseTransition pause = new PauseTransition(Duration.seconds(2));
                 pause.setOnFinished(e -> fadeOutStartupOverlay(loadingStage, root, blur));
                 pause.play();
-            }
-        };
-
-        // Staggered starts (1s/2s/3s) so each row's pending state is visible for a moment and
-        // the three spinners don't all flash at once; each still resolves independently.
-        delayThenRun(1, () -> startAdCheck(rowAD, onCheckDone));
-        delayThenRun(2, () -> startDbCheck(rowDB, onCheckDone));
-        delayThenRun(3, () -> startGlpiCheck(rowGLPI, onCheckDone));
+            });
+        }, "startup-status-check");
+        t.setDaemon(true);
+        t.start();
 
         startStatusMonitor();
     }
 
-    private void delayThenRun(int seconds, Runnable action) {
-        PauseTransition delay = new PauseTransition(Duration.seconds(seconds));
-        delay.setOnFinished(e -> action.run());
-        delay.play();
-    }
-
-    /**
-     * Retries a live AD reachability check up to MAX_CONNECTION_ATTEMPTS times, using the
-     * already-resolved technician username.
-     */
-    private void startAdCheck(StartupRow row, Runnable onCheckDone) {
-        Thread t = new Thread(() -> {
-            String username = TechnicianSessionService.getInstance().getUsername();
-            boolean reachable = false;
-            for (int attempt = 1; attempt <= MAX_CONNECTION_ATTEMPTS && !reachable; attempt++) {
-                try {
-                    reachable = username != null
-                        && !ServiceLocator.getInstance().getAdService().search(null, null, username).isEmpty();
-                } catch (Exception adUnreachable) {
-                    reachable = false;
-                }
-                if (!reachable && attempt < MAX_CONNECTION_ATTEMPTS) sleepBetweenAttempts();
-            }
-            boolean finalReachable = reachable;
-            Platform.runLater(() -> {
-                updateADStatus(finalReachable);
-                resolveRow(row, "Active Directory",
-                    ServiceLocator.getInstance().getAdService().isConfigured(), finalReachable);
-                onCheckDone.run();
-            });
-        }, "startup-ad-check");
-        t.setDaemon(true);
-        t.start();
-    }
-
-    /** Retries the DB connection test up to MAX_CONNECTION_ATTEMPTS times before giving up. */
-    private void startDbCheck(StartupRow row, Runnable onCheckDone) {
-        Thread t = new Thread(() -> {
-            boolean dbUp = false;
-            for (int attempt = 1; attempt <= MAX_CONNECTION_ATTEMPTS && !dbUp; attempt++) {
-                dbUp = RemoteDatabaseService.getInstance().testConnection();
-                if (!dbUp && attempt < MAX_CONNECTION_ATTEMPTS) sleepBetweenAttempts();
-            }
-            boolean finalDbUp = dbUp;
-            Platform.runLater(() -> {
-                updateDBStatus(finalDbUp);
-                resolveRow(row, "Base de Datos", RemoteDatabaseService.getInstance().isConfigured(), finalDbUp);
-                onCheckDone.run();
-            });
-        }, "startup-db-check");
-        t.setDaemon(true);
-        t.start();
-    }
-
-    /** Retries the GLPI reachability check up to MAX_CONNECTION_ATTEMPTS times before giving up. */
-    private void startGlpiCheck(StartupRow row, Runnable onCheckDone) {
-        Thread t = new Thread(() -> {
-            boolean glpiUp = false;
-            for (int attempt = 1; attempt <= MAX_CONNECTION_ATTEMPTS && !glpiUp; attempt++) {
-                glpiUp = ServiceLocator.getInstance().getGlpiService().isReachable();
-                if (!glpiUp && attempt < MAX_CONNECTION_ATTEMPTS) sleepBetweenAttempts();
-            }
-            boolean finalGlpiUp = glpiUp;
-            Platform.runLater(() -> {
-                updateGLPIStatus(finalGlpiUp);
-                resolveRow(row, "GLPI", true, finalGlpiUp);
-                onCheckDone.run();
-            });
-        }, "startup-glpi-check");
-        t.setDaemon(true);
-        t.start();
+    private static String componentOrNull(boolean mwUp, MiddlewareStatus status, boolean directory) {
+        if (!mwUp || status == null) return null;
+        return directory ? status.directory() : status.database();
     }
 
     private void sleepBetweenAttempts() {
@@ -400,6 +344,30 @@ public class MainController {
         }
     }
 
+    /** Same, for a component whose state comes from {@code GET /status} — {@code null} means the
+     * middleware was unreachable, so its sub-components are simply unknown. */
+    private void resolveRowFromStatus(StartupRow row, String serviceName, String componentStatus) {
+        row.ellipsis.stop();
+        row.lblService.setText(serviceName);
+        row.lblService.setStyle("-fx-text-fill: #334155; -fx-font-size: 12px;");
+
+        String text;
+        String color;
+        String dot;
+        if (componentStatus == null) {
+            text = "SIN DATOS"; color = "#94a3b8"; dot = "#94a3b8";
+        } else if (MiddlewareStatus.UP.equals(componentStatus)) {
+            text = "EN LÍNEA"; color = "#22c55e"; dot = "#22c55e";
+        } else if (MiddlewareStatus.NOT_CONFIGURED.equals(componentStatus)) {
+            text = "NO CONFIGURADO"; color = "#94a3b8"; dot = "#94a3b8";
+        } else {
+            text = "DESCONECTADO"; color = "#ef4444"; dot = "#ef4444";
+        }
+        row.indicatorSlot.getChildren().setAll(new Circle(5, Color.web(dot)));
+        row.lblStatus.setText(text);
+        row.lblStatus.setStyle("-fx-text-fill: " + color + "; -fx-font-size: 11px; -fx-font-weight: bold;");
+    }
+
     /** Fades the loading card and the background blur out together, then closes the overlay. */
     private void fadeOutStartupOverlay(Stage loadingStage, VBox root, GaussianBlur blur) {
         Duration fadeDuration = Duration.millis(700);
@@ -434,43 +402,26 @@ public class MainController {
     }
 
     private void startStatusMonitor() {
-        ScheduledService<boolean[]> service = new ScheduledService<>() {
+        ScheduledService<MiddlewareStatus> service = new ScheduledService<>() {
             @Override
-            protected Task<boolean[]> createTask() {
+            protected Task<MiddlewareStatus> createTask() {
                 return new Task<>() {
                     @Override
-                    protected boolean[] call() {
-                        boolean adUp   = checkAdReachable();
-                        boolean glpiUp = ServiceLocator.getInstance().getGlpiService().isReachable();
-                        boolean dbUp   = RemoteDatabaseService.getInstance().testConnection();
-                        // Promotes equipmentService/historyService/userRoleService off local-only
-                        // if remote was down at app startup and has since come back.
-                        if (dbUp) ServiceLocator.getInstance().retryRemoteConnectionIfDown();
-                        return new boolean[]{adUp, glpiUp, dbUp};
+                    protected MiddlewareStatus call() {
+                        // null = the middleware was unreachable this cycle.
+                        try {
+                            return MiddlewareAuthService.getInstance().status();
+                        } catch (MiddlewareException e) {
+                            return null;
+                        }
                     }
                 };
             }
         };
         service.setDelay(Duration.seconds(60));
         service.setPeriod(Duration.seconds(60));
-        service.setOnSucceeded(e -> {
-            boolean[] r = service.getValue();
-            updateADStatus(r[0]);
-            updateGLPIStatus(r[1]);
-            updateDBStatus(r[2]);
-        });
+        service.setOnSucceeded(e -> applyStatusSnapshot(service.getValue() != null, service.getValue()));
         service.start();
-    }
-
-    private boolean checkAdReachable() {
-        String username = TechnicianSessionService.getInstance().getUsername();
-        if (username == null || username.isBlank()) return false;
-        try {
-            ServiceLocator.getInstance().getAdService().search(null, null, username);
-            return true;
-        } catch (Exception e) {
-            return false;
-        }
     }
 
     private Color statusColor(boolean configured, boolean online) {
@@ -478,27 +429,35 @@ public class MainController {
         return online ? Color.web("#22c55e") : Color.web("#ef4444");
     }
 
-    private void updateADStatus(boolean online) {
-        boolean configured = ServiceLocator.getInstance().getAdService().isConfigured();
-        Color color = statusColor(configured, online);
-        circleAD.setFill(color);
-        circleADMini.setFill(color);
-        tooltipAD.setText("Active Directory: " + (!configured ? "No configurado" : (online ? "En línea" : "Desconectado")));
+    /** Repaints the three sidebar dots (and their title-bar minis) from a {@code GET /status}
+     * result. {@code mwUp} false / {@code status} null means the middleware itself was unreachable. */
+    private void applyStatusSnapshot(boolean mwUp, MiddlewareStatus status) {
+        Color mwColor = mwUp ? Color.web("#22c55e") : Color.web("#ef4444");
+        circleMiddleware.setFill(mwColor);
+        circleMiddlewareMini.setFill(mwColor);
+        tooltipMiddleware.setText("Middleware: " + (mwUp ? "En línea" : "No disponible"));
+
+        paintComponentDot(circleDirectory, circleDirectoryMini, tooltipDirectory, "Directorio (AD)",
+            componentOrNull(mwUp, status, true));
+        paintComponentDot(circleDb, circleDbMini, tooltipDb, "Base de datos",
+            componentOrNull(mwUp, status, false));
     }
 
-    private void updateGLPIStatus(boolean online) {
-        Color color = online ? Color.web("#22c55e") : Color.web("#ef4444");
-        circleGLPI.setFill(color);
-        circleGLPIMini.setFill(color);
-        tooltipGLPI.setText("GLPI API: " + (online ? "En línea" : "Desconectado"));
-    }
-
-    private void updateDBStatus(boolean online) {
-        boolean configured = RemoteDatabaseService.getInstance().isConfigured();
-        Color color = statusColor(configured, online);
-        circleDB.setFill(color);
-        circleDBMini.setFill(color);
-        tooltipDB.setText("Base de datos remota: " + (!configured ? "No configurada" : (online ? "En línea" : "Desconectada")));
+    private void paintComponentDot(Circle main, Circle mini, Tooltip tip, String label, String componentStatus) {
+        Color color;
+        String word;
+        if (componentStatus == null) {
+            color = Color.web("#94a3b8"); word = "Sin datos";
+        } else if (MiddlewareStatus.UP.equals(componentStatus)) {
+            color = Color.web("#22c55e"); word = "En línea";
+        } else if (MiddlewareStatus.NOT_CONFIGURED.equals(componentStatus)) {
+            color = Color.web("#94a3b8"); word = "No configurado";
+        } else {
+            color = Color.web("#ef4444"); word = "Desconectado";
+        }
+        main.setFill(color);
+        mini.setFill(color);
+        tip.setText(label + ": " + word);
     }
 
     private void updateAdminIndicator() {

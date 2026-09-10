@@ -31,16 +31,16 @@
                <HBox.margin><Insets left="10"/></HBox.margin>
             </Label>
             <Region HBox.hgrow="ALWAYS"/>
-            <!-- Compact status preview: mirrors circleAD/circleGLPI/circleDB's colors (kept in
-                 sync by MainController's updateADStatus/updateGLPIStatus/updateDBStatus). Hovering
-                 opens the full "ESTADO DE SERVICIOS" panel (statusPanel below, reparented into a
-                 PopOver at runtime by MainController.setupTitleBarStatusHover()). -->
+            <!-- Compact status preview: mirrors circleMiddleware/circleDirectory/circleDb's colors
+                 (kept in sync by MainController.applyStatusSnapshot()). Hovering opens the full
+                 "ESTADO DE SERVICIOS" panel (statusPanel below, reparented into a PopOver at
+                 runtime by MainController.setupTitleBarStatusHover()). -->
             <HBox fx:id="statusPreview" spacing="6" alignment="CENTER" style="-fx-cursor: hand;">
                <HBox.margin><Insets right="14"/></HBox.margin>
                <children>
-                  <Circle fx:id="circleADMini" radius="4.0" fill="#ff9800" stroke="#ffffff" strokeWidth="1.0"/>
-                  <Circle fx:id="circleGLPIMini" radius="4.0" fill="#f44336" stroke="#ffffff" strokeWidth="1.0"/>
-                  <Circle fx:id="circleDBMini" radius="4.0" fill="#94a3b8" stroke="#ffffff" strokeWidth="1.0"/>
+                  <Circle fx:id="circleMiddlewareMini" radius="4.0" fill="#94a3b8" stroke="#ffffff" strokeWidth="1.0"/>
+                  <Circle fx:id="circleDirectoryMini" radius="4.0" fill="#94a3b8" stroke="#ffffff" strokeWidth="1.0"/>
+                  <Circle fx:id="circleDbMini" radius="4.0" fill="#94a3b8" stroke="#ffffff" strokeWidth="1.0"/>
                </children>
             </HBox>
             <Button fx:id="btnLogout" text="Cerrar sesión" onAction="#handleLogout" styleClass="title-bar-logout-button">
@@ -232,35 +232,35 @@
                   style="-fx-background-color: #0c8570; -fx-background-radius: 8; -fx-border-color: rgba(255,255,255,0.18); -fx-border-width: 1; -fx-border-radius: 8; -fx-padding: 10;">
                <children>
                   <Label text="ESTADO DE SERVICIOS" style="-fx-text-fill: rgba(255,255,255,0.5); -fx-font-size: 9px; -fx-font-weight: bold; -fx-letter-spacing: 1px;"/>
-                  <!-- Active Directory -->
+                  <!-- Middleware (checked directly by the client) -->
                   <HBox alignment="CENTER_LEFT" spacing="10">
                      <children>
-                        <Circle fx:id="circleAD" radius="5.0" fill="#ff9800" stroke="#ffffff" strokeWidth="1.0" />
-                        <Label text="Active Directory (AD) API" style="-fx-text-fill: white; -fx-font-size: 11px;">
+                        <Circle fx:id="circleMiddleware" radius="5.0" fill="#94a3b8" stroke="#ffffff" strokeWidth="1.0" />
+                        <Label text="Middleware" style="-fx-text-fill: white; -fx-font-size: 11px;">
                               <tooltip>
-                                 <Tooltip fx:id="tooltipAD" text="Verificando estado..." />
+                                 <Tooltip fx:id="tooltipMiddleware" text="Verificando estado..." />
                               </tooltip>
                         </Label>
                      </children>
                   </HBox>
-                  <!-- GLPI API -->
+                  <!-- Directory / AD (reported by the middleware) -->
                   <HBox alignment="CENTER_LEFT" spacing="10">
                         <children>
-                           <Circle fx:id="circleGLPI" radius="5.0" fill="#f44336" stroke="#ffffff" strokeWidth="1.0" />
-                           <Label text="GLPI API" style="-fx-text-fill: white; -fx-font-size: 11px;">
+                           <Circle fx:id="circleDirectory" radius="5.0" fill="#94a3b8" stroke="#ffffff" strokeWidth="1.0" />
+                           <Label text="Directorio (AD)" style="-fx-text-fill: white; -fx-font-size: 11px;">
                               <tooltip>
-                                 <Tooltip fx:id="tooltipGLPI" text="Verificando estado..." />
+                                 <Tooltip fx:id="tooltipDirectory" text="Verificando estado..." />
                               </tooltip>
                            </Label>
                         </children>
                   </HBox>
-                  <!-- Remote DB -->
+                  <!-- Database (reported by the middleware) -->
                   <HBox alignment="CENTER_LEFT" spacing="10">
                         <children>
-                           <Circle fx:id="circleDB" radius="5.0" fill="#94a3b8" stroke="#ffffff" strokeWidth="1.0" />
+                           <Circle fx:id="circleDb" radius="5.0" fill="#94a3b8" stroke="#ffffff" strokeWidth="1.0" />
                            <Label text="Base de Datos" style="-fx-text-fill: white; -fx-font-size: 11px;">
                               <tooltip>
-                                 <Tooltip fx:id="tooltipDB" text="Verificando estado..." />
+                                 <Tooltip fx:id="tooltipDb" text="Verificando estado..." />
                               </tooltip>
                            </Label>
                         </children>
