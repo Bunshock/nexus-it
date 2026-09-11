@@ -21,40 +21,36 @@ import static org.junit.jupiter.api.Assertions.*;
 // the keys it touches and restores it in @AfterEach — a run against a developer's real,
 // already-configured installation must never lose real settings.
 //
-// Phase B: the remote-DB fields (db_host/port/name/username/password) were retired along with
-// RemoteDatabaseService — the middleware is the one remote connection now, configured via
-// config.middleware.baseUrl (not a secret, not provisioned here). Only smtp_password/
-// glpi_api_key/ad_api_token remain.
+// Phase B: the remote-DB fields (db_host/port/name/username/password), ad_api_token, and
+// glpi_api_key were all retired along with RemoteDatabaseService/AdApiService/the GLPI Settings
+// card — the middleware is the one remote connection now, configured via config.middleware.baseUrl
+// (not a secret, not provisioned here). smtp_password is the only secret provisionDefaultSecrets()
+// still copies from config.defaults.
 class ServiceLocatorProvisionTest {
 
-    private static final String[] KEYS = {"smtp_password", "glpi_api_key", "ad_api_token"};
+    private static final String KEY = "smtp_password";
 
     private final ServiceLocator locator = ServiceLocator.getInstance();
     private final Map<String, String> backup = new HashMap<>();
 
     @BeforeEach
     void backupSettings() throws Exception {
-        backup.clear();
-        for (String key : KEYS) {
-            backup.put(key, readSetting(key));
-        }
+        backup.put(KEY, readSetting(KEY));
     }
 
     @AfterEach
     void restoreSettings() throws Exception {
-        for (String key : KEYS) {
-            String original = backup.get(key);
-            if (original == null) {
-                deleteSetting(key);
-            } else {
-                writeSetting(key, original);
-            }
+        String original = backup.get(KEY);
+        if (original == null) {
+            deleteSetting(KEY);
+        } else {
+            writeSetting(KEY, original);
         }
     }
 
     @Test
     void provisionsSmtpPasswordFromDefaultsWhenMissing() throws Exception {
-        deleteSetting("smtp_password");
+        deleteSetting(KEY);
 
         AppConfig config = new AppConfig();
         config.defaults = new AppConfig.DefaultSecrets();
@@ -62,12 +58,12 @@ class ServiceLocatorProvisionTest {
 
         locator.provisionDefaultSecrets(config);
 
-        assertEquals("encrypted-smtp-ciphertext", readSetting("smtp_password"));
+        assertEquals("encrypted-smtp-ciphertext", readSetting(KEY));
     }
 
     @Test
     void doesNotOverwriteExistingSmtpPassword() throws Exception {
-        writeSetting("smtp_password", "already-set-ciphertext");
+        writeSetting(KEY, "already-set-ciphertext");
 
         AppConfig config = new AppConfig();
         config.defaults = new AppConfig.DefaultSecrets();
@@ -75,30 +71,30 @@ class ServiceLocatorProvisionTest {
 
         locator.provisionDefaultSecrets(config);
 
-        assertEquals("already-set-ciphertext", readSetting("smtp_password"));
+        assertEquals("already-set-ciphertext", readSetting(KEY));
     }
 
     @Test
     void provisionIfMissingIgnoresBlankOrNullValue() throws Exception {
-        deleteSetting("glpi_api_key");
+        deleteSetting(KEY);
 
-        locator.provisionIfMissing("glpi_api_key", "");
-        assertNull(readSetting("glpi_api_key"));
+        locator.provisionIfMissing(KEY, "");
+        assertNull(readSetting(KEY));
 
-        locator.provisionIfMissing("glpi_api_key", null);
-        assertNull(readSetting("glpi_api_key"));
+        locator.provisionIfMissing(KEY, null);
+        assertNull(readSetting(KEY));
     }
 
     @Test
     void provisionDefaultSecretsIsANoOpWhenDefaultsIsNull() throws Exception {
-        deleteSetting("ad_api_token");
+        deleteSetting(KEY);
 
         AppConfig config = new AppConfig();
         config.defaults = null;
 
         locator.provisionDefaultSecrets(config);
 
-        assertNull(readSetting("ad_api_token"));
+        assertNull(readSetting(KEY));
     }
 
     private String readSetting(String key) throws Exception {

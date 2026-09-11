@@ -79,31 +79,6 @@
                 </children>
             </VBox>
 
-            <!-- GLPI -->
-            <VBox spacing="10" style="-fx-background-color: white; -fx-background-radius: 10; -fx-padding: 15 20 20 20;">
-                <children>
-                    <Label text="GLPI API" styleClass="section-label"/>
-                    <GridPane hgap="15" vgap="10">
-                        <columnConstraints>
-                            <ColumnConstraints percentWidth="25"/>
-                            <ColumnConstraints percentWidth="25"/>
-                        </columnConstraints>
-                        <children>
-                            <VBox spacing="2" GridPane.columnIndex="0">
-                                <Label text="API URL" styleClass="input-label-small"/>
-                                <TextField fx:id="txtGlpiUrl" promptText="http://glpi-server/apirest.php"
-                                           styleClass="form-input-main" disable="true"/>
-                            </VBox>
-                            <VBox spacing="2" GridPane.columnIndex="1">
-                                <Label text="API KEY" styleClass="input-label-small"/>
-                                <PasswordField fx:id="pfGlpiApiKey" promptText="Clave de API de GLPI"
-                                               styleClass="form-input-main" disable="true"/>
-                            </VBox>
-                        </children>
-                    </GridPane>
-                </children>
-            </VBox>
-
             <!-- S/N validation -->
             <VBox spacing="10" style="-fx-background-color: white; -fx-background-radius: 10; -fx-padding: 15 20 20 20;">
                 <children>

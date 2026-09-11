@@ -18,7 +18,6 @@ public class AppConfig {
     // as failureTriggerMotivo above.
     public List<String> returnableMotivosProveedor = List.of();
     public SmtpConfig smtp;
-    public ApiEndpoint glpiApi;
     public int noteItemLimit;
     public DefaultSecrets defaults;
     public CatalogConfig catalog = new CatalogConfig();
@@ -38,11 +37,6 @@ public class AppConfig {
         public String senderAddress;
     }
 
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    public static class ApiEndpoint {
-        public String baseUrl;
-    }
-
     /**
      * Pre-encrypted (AppKeyEncryptionService) default values for a zero-touch first run —
      * generated via utils.AppKeyEncryptionGenerator, never plaintext. Copied into
@@ -52,7 +46,6 @@ public class AppConfig {
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class DefaultSecrets {
         public String smtpPassword;
-        public String glpiApiKey;
     }
 
 
@@ -81,7 +74,7 @@ public class AppConfig {
     /**
      * The one backend the app talks to (Phase B — REST client). {@code baseUrl} is the middleware
      * root, e.g. {@code http://localhost:8080} or {@code https://nexus-it.example.org}. Not a
-     * secret. Everything else the app used to configure locally (AD/GLPI/SMTP/DB credentials)
+     * secret. Everything else the app used to configure locally (AD lookup, DB credentials)
      * lives server-side in the middleware now.
      */
     @JsonIgnoreProperties(ignoreUnknown = true)

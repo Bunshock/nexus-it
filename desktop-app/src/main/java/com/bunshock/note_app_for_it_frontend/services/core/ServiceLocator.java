@@ -77,7 +77,6 @@ public class ServiceLocator {
     void provisionDefaultSecrets(AppConfig config) {
         if (config.defaults == null) return;
         provisionIfMissing("smtp_password", config.defaults.smtpPassword);
-        provisionIfMissing("glpi_api_key", config.defaults.glpiApiKey);
     }
 
     void provisionIfMissing(String key, String value) {

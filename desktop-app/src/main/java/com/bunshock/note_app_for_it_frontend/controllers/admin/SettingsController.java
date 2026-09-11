@@ -59,9 +59,6 @@ public class SettingsController {
     @FXML private TextField   txtSmtpSender;
     @FXML private PasswordField pfSmtpPassword;
 
-    @FXML private TextField     txtGlpiUrl;
-    @FXML private PasswordField pfGlpiApiKey;
-
     @FXML private Button btnSave;
     @FXML private Label  lblSaveStatus;
 
@@ -84,12 +81,11 @@ public class SettingsController {
     private static final List<String> SN_ACTIVE_OPTIONS = List.of("Sí", "No");
     private static final int SN_REGEX_MAX_LENGTH = 500;
 
-    // None of these four are backed by a SQL Server column (app-config.json's afFormat.prefix/
-    // separator, smtp.senderAddress, glpiApi.baseUrl; the two PasswordFields are encrypted
-    // APP_SETTINGS values, local-only) — capped purely as a sanity guard against an accidental
-    // huge paste, same reasoning already applied to SN_REGEX_MAX_LENGTH above.
+    // None of these three are backed by a SQL Server column (app-config.json's afFormat.prefix/
+    // separator, smtp.senderAddress; the PasswordField is an encrypted APP_SETTINGS value,
+    // local-only) — capped purely as a sanity guard against an accidental huge paste, same
+    // reasoning already applied to SN_REGEX_MAX_LENGTH above.
     private static final int AF_FORMAT_MAX_LENGTH = 20;
-    private static final int URL_MAX_LENGTH = 255;
     private static final int SMTP_SENDER_MAX_LENGTH = 255;
     private static final int API_SECRET_MAX_LENGTH = 500;
 
@@ -113,7 +109,6 @@ public class SettingsController {
         txtAfPrefix.setText(config.afFormat.prefix);
         txtAfSeparator.setText(config.afFormat.separator);
         txtSmtpSender.setText(config.smtp.senderAddress);
-        txtGlpiUrl.setText(config.glpiApi.baseUrl);
 
         txtAfPrefix.setTextFormatter(new TextFormatter<>(change ->
             change.getControlNewText().length() <= AF_FORMAT_MAX_LENGTH ? change : null));
@@ -121,11 +116,7 @@ public class SettingsController {
             change.getControlNewText().length() <= AF_FORMAT_MAX_LENGTH ? change : null));
         txtSmtpSender.setTextFormatter(new TextFormatter<>(change ->
             change.getControlNewText().length() <= SMTP_SENDER_MAX_LENGTH ? change : null));
-        txtGlpiUrl.setTextFormatter(new TextFormatter<>(change ->
-            change.getControlNewText().length() <= URL_MAX_LENGTH ? change : null));
         pfSmtpPassword.setTextFormatter(new TextFormatter<>(change ->
-            change.getControlNewText().length() <= API_SECRET_MAX_LENGTH ? change : null));
-        pfGlpiApiKey.setTextFormatter(new TextFormatter<>(change ->
             change.getControlNewText().length() <= API_SECRET_MAX_LENGTH ? change : null));
 
         txtAfPrefix.textProperty().addListener((o, a, b) -> updateAfPreview());
@@ -160,13 +151,10 @@ public class SettingsController {
     private void updateFieldEditability() {
         boolean canAf   = AdminSession.getInstance().hasPermission(Permission.EDIT_AF_FORMAT_CONFIG);
         boolean canSmtp = AdminSession.getInstance().hasPermission(Permission.EDIT_SMTP_CONFIG);
-        boolean canGlpi = AdminSession.getInstance().hasPermission(Permission.EDIT_GLPI_CONFIG);
         txtAfPrefix.setDisable(!canAf);
         txtAfSeparator.setDisable(!canAf);
         txtSmtpSender.setDisable(!canSmtp);
         pfSmtpPassword.setDisable(!canSmtp);
-        txtGlpiUrl.setDisable(!canGlpi);
-        pfGlpiApiKey.setDisable(!canGlpi);
         // btnSave itself is never disabled — a session with none of these permissions granted
         // simply has every field disabled, so clicking Save is a harmless no-op (see handleSave).
     }
@@ -191,9 +179,8 @@ public class SettingsController {
         AppConfig config = ConfigService.getInstance().getConfig();
         boolean canAf   = AdminSession.getInstance().hasPermission(Permission.EDIT_AF_FORMAT_CONFIG);
         boolean canSmtp = AdminSession.getInstance().hasPermission(Permission.EDIT_SMTP_CONFIG);
-        boolean canGlpi = AdminSession.getInstance().hasPermission(Permission.EDIT_GLPI_CONFIG);
 
-        if (!canAf && !canSmtp && !canGlpi) {
+        if (!canAf && !canSmtp) {
             triggerSaveStatus("No tiene permisos para modificar esta configuración", "#ef4444");
             return;
         }
@@ -203,7 +190,6 @@ public class SettingsController {
         String oldAfPrefix    = config.afFormat.prefix;
         String oldAfSeparator = config.afFormat.separator;
         String oldSmtpSender  = config.smtp.senderAddress;
-        String oldGlpiUrl     = config.glpiApi.baseUrl;
 
         if (canAf) {
             config.afFormat.prefix    = txtAfPrefix.getText().trim();
@@ -211,9 +197,6 @@ public class SettingsController {
         }
         if (canSmtp) {
             config.smtp.senderAddress = txtSmtpSender.getText().trim();
-        }
-        if (canGlpi) {
-            config.glpiApi.baseUrl = txtGlpiUrl.getText().trim();
         }
 
         boolean smtpPasswordChanged = false;
@@ -226,22 +209,12 @@ public class SettingsController {
             }
         }
 
-        boolean glpiKeyChanged = false;
-        if (canGlpi) {
-            String glpiApiKey = pfGlpiApiKey.getText();
-            if (!glpiApiKey.isBlank()) {
-                saveEncryptedSetting("glpi_api_key", glpiApiKey);
-                pfGlpiApiKey.clear();
-                glpiKeyChanged = true;
-            }
-        }
-
         try {
             ConfigService.getInstance().save();
             triggerSaveStatus("Configuración guardada", "#0c8570");
             String username = TechnicianSessionService.getInstance().getUsername();
-            // Secret values (SMTP password, GLPI key) are NEVER written to old_value/new_value
-            // here — only that a change happened, via the reason field.
+            // The SMTP password is NEVER written to old_value/new_value here — only that a
+            // change happened, via the reason field.
             if (canAf && (!oldAfPrefix.equals(config.afFormat.prefix) || !oldAfSeparator.equals(config.afFormat.separator))) {
                 ServiceLocator.getInstance().getAuditService().recordAdminAction(username,
                     "EDIT_AF_FORMAT_CONFIG", "APP_CONFIG", "afFormat",
@@ -251,11 +224,6 @@ public class SettingsController {
                 ServiceLocator.getInstance().getAuditService().recordAdminAction(username,
                     "EDIT_SMTP_CONFIG", "APP_SETTINGS", "smtp",
                     oldSmtpSender, config.smtp.senderAddress, smtpPasswordChanged ? "Contraseña actualizada" : null);
-            }
-            if (canGlpi && (!oldGlpiUrl.equals(config.glpiApi.baseUrl) || glpiKeyChanged)) {
-                ServiceLocator.getInstance().getAuditService().recordAdminAction(username,
-                    "EDIT_GLPI_CONFIG", "APP_SETTINGS", "glpi_api_key",
-                    oldGlpiUrl, config.glpiApi.baseUrl, glpiKeyChanged ? "Clave API actualizada" : null);
             }
         } catch (Exception e) {
             triggerSaveStatus("Error al guardar la configuración", "#ef4444");

@@ -17,9 +17,6 @@
     "port" : 587,
     "senderAddress" : ""
   },
-  "glpiApi" : {
-    "baseUrl" : ""
-  },
   "middleware" : {
     "baseUrl" : "http://localhost:8080"
   },
@@ -31,7 +28,6 @@
     "manifestPath" : ""
   },
   "defaults" : {
-    "smtpPassword" : "",
-    "glpiApiKey" : ""
+    "smtpPassword" : ""
   }
 }

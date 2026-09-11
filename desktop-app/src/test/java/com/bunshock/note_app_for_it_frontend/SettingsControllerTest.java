@@ -24,10 +24,10 @@ import static org.junit.jupiter.api.Assertions.*;
 class SettingsControllerTest {
 
     // Only EDIT_SMTP_CONFIG is SUPERADMIN-only (see SettingsController.handleSave()'s own comment
-    // and TestPermissions.ADMIN_GRANTS = "all except EDIT_SMTP_CONFIG"). AF-format / GLPI
+    // and TestPermissions.ADMIN_GRANTS = "all except EDIT_SMTP_CONFIG"). AF-format
     // config is editable by a plain ADMIN.
     private static final String[] PLAIN_ADMIN_FIELD_NAMES = {
-        "txtAfPrefix", "txtAfSeparator", "txtGlpiUrl", "pfGlpiApiKey"
+        "txtAfPrefix", "txtAfSeparator"
     };
     private static final String[] SUPERADMIN_ONLY_FIELD_NAMES = {
         "txtSmtpSender", "pfSmtpPassword"
@@ -55,8 +55,6 @@ class SettingsControllerTest {
         setField("txtAfSeparator", new TextField());
         setField("txtSmtpSender", new TextField());
         setField("pfSmtpPassword", new PasswordField());
-        setField("txtGlpiUrl", new TextField());
-        setField("pfGlpiApiKey", new PasswordField());
         setField("btnSave", new Button());
     }
 
