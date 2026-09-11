@@ -73,7 +73,7 @@
                 <Separator/>
 
                 <Label wrapText="true"
-                       text="El Generador de Notas IT permite al personal de soporte técnico crear notas de entrega, devolución y proveedor de equipamiento informático. Las notas pueden previsualizarse, imprimirse y enviarse por correo electrónico directamente desde la aplicación."
+                       text="El Generador de Notas IT permite al personal de soporte técnico crear notas de entrega, devolución y proveedor de equipamiento informático. Las notas pueden previsualizarse e imprimirse directamente desde la aplicación."
                        style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
 
                 <Separator/>
@@ -121,11 +121,7 @@
                            style="-fx-font-size: 12px; -fx-text-fill: #334155;"/>
                     <Label text="     14.1  Formato del Activo Fijo"
                            style="-fx-font-size: 12px; -fx-text-fill: #64748b;"/>
-                    <Label text="     14.2  Correo electrónico"
-                           style="-fx-font-size: 12px; -fx-text-fill: #64748b;"/>
-                    <Label text="     14.3  Active Directory"
-                           style="-fx-font-size: 12px; -fx-text-fill: #64748b;"/>
-                    <Label text="     14.4  Validación de S/N por modelo"
+                    <Label text="     14.2  Validación de S/N por modelo"
                            style="-fx-font-size: 12px; -fx-text-fill: #64748b;"/>
                     <Label text="15.  Roles y modo administrador"
                            style="-fx-font-size: 12px; -fx-text-fill: #334155;"/>
@@ -184,7 +180,7 @@
                            style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
                     <Label text="•  Mi Perfil — datos del técnico que aparecen en las notas y en el saludo de la barra lateral"
                            style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
-                    <Label text="•  Configuración — ajustes de correo, GLPI, Active Directory y validación de S/N"
+                    <Label text="•  Configuración — formato de Activo Fijo y validación de S/N"
                            style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
                     <Label text="•  Acerca de — información sobre la aplicación, este manual y la búsqueda de actualizaciones"
                            style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
@@ -317,8 +313,6 @@
                        style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
                 <VBox spacing="3" style="-fx-padding: 0 0 0 12;">
                     <Label wrapText="true" text="•  Imprimir: abre el diálogo de impresión del sistema para imprimir la nota en papel."
-                           style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
-                    <Label wrapText="true" text="•  Enviar por correo: aún no disponible en esta versión — el casillero aparece deshabilitado independientemente de la configuración de correo (ver sección 14.2)."
                            style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
                 </VBox>
                 <Label wrapText="true"
@@ -470,7 +464,7 @@
                        style="-fx-font-size: 15px; -fx-font-weight: bold; -fx-text-fill: #0c8570;"/>
 
                 <Label wrapText="true"
-                       text="Salvo indicación contraria, todos los campos de esta sección son de solo lectura y solo pueden modificarse con modo administrador (o, para Correo Electrónico, modo superadministrador) activo — ver sección 15."
+                       text="Salvo indicación contraria, todos los campos de esta sección son de solo lectura y solo pueden modificarse con modo administrador activo — ver sección 15. La búsqueda de usuarios en Active Directory (sección 7) no requiere configuración: la administra el servidor central de la aplicación."
                        style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
 
                 <Label text="14.1  Formato del Activo Fijo"
@@ -479,19 +473,7 @@
                        text="Define cómo se arma el número de Activo Fijo a partir del número de serie de cada ítem (ver sección 5.3): un Prefijo (texto que precede al número, ej: IT) y un Separador (carácter entre el prefijo y el número de serie, ej: -). Una previsualización en tiempo real muestra el resultado con un número de ejemplo."
                        style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
 
-                <Label text="14.2  Correo electrónico"
-                       style="-fx-font-size: 13px; -fx-font-weight: bold; -fx-text-fill: #334155;"/>
-                <Label wrapText="true"
-                       text="Estos campos de configuración SMTP (servidor, puerto, dirección del remitente y contraseña) están disponibles para dejar el envío de correo pre-configurado, y son visibles solo para superadministradores. La contraseña se ingresa una sola vez y queda almacenada de forma segura en el equipo; no es necesario volver a ingresarla en sesiones posteriores. El envío de notas por correo aún no está disponible en esta versión de la aplicación: la opción &quot;Enviar por correo&quot; de la previsualización permanece deshabilitada independientemente de esta configuración."
-                       style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
-
-                <Label text="14.3  Active Directory"
-                       style="-fx-font-size: 13px; -fx-font-weight: bold; -fx-text-fill: #334155;"/>
-                <Label wrapText="true"
-                       text="Para habilitar la búsqueda de usuarios en Active Directory (sección 7), completar la URL y el Token de la API en &quot;ACTIVE DIRECTORY API&quot;. El Token se ingresa una sola vez y queda almacenado de forma segura en el equipo; por seguridad, el campo no vuelve a mostrar el valor guardado, solo se completa si se desea reemplazarlo. Al guardar, la aplicación verifica la conexión antes de confirmar el cambio."
-                       style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
-
-                <Label text="14.4  Validación de S/N por modelo"
+                <Label text="14.2  Validación de S/N por modelo"
                        style="-fx-font-size: 13px; -fx-font-weight: bold; -fx-text-fill: #334155;"/>
                 <Label wrapText="true"
                        text="El botón &quot;Ver tabla&quot; abre el listado completo de modelos de equipamiento tipo activo, junto con su patrón de validación de número de serie (si tiene uno definido) y un interruptor para activarlo o desactivarlo. Los desplegables Tipo, Marca, Modelo y Activo permiten filtrar el listado seleccionando uno o varios valores a la vez (Tipo acota las opciones de Marca, y Marca las de Modelo); &quot;Limpiar filtros&quot; los restablece todos. Los modelos con la validación activa aparecen primero. El botón &quot;Editar&quot; de cada fila aparece siempre visible pero solo se habilita con el permiso correspondiente activo. Definir o modificar el patrón de un modelo determina qué números de serie se aceptan al agregar ese modelo a una nota (ver sección 5.2)."
@@ -506,7 +488,7 @@
                        text="Cada cuenta tiene asignado uno de tres roles: Usuario (sin permisos administrativos), Administrador o Superadministrador. El rol se activa automáticamente al iniciar sesión (ver sección 1) — no existe ningún botón dentro de la aplicación para activarlo manualmente, y permanece activo durante toda la sesión, sin expirar por inactividad. Mientras un rol elevado está activo, la barra de título muestra una etiqueta: &quot;MODO ADMINISTRADOR&quot; (color turquesa) o &quot;MODO SUPERADMINISTRADOR&quot; (color magenta)."
                        style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
                 <Label wrapText="true"
-                       text="Un Administrador puede aprobar/rechazar notas, sincronizar/rechazar GLPI y validar devoluciones (secciones 9, 10, 11 y 12) únicamente sobre notas de su propia Sede; puede además administrar el catálogo de equipamiento y la validación de S/N en Base de Datos y Ajustes. Un Superadministrador tiene los mismos permisos sin la restricción de Sede, y es el único rol que puede ver y modificar la configuración de Correo Electrónico (sección 14.2)."
+                       text="Un Administrador puede aprobar/rechazar notas, sincronizar/rechazar GLPI y validar devoluciones (secciones 9, 10, 11 y 12) únicamente sobre notas de su propia Sede; puede además administrar el catálogo de equipamiento y la validación de S/N en Base de Datos y Ajustes. Un Superadministrador tiene los mismos permisos sin la restricción de Sede."
                        style="-fx-font-size: 12px; -fx-text-fill: #475569;"/>
                 <Label wrapText="true"
                        text="La asignación de rol y de Sede a cada cuenta, así como el alta de nuevos usuarios de la aplicación, se realiza por consulta directa a la base de datos — no hay una pantalla dentro de la aplicación para hacerlo."
