@@ -66,6 +66,16 @@
                             </children>
                         </VBox>
 
+                        <!-- Shown while probing the server and during an OIDC/dev-login attempt;
+                             hidden the rest of the time. Same green as the app's other loading
+                             spinners (MainController.runStartupChecks()). -->
+                        <ProgressIndicator fx:id="progressLogin" maxWidth="28" maxHeight="28"
+                                            minWidth="28" minHeight="28"
+                                            visible="false" managed="false"
+                                            style="-fx-progress-color: #0c8570;">
+                            <VBox.margin><Insets top="4"/></VBox.margin>
+                        </ProgressIndicator>
+
                         <Label fx:id="lblLoginStatus" text="" wrapText="true" textAlignment="CENTER"
                                style="-fx-font-size: 12px;">
                             <VBox.margin><Insets top="2"/></VBox.margin>

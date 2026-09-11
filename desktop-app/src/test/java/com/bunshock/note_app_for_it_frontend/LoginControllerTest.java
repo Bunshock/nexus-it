@@ -19,6 +19,7 @@ import com.bunshock.note_app_for_it_frontend.services.core.MiddlewareException;
 import javafx.application.Platform;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
+import javafx.scene.control.ProgressIndicator;
 import javafx.scene.control.TextField;
 import javafx.scene.layout.VBox;
 
@@ -40,6 +41,7 @@ class LoginControllerTest {
     private VBox devUsernameBox;
     private TextField txtUsername;
     private Label lblModeHint;
+    private ProgressIndicator progressLogin;
     private Label lblLoginStatus;
     private Button btnLogin;
     private Button btnExit;
@@ -64,12 +66,14 @@ class LoginControllerTest {
         devUsernameBox = new VBox();
         txtUsername = new TextField();
         lblModeHint = new Label();
+        progressLogin = new ProgressIndicator();
         lblLoginStatus = new Label();
         btnLogin = new Button();
         btnExit = new Button();
         setField("devUsernameBox", devUsernameBox);
         setField("txtUsername", txtUsername);
         setField("lblModeHint", lblModeHint);
+        setField("progressLogin", progressLogin);
         setField("lblLoginStatus", lblLoginStatus);
         setField("btnLogin", btnLogin);
         setField("btnExit", btnExit);
@@ -163,17 +167,44 @@ class LoginControllerTest {
 
     // ── prod mode (auth/config OK) ────────────────────────────────────────
 
+    // localhost, an almost-certainly-unbound low port — a real TCP connect that's refused
+    // instantly, purely on loopback. No DNS, no TLS, no external network at all involved, unlike
+    // a *.example host (tried first, reverted: an unresolvable *but real* DNS lookup has
+    // unpredictable duration depending on the machine's resolver/network security software, and
+    // left a straggler background thread racing later tests' @BeforeEach — confirmed by an actual
+    // cross-test failure before this fix).
+    private static final String UNREACHABLE_ISSUER = "http://127.0.0.1:1";
+
     @Test
     void prodModeHidesUsernameFieldWhenIdpIsConfigured() throws Exception {
-        fakeAuth.config = new AuthConfig("https://idp.example/realms/x", "nexus-it",
+        fakeAuth.config = new AuthConfig(UNREACHABLE_ISSUER, "nexus-it",
                 List.of("openid", "profile"), "Keycloak");
 
         runOnFx(() -> controller.initialize());
-        waitUntil(() -> !btnLogin.isDisabled() && lblLoginStatus.getText().isEmpty());
+        // enterProdMode() now auto-starts the OIDC flow immediately (no click needed) — this
+        // waits for the connection-refused failure to resolve (fast, local, deterministic) and
+        // land the screen in its retry state, confirming both that the dev-only fields never show
+        // and that a failed attempt is recoverable rather than stuck.
+        waitUntil(() -> !devUsernameBox.isVisible() && !devUsernameBox.isManaged()
+                && btnLogin.isVisible() && "Reintentar".equals(btnLogin.getText()));
+    }
 
-        assertFalse(devUsernameBox.isVisible());
-        assertFalse(devUsernameBox.isManaged());
-        assertEquals("Iniciar sesión", btnLogin.getText());
+    @Test
+    void prodModeRetryButtonReattemptsLogin() throws Exception {
+        fakeAuth.config = new AuthConfig(UNREACHABLE_ISSUER, "nexus-it",
+                List.of("openid", "profile"), "Keycloak");
+
+        runOnFx(() -> controller.initialize());
+        waitUntil(() -> btnLogin.isVisible() && "Reintentar".equals(btnLogin.getText())
+                && !btnLogin.isDisabled());
+
+        // Clicking Reintentar re-runs handleLogin() — same unreachable issuer, so it fails again
+        // the same way. This just confirms the retry action is wired to a real second attempt
+        // (button goes disabled+hidden mid-attempt) rather than being a dead click.
+        runOnFx(() -> btnLogin.fire());
+        waitUntil(() -> !btnLogin.isVisible());
+        waitUntil(() -> btnLogin.isVisible() && "Reintentar".equals(btnLogin.getText())
+                && !btnLogin.isDisabled());
     }
 
     // ── probe failure ────────────────────────────────────────────────────

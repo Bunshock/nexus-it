@@ -20,6 +20,7 @@ import javafx.application.Platform;
 import javafx.fxml.FXML;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
+import javafx.scene.control.ProgressIndicator;
 import javafx.scene.control.TextField;
 import javafx.scene.control.TextFormatter;
 import javafx.scene.layout.VBox;
@@ -27,10 +28,13 @@ import javafx.scene.layout.VBox;
 /**
  * Login screen — Phase B. On show it probes {@code GET /auth/config}:
  * <ul>
- *   <li>IdP configured &rArr; <b>production mode</b>: one "Iniciar sesión" button that runs the
- *       system-browser OIDC flow ({@link OidcBrowserFlow}), then {@code POST /auth/login}.</li>
- *   <li>{@code 503 IDP_NOT_CONFIGURED} &rArr; <b>dev mode</b>: a username field that calls
- *       {@code POST /auth/dev-login} (no Keycloak, seeded users only).</li>
+ *   <li>IdP configured &rArr; <b>production mode</b>: no button to click — the system-browser
+ *       OIDC flow ({@link OidcBrowserFlow}) starts immediately, showing a progress spinner
+ *       ("Iniciando sesión..."). On failure the screen switches to a retry state ("Reintentar" /
+ *       "Cerrar"); on success {@code POST /auth/login} completes and the screen closes.</li>
+ *   <li>{@code 503 IDP_NOT_CONFIGURED} &rArr; <b>dev mode</b>, unchanged: a username field and an
+ *       explicit "Iniciar sesión" button that calls {@code POST /auth/dev-login} (no Keycloak,
+ *       seeded users only).</li>
  * </ul>
  * All credential checks, the group gate, the {@code APP_USER} registration check, role
  * resolution, and the {@code AUDIT_LOGIN} write happen server-side now — this controller only
@@ -41,6 +45,7 @@ public class LoginController {
     @FXML private VBox devUsernameBox;
     @FXML private TextField txtUsername;
     @FXML private Label lblModeHint;
+    @FXML private ProgressIndicator progressLogin;
     @FXML private Label lblLoginStatus;
     @FXML private Button btnLogin;
     @FXML private Button btnExit;
@@ -68,6 +73,7 @@ public class LoginController {
 
     private void probeAuthConfig() {
         setBusy(true);
+        showBusySpinner(true);
         showStatus("Conectando con el servidor...", "#64748b");
         runOffThread("login-probe", () -> {
             try {
@@ -97,8 +103,10 @@ public class LoginController {
         lblModeHint.setManaged(false);
         btnLogin.setText("Iniciar sesión");
         btnLogin.setOnAction(e -> handleLogin());
+        btnExit.setText("Salir");
         clearStatus();
         setBusy(false);
+        handleLogin(); // no username to type anymore — start the browser flow immediately
     }
 
     private void enterDevMode() {
@@ -111,6 +119,9 @@ public class LoginController {
         lblModeHint.setManaged(true);
         btnLogin.setText("Iniciar sesión");
         btnLogin.setOnAction(e -> handleLogin());
+        btnLogin.setVisible(true);
+        btnLogin.setManaged(true);
+        showBusySpinner(false);
         String sessionEmail = WindowsIdentityService.getInstance().getSessionEmail();
         if (sessionEmail != null && txtUsername.getText().isEmpty()) {
             txtUsername.setText(TechnicianSessionService.deriveUsernameFromEmail(sessionEmail));
@@ -120,11 +131,28 @@ public class LoginController {
         Platform.runLater(() -> (txtUsername.getText().isEmpty() ? txtUsername : btnLogin).requestFocus());
     }
 
+    /** The initial {@code GET /auth/config} probe failed at the transport/server level — retry re-probes. */
     private void showRetryable(String message) {
+        showBusySpinner(false);
         showError(message);
         btnLogin.setText("Reintentar");
         btnLogin.setOnAction(e -> probeAuthConfig());
+        btnLogin.setVisible(true);
+        btnLogin.setManaged(true);
         btnLogin.setDisable(false);
+        btnExit.setDisable(false);
+    }
+
+    /** An actual login attempt (OIDC) failed — retry re-runs {@link #handleLogin()}, not the probe. */
+    private void showLoginRetry(String message) {
+        showBusySpinner(false);
+        showError(message);
+        btnLogin.setText("Reintentar");
+        btnLogin.setOnAction(e -> handleLogin());
+        btnLogin.setVisible(true);
+        btnLogin.setManaged(true);
+        btnLogin.setDisable(false);
+        btnExit.setText("Cerrar");
         btnExit.setDisable(false);
     }
 
@@ -139,12 +167,16 @@ public class LoginController {
                 return;
             }
             setBusy(true);
+            showBusySpinner(true);
             showStatus("Iniciando sesión...", "#64748b");
             runOffThread("login-dev", () -> completeLogin(
                     () -> MiddlewareAuthService.getInstance().devLogin(username)));
         } else {
+            btnLogin.setVisible(false);
+            btnLogin.setManaged(false);
             setBusy(true);
-            showStatus("Abriendo el navegador para iniciar sesión...", "#64748b");
+            showBusySpinner(true);
+            showStatus("Iniciando sesión...", "#64748b");
             runOffThread("login-oidc", () -> completeLogin(() -> {
                 String accessToken = new OidcBrowserFlow().authenticate(authConfig,
                         url -> App.getInstance().openInBrowser(url));
@@ -170,7 +202,13 @@ public class LoginController {
         } catch (MiddlewareException e) {
             Platform.runLater(() -> {
                 setBusy(false);
-                showError(e.getMessage() != null ? e.getMessage() : "No se pudo iniciar sesión.");
+                String msg = e.getMessage() != null ? e.getMessage() : "No se pudo iniciar sesión.";
+                if (devMode) {
+                    showBusySpinner(false);
+                    showError(msg);
+                } else {
+                    showLoginRetry(msg);
+                }
             });
         }
     }
@@ -205,6 +243,11 @@ public class LoginController {
         btnLogin.setDisable(busy);
         btnExit.setDisable(busy);
         txtUsername.setDisable(busy);
+    }
+
+    private void showBusySpinner(boolean visible) {
+        progressLogin.setVisible(visible);
+        progressLogin.setManaged(visible);
     }
 
     private void showStatus(String message, String hexColor) {
