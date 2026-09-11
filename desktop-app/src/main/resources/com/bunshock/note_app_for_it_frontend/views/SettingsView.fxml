@@ -91,30 +91,6 @@
                 </children>
             </VBox>
 
-            <!-- Email (SMTP) — moved to the very end: this panel's only SUPERADMIN-only field
-                 group (EDIT_SMTP_CONFIG), everything else here is at most ADMIN-level. -->
-            <VBox spacing="10" style="-fx-background-color: white; -fx-background-radius: 10; -fx-padding: 15 20 20 20;">
-                <children>
-                    <Label text="CORREO ELECTRÓNICO (SMTP)" styleClass="section-label"/>
-                    <GridPane hgap="15" vgap="10">
-                        <columnConstraints>
-                            <ColumnConstraints percentWidth="25"/>
-                            <ColumnConstraints percentWidth="25"/>
-                        </columnConstraints>
-                        <children>
-                            <VBox spacing="2" GridPane.columnIndex="0">
-                                <Label text="DIRECCIÓN DE ENVÍO" styleClass="input-label-small"/>
-                                <TextField fx:id="txtSmtpSender" styleClass="form-input-main" disable="true"/>
-                            </VBox>
-                            <VBox spacing="2" GridPane.columnIndex="1">
-                                <Label text="CONTRASEÑA" styleClass="input-label-small"/>
-                                <PasswordField fx:id="pfSmtpPassword" styleClass="form-input-main" disable="true"/>
-                            </VBox>
-                        </children>
-                    </GridPane>
-                </children>
-            </VBox>
-
         </children>
         </VBox>
         </content>

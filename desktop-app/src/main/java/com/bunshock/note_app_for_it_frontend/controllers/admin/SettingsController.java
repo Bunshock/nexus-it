@@ -1,7 +1,5 @@
 package com.bunshock.note_app_for_it_frontend.controllers.admin;
 
-import java.sql.Connection;
-import java.sql.PreparedStatement;
 import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -12,9 +10,7 @@ import com.bunshock.note_app_for_it_frontend.models.core.AppConfig;
 import com.bunshock.note_app_for_it_frontend.models.admin.Permission;
 import com.bunshock.note_app_for_it_frontend.models.catalog.SnValidationRow;
 import com.bunshock.note_app_for_it_frontend.services.auth.AdminSession;
-import com.bunshock.note_app_for_it_frontend.services.core.AppKeyEncryptionService;
 import com.bunshock.note_app_for_it_frontend.services.core.ConfigService;
-import com.bunshock.note_app_for_it_frontend.services.core.DatabaseService;
 import com.bunshock.note_app_for_it_frontend.services.catalog.IEquipmentService;
 import com.bunshock.note_app_for_it_frontend.services.core.ServiceLocator;
 import com.bunshock.note_app_for_it_frontend.services.auth.TechnicianSessionService;
@@ -56,9 +52,6 @@ public class SettingsController {
     @FXML private TextField txtAfSeparator;
     @FXML private Label     lblAfPreview;
 
-    @FXML private TextField   txtSmtpSender;
-    @FXML private PasswordField pfSmtpPassword;
-
     @FXML private Button btnSave;
     @FXML private Label  lblSaveStatus;
 
@@ -81,13 +74,10 @@ public class SettingsController {
     private static final List<String> SN_ACTIVE_OPTIONS = List.of("Sí", "No");
     private static final int SN_REGEX_MAX_LENGTH = 500;
 
-    // None of these three are backed by a SQL Server column (app-config.json's afFormat.prefix/
-    // separator, smtp.senderAddress; the PasswordField is an encrypted APP_SETTINGS value,
-    // local-only) — capped purely as a sanity guard against an accidental huge paste, same
-    // reasoning already applied to SN_REGEX_MAX_LENGTH above.
+    // Not backed by a SQL Server column (app-config.json's afFormat.prefix/separator) — capped
+    // purely as a sanity guard against an accidental huge paste, same reasoning already applied
+    // to SN_REGEX_MAX_LENGTH above.
     private static final int AF_FORMAT_MAX_LENGTH = 20;
-    private static final int SMTP_SENDER_MAX_LENGTH = 255;
-    private static final int API_SECRET_MAX_LENGTH = 500;
 
     private final Set<String> selSnTypes  = new LinkedHashSet<>();
     private final Set<String> selSnBrands = new LinkedHashSet<>();
@@ -108,16 +98,11 @@ public class SettingsController {
         AppConfig config = ConfigService.getInstance().getConfig();
         txtAfPrefix.setText(config.afFormat.prefix);
         txtAfSeparator.setText(config.afFormat.separator);
-        txtSmtpSender.setText(config.smtp.senderAddress);
 
         txtAfPrefix.setTextFormatter(new TextFormatter<>(change ->
             change.getControlNewText().length() <= AF_FORMAT_MAX_LENGTH ? change : null));
         txtAfSeparator.setTextFormatter(new TextFormatter<>(change ->
             change.getControlNewText().length() <= AF_FORMAT_MAX_LENGTH ? change : null));
-        txtSmtpSender.setTextFormatter(new TextFormatter<>(change ->
-            change.getControlNewText().length() <= SMTP_SENDER_MAX_LENGTH ? change : null));
-        pfSmtpPassword.setTextFormatter(new TextFormatter<>(change ->
-            change.getControlNewText().length() <= API_SECRET_MAX_LENGTH ? change : null));
 
         txtAfPrefix.textProperty().addListener((o, a, b) -> updateAfPreview());
         txtAfSeparator.textProperty().addListener((o, a, b) -> updateAfPreview());
@@ -149,14 +134,11 @@ public class SettingsController {
     }
 
     private void updateFieldEditability() {
-        boolean canAf   = AdminSession.getInstance().hasPermission(Permission.EDIT_AF_FORMAT_CONFIG);
-        boolean canSmtp = AdminSession.getInstance().hasPermission(Permission.EDIT_SMTP_CONFIG);
+        boolean canAf = AdminSession.getInstance().hasPermission(Permission.EDIT_AF_FORMAT_CONFIG);
         txtAfPrefix.setDisable(!canAf);
         txtAfSeparator.setDisable(!canAf);
-        txtSmtpSender.setDisable(!canSmtp);
-        pfSmtpPassword.setDisable(!canSmtp);
-        // btnSave itself is never disabled — a session with none of these permissions granted
-        // simply has every field disabled, so clicking Save is a harmless no-op (see handleSave).
+        // btnSave itself is never disabled — a session without this permission simply has every
+        // field disabled, so clicking Save is a harmless no-op (see handleSave).
     }
 
     // ── A/F preview ───────────────────────────────────────────────────
@@ -169,75 +151,22 @@ public class SettingsController {
 
     // ── Save ──────────────────────────────────────────────────────────
 
-    // Each field group is persisted only if its own permission is currently granted — a session
-    // with none of these fields disabled couldn't have typed into them anyway, but this is the
-    // actual boundary check (not just the disabled widgets), matching this app's "validate at
-    // every system boundary" convention. EDIT_SMTP_CONFIG is superadmin-only; the other three
-    // stay admin-level.
     @FXML
     private void handleSave() {
         AppConfig config = ConfigService.getInstance().getConfig();
-        boolean canAf   = AdminSession.getInstance().hasPermission(Permission.EDIT_AF_FORMAT_CONFIG);
-        boolean canSmtp = AdminSession.getInstance().hasPermission(Permission.EDIT_SMTP_CONFIG);
+        boolean canAf = AdminSession.getInstance().hasPermission(Permission.EDIT_AF_FORMAT_CONFIG);
 
-        if (!canAf && !canSmtp) {
+        if (!canAf) {
             triggerSaveStatus("No tiene permisos para modificar esta configuración", "#ef4444");
             return;
         }
 
-        // Captured before any mutation below, purely for AUDIT_ADMIN_ACTION's old_value —
-        // never used for anything that affects the actual save.
-        String oldAfPrefix    = config.afFormat.prefix;
-        String oldAfSeparator = config.afFormat.separator;
-        String oldSmtpSender  = config.smtp.senderAddress;
-
-        if (canAf) {
-            config.afFormat.prefix    = txtAfPrefix.getText().trim();
-            config.afFormat.separator = txtAfSeparator.getText();
-        }
-        if (canSmtp) {
-            config.smtp.senderAddress = txtSmtpSender.getText().trim();
-        }
-
-        boolean smtpPasswordChanged = false;
-        if (canSmtp) {
-            String smtpPassword = pfSmtpPassword.getText();
-            if (!smtpPassword.isBlank()) {
-                saveEncryptedSetting("smtp_password", smtpPassword);
-                pfSmtpPassword.clear();
-                smtpPasswordChanged = true;
-            }
-        }
+        config.afFormat.prefix    = txtAfPrefix.getText().trim();
+        config.afFormat.separator = txtAfSeparator.getText();
 
         try {
             ConfigService.getInstance().save();
             triggerSaveStatus("Configuración guardada", "#0c8570");
-            String username = TechnicianSessionService.getInstance().getUsername();
-            // The SMTP password is NEVER written to old_value/new_value here — only that a
-            // change happened, via the reason field.
-            if (canAf && (!oldAfPrefix.equals(config.afFormat.prefix) || !oldAfSeparator.equals(config.afFormat.separator))) {
-                ServiceLocator.getInstance().getAuditService().recordAdminAction(username,
-                    "EDIT_AF_FORMAT_CONFIG", "APP_CONFIG", "afFormat",
-                    oldAfPrefix + oldAfSeparator, config.afFormat.prefix + config.afFormat.separator, null);
-            }
-            if (canSmtp && (!oldSmtpSender.equals(config.smtp.senderAddress) || smtpPasswordChanged)) {
-                ServiceLocator.getInstance().getAuditService().recordAdminAction(username,
-                    "EDIT_SMTP_CONFIG", "APP_SETTINGS", "smtp",
-                    oldSmtpSender, config.smtp.senderAddress, smtpPasswordChanged ? "Contraseña actualizada" : null);
-            }
-        } catch (Exception e) {
-            triggerSaveStatus("Error al guardar la configuración", "#ef4444");
-        }
-    }
-
-    private void saveEncryptedSetting(String key, String plainValue) {
-        String encrypted = AppKeyEncryptionService.getInstance().encrypt(plainValue);
-        try (Connection c = DatabaseService.getInstance().getConnection();
-             PreparedStatement ps = c.prepareStatement(
-                 "INSERT INTO APP_SETTINGS (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value")) {
-            ps.setString(1, key);
-            ps.setString(2, encrypted);
-            ps.executeUpdate();
         } catch (Exception e) {
             triggerSaveStatus("Error al guardar la configuración", "#ef4444");
         }

@@ -12,11 +12,6 @@
   "fallaOptions" : [ "Pantalla rota", "No enciende", "Daño por líquido", "Batería agotada / no carga", "Falla de software / sistema operativo", "Componente faltante o dañado", "Otro" ],
   "failureTriggerMotivo" : "Falla",
   "returnableMotivosProveedor" : [ "Garantía", "Reparación" ],
-  "smtp" : {
-    "host" : "smtp.gmail.com",
-    "port" : 587,
-    "senderAddress" : ""
-  },
   "middleware" : {
     "baseUrl" : "http://localhost:8080"
   },
@@ -26,8 +21,5 @@
   },
   "updates" : {
     "manifestPath" : ""
-  },
-  "defaults" : {
-    "smtpPassword" : ""
   }
 }

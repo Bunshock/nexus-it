@@ -28,8 +28,6 @@ import javafx.scene.shape.Rectangle;
 import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.Label;
-import javafx.scene.control.TextField;
-import javafx.scene.control.TextFormatter;
 import javafx.scene.layout.VBox;
 import javafx.scene.web.WebView;
 import javafx.stage.Stage;
@@ -41,9 +39,6 @@ public class NotePreviewController {
     @FXML private WebView webPreview;
 
     @FXML private CheckBox chkPrint;
-    @FXML private CheckBox chkEmail;
-    @FXML private VBox vboxEmailField;
-    @FXML private TextField txtEmailRecipient;
     @FXML private Label lblStatus;
     @FXML private Button btnGenerate;
 
@@ -54,23 +49,15 @@ public class NotePreviewController {
     private List<CountableItem> countables;
     private Runnable onSuccess;
 
-    // Never persisted (a one-off SMTP recipient address, not written to any table) — capped
-    // purely as a sanity guard against an accidental huge paste.
-    private static final int EMAIL_RECIPIENT_MAX_LENGTH = 255;
-
     public void setOnSuccess(Runnable onSuccess) {
         this.onSuccess = onSuccess;
     }
 
     public void initialize() {
         chkPrint.selectedProperty().addListener((o, a, b) -> updateGenerateButton());
-        chkEmail.selectedProperty().addListener((o, a, b) -> updateGenerateButton());
 
         chkPrint.setSelected(true);
         updateGenerateButton();
-
-        txtEmailRecipient.setTextFormatter(new TextFormatter<>(change ->
-            change.getControlNewText().length() <= EMAIL_RECIPIENT_MAX_LENGTH ? change : null));
 
         Rectangle clip = new Rectangle();
         clip.setArcWidth(20);
@@ -89,25 +76,10 @@ public class NotePreviewController {
         this.countables = countables;
 
         webPreview.getEngine().loadContent(html);
-
-        // Email sending is not ready for real use yet (untested end-to-end) — always disabled
-        // regardless of SMTP configuration, not just when unconfigured. See TODO memory
-        // "email-send-feature-todo" for what's left before this can be re-enabled.
-        chkEmail.setDisable(true);
-        chkEmail.setText("Enviar por correo (no disponible)");
-    }
-
-    @FXML
-    private void handleEmailToggle() {
-        vboxEmailField.setVisible(chkEmail.isSelected());
-        vboxEmailField.setManaged(chkEmail.isSelected());
-        updateGenerateButton();
     }
 
     private void updateGenerateButton() {
-        boolean atLeastOne = chkPrint.isSelected() || chkEmail.isSelected();
-        boolean emailOk = !chkEmail.isSelected() || !txtEmailRecipient.getText().isBlank();
-        btnGenerate.setDisable(!atLeastOne || !emailOk);
+        btnGenerate.setDisable(!chkPrint.isSelected());
     }
 
     @FXML
@@ -125,15 +97,6 @@ public class NotePreviewController {
                 lblStatus.setText("Impresión cancelada — nota no generada");
                 btnGenerate.setDisable(false);
                 return;
-            }
-
-            if (chkEmail.isSelected()) {
-                ServiceLocator.getInstance().getEmailService().sendNote(
-                    txtEmailRecipient.getText().trim(),
-                    "Nota IT — " + profileType,
-                    "Adjunto encontrará la nota generada por el área de Soporte IT.",
-                    tempHtml
-                );
             }
 
             ServiceLocator.getInstance().getHistoryService().save(buildReportWithItems());

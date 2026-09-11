@@ -48,18 +48,6 @@
                         <CheckBox fx:id="chkPrint" text="Imprimir nota" selected="true"
                                   style="-fx-font-size: 13px; -fx-text-fill: #1e293b;"/>
 
-                        <!-- Email -->
-                        <VBox spacing="6">
-                            <CheckBox fx:id="chkEmail" text="Enviar por correo" onAction="#handleEmailToggle"
-                                      style="-fx-font-size: 13px; -fx-text-fill: #1e293b;"/>
-                            <VBox fx:id="vboxEmailField" spacing="4" managed="false" visible="false"
-                                  style="-fx-padding: 0 0 0 24;">
-                                <Label text="DESTINATARIO" styleClass="input-label-small"/>
-                                <TextField fx:id="txtEmailRecipient" styleClass="form-input-main"
-                                           promptText="email@ues21.edu.ar"/>
-                            </VBox>
-                        </VBox>
-
                         <Region VBox.vgrow="ALWAYS"/>
 
                         <Label fx:id="lblStatus" text="" wrapText="true"

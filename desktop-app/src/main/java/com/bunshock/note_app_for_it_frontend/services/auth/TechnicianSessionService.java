@@ -1,28 +1,26 @@
 package com.bunshock.note_app_for_it_frontend.services.auth;
 
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.prefs.Preferences;
 
 import com.bunshock.note_app_for_it_frontend.models.auth.ADUser;
 import com.bunshock.note_app_for_it_frontend.models.auth.SessionInfo;
 
 import javafx.application.Platform;
 
-import com.bunshock.note_app_for_it_frontend.services.core.DatabaseService;
 /**
  * Holds the current technician's identity for this app session only — never persisted to
  * disk. Populated once at login (LoginController.loginResolved(), after AD credentials, group
  * membership, and USER_ROLE have all already been checked), and refreshable on demand
  * ("Actualizar Perfil desde AD" in Mi Perfil, or an admin-mode manual edit) — but never
  * re-authenticated mid-session; a refresh failure leaves the existing session intact rather
- * than forcing a fresh login. The one exception is displayNamePreference (see
- * getDisplayName()/setDisplayNamePreference()): a personal greeting-name preference,
- * independent of AD identity, persisted locally in APP_SETTINGS keyed by username so it
- * survives restarts and AD refreshes.
+ * than forcing a fresh login. The exceptions are displayNamePreference/autoClearForm/
+ * autoCloseTab (see their own getters/setters below): per-technician cosmetic preferences,
+ * independent of AD identity, persisted locally in the OS's Java Preferences store (keyed by
+ * username, same as the old APP_SETTINGS rows they replaced — see loadSetting()/saveSetting())
+ * so they survive restarts and AD refreshes. Not secrets, so no encryption — Phase B retired the
+ * app's only other local store (DatabaseService/SQLite) once these were the last thing left in it.
  */
 public class TechnicianSessionService {
 
@@ -239,39 +237,22 @@ public class TechnicianSessionService {
      * session's Sede-scoped permission checks are compared against (see AdminSession). */
     public Integer getSedeId() { return sedeId; }
 
+    // Device-local, per-Windows-user store (HKCU on Windows) — not shared across machines, same
+    // scope the old local-only APP_SETTINGS rows had. put()/remove() are fire-and-forget (the JDK
+    // flushes them asynchronously); a failed write is the same "best-effort, in-memory value still
+    // wins for this session" trade-off the old SQLite version already documented.
+    private static final Preferences PREFS = Preferences.userNodeForPackage(TechnicianSessionService.class);
+
     private String loadSetting(String key) {
-        try (Connection c = DatabaseService.getInstance().getConnection();
-             PreparedStatement ps = c.prepareStatement("SELECT value FROM APP_SETTINGS WHERE key = ?")) {
-            ps.setString(1, key);
-            try (ResultSet rs = ps.executeQuery()) {
-                return rs.next() ? rs.getString("value") : null;
-            }
-        } catch (SQLException e) {
-            return null;
-        }
+        return PREFS.get(key, null);
     }
 
     private void saveSetting(String key, String value) {
-        try (Connection c = DatabaseService.getInstance().getConnection();
-             PreparedStatement ps = c.prepareStatement(
-                 "INSERT INTO APP_SETTINGS (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value")) {
-            ps.setString(1, key);
-            ps.setString(2, value);
-            ps.executeUpdate();
-        } catch (SQLException e) {
-            // best-effort persistence — the in-memory value above still updates, so this
-            // session stays correct even if the write fails
-        }
+        PREFS.put(key, value);
     }
 
     private void deleteSetting(String key) {
-        try (Connection c = DatabaseService.getInstance().getConnection();
-             PreparedStatement ps = c.prepareStatement("DELETE FROM APP_SETTINGS WHERE key = ?")) {
-            ps.setString(1, key);
-            ps.executeUpdate();
-        } catch (SQLException e) {
-            // best-effort — see saveSetting
-        }
+        PREFS.remove(key);
     }
 
     private void notifyListeners() {

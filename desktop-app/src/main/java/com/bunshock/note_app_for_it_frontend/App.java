@@ -1,7 +1,6 @@
 package com.bunshock.note_app_for_it_frontend;
 import com.bunshock.note_app_for_it_frontend.controllers.auth.LoginController;
 import com.bunshock.note_app_for_it_frontend.services.core.ConfigService;
-import com.bunshock.note_app_for_it_frontend.services.core.DatabaseService;
 import com.bunshock.note_app_for_it_frontend.services.core.MiddlewareClient;
 import com.bunshock.note_app_for_it_frontend.services.core.ServiceLocator;
 
@@ -59,7 +58,6 @@ public class App extends Application {
     @Override
     public void init() throws Exception {
         ConfigService.getInstance().load();
-        DatabaseService.getInstance().initialize();
         ServiceLocator.getInstance().initialize(ConfigService.getInstance().getConfig());
     }
 

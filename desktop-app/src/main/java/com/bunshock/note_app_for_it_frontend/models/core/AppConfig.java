@@ -17,9 +17,7 @@ public class AppConfig {
     // return-tracking row in NoteDetailController, same "config-driven, not hardcoded" pattern
     // as failureTriggerMotivo above.
     public List<String> returnableMotivosProveedor = List.of();
-    public SmtpConfig smtp;
     public int noteItemLimit;
-    public DefaultSecrets defaults;
     public CatalogConfig catalog = new CatalogConfig();
     public UpdatesConfig updates;
     public MiddlewareConfig middleware;
@@ -29,25 +27,6 @@ public class AppConfig {
         public String prefix;
         public String separator;
     }
-
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    public static class SmtpConfig {
-        public String host;
-        public int port;
-        public String senderAddress;
-    }
-
-    /**
-     * Pre-encrypted (AppKeyEncryptionService) default values for a zero-touch first run —
-     * generated via utils.AppKeyEncryptionGenerator, never plaintext. Copied into
-     * APP_SETTINGS on first startup only if that key isn't already set; an admin's later
-     * Settings edit always takes precedence.
-     */
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    public static class DefaultSecrets {
-        public String smtpPassword;
-    }
-
 
     /**
      * catalog.genericLabel seeds the name of the single global "no specific brand/model"
