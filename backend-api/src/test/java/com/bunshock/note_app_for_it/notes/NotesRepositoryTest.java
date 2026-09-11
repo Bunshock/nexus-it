@@ -249,6 +249,37 @@ class NotesRepositoryTest {
     }
 
     @Test
+    void countableItemReturnsIndividualAllocationBatchesOrderedByTime() {
+        NoteItemRequest cables = new NoteItemRequest("COUNTABLE", cableTypeId, cableBrandId, cableModelId,
+                null, null, 5, null, true, null);
+        CreateNoteRequest req = new CreateNoteRequest("PRÉSTAMO", "Juan Perez", "12345678", null,
+                null, null, null, null, null, null, null, null, null, null, null, null, null, List.of(cables));
+        int id = notes.createNote(req, "tech1", null, sedeId);
+        int itemId = notes.getById(id).items().get(0).id();
+
+        notes.allocateCountableReturn(itemId, "RETURNED", 2, null, "tester");
+        notes.allocateCountableReturn(itemId, "LOST", 1, "Se rompió", "tester");
+        notes.allocateCountableReturn(itemId, "LOST", 1, "Robado", "tester");
+
+        NoteItemResponse item = notes.getById(id).items().get(0);
+        assertEquals(1, item.returnedBatches().size());
+        assertEquals(2, item.returnedBatches().get(0).quantity());
+        assertNull(item.returnedBatches().get(0).reason());
+        assertEquals(2, item.lostBatches().size());
+        assertEquals("Se rompió", item.lostBatches().get(0).reason());
+        assertEquals("Robado", item.lostBatches().get(1).reason());
+    }
+
+    @Test
+    void assetItemNeverGetsAllocationBatches() {
+        int id = notes.createNote(entregaRequest("ENTREGA"), "tech1", null, sedeId);
+
+        NoteItemResponse item = notes.getById(id).items().get(0);
+        assertEquals(List.of(), item.returnedBatches());
+        assertEquals(List.of(), item.lostBatches());
+    }
+
+    @Test
     void allocatingMoreThanPendingQuantityThrows() {
         NoteItemRequest cables = new NoteItemRequest("COUNTABLE", cableTypeId, cableBrandId, cableModelId,
                 null, null, 5, null, true, null);
