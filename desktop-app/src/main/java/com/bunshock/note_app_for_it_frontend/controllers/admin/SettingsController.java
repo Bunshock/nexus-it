@@ -11,7 +11,6 @@ import java.util.function.Predicate;
 import com.bunshock.note_app_for_it_frontend.models.core.AppConfig;
 import com.bunshock.note_app_for_it_frontend.models.admin.Permission;
 import com.bunshock.note_app_for_it_frontend.models.catalog.SnValidationRow;
-import com.bunshock.note_app_for_it_frontend.services.auth.AdApiService;
 import com.bunshock.note_app_for_it_frontend.services.auth.AdminSession;
 import com.bunshock.note_app_for_it_frontend.services.core.AppKeyEncryptionService;
 import com.bunshock.note_app_for_it_frontend.services.core.ConfigService;
@@ -63,9 +62,6 @@ public class SettingsController {
     @FXML private TextField     txtGlpiUrl;
     @FXML private PasswordField pfGlpiApiKey;
 
-    @FXML private TextField     txtAdUrl;
-    @FXML private PasswordField pfAdApiToken;
-
     @FXML private Button btnSave;
     @FXML private Label  lblSaveStatus;
 
@@ -88,10 +84,10 @@ public class SettingsController {
     private static final List<String> SN_ACTIVE_OPTIONS = List.of("Sí", "No");
     private static final int SN_REGEX_MAX_LENGTH = 500;
 
-    // None of these five are backed by a SQL Server column (app-config.json's afFormat.prefix/
-    // separator, smtp.senderAddress, glpiApi.baseUrl, adApi.baseUrl; the two PasswordFields are
-    // encrypted APP_SETTINGS values, local-only) — capped purely as a sanity guard against an
-    // accidental huge paste, same reasoning already applied to SN_REGEX_MAX_LENGTH above.
+    // None of these four are backed by a SQL Server column (app-config.json's afFormat.prefix/
+    // separator, smtp.senderAddress, glpiApi.baseUrl; the two PasswordFields are encrypted
+    // APP_SETTINGS values, local-only) — capped purely as a sanity guard against an accidental
+    // huge paste, same reasoning already applied to SN_REGEX_MAX_LENGTH above.
     private static final int AF_FORMAT_MAX_LENGTH = 20;
     private static final int URL_MAX_LENGTH = 255;
     private static final int SMTP_SENDER_MAX_LENGTH = 255;
@@ -118,7 +114,6 @@ public class SettingsController {
         txtAfSeparator.setText(config.afFormat.separator);
         txtSmtpSender.setText(config.smtp.senderAddress);
         txtGlpiUrl.setText(config.glpiApi.baseUrl);
-        txtAdUrl.setText(config.adApi.baseUrl);
 
         txtAfPrefix.setTextFormatter(new TextFormatter<>(change ->
             change.getControlNewText().length() <= AF_FORMAT_MAX_LENGTH ? change : null));
@@ -128,13 +123,9 @@ public class SettingsController {
             change.getControlNewText().length() <= SMTP_SENDER_MAX_LENGTH ? change : null));
         txtGlpiUrl.setTextFormatter(new TextFormatter<>(change ->
             change.getControlNewText().length() <= URL_MAX_LENGTH ? change : null));
-        txtAdUrl.setTextFormatter(new TextFormatter<>(change ->
-            change.getControlNewText().length() <= URL_MAX_LENGTH ? change : null));
         pfSmtpPassword.setTextFormatter(new TextFormatter<>(change ->
             change.getControlNewText().length() <= API_SECRET_MAX_LENGTH ? change : null));
         pfGlpiApiKey.setTextFormatter(new TextFormatter<>(change ->
-            change.getControlNewText().length() <= API_SECRET_MAX_LENGTH ? change : null));
-        pfAdApiToken.setTextFormatter(new TextFormatter<>(change ->
             change.getControlNewText().length() <= API_SECRET_MAX_LENGTH ? change : null));
 
         txtAfPrefix.textProperty().addListener((o, a, b) -> updateAfPreview());
@@ -170,15 +161,12 @@ public class SettingsController {
         boolean canAf   = AdminSession.getInstance().hasPermission(Permission.EDIT_AF_FORMAT_CONFIG);
         boolean canSmtp = AdminSession.getInstance().hasPermission(Permission.EDIT_SMTP_CONFIG);
         boolean canGlpi = AdminSession.getInstance().hasPermission(Permission.EDIT_GLPI_CONFIG);
-        boolean canAd   = AdminSession.getInstance().hasPermission(Permission.EDIT_AD_CONFIG);
         txtAfPrefix.setDisable(!canAf);
         txtAfSeparator.setDisable(!canAf);
         txtSmtpSender.setDisable(!canSmtp);
         pfSmtpPassword.setDisable(!canSmtp);
         txtGlpiUrl.setDisable(!canGlpi);
         pfGlpiApiKey.setDisable(!canGlpi);
-        txtAdUrl.setDisable(!canAd);
-        pfAdApiToken.setDisable(!canAd);
         // btnSave itself is never disabled — a session with none of these permissions granted
         // simply has every field disabled, so clicking Save is a harmless no-op (see handleSave).
     }
@@ -204,9 +192,8 @@ public class SettingsController {
         boolean canAf   = AdminSession.getInstance().hasPermission(Permission.EDIT_AF_FORMAT_CONFIG);
         boolean canSmtp = AdminSession.getInstance().hasPermission(Permission.EDIT_SMTP_CONFIG);
         boolean canGlpi = AdminSession.getInstance().hasPermission(Permission.EDIT_GLPI_CONFIG);
-        boolean canAd   = AdminSession.getInstance().hasPermission(Permission.EDIT_AD_CONFIG);
 
-        if (!canAf && !canSmtp && !canGlpi && !canAd) {
+        if (!canAf && !canSmtp && !canGlpi) {
             triggerSaveStatus("No tiene permisos para modificar esta configuración", "#ef4444");
             return;
         }
@@ -217,7 +204,6 @@ public class SettingsController {
         String oldAfSeparator = config.afFormat.separator;
         String oldSmtpSender  = config.smtp.senderAddress;
         String oldGlpiUrl     = config.glpiApi.baseUrl;
-        String oldAdUrl       = config.adApi.baseUrl;
 
         if (canAf) {
             config.afFormat.prefix    = txtAfPrefix.getText().trim();
@@ -229,151 +215,50 @@ public class SettingsController {
         if (canGlpi) {
             config.glpiApi.baseUrl = txtGlpiUrl.getText().trim();
         }
-        String adUrl   = canAd ? txtAdUrl.getText().trim() : config.adApi.baseUrl;
-        String adToken = canAd ? pfAdApiToken.getText() : "";
 
-        Runnable persist = () -> {
-            if (canAd) config.adApi.baseUrl = adUrl;
-
-            boolean smtpPasswordChanged = false;
-            if (canSmtp) {
-                String smtpPassword = pfSmtpPassword.getText();
-                if (!smtpPassword.isBlank()) {
-                    saveEncryptedSetting("smtp_password", smtpPassword);
-                    pfSmtpPassword.clear();
-                    smtpPasswordChanged = true;
-                }
+        boolean smtpPasswordChanged = false;
+        if (canSmtp) {
+            String smtpPassword = pfSmtpPassword.getText();
+            if (!smtpPassword.isBlank()) {
+                saveEncryptedSetting("smtp_password", smtpPassword);
+                pfSmtpPassword.clear();
+                smtpPasswordChanged = true;
             }
-
-            boolean glpiKeyChanged = false;
-            if (canGlpi) {
-                String glpiApiKey = pfGlpiApiKey.getText();
-                if (!glpiApiKey.isBlank()) {
-                    saveEncryptedSetting("glpi_api_key", glpiApiKey);
-                    pfGlpiApiKey.clear();
-                    glpiKeyChanged = true;
-                }
-            }
-
-            boolean adTokenChanged = false;
-            if (canAd) {
-                if (!adToken.isBlank()) {
-                    saveEncryptedSetting("ad_api_token", adToken);
-                    pfAdApiToken.clear();
-                    adTokenChanged = true;
-                }
-                String effectiveToken = !adToken.isBlank() ? adToken : decryptSetting("ad_api_token");
-                AdApiService.getInstance().configure(adUrl.isBlank() ? null : adUrl, effectiveToken);
-            }
-
-            try {
-                ConfigService.getInstance().save();
-                triggerSaveStatus("Configuración guardada", "#0c8570");
-                String username = TechnicianSessionService.getInstance().getUsername();
-                // Secret values (SMTP password, GLPI key, AD token) are NEVER written to
-                // old_value/new_value here — only that a change happened, via the reason field.
-                if (canAf && (!oldAfPrefix.equals(config.afFormat.prefix) || !oldAfSeparator.equals(config.afFormat.separator))) {
-                    ServiceLocator.getInstance().getAuditService().recordAdminAction(username,
-                        "EDIT_AF_FORMAT_CONFIG", "APP_CONFIG", "afFormat",
-                        oldAfPrefix + oldAfSeparator, config.afFormat.prefix + config.afFormat.separator, null);
-                }
-                if (canSmtp && (!oldSmtpSender.equals(config.smtp.senderAddress) || smtpPasswordChanged)) {
-                    ServiceLocator.getInstance().getAuditService().recordAdminAction(username,
-                        "EDIT_SMTP_CONFIG", "APP_SETTINGS", "smtp",
-                        oldSmtpSender, config.smtp.senderAddress, smtpPasswordChanged ? "Contraseña actualizada" : null);
-                }
-                if (canGlpi && (!oldGlpiUrl.equals(config.glpiApi.baseUrl) || glpiKeyChanged)) {
-                    ServiceLocator.getInstance().getAuditService().recordAdminAction(username,
-                        "EDIT_GLPI_CONFIG", "APP_SETTINGS", "glpi_api_key",
-                        oldGlpiUrl, config.glpiApi.baseUrl, glpiKeyChanged ? "Clave API actualizada" : null);
-                }
-                if (canAd && (!oldAdUrl.equals(config.adApi.baseUrl) || adTokenChanged)) {
-                    ServiceLocator.getInstance().getAuditService().recordAdminAction(username,
-                        "EDIT_AD_CONFIG", "APP_SETTINGS", "ad_api_token",
-                        oldAdUrl, config.adApi.baseUrl, adTokenChanged ? "Token actualizado" : null);
-                }
-            } catch (Exception e) {
-                triggerSaveStatus("Error al guardar la configuración", "#ef4444");
-            }
-        };
-
-        if (!canAd || adUrl.isEmpty()) {
-            persist.run();
-            return;
         }
 
-        String tokenForTest = !adToken.isBlank() ? adToken : decryptSetting("ad_api_token");
-        if (tokenForTest == null || tokenForTest.isBlank()) {
-            persist.run();
-            return;
+        boolean glpiKeyChanged = false;
+        if (canGlpi) {
+            String glpiApiKey = pfGlpiApiKey.getText();
+            if (!glpiApiKey.isBlank()) {
+                saveEncryptedSetting("glpi_api_key", glpiApiKey);
+                pfGlpiApiKey.clear();
+                glpiKeyChanged = true;
+            }
         }
 
-        btnSave.setDisable(true);
-        String originalText = btnSave.getText();
-        btnSave.setText("Probando...");
-
-        Thread t = new Thread(() -> {
-            String technicianUsername = TechnicianSessionService.getInstance().getUsername();
-            boolean ok = AdApiService.getInstance().testConnection(adUrl, tokenForTest, technicianUsername);
-            Platform.runLater(() -> {
-                btnSave.setDisable(false);
-                btnSave.setText(originalText);
-                if (ok || confirmSaveDespiteFailedTest()) persist.run();
-            });
-        }, "ad-connection-test");
-        t.setDaemon(true);
-        t.start();
-    }
-
-    private boolean confirmSaveDespiteFailedTest() {
-        boolean[] confirmed = {false};
-        Stage stage = DialogChrome.buildDialogStage();
-        DialogChrome.centerOnContent(stage, panelSettings.isVisible() ? panelSettings : panelSnValidation);
-
-        Label lblTitle = new Label("No se pudo conectar");
-        lblTitle.getStyleClass().add("section-label");
-
-        Label lblMsg = new Label(
-            "No se pudo establecer conexión con la API de Active Directory usando estos datos. "
-                + "¿Guardar de todas formas?");
-        lblMsg.setStyle("-fx-text-fill: #475569; -fx-font-size: 12px;");
-        lblMsg.setWrapText(true);
-
-        Button btnCancel = new Button("Cancelar");
-        btnCancel.getStyleClass().add("button-secondary");
-        btnCancel.setOnAction(e -> stage.close());
-
-        Button btnConfirm = new Button("Guardar de todas formas");
-        btnConfirm.setStyle("-fx-background-color: #ef4444; -fx-text-fill: white; " +
-            "-fx-background-radius: 6; -fx-font-weight: bold; -fx-cursor: hand;");
-        btnConfirm.setOnAction(e -> { confirmed[0] = true; stage.close(); });
-
-        HBox buttons = new HBox(8, btnCancel, btnConfirm);
-        buttons.setAlignment(Pos.CENTER_RIGHT);
-
-        VBox root = DialogChrome.buildDialogRoot(380, "#1a1a1a");
-        root.getChildren().addAll(lblTitle, lblMsg, buttons);
-
-        Scene scene = DialogChrome.buildDialogScene(root);
-        scene.setOnKeyPressed(ev -> { if (ev.getCode() == javafx.scene.input.KeyCode.ESCAPE) stage.close(); });
-        stage.setScene(scene);
-        stage.showAndWait();
-
-        return confirmed[0];
-    }
-
-    private String decryptSetting(String key) {
-        try (Connection c = DatabaseService.getInstance().getConnection();
-             PreparedStatement ps = c.prepareStatement(
-                 "SELECT value FROM APP_SETTINGS WHERE key = ?")) {
-            ps.setString(1, key);
-            try (var rs = ps.executeQuery()) {
-                if (!rs.next()) return null;
-                String enc = rs.getString("value");
-                return (enc == null || enc.isBlank()) ? null : AppKeyEncryptionService.getInstance().decrypt(enc);
+        try {
+            ConfigService.getInstance().save();
+            triggerSaveStatus("Configuración guardada", "#0c8570");
+            String username = TechnicianSessionService.getInstance().getUsername();
+            // Secret values (SMTP password, GLPI key) are NEVER written to old_value/new_value
+            // here — only that a change happened, via the reason field.
+            if (canAf && (!oldAfPrefix.equals(config.afFormat.prefix) || !oldAfSeparator.equals(config.afFormat.separator))) {
+                ServiceLocator.getInstance().getAuditService().recordAdminAction(username,
+                    "EDIT_AF_FORMAT_CONFIG", "APP_CONFIG", "afFormat",
+                    oldAfPrefix + oldAfSeparator, config.afFormat.prefix + config.afFormat.separator, null);
+            }
+            if (canSmtp && (!oldSmtpSender.equals(config.smtp.senderAddress) || smtpPasswordChanged)) {
+                ServiceLocator.getInstance().getAuditService().recordAdminAction(username,
+                    "EDIT_SMTP_CONFIG", "APP_SETTINGS", "smtp",
+                    oldSmtpSender, config.smtp.senderAddress, smtpPasswordChanged ? "Contraseña actualizada" : null);
+            }
+            if (canGlpi && (!oldGlpiUrl.equals(config.glpiApi.baseUrl) || glpiKeyChanged)) {
+                ServiceLocator.getInstance().getAuditService().recordAdminAction(username,
+                    "EDIT_GLPI_CONFIG", "APP_SETTINGS", "glpi_api_key",
+                    oldGlpiUrl, config.glpiApi.baseUrl, glpiKeyChanged ? "Clave API actualizada" : null);
             }
         } catch (Exception e) {
-            return null;
+            triggerSaveStatus("Error al guardar la configuración", "#ef4444");
         }
     }
 

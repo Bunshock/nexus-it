@@ -8,8 +8,8 @@ import com.bunshock.note_app_for_it_frontend.models.core.AppConfig;
 
 import com.bunshock.note_app_for_it_frontend.services.audit.IAuditService;
 import com.bunshock.note_app_for_it_frontend.services.audit.SqliteAuditService;
-import com.bunshock.note_app_for_it_frontend.services.auth.AdApiService;
 import com.bunshock.note_app_for_it_frontend.services.auth.IADService;
+import com.bunshock.note_app_for_it_frontend.services.auth.RestDirectoryService;
 import com.bunshock.note_app_for_it_frontend.services.catalog.IEquipmentService;
 import com.bunshock.note_app_for_it_frontend.services.catalog.RestEquipmentService;
 import com.bunshock.note_app_for_it_frontend.services.history.GLPIServiceStub;
@@ -53,9 +53,9 @@ public class ServiceLocator {
         // IAuditService's Javadoc.
         auditService     = new SqliteAuditService();
 
-        AdApiService realAd = AdApiService.getInstance();
-        realAd.configure(config.adApi != null ? config.adApi.baseUrl : null, decryptSetting("ad_api_token"));
-        adService = realAd;
+        // Phase B: directory search (recipient lookup) goes through the middleware now — the
+        // middleware owns its own directory config server-side, nothing left to configure here.
+        adService = new RestDirectoryService(MiddlewareClient.getInstance());
 
         glpiService  = new GLPIServiceStub();
 
@@ -78,7 +78,6 @@ public class ServiceLocator {
         if (config.defaults == null) return;
         provisionIfMissing("smtp_password", config.defaults.smtpPassword);
         provisionIfMissing("glpi_api_key", config.defaults.glpiApiKey);
-        provisionIfMissing("ad_api_token", config.defaults.adApiToken);
     }
 
     void provisionIfMissing(String key, String value) {
@@ -108,13 +107,6 @@ public class ServiceLocator {
         } catch (Exception e) {
             return null;
         }
-    }
-
-    private String decryptSetting(String key) {
-        String enc = loadSetting(key);
-        if (enc == null || enc.isBlank()) return null;
-        try { return AppKeyEncryptionService.getInstance().decrypt(enc); }
-        catch (Exception e) { return null; }
     }
 
     private String loadSmtpPassword() {

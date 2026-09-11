@@ -17,20 +17,8 @@
     "port" : 587,
     "senderAddress" : ""
   },
-  "adApi" : {
-    "baseUrl" : "https://ad-api.example.org"
-  },
-  "adAccess" : {
-    "allowedGroupName" : "",
-    "mockCredentialValidation" : false
-  },
   "glpiApi" : {
     "baseUrl" : ""
-  },
-  "remoteDatabase" : {
-    "host" : "",
-    "port" : 1433,
-    "dbName" : ""
   },
   "middleware" : {
     "baseUrl" : "http://localhost:8080"
@@ -44,9 +32,6 @@
   },
   "defaults" : {
     "smtpPassword" : "",
-    "glpiApiKey" : "",
-    "dbUsername" : "",
-    "dbPassword" : "",
-    "adApiToken" : ""
+    "glpiApiKey" : ""
   }
 }
