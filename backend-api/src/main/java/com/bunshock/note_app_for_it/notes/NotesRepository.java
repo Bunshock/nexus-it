@@ -725,6 +725,99 @@ public class NotesRepository {
         return quantities;
     }
 
+    // ── Distinct item filter values (History filter dropdown menus) ────────
+    // "Distinct values actually used in a note", not the full catalog — same convention as the
+    // desktop app's SqliteHistoryService.getDistinctItemTypes()/etc. this is ported from.
+
+    public List<String> getDistinctItemTypes() {
+        return jdbc.query("""
+                SELECT DISTINCT t.name FROM NOTE_ITEM ni JOIN TYPE t ON t.id = ni.type_id ORDER BY t.name
+                """, (rs, rowNum) -> rs.getString(1));
+    }
+
+    public List<String> getDistinctItemBrands(List<String> types) {
+        StringBuilder sql = new StringBuilder("""
+                SELECT DISTINCT b.name FROM NOTE_ITEM ni
+                JOIN BRAND b ON b.id = ni.brand_id
+                JOIN TYPE t ON t.id = ni.type_id
+                WHERE 1=1
+                """);
+        List<Object> params = new ArrayList<>();
+        appendIn(sql, params, "t.name", types);
+        sql.append(" ORDER BY b.name");
+        return jdbc.query(sql.toString(), (rs, rowNum) -> rs.getString(1), params.toArray());
+    }
+
+    public List<String> getDistinctItemModels(List<String> types, List<String> brands) {
+        StringBuilder sql = new StringBuilder("""
+                SELECT DISTINCT m.name FROM NOTE_ITEM ni
+                JOIN MODEL m ON m.id = ni.model_id
+                JOIN BRAND b ON b.id = ni.brand_id
+                JOIN TYPE t ON t.id = ni.type_id
+                WHERE 1=1
+                """);
+        List<Object> params = new ArrayList<>();
+        appendIn(sql, params, "t.name", types);
+        appendIn(sql, params, "b.name", brands);
+        sql.append(" ORDER BY m.name");
+        return jdbc.query(sql.toString(), (rs, rowNum) -> rs.getString(1), params.toArray());
+    }
+
+    // ── Most-used item pinning (ItemDialogController's Type/Brand/Model combo pinning) ──
+    // Ported from the desktop app's SqliteHistoryService.getMostUsedTypeNames()/etc. — top N
+    // catalog entries actually used across notes created within the last windowDays days, with
+    // at least minUses uses. OFFSET/FETCH instead of LIMIT — works on both SQL Server 2012+ and
+    // H2, same convention as AuditRepository's paging (see IMPLEMENTED_ENDPOINTS.md).
+
+    public List<String> getMostUsedTypeNames(int windowDays, int minUses, int limit) {
+        String sql = """
+                SELECT t.name AS name FROM NOTE_ITEM ni
+                JOIN NOTE_REPORT r ON r.id = ni.note_id
+                JOIN TYPE t ON t.id = ni.type_id
+                WHERE t.deprecated = 0 AND r.created_at >= ?
+                GROUP BY t.id, t.name
+                HAVING COUNT(*) >= ?
+                ORDER BY COUNT(*) DESC
+                OFFSET 0 ROWS FETCH NEXT ? ROWS ONLY
+                """;
+        return jdbc.query(sql, (rs, rowNum) -> rs.getString("name"), cutoff(windowDays), minUses, limit);
+    }
+
+    public List<String> getMostUsedBrandNames(String typeName, int windowDays, int minUses, int limit) {
+        String sql = """
+                SELECT b.name AS name FROM NOTE_ITEM ni
+                JOIN NOTE_REPORT r ON r.id = ni.note_id
+                JOIN TYPE t ON t.id = ni.type_id
+                JOIN BRAND b ON b.id = ni.brand_id
+                WHERE t.name = ? AND b.deprecated = 0 AND r.created_at >= ?
+                GROUP BY b.id, b.name
+                HAVING COUNT(*) >= ?
+                ORDER BY COUNT(*) DESC
+                OFFSET 0 ROWS FETCH NEXT ? ROWS ONLY
+                """;
+        return jdbc.query(sql, (rs, rowNum) -> rs.getString("name"), typeName, cutoff(windowDays), minUses, limit);
+    }
+
+    public List<String> getMostUsedModelNames(String typeName, String brandName, int windowDays, int minUses, int limit) {
+        String sql = """
+                SELECT m.name AS name FROM NOTE_ITEM ni
+                JOIN NOTE_REPORT r ON r.id = ni.note_id
+                JOIN TYPE t ON t.id = ni.type_id
+                JOIN BRAND b ON b.id = ni.brand_id
+                JOIN MODEL m ON m.id = ni.model_id
+                WHERE t.name = ? AND b.name = ? AND m.deprecated = 0 AND r.created_at >= ?
+                GROUP BY m.id, m.name
+                HAVING COUNT(*) >= ?
+                ORDER BY COUNT(*) DESC
+                OFFSET 0 ROWS FETCH NEXT ? ROWS ONLY
+                """;
+        return jdbc.query(sql, (rs, rowNum) -> rs.getString("name"), typeName, brandName, cutoff(windowDays), minUses, limit);
+    }
+
+    private Timestamp cutoff(int windowDays) {
+        return Timestamp.valueOf(LocalDateTime.now().minusDays(windowDays));
+    }
+
     // ── Item sync (GLPI dimension) ──────────────────────────────────────────
 
     @Transactional

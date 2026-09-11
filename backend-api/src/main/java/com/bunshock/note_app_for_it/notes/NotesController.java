@@ -88,6 +88,60 @@ public class NotesController {
         return notes.getById(id);
     }
 
+    // ── Distinct item filter values (History filter dropdown menus) ────────
+
+    @GetMapping("/distinct/item-types")
+    public List<String> distinctItemTypes() {
+        currentUser.require();
+        return notes.getDistinctItemTypes();
+    }
+
+    @GetMapping("/distinct/item-brands")
+    public List<String> distinctItemBrands(@RequestParam(required = false) List<String> types) {
+        currentUser.require();
+        return notes.getDistinctItemBrands(types);
+    }
+
+    @GetMapping("/distinct/item-models")
+    public List<String> distinctItemModels(
+            @RequestParam(required = false) List<String> types,
+            @RequestParam(required = false) List<String> brands) {
+        currentUser.require();
+        return notes.getDistinctItemModels(types, brands);
+    }
+
+    // ── Most-used item pinning (ItemDialogController's Type/Brand/Model combo pinning) ──
+
+    @GetMapping("/most-used/types")
+    public List<String> mostUsedTypes(
+            @RequestParam(defaultValue = "30") int windowDays,
+            @RequestParam(defaultValue = "2") int minUses,
+            @RequestParam(defaultValue = "3") int limit) {
+        currentUser.require();
+        return notes.getMostUsedTypeNames(windowDays, minUses, limit);
+    }
+
+    @GetMapping("/most-used/brands")
+    public List<String> mostUsedBrands(
+            @RequestParam String typeName,
+            @RequestParam(defaultValue = "30") int windowDays,
+            @RequestParam(defaultValue = "2") int minUses,
+            @RequestParam(defaultValue = "3") int limit) {
+        currentUser.require();
+        return notes.getMostUsedBrandNames(typeName, windowDays, minUses, limit);
+    }
+
+    @GetMapping("/most-used/models")
+    public List<String> mostUsedModels(
+            @RequestParam String typeName,
+            @RequestParam String brandName,
+            @RequestParam(defaultValue = "30") int windowDays,
+            @RequestParam(defaultValue = "2") int minUses,
+            @RequestParam(defaultValue = "3") int limit) {
+        currentUser.require();
+        return notes.getMostUsedModelNames(typeName, brandName, windowDays, minUses, limit);
+    }
+
     @PutMapping("/{id}/approve")
     public NoteDetailResponse approve(@PathVariable int id) {
         CallerPrincipal caller = currentUser.require();

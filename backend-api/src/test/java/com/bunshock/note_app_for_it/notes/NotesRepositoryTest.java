@@ -580,6 +580,93 @@ class NotesRepositoryTest {
         assertTrue(notes.isAssetItem(itemId));
     }
 
+    // ── Distinct item filter values ─────────────────────────────────────────
+
+    @Test
+    void getDistinctItemTypesOnlyReturnsTypesActuallyUsedOnANote() {
+        notes.createNote(entregaRequest("ENTREGA"), "tech1", null, sedeId); // NOTEBOOK
+
+        // CABLE exists in the catalog (setUp()) but has never been used on a note.
+        List<String> types = notes.getDistinctItemTypes();
+        assertEquals(List.of("NOTEBOOK"), types);
+    }
+
+    @Test
+    void getDistinctItemBrandsScopedByType() {
+        int hpBrandId = insertBrand("HP");
+        int hpLink = link(notebookTypeId, hpBrandId);
+        int hpModelId = insertModel(hpLink, "EliteBook 840");
+        catalog.setModelStock(hpModelId, hpBrandId, notebookTypeId, sedeId, 5, "Ajuste de prueba", "tester");
+        notes.createNote(entregaRequest("ENTREGA"), "tech1", null, sedeId); // NOTEBOOK/DELL
+        NoteItemRequest cable = new NoteItemRequest("COUNTABLE", cableTypeId, cableBrandId, cableModelId,
+                null, null, 2, null, true, null);
+        notes.createNote(new CreateNoteRequest("ENTREGA", "Ana Diaz", "22222222", null,
+                null, null, null, null, null, null, null, null, null, null, null, null, null, List.of(cable)), "tech1", null, sedeId);
+
+        assertEquals(List.of("DELL"), notes.getDistinctItemBrands(List.of("NOTEBOOK")));
+        assertEquals(List.of("GENERIC"), notes.getDistinctItemBrands(List.of("CABLE")));
+        assertEquals(List.of("DELL", "GENERIC"), notes.getDistinctItemBrands(null));
+    }
+
+    @Test
+    void getDistinctItemModelsScopedByTypeAndBrand() {
+        notes.createNote(entregaRequest("ENTREGA"), "tech1", null, sedeId); // NOTEBOOK/DELL/Latitude 5420
+
+        assertEquals(List.of("Latitude 5420"),
+                notes.getDistinctItemModels(List.of("NOTEBOOK"), List.of("DELL")));
+        assertEquals(List.of(),
+                notes.getDistinctItemModels(List.of("NOTEBOOK"), List.of("HP")));
+    }
+
+    // ── Most-used item pinning ──────────────────────────────────────────────
+
+    @Test
+    void mostUsedTypeNamesRequiresTheMinimumUseCountWithinTheWindow() {
+        notes.createNote(entregaRequest("ENTREGA"), "tech1", null, sedeId);
+
+        assertEquals(List.of(), notes.getMostUsedTypeNames(30, 2, 3), "one use is below the minimum of 2");
+
+        notes.createNote(entregaRequest("DEVOLUCIÓN"), "tech1", null, sedeId);
+        assertEquals(List.of("NOTEBOOK"), notes.getMostUsedTypeNames(30, 2, 3));
+
+        assertEquals(List.of(), notes.getMostUsedTypeNames(0, 2, 3),
+                "a 0-day window excludes notes created just now");
+    }
+
+    @Test
+    void mostUsedBrandNamesScopedByTypeAndLimited() {
+        int hpBrandId = insertBrand("HP");
+        int hpLink = link(notebookTypeId, hpBrandId);
+        int hpModelId = insertModel(hpLink, "EliteBook 840");
+        catalog.setModelStock(hpModelId, hpBrandId, notebookTypeId, sedeId, 5, "Ajuste de prueba", "tester");
+        NoteItemRequest hpAsset = new NoteItemRequest("ASSET", notebookTypeId, hpBrandId, hpModelId,
+                "SNHP1", "IT-SNHP1", null, null, true, null);
+        CreateNoteRequest hpRequest = new CreateNoteRequest("ENTREGA", "Ana Diaz", "22222222", null,
+                null, null, null, null, null, null, null, null, null, null, null, null, null, List.of(hpAsset));
+
+        // DELL used 3 times, HP used 2 times.
+        notes.createNote(entregaRequest("ENTREGA"), "tech1", null, sedeId);
+        notes.createNote(entregaRequest("ENTREGA"), "tech1", null, sedeId);
+        notes.createNote(entregaRequest("ENTREGA"), "tech1", null, sedeId);
+        notes.createNote(hpRequest, "tech1", null, sedeId);
+        notes.createNote(hpRequest, "tech1", null, sedeId);
+
+        assertEquals(List.of("DELL", "HP"), notes.getMostUsedBrandNames("NOTEBOOK", 30, 2, 3));
+        assertEquals(List.of("DELL"), notes.getMostUsedBrandNames("NOTEBOOK", 30, 2, 1),
+                "limit caps the result even though both brands qualify");
+    }
+
+    @Test
+    void mostUsedModelNamesExcludesDeprecatedModels() {
+        notes.createNote(entregaRequest("ENTREGA"), "tech1", null, sedeId);
+        notes.createNote(entregaRequest("ENTREGA"), "tech1", null, sedeId);
+        assertEquals(List.of("Latitude 5420"), notes.getMostUsedModelNames("NOTEBOOK", "DELL", 30, 2, 3));
+
+        jdbc.update("UPDATE MODEL SET deprecated = 1 WHERE id = ?", laptopModelId);
+        assertEquals(List.of(), notes.getMostUsedModelNames("NOTEBOOK", "DELL", 30, 2, 3),
+                "a deprecated model is never suggested as most-used, even with enough uses");
+    }
+
     private int insertType(String name, boolean isAsset) {
         jdbc.update("INSERT INTO TYPE (name, is_asset) VALUES (?, ?)", name, isAsset ? 1 : 0);
         return jdbc.queryForObject("SELECT id FROM TYPE WHERE name = ?", Integer.class, name);
