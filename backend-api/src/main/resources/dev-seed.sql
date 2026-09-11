@@ -23,8 +23,9 @@ MERGE INTO APP_USER (id, username, role_id, sede_id, bypass_group_check) KEY (id
     (3, 'dev.user',       1, 1, 0);
 
 -- ── permission grants ────────────────────────────────────────────────────────
--- SUPERADMIN: every Permission. ADMIN: every Permission except EDIT_SMTP_CONFIG (SUPERADMIN-only,
--- matching the desktop app's seedDefaultRolePermissions precedent). USER: none.
+-- SUPERADMIN: every Permission. ADMIN: every Permission except EDIT_SMTP_CONFIG and
+-- EDIT_AF_FORMAT_CONFIG (both SUPERADMIN-only — direct user decision 2026-09-11 for the latter,
+-- matching the desktop app's seedDefaultRolePermissions precedent for the former). USER: none.
 DELETE FROM ROLE_PERMISSION;
 INSERT INTO ROLE_PERMISSION (role_id, permission) VALUES
     (3, 'MANAGE_TYPES'), (3, 'MANAGE_BRANDS'), (3, 'MANAGE_MODELS'), (3, 'MANAGE_STOCK'),
@@ -32,7 +33,7 @@ INSERT INTO ROLE_PERMISSION (role_id, permission) VALUES
     (3, 'EDIT_AF_FORMAT_CONFIG'), (3, 'APPROVE_NOTES'), (3, 'SYNC_GLPI'), (3, 'VALIDATE_RETURNS'),
     (2, 'MANAGE_TYPES'), (2, 'MANAGE_BRANDS'), (2, 'MANAGE_MODELS'), (2, 'MANAGE_STOCK'),
     (2, 'EDIT_SN_VALIDATION'), (2, 'EDIT_GLPI_CONFIG'), (2, 'EDIT_AD_CONFIG'),
-    (2, 'EDIT_AF_FORMAT_CONFIG'), (2, 'APPROVE_NOTES'), (2, 'SYNC_GLPI'), (2, 'VALIDATE_RETURNS');
+    (2, 'APPROVE_NOTES'), (2, 'SYNC_GLPI'), (2, 'VALIDATE_RETURNS');
 
 -- ── config (mirrors V2__config.sql's shipped defaults) ───────────────────────
 MERGE INTO APP_CONFIG (id, note_item_limit) KEY (id) VALUES (1, 8);
