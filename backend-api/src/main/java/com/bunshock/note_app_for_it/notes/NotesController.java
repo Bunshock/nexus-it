@@ -103,6 +103,14 @@ public class NotesController {
         return notes.getById(id);
     }
 
+    // Lets a REST client resolve the noteId it needs for the item sync/return URLs below when it
+    // only has an itemId on hand — see NotesRepository.getNoteIdForItem()'s Javadoc.
+    @GetMapping("/items/{itemId}/note-id")
+    public int noteIdForItem(@PathVariable int itemId) {
+        currentUser.require();
+        return notes.getNoteIdForItem(itemId);
+    }
+
     // ── Item sync (GLPI dimension) ──────────────────────────────────────────
 
     @PostMapping("/{noteId}/items/{itemId}/sync")

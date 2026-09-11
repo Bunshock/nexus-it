@@ -512,6 +512,22 @@ public class NotesRepository {
         return ids.get(0);
     }
 
+    /**
+     * Resolves an item's parent note id — the desktop REST client only ever holds an
+     * {@code itemId} at an item-status-change call site (its {@code IHistoryService} interface
+     * predates the REST cutover and was deliberately left unchanged rather than threading
+     * {@code noteId} through every controller call site), but every sync/return endpoint's URL
+     * needs {@code noteId} in the path.
+     */
+    public int getNoteIdForItem(int itemId) {
+        List<Integer> ids = jdbc.query("SELECT note_id FROM NOTE_ITEM WHERE id = ?",
+                (rs, rowNum) -> rs.getInt("note_id"), itemId);
+        if (ids.isEmpty()) {
+            throw ApiException.notFound("ITEM_NOT_FOUND", "El ítem solicitado no existe.");
+        }
+        return ids.get(0);
+    }
+
     public boolean isAssetItem(int itemId) {
         List<Boolean> rows = jdbc.query(
                 "SELECT CASE WHEN a.item_id IS NOT NULL THEN 1 ELSE 0 END AS is_asset " +
@@ -561,17 +577,35 @@ public class NotesRepository {
                 ) alloc ON alloc.item_id = b.id
                 WHERE b.note_id = ? ORDER BY b.id
                 """;
-        return jdbc.query(sql, (rs, rowNum) -> new NoteItemResponse(
-                rs.getInt("id"), rs.getInt("type_id"), rs.getInt("brand_id"), rs.getInt("model_id"),
+        return jdbc.query(sql, (rs, rowNum) -> {
+            boolean isAsset = rs.getInt("is_asset") == 1;
+            int itemId = rs.getInt("id");
+            return new NoteItemResponse(
+                itemId, rs.getInt("type_id"), rs.getInt("brand_id"), rs.getInt("model_id"),
                 rs.getString("type_name"), rs.getString("brand_name"), rs.getString("model_name"),
                 rs.getString("serial_number"), rs.getString("a_f"), rs.getInt("quantity"),
                 rs.getString("observations"), rs.getInt("modifies_stock") == 1, rs.getString("modifies_stock_reason"),
-                rs.getInt("is_asset") == 1,
+                isAsset,
                 rs.getString("glpi_status"), rs.getString("glpi_rejection_reason"), normalizeTimestampString(rs.getString("glpi_status_updated_at")),
                 rs.getString("glpi_return_status"), rs.getString("glpi_return_rejection_reason"), normalizeTimestampString(rs.getString("glpi_return_status_updated_at")),
                 rs.getString("return_status"), rs.getString("return_rejection_reason"), normalizeTimestampString(rs.getString("return_status_updated_at")),
-                rs.getInt("returned_quantity"), rs.getInt("lost_quantity")),
-                reportId);
+                rs.getInt("returned_quantity"), rs.getInt("lost_quantity"),
+                isAsset ? List.of() : loadAllocationBatches(itemId, "RETURNED"),
+                isAsset ? List.of() : loadAllocationBatches(itemId, "LOST"));
+        }, reportId);
+    }
+
+    // Each allocation batch (RETURNED or LOST) is one real event with its own timestamp — a
+    // one-query-per-countable-item follow-up scoped to a single note's detail view, not a bulk
+    // list. Ported from the desktop app's own SqliteHistoryService.loadAllocationBatches().
+    private List<NoteItemResponse.AllocationBatchResponse> loadAllocationBatches(int itemId, String status) {
+        return jdbc.query("""
+                SELECT quantity, reason, updated_at FROM NOTE_ITEM_RETURN_ALLOCATION
+                WHERE item_id = ? AND status = ? ORDER BY updated_at ASC
+                """, (rs, rowNum) -> new NoteItemResponse.AllocationBatchResponse(
+                        rs.getInt("quantity"), rs.getString("reason"),
+                        normalizeTimestampString(rs.getString("updated_at"))),
+                itemId, status);
     }
 
     // status_updated_at/updated_at columns are written as plain ISO-8601 strings (see
