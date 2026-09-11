@@ -49,9 +49,17 @@ public class SecurityConfig {
                                 // before a real deployment if the API shape shouldn't be public.
                                 "/v3/api-docs/**",
                                 "/swagger-ui.html",
-                                "/swagger-ui/**")
+                                "/swagger-ui/**",
+                                // H2 web console — dev profile only (spring.h2.console.enabled is
+                                // only set under the dev block in application.yml, so this route
+                                // doesn't exist in a prod build either), same dev-convenience
+                                // precedent as Swagger above.
+                                "/h2-console/**")
                         .permitAll()
                         .anyRequest().authenticated())
+                // The H2 console renders inside an HTML frame — Spring Security's default
+                // X-Frame-Options: DENY would otherwise block it from displaying at all.
+                .headers(headers -> headers.frameOptions(frame -> frame.sameOrigin()))
                 .exceptionHandling(eh -> eh
                         .authenticationEntryPoint((request, response, ex) ->
                                 writeError(response, 401, "UNAUTHENTICATED", "Falta o expiró la sesión."))
