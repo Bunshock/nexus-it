@@ -520,6 +520,22 @@ public class NotesRepository {
         return ids.get(0);
     }
 
+    /**
+     * Resolves an item's parent note id — the desktop REST client only ever holds an
+     * {@code itemId} at an item-status-change call site (its {@code IHistoryService} interface
+     * predates the REST cutover and was deliberately left unchanged rather than threading
+     * {@code noteId} through every controller call site), but every sync/return endpoint's URL
+     * needs {@code noteId} in the path.
+     */
+    public int getNoteIdForItem(int itemId) {
+        List<Integer> ids = jdbc.query("SELECT note_id FROM NOTE_ITEM WHERE id = ?",
+                (rs, rowNum) -> rs.getInt("note_id"), itemId);
+        if (ids.isEmpty()) {
+            throw ApiException.notFound("ITEM_NOT_FOUND", "El ítem solicitado no existe.");
+        }
+        return ids.get(0);
+    }
+
     public boolean isAssetItem(int itemId) {
         List<Boolean> rows = jdbc.query(
                 "SELECT CASE WHEN a.item_id IS NOT NULL THEN 1 ELSE 0 END AS is_asset " +

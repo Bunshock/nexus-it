@@ -580,6 +580,17 @@ class NotesRepositoryTest {
         assertTrue(notes.isAssetItem(itemId));
     }
 
+    @Test
+    void getNoteIdForItemResolvesTheParentNote() {
+        int id = notes.createNote(entregaRequest("ENTREGA"), "tech1", null, sedeId);
+        int itemId = notes.getById(id).items().get(0).id();
+
+        assertEquals(id, notes.getNoteIdForItem(itemId));
+
+        ApiException ex = assertThrows(ApiException.class, () -> notes.getNoteIdForItem(999999));
+        assertEquals("ITEM_NOT_FOUND", ex.getCode());
+    }
+
     // ── Distinct item filter values ─────────────────────────────────────────
 
     @Test
