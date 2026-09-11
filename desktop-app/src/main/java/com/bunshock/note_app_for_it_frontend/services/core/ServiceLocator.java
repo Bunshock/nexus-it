@@ -10,15 +10,12 @@ import com.bunshock.note_app_for_it_frontend.services.audit.IAuditService;
 import com.bunshock.note_app_for_it_frontend.services.audit.SqliteAuditService;
 import com.bunshock.note_app_for_it_frontend.services.auth.AdApiService;
 import com.bunshock.note_app_for_it_frontend.services.auth.IADService;
-import com.bunshock.note_app_for_it_frontend.services.catalog.CachingEquipmentService;
 import com.bunshock.note_app_for_it_frontend.services.catalog.IEquipmentService;
 import com.bunshock.note_app_for_it_frontend.services.catalog.RestEquipmentService;
-import com.bunshock.note_app_for_it_frontend.services.catalog.SqliteEquipmentService;
-import com.bunshock.note_app_for_it_frontend.services.history.CachingHistoryService;
 import com.bunshock.note_app_for_it_frontend.services.history.GLPIServiceStub;
 import com.bunshock.note_app_for_it_frontend.services.history.IGLPIService;
 import com.bunshock.note_app_for_it_frontend.services.history.IHistoryService;
-import com.bunshock.note_app_for_it_frontend.services.history.SqliteHistoryService;
+import com.bunshock.note_app_for_it_frontend.services.history.RestHistoryService;
 import com.bunshock.note_app_for_it_frontend.services.note.GmailEmailService;
 import com.bunshock.note_app_for_it_frontend.services.note.IEmailService;
 import com.bunshock.note_app_for_it_frontend.services.update.IUpdateService;
@@ -27,22 +24,13 @@ public class ServiceLocator {
 
     private static ServiceLocator instance;
 
-    // volatile: retryRemoteConnectionIfDown() can reassign these from the status-monitor's
-    // background thread while the FX thread reads them.
     private volatile IEquipmentService equipmentService;
-    // Phase B bridge: the Base de Datos admin section + Settings' S/N panel talk to the middleware
-    // catalog now, while note generation still reads the local `equipmentService` for one more
-    // slice (the note-item type/brand/model ids must match the local NOTE_ITEM FK targets until
-    // notes move too). Both go away in the notes slice — equipmentService becomes the REST one.
-    private IEquipmentService catalogAdminService;
     private IADService adService;
     private IGLPIService glpiService;
     private IEmailService emailService;
     private volatile IHistoryService historyService;
     private IAuditService auditService;
     private IUpdateService updateService;
-
-    private volatile boolean remoteConnected = false;
 
     private ServiceLocator() {}
 
@@ -58,18 +46,12 @@ public class ServiceLocator {
 
         MiddlewareClient.getInstance().configure(config.middleware != null ? config.middleware.baseUrl : null);
 
-        SqliteEquipmentService localEquipment = new SqliteEquipmentService();
-        SqliteHistoryService localHistory     = new SqliteHistoryService();
-
-        equipmentService     = localEquipment;
-        catalogAdminService  = new RestEquipmentService(MiddlewareClient.getInstance());
-        historyService       = localHistory;
+        equipmentService = new RestEquipmentService(MiddlewareClient.getInstance());
+        historyService   = new RestHistoryService(MiddlewareClient.getInstance());
         // Local-only, deliberately — no remote-first CachingAuditService wrapper yet, same
         // reasoning as APP_SETTINGS staying local-only regardless of remote config. See
         // IAuditService's Javadoc.
         auditService     = new SqliteAuditService();
-
-        connectRemote();
 
         AdApiService realAd = AdApiService.getInstance();
         realAd.configure(config.adApi != null ? config.adApi.baseUrl : null, decryptSetting("ad_api_token"));
@@ -86,65 +68,16 @@ public class ServiceLocator {
     }
 
     /**
-     * Called periodically by MainController's status monitor (not just at startup) — if remote
-     * was unreachable when initialize() ran, this is the only thing that can later promote
-     * equipmentService/historyService/userRoleService from local-only to the Caching wrapper
-     * once remote actually comes back. No-op if already connected or not configured at all.
-     */
-    public void retryRemoteConnectionIfDown() {
-        if (!remoteConnected) connectRemote();
-    }
-
-    private void connectRemote() {
-        String host = loadSetting("db_host");
-        if (host == null || host.isBlank()) return;
-        try {
-            String portStr  = loadSetting("db_port");
-            int    port     = (portStr != null && !portStr.isBlank()) ? Integer.parseInt(portStr) : 1433;
-            String dbName   = loadSetting("db_name");
-            String username = decryptSetting("db_username");
-            String password = decryptSetting("db_password");
-
-            RemoteDatabaseService remote = RemoteDatabaseService.getInstance();
-            remote.configure(host, port, dbName, username, password);
-            remote.ensureSchema();
-
-            IEquipmentService remoteEquipment = new SqliteEquipmentService(() -> {
-                try { return remote.getConnection(); } catch (java.sql.SQLException e) { throw new RuntimeException(e); }
-            });
-            IHistoryService remoteHistory = new SqliteHistoryService(() -> {
-                try { return remote.getConnection(); } catch (java.sql.SQLException e) { throw new RuntimeException(e); }
-            });
-
-            // Safe only because remoteConnected is still false here — these fields are guaranteed
-            // to still be the plain local instances, never an already-wrapped Caching*Service.
-            equipmentService = new CachingEquipmentService(remoteEquipment, equipmentService);
-            historyService   = new CachingHistoryService(remoteHistory, historyService);
-            remoteConnected  = true;
-        } catch (Exception e) {
-            remoteConnected = false;
-        }
-    }
-
-    /**
-     * Copies non-secret remote DB fields (config.remoteDatabase) and pre-encrypted default
-     * secrets (config.defaults) into APP_SETTINGS on first run only — never overwrites a
-     * value an admin already configured via Settings / Base de Datos.
+     * Copies pre-encrypted default secrets (config.defaults) into APP_SETTINGS on first run only —
+     * never overwrites a value an admin already configured via Settings. The remote-DB fields
+     * (config.remoteDatabase, defaults.dbUsername/dbPassword) were retired along with
+     * RemoteDatabaseService — the middleware is the one remote connection now, configured via
+     * config.middleware.baseUrl (a plain, non-secret URL, not something provisioned here).
      */
     void provisionDefaultSecrets(AppConfig config) {
-        if (config.remoteDatabase != null
-                && config.remoteDatabase.host != null
-                && !config.remoteDatabase.host.isBlank()) {
-            provisionIfMissing("db_host", config.remoteDatabase.host);
-            provisionIfMissing("db_port", String.valueOf(config.remoteDatabase.port));
-            provisionIfMissing("db_name", config.remoteDatabase.dbName);
-        }
-
         if (config.defaults == null) return;
         provisionIfMissing("smtp_password", config.defaults.smtpPassword);
         provisionIfMissing("glpi_api_key", config.defaults.glpiApiKey);
-        provisionIfMissing("db_username", config.defaults.dbUsername);
-        provisionIfMissing("db_password", config.defaults.dbPassword);
         provisionIfMissing("ad_api_token", config.defaults.adApiToken);
     }
 
@@ -189,19 +122,14 @@ public class ServiceLocator {
     }
 
     public IEquipmentService getEquipmentService() { return equipmentService; }
-    /** Phase B bridge — the middleware-backed catalog, used by Base de Datos admin + Settings' S/N
-     * panel while note generation still uses the local {@link #getEquipmentService()}. */
-    public IEquipmentService getCatalogAdminService() { return catalogAdminService; }
     public IADService        getAdService()         { return adService; }
     public IGLPIService      getGlpiService()       { return glpiService; }
     public IEmailService     getEmailService()      { return emailService; }
     public IHistoryService   getHistoryService()    { return historyService; }
     public IAuditService     getAuditService()      { return auditService; }
     public IUpdateService    getUpdateService()     { return updateService; }
-    public boolean           isRemoteConnected()    { return remoteConnected; }
 
     public void setEquipmentService(IEquipmentService s) { equipmentService = s; }
-    public void setCatalogAdminService(IEquipmentService s) { catalogAdminService = s; }
     public void setAdService(IADService s)               { adService = s; }
     public void setHistoryService(IHistoryService s)     { historyService = s; }
     public void setAuditService(IAuditService s)         { auditService = s; }

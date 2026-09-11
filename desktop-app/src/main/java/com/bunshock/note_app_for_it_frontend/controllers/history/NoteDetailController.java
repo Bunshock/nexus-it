@@ -166,20 +166,16 @@ public class NoteDetailController {
 
     private void handleApprove() {
         AdminSession.getInstance().refreshActivity();
-        String oldStatus = report.getApprovalStatus();
         try {
             ServiceLocator.getInstance().getHistoryService().updateNoteApprovalStatus(report.getId(), "APPROVED", null);
         } catch (RuntimeException e) {
             // Approval can fail for a real, user-facing reason now — most commonly insufficient
-            // stock at the note's Sede (see SqliteHistoryService.applyNoteStockIfNeeded()'s
-            // IllegalArgumentException). Must not update local state/rebuild the UI as if it
-            // succeeded when it didn't.
+            // stock at the note's Sede (409 STOCK_WOULD_GO_NEGATIVE from the middleware). Must not
+            // update local state/rebuild the UI as if it succeeded when it didn't.
             showApprovalError(e.getMessage());
             return;
         }
-        ServiceLocator.getInstance().getAuditService().recordAdminAction(
-            TechnicianSessionService.getInstance().getUsername(), "APPROVE_NOTE", "NOTE_REPORT",
-            String.valueOf(report.getId()), oldStatus, "APPROVED", null);
+        // Middleware writes AUDIT_ADMIN_ACTION server-side now — no local audit call needed.
         report.setApprovalStatus("APPROVED");
         report.setRejectionReason(null);
         PendingCountsService.getInstance().notifyChanged();
@@ -200,11 +196,8 @@ public class NoteDetailController {
         AdminSession.getInstance().refreshActivity();
         String reason = promptNoteRejectionReason();
         if (reason == null) return;
-        String oldStatus = report.getApprovalStatus();
         ServiceLocator.getInstance().getHistoryService().updateNoteApprovalStatus(report.getId(), "REJECTED", reason);
-        ServiceLocator.getInstance().getAuditService().recordAdminAction(
-            TechnicianSessionService.getInstance().getUsername(), "REJECT_NOTE", "NOTE_REPORT",
-            String.valueOf(report.getId()), oldStatus, "REJECTED", reason);
+        // Middleware writes AUDIT_ADMIN_ACTION server-side now — no local audit call needed.
         report.setApprovalStatus("REJECTED");
         report.setRejectionReason(reason);
         PendingCountsService.getInstance().notifyChanged();
@@ -497,12 +490,9 @@ public class NoteDetailController {
     private void handleProviderReceived(NoteReportItem item, Button btnReceived) {
         AdminSession.getInstance().refreshActivity();
         btnReceived.setDisable(true);
-        ReturnStatus oldStatus = item.getReturnStatus();
         ServiceLocator.getInstance().getHistoryService()
             .updateItemReturnStatus(item.getId(), ReturnStatus.RETURNED, null);
-        ServiceLocator.getInstance().getAuditService().recordItemStatusChange(item.getId(), "RETURN",
-            oldStatus.toDbString(), ReturnStatus.RETURNED.toDbString(), null, 1,
-            TechnicianSessionService.getInstance().getUsername());
+        // Middleware writes AUDIT_ITEM_STATUS server-side now — no local audit call needed.
         item.setReturnStatus(ReturnStatus.RETURNED);
         item.setReturnStatusUpdatedAt(java.time.LocalDateTime.now().toString());
         // Seeds the second, independent GLPI dimension now that the return is validated — GLPI
@@ -521,12 +511,9 @@ public class NoteDetailController {
         AdminSession.getInstance().refreshActivity();
         String reason = promptProviderNotReceivedReason();
         if (reason == null) return;
-        ReturnStatus oldStatus = item.getReturnStatus();
         ServiceLocator.getInstance().getHistoryService()
             .updateItemReturnStatus(item.getId(), ReturnStatus.LOST, reason);
-        ServiceLocator.getInstance().getAuditService().recordItemStatusChange(item.getId(), "RETURN",
-            oldStatus.toDbString(), ReturnStatus.LOST.toDbString(), reason, 1,
-            TechnicianSessionService.getInstance().getUsername());
+        // Middleware writes AUDIT_ITEM_STATUS server-side now — no local audit call needed.
         item.setReturnStatus(ReturnStatus.LOST);
         item.setReturnRejectionReason(reason);
         item.setReturnStatusUpdatedAt(java.time.LocalDateTime.now().toString());
@@ -541,9 +528,7 @@ public class NoteDetailController {
         if (qty <= 0) return;
         ServiceLocator.getInstance().getHistoryService()
             .allocateCountableReturn(item.getId(), ReturnStatus.RETURNED, qty, null);
-        ServiceLocator.getInstance().getAuditService().recordItemStatusChange(item.getId(), "RETURN",
-            ReturnStatus.PENDING.toDbString(), ReturnStatus.RETURNED.toDbString(), null, qty,
-            TechnicianSessionService.getInstance().getUsername());
+        // Middleware writes AUDIT_ITEM_STATUS server-side now — no local audit call needed.
         item.setReturnedQuantity(item.getReturnedQuantity() + qty);
         // Same "in-memory item must reflect what was just written" fix as the whole-item status
         // handlers above — without appending this batch here too, the new line wouldn't show up
@@ -562,9 +547,7 @@ public class NoteDetailController {
         if (reason == null) return;
         ServiceLocator.getInstance().getHistoryService()
             .allocateCountableReturn(item.getId(), ReturnStatus.LOST, qty, reason);
-        ServiceLocator.getInstance().getAuditService().recordItemStatusChange(item.getId(), "RETURN",
-            ReturnStatus.PENDING.toDbString(), ReturnStatus.LOST.toDbString(), reason, qty,
-            TechnicianSessionService.getInstance().getUsername());
+        // Middleware writes AUDIT_ITEM_STATUS server-side now — no local audit call needed.
         item.setLostQuantity(item.getLostQuantity() + qty);
         item.getLostBatches().add(new ReturnAllocationBatch(qty, reason, java.time.LocalDateTime.now().toString()));
         PendingCountsService.getInstance().notifyChanged();
@@ -680,12 +663,9 @@ public class NoteDetailController {
     private void handleSync(NoteReportItem item, Button btnSync) {
         AdminSession.getInstance().refreshActivity();
         btnSync.setDisable(true);
-        GlpiStatus oldStatus = item.getGlpiStatus();
         ServiceLocator.getInstance().getHistoryService()
             .updateItemGlpiStatus(item.getId(), GlpiStatus.SYNCED, null);
-        ServiceLocator.getInstance().getAuditService().recordItemStatusChange(item.getId(), "GLPI",
-            oldStatus.toDbString(), GlpiStatus.SYNCED.toDbString(), null, 1,
-            TechnicianSessionService.getInstance().getUsername());
+        // Middleware writes AUDIT_ITEM_STATUS server-side now — no local audit call needed.
         item.setGlpiStatus(GlpiStatus.SYNCED);
         // Without this, the badge kept showing no timestamp at all until the popup was closed
         // and reopened — updateItemGlpiStatus() above writes the real timestamp to the DB, but
@@ -702,12 +682,9 @@ public class NoteDetailController {
         AdminSession.getInstance().refreshActivity();
         String reason = promptRejectionReason();
         if (reason == null) return;
-        GlpiStatus oldStatus = item.getGlpiStatus();
         ServiceLocator.getInstance().getHistoryService()
             .updateItemGlpiStatus(item.getId(), GlpiStatus.REJECTED, reason);
-        ServiceLocator.getInstance().getAuditService().recordItemStatusChange(item.getId(), "GLPI",
-            oldStatus.toDbString(), GlpiStatus.REJECTED.toDbString(), reason, 1,
-            TechnicianSessionService.getInstance().getUsername());
+        // Middleware writes AUDIT_ITEM_STATUS server-side now — no local audit call needed.
         item.setGlpiStatus(GlpiStatus.REJECTED);
         item.setGlpiRejectionReason(reason);
         item.setGlpiStatusUpdatedAt(java.time.LocalDateTime.now().toString());

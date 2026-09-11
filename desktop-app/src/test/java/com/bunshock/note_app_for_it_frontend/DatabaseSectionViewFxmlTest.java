@@ -29,7 +29,6 @@ class DatabaseSectionViewFxmlTest {
         }
         ConfigService.getInstance().load();
         ServiceLocator.getInstance().setEquipmentService(new MockEquipmentService());
-        ServiceLocator.getInstance().setCatalogAdminService(new MockEquipmentService());
     }
 
     @Test

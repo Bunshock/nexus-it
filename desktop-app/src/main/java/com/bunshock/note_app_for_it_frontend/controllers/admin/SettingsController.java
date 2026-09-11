@@ -109,8 +109,9 @@ public class SettingsController {
 
     public void initialize() {
         // Phase B: the S/N Validation panel (the only thing here that touches the catalog) reads
-        // and writes through the middleware; it audits the EDIT_SN_VALIDATION action server-side.
-        equipmentService = ServiceLocator.getInstance().getCatalogAdminService();
+        // and writes through the middleware; it audits the EDIT_SN_VALIDATION action server-side —
+        // same instance every other screen uses now.
+        equipmentService = ServiceLocator.getInstance().getEquipmentService();
 
         AppConfig config = ConfigService.getInstance().getConfig();
         txtAfPrefix.setText(config.afFormat.prefix);

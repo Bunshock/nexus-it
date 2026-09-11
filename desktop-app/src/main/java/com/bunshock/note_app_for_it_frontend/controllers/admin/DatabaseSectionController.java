@@ -1,9 +1,5 @@
 package com.bunshock.note_app_for_it_frontend.controllers.admin;
 
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -18,12 +14,9 @@ import com.bunshock.note_app_for_it_frontend.models.catalog.EquipmentType;
 import com.bunshock.note_app_for_it_frontend.models.admin.Permission;
 import com.bunshock.note_app_for_it_frontend.models.catalog.Sede;
 import com.bunshock.note_app_for_it_frontend.services.auth.AdminSession;
-import com.bunshock.note_app_for_it_frontend.services.core.AppKeyEncryptionService;
 import com.bunshock.note_app_for_it_frontend.services.core.ConfigService;
-import com.bunshock.note_app_for_it_frontend.services.core.DatabaseService;
 import com.bunshock.note_app_for_it_frontend.services.catalog.IEquipmentService;
 import com.bunshock.note_app_for_it_frontend.models.auth.Roles;
-import com.bunshock.note_app_for_it_frontend.services.core.RemoteDatabaseService;
 import com.bunshock.note_app_for_it_frontend.services.core.ServiceLocator;
 import com.bunshock.note_app_for_it_frontend.services.auth.TechnicianSessionService;
 import com.bunshock.note_app_for_it_frontend.utils.core.DialogChrome;
@@ -54,10 +47,6 @@ import javafx.util.Duration;
 public class DatabaseSectionController {
 
     @FXML private VBox rootContainer;
-    @FXML private Label lblDbServer;
-    @FXML private Label lblDbName;
-    @FXML private Label lblConnectionStatus;
-    @FXML private Label lblLocalConnectionStatus;
     @FXML private ListView<EquipmentType>  listTypes;
     @FXML private ListView<EquipmentBrand> listBrands;
     @FXML private ListView<EquipmentModel> listModels;
@@ -87,11 +76,9 @@ public class DatabaseSectionController {
     private boolean suppressSelectionListeners = false;
 
     public void initialize() {
-        // Phase B: Base de Datos admin talks to the middleware catalog (audits server-side,
-        // enforces permissions/Sede-scoping server-side). Note generation still reads the local
-        // catalog for one more slice — see ServiceLocator's bridge note.
-        equipmentService = ServiceLocator.getInstance().getCatalogAdminService();
-        loadConnectionDisplay();
+        // Phase B: the catalog is the middleware's now (audits server-side, enforces
+        // permissions/Sede-scoping server-side) — same instance every other screen uses.
+        equipmentService = ServiceLocator.getInstance().getEquipmentService();
         initStockSedeSelector();
         refreshTypes();
 
@@ -136,207 +123,6 @@ public class DatabaseSectionController {
     private void setButtonVisible(Button button, boolean visible) {
         button.setVisible(visible);
         button.setManaged(visible);
-    }
-
-    // ── Connection display ───────────────────────────────────────────
-
-    private void loadConnectionDisplay() {
-        String host = getSetting("db_host");
-        String port = getSetting("db_port");
-        String name = getSetting("db_name");
-        if (host == null || host.isBlank()) {
-            lblDbServer.setText("No configurado");
-            lblDbServer.setStyle("-fx-text-fill: #94a3b8; -fx-font-size: 13px;");
-            lblDbName.setText("—");
-            lblDbName.setStyle("-fx-text-fill: #94a3b8; -fx-font-size: 13px;");
-        } else {
-            lblDbServer.setText(host + ":" + (port != null && !port.isBlank() ? port : "1433"));
-            lblDbServer.setStyle("-fx-text-fill: #334155; -fx-font-size: 13px;");
-            lblDbName.setText(name != null && !name.isBlank() ? name : "—");
-            lblDbName.setStyle("-fx-text-fill: #334155; -fx-font-size: 13px;");
-        }
-        lblConnectionStatus.setText("Sin verificar");
-        lblConnectionStatus.setStyle("-fx-text-fill: #94a3b8; -fx-font-size: 13px;");
-        lblLocalConnectionStatus.setText("Sin verificar");
-        lblLocalConnectionStatus.setStyle("-fx-text-fill: #94a3b8; -fx-font-size: 13px;");
-    }
-
-    // Not admin-gated — db_host/port/name/username/password live in local-only APP_SETTINGS
-    // (never synced), so this only ever affects the machine it's changed on; the
-    // test-connection-before-accepting flow below still guards against saving an unreachable
-    // config.
-    @FXML
-    private void handleEditConnection() {
-        openEditConnectionDialog();
-    }
-
-    // Tests and reports both databases independently, since either can be reachable/configured
-    // without the other.
-    @FXML
-    private void handleTestConnection() {
-        RemoteDatabaseService remote = RemoteDatabaseService.getInstance();
-        if (!remote.isConfigured()) {
-            lblConnectionStatus.setStyle("-fx-text-fill: #f59e0b; -fx-font-size: 13px;");
-            lblConnectionStatus.setText("⚠ Base de datos remota no configurada");
-        } else if (remote.testConnection()) {
-            lblConnectionStatus.setStyle("-fx-text-fill: #22c55e; -fx-font-size: 13px;");
-            lblConnectionStatus.setText("✓ Conexión remota activa");
-        } else {
-            lblConnectionStatus.setStyle("-fx-text-fill: #ef4444; -fx-font-size: 13px;");
-            lblConnectionStatus.setText("✗ Servidor remoto configurado no disponible");
-        }
-
-        try (Connection c = DatabaseService.getInstance().getConnection()) {
-            c.createStatement().execute("SELECT 1");
-            lblLocalConnectionStatus.setStyle("-fx-text-fill: #22c55e; -fx-font-size: 13px;");
-            lblLocalConnectionStatus.setText("✓ Base de datos local activa");
-        } catch (Exception e) {
-            lblLocalConnectionStatus.setStyle("-fx-text-fill: #ef4444; -fx-font-size: 13px;");
-            lblLocalConnectionStatus.setText("✗ Error: " + e.getMessage());
-        }
-    }
-
-    private void openEditConnectionDialog() {
-        Stage stage = DialogChrome.buildDialogStage();
-        DialogChrome.centerOnContent(stage, rootContainer);
-
-        String curHost = getSetting("db_host");
-        String curPort = getSetting("db_port");
-        String curName = getSetting("db_name");
-        String curUser = decryptSetting("db_username");
-        String curPass = decryptSetting("db_password");
-
-        Label lblTitle = new Label("Conexión a base de datos");
-        lblTitle.getStyleClass().add("section-label");
-
-        Label lblH = new Label("SERVIDOR (HOST)"); lblH.getStyleClass().add("input-label-small");
-        TextField tfHost = new TextField(curHost != null ? curHost : "");
-        tfHost.setPromptText("Ej: 192.168.1.100"); tfHost.getStyleClass().add("form-input-main");
-        tfHost.setTextFormatter(connectionFieldFormatter());
-
-        Label lblP = new Label("PUERTO"); lblP.getStyleClass().add("input-label-small");
-        TextField tfPort = new TextField(curPort != null && !curPort.isBlank() ? curPort : "1433");
-        tfPort.setPrefWidth(80); tfPort.getStyleClass().add("form-input-main");
-        tfPort.setTextFormatter(new TextFormatter<>(change ->
-            change.getControlNewText().matches("\\d{0,5}") ? change : null));
-
-        VBox hostBox = new VBox(2, lblH, tfHost); HBox.setHgrow(hostBox, Priority.ALWAYS);
-        VBox portBox = new VBox(2, lblP, tfPort);
-        HBox hostPort = new HBox(8, hostBox, portBox);
-
-        Label lblN = new Label("BASE DE DATOS"); lblN.getStyleClass().add("input-label-small");
-        TextField tfName = new TextField(curName != null ? curName : "");
-        tfName.setPromptText("Ej: noteapp_db"); tfName.getStyleClass().add("form-input-main");
-        tfName.setTextFormatter(connectionFieldFormatter());
-
-        Label lblU = new Label("USUARIO"); lblU.getStyleClass().add("input-label-small");
-        TextField tfUser = new TextField(curUser != null ? curUser : "");
-        tfUser.setPromptText("Ej: admin"); tfUser.getStyleClass().add("form-input-main");
-        tfUser.setTextFormatter(connectionFieldFormatter());
-
-        // Write-only, like every other secret field in this app — never pre-filled with the
-        // decrypted value. A PasswordField's masked text can still be selected/copied, so
-        // pre-filling would expose the real shared DB password to anyone who opens this screen.
-        Label lblPw = new Label("CONTRASEÑA");
-        lblPw.getStyleClass().add("input-label-small");
-        Label lblPwError = buildErrorLabel();
-        PasswordField pfPass = new PasswordField();
-        pfPass.setPromptText("Dejar en blanco para no cambiarla");
-        pfPass.getStyleClass().add("form-input-main");
-        pfPass.setTextFormatter(connectionFieldFormatter());
-
-        Button btnCancel = new Button("Cancelar");
-        btnCancel.getStyleClass().add("button-secondary");
-        btnCancel.setOnAction(e -> stage.close());
-
-        Button btnSave = new Button("Guardar");
-        btnSave.getStyleClass().add("button-primary");
-        btnSave.setOnAction(e -> {
-            String host   = tfHost.getText().trim();
-            String portStr = tfPort.getText().trim().isEmpty() ? "1433" : tfPort.getText().trim();
-            String name   = tfName.getText().trim();
-            String user   = tfUser.getText().trim();
-            // Blank keeps the existing password, but only when host/port are unchanged —
-            // reusing it against a different host would submit the live credential to wherever
-            // the field now points, via the test-connection call below, before saving anything.
-            String curHostNorm = curHost != null ? curHost : "";
-            String curPortNorm = curPort != null && !curPort.isBlank() ? curPort : "1433";
-            boolean destinationChanged = !host.equals(curHostNorm) || !portStr.equals(curPortNorm);
-
-            String typedPass = pfPass.getText();
-            if (typedPass.isBlank() && destinationChanged && !host.isEmpty()) {
-                triggerFieldError(lblPwError, "Ingrese la contraseña al cambiar de servidor o puerto");
-                return;
-            }
-            String pass = typedPass.isBlank() ? (curPass != null ? curPass : "") : typedPass;
-
-            Runnable persistAndClose = () -> {
-                saveSetting("db_host", host);
-                saveSetting("db_port", portStr);
-                saveSetting("db_name", name);
-                saveEncryptedSetting("db_username", user);
-                if (!typedPass.isBlank()) saveEncryptedSetting("db_password", typedPass);
-                int configuredPort;
-                try { configuredPort = Integer.parseInt(portStr); }
-                catch (NumberFormatException nfe) { configuredPort = 1433; }
-                RemoteDatabaseService.getInstance().configure(host, configuredPort, name, user, pass);
-                loadConnectionDisplay();
-                stage.close();
-            };
-
-            if (host.isEmpty()) {
-                persistAndClose.run();
-                return;
-            }
-
-            int port;
-            try { port = Integer.parseInt(portStr); }
-            catch (NumberFormatException nfe) { port = -1; }
-
-            btnSave.setDisable(true);
-            btnCancel.setDisable(true);
-            btnSave.setText("Probando...");
-            tfHost.setDisable(true);
-            tfPort.setDisable(true);
-            tfName.setDisable(true);
-            tfUser.setDisable(true);
-            pfPass.setDisable(true);
-
-            int testPort = port;
-            Thread t = new Thread(() -> {
-                boolean ok = testPort > 0 && RemoteDatabaseService.getInstance()
-                    .testConnection(host, testPort, name, user, pass);
-                Platform.runLater(() -> {
-                    btnSave.setDisable(false);
-                    btnCancel.setDisable(false);
-                    btnSave.setText("Guardar");
-                    tfHost.setDisable(false);
-                    tfPort.setDisable(false);
-                    tfName.setDisable(false);
-                    tfUser.setDisable(false);
-                    pfPass.setDisable(false);
-                    if (ok || confirmSaveDespiteFailedTest()) persistAndClose.run();
-                });
-            }, "db-connection-test");
-            t.setDaemon(true);
-            t.start();
-        });
-
-        HBox buttons = new HBox(8, btnCancel, btnSave);
-        buttons.setAlignment(Pos.CENTER_RIGHT);
-
-        VBox root = DialogChrome.buildDialogRoot(440, "#1a1a1a");
-        root.getChildren().addAll(lblTitle, hostPort,
-            new VBox(2, lblN, tfName),
-            new VBox(2, lblU, tfUser),
-            new VBox(2, buildFieldHeaderRow(lblPw, lblPwError), pfPass),
-            new Separator(), buttons);
-
-        Scene scene = DialogChrome.buildDialogScene(root);
-        scene.setOnKeyPressed(ev -> { if (ev.getCode() == KeyCode.ESCAPE) stage.close(); });
-        stage.setScene(scene);
-        Platform.runLater(tfHost::requestFocus);
-        stage.showAndWait();
     }
 
     // ── Equipment catalog ────────────────────────────────────────────
@@ -765,14 +551,6 @@ public class DatabaseSectionController {
             change.getControlNewText().length() <= CATALOG_NAME_MAX_LENGTH ? change : null);
     }
 
-    // db_host/port/name/username/password are local-only APP_SETTINGS values with no SQL Server
-    // column bound to match — capped as a sanity guard against an accidental huge paste.
-    private static final int CONNECTION_FIELD_MAX_LENGTH = 255;
-
-    private TextFormatter<String> connectionFieldFormatter() {
-        return new TextFormatter<>(change ->
-            change.getControlNewText().length() <= CONNECTION_FIELD_MAX_LENGTH ? change : null);
-    }
 
     private Label buildErrorLabel() {
         Label lbl = new Label();
@@ -1342,43 +1120,6 @@ public class DatabaseSectionController {
         return confirmed[0];
     }
 
-    private boolean confirmSaveDespiteFailedTest() {
-        boolean[] confirmed = {false};
-        Stage stage = DialogChrome.buildDialogStage();
-        DialogChrome.centerOnContent(stage, rootContainer);
-
-        Label lblTitle = new Label("No se pudo conectar");
-        lblTitle.getStyleClass().add("section-label");
-
-        Label lblMsg = new Label(
-            "No se pudo establecer conexión con el servidor remoto usando estos datos. "
-                + "¿Guardar de todas formas?");
-        lblMsg.setStyle("-fx-text-fill: #475569; -fx-font-size: 12px;");
-        lblMsg.setWrapText(true);
-
-        Button btnCancel = new Button("Cancelar");
-        btnCancel.getStyleClass().add("button-secondary");
-        btnCancel.setOnAction(e -> stage.close());
-
-        Button btnConfirm = new Button("Guardar de todas formas");
-        btnConfirm.setStyle("-fx-background-color: #ef4444; -fx-text-fill: white; " +
-            "-fx-background-radius: 6; -fx-font-weight: bold; -fx-cursor: hand;");
-        btnConfirm.setOnAction(e -> { confirmed[0] = true; stage.close(); });
-
-        HBox buttons = new HBox(8, btnCancel, btnConfirm);
-        buttons.setAlignment(Pos.CENTER_RIGHT);
-
-        VBox root = DialogChrome.buildDialogRoot(380, "#1a1a1a");
-        root.getChildren().addAll(lblTitle, lblMsg, buttons);
-
-        Scene scene = DialogChrome.buildDialogScene(root);
-        scene.setOnKeyPressed(ev -> { if (ev.getCode() == KeyCode.ESCAPE) stage.close(); });
-        stage.setScene(scene);
-        stage.showAndWait();
-
-        return confirmed[0];
-    }
-
     private void buildAndShow(Stage stage, VBox root, TextField focusTarget) {
         Scene scene = DialogChrome.buildDialogScene(root);
         scene.setOnKeyPressed(ev -> { if (ev.getCode() == KeyCode.ESCAPE) stage.close(); });
@@ -1411,48 +1152,6 @@ public class DatabaseSectionController {
         }
         AdminSession.getInstance().refreshActivity();
         action.run();
-    }
-
-    // ── APP_SETTINGS helpers ─────────────────────────────────────────
-
-    private String getSetting(String key) {
-        try (Connection c = DatabaseService.getInstance().getConnection();
-             PreparedStatement ps = c.prepareStatement(
-                 "SELECT value FROM APP_SETTINGS WHERE key = ?")) {
-            ps.setString(1, key);
-            try (ResultSet rs = ps.executeQuery()) {
-                return rs.next() ? rs.getString("value") : null;
-            }
-        } catch (SQLException e) {
-            return null;
-        }
-    }
-
-    private void saveSetting(String key, String value) {
-        try (Connection c = DatabaseService.getInstance().getConnection();
-             PreparedStatement ps = c.prepareStatement(
-                 "INSERT OR REPLACE INTO APP_SETTINGS (key, value) VALUES (?, ?)")) {
-            ps.setString(1, key);
-            ps.setString(2, value);
-            ps.executeUpdate();
-        } catch (SQLException e) {
-            throw new RuntimeException("Failed to save setting: " + key, e);
-        }
-    }
-
-    private String decryptSetting(String key) {
-        String enc = getSetting(key);
-        if (enc == null || enc.isBlank()) return null;
-        try { return AppKeyEncryptionService.getInstance().decrypt(enc); }
-        catch (Exception e) { return null; }
-    }
-
-    private void saveEncryptedSetting(String key, String value) {
-        if (value == null || value.isBlank()) {
-            saveSetting(key, "");
-        } else {
-            saveSetting(key, AppKeyEncryptionService.getInstance().encrypt(value));
-        }
     }
 
     // ── Dialog helpers ────────────────────────────────────────────────
