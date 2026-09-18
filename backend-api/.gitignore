@@ -39,3 +39,11 @@ build/
 /DB-SCHEMA.md
 /IMPLEMENTED_ENDPOINTS.md
 /MIDDLEWARE-COMPARE.md
+
+# Local-only dev-seed addition (real usernames for testing against production Keycloak) —
+# never commit, see NEXT-SESSION.md "Testing against production Keycloak".
+/src/main/resources/dev-seed-local.sql
+
+# Local-only config overrides (real Keycloak/AD directory values, incl. the directory
+# bearer token) — never commit, see NEXT-SESSION.md "Testing against production Keycloak".
+/src/main/resources/application-local.yml
