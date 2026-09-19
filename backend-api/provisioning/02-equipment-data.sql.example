@@ -1,0 +1,207 @@
+-- NexusIT middleware — starting data: equipment catalog (Type / Brand / Model / S/N
+-- validation / Provider / per-Sede stock)
+--
+-- This is a TEMPLATE with placeholder rows, not real data. Copy this file to 02-equipment-data.sql
+-- (gitignored) and replace the example rows below with your organization's real catalog before
+-- running it. Never commit real inventory, S/N pattern, or business-partner data to this
+-- repository.
+--
+-- Run AFTER 01-sede-data (MODEL_STOCK below needs real SEDE rows to exist). Type/Brand/Model can
+-- also be managed later through the app (MANAGE_* permissions); Provider and Sede cannot — they
+-- are direct-SQL only in v1.
+--
+-- WHY THE #-TABLES BELOW: every Type and Brand is typed exactly once, in its own list — never
+-- repeated. A Model belongs to exactly one (Type, Brand) pair, so it still has to reference one —
+-- but instead of retyping both names on every Model row (error-prone once a Brand+Type has many
+-- Models: a typo like "NOTEBOK" wouldn't fail, it would silently create a brand-new, unreal Type),
+-- each (Type, Brand) pair is given a short link_key once in the Links list, and every Model just
+-- references that key. Likewise each Model gets a short model_key, referenced by S/N validation
+-- and starting stock instead of repeating the Type+Brand+Model text a third and fourth time. Every
+-- *_key value is scratch data — used only within this script to wire rows together, never written
+-- to the database itself. Pick any short, unique text for them; the examples below just use
+-- readable abbreviations.
+--
+-- IMPORTANT — read the diagnostic check's output near the end of this script. The Links/Models/
+-- S/N/Stock inserts below are all INSERT ... SELECT ... JOIN — a typo'd Type/Brand name in the
+-- Links list, or a typo'd *_key reference anywhere downstream, means that one JOIN simply finds no
+-- match, so that one row is silently excluded from what gets inserted (no SQL error, and — the
+-- actual point of this redesign — no phantom Type/Brand ever gets created either). The diagnostic
+-- query is what actually surfaces a typo like that, by name, so don't skip reading it. Like every
+-- other script in this folder, this is meant to run ONCE against an empty catalog — plain
+-- INSERT, no upsert handling, so re-running it fails loudly on a duplicate key, which is
+-- expected (see this folder's own README.md).
+
+BEGIN TRANSACTION;
+
+-- The single global "Genérico / Otro" fallback Brand + Model — offered for every Brand+Type
+-- combination, and on a hand-provisioned database it must be created explicitly once.
+-- brand_type_id = NULL on the Model row is what marks it as the global fallback (not scoped to any
+-- one Brand+Type); the unique indexes idx_model_global_generic_name / idx_model_single_active_generic
+-- guarantee there is only ever one active such row.
+-- The middleware identifies "the" generic Brand by NAME, comparing against APP_CONFIG.generic_label
+-- (V2__config.sql seeds it as 'Genérico / Otro'). Keep the two identical — if you use a different
+-- label here, update APP_CONFIG.generic_label to match before anyone uses the catalog.
+-- Do not rename these rows via a plain UPDATE later — renaming through the app's own catalog
+-- "Editar" flow is what keeps old notes rendering the name that was true when they were generated.
+INSERT INTO BRAND (name) VALUES (N'Genérico / Otro');
+INSERT INTO MODEL (brand_type_id, name) VALUES (NULL, N'Genérico / Otro');
+
+-- 1) TYPES — one row per Type, typed exactly once. is_asset = 1 means the type is a physical,
+-- individually-identified asset (has its own N° de Serie / A-F tag) rather than tracked by
+-- quantity. requires_serial = 1 force-disables the app's "Sin S/N" checkbox for that type — only
+-- meaningful when is_asset = 1. A mobile phone has no dedicated IMEI field: it's just an asset
+-- type (is_asset = 1) whose IMEI is typed directly into the same N° de Serie field (see the app's
+-- manual, section 5.2). A corporate chip/line has no dedicated field either: it's just a countable
+-- type (is_asset = 0) — one item row per line, quantity always 1, with the line's own number
+-- noted in that item's observations.
+-- EXAMPLE ROWS ONLY — replace with your organization's real types.
+INSERT INTO TYPE (name, is_asset, requires_serial) VALUES
+(N'NOTEBOOK', 1, 1),
+(N'MONITOR', 1, 0),
+(N'MOUSE', 0, 0),
+(N'HEADSET', 0, 0),
+(N'CELULAR', 1, 1),
+(N'LÍNEA CORPORATIVA', 0, 0);
+
+-- 2) BRANDS — one row per Brand, typed exactly once, regardless of how many Types it ends up
+-- linked to below. EXAMPLE ROWS ONLY — replace with your organization's real brands.
+INSERT INTO BRAND (name) VALUES
+(N'Marca Ejemplo A'),
+(N'Marca Ejemplo B');
+
+-- 3) LINKS — one row per (Type, Brand) combination that should exist in the app, each pair typed
+-- exactly once here, regardless of how many Models it has. A link with no Models below (see
+-- MONITOR_A/HEADSET_A) still works in the app — it just offers only the global "Genérico / Otro"
+-- fallback from above, not a curated list. EXAMPLE ROWS ONLY.
+CREATE TABLE #_seed_links (
+    link_key   NVARCHAR(50) PRIMARY KEY,
+    type_name  NVARCHAR(255) NOT NULL,
+    brand_name NVARCHAR(255) NOT NULL
+);
+INSERT INTO #_seed_links (link_key, type_name, brand_name) VALUES
+(N'NOTEBOOK_A', N'NOTEBOOK', N'Marca Ejemplo A'),
+(N'NOTEBOOK_B', N'NOTEBOOK', N'Marca Ejemplo B'),
+(N'MONITOR_A',  N'MONITOR',  N'Marca Ejemplo A'),
+(N'MOUSE_A',    N'MOUSE',    N'Marca Ejemplo A'),
+(N'HEADSET_A',  N'HEADSET',  N'Marca Ejemplo A');
+
+INSERT INTO BRAND_TYPE_LINK (type_id, brand_id)
+SELECT t.id, b.id
+FROM #_seed_links l
+JOIN TYPE  t ON t.name = l.type_name
+JOIN BRAND b ON b.name = l.brand_name;
+
+-- 4) MODELS — one row per Model, attached to a Link by link_key only; the Type/Brand names are
+-- never retyped here. Each Model also gets its own model_key, used below by S/N validation and
+-- starting stock. EXAMPLE ROWS ONLY.
+CREATE TABLE #_seed_models (
+    model_key  NVARCHAR(50) PRIMARY KEY,
+    link_key   NVARCHAR(50) NOT NULL,
+    model_name NVARCHAR(255) NOT NULL
+);
+INSERT INTO #_seed_models (model_key, link_key, model_name) VALUES
+(N'NB14',    N'NOTEBOOK_A', N'Modelo Ejemplo 14'),
+(N'NB15',    N'NOTEBOOK_A', N'Modelo Ejemplo 15'),
+(N'NBPRO',   N'NOTEBOOK_B', N'Modelo Ejemplo Pro'),
+(N'MOUSE_W', N'MOUSE_A',    N'Modelo Ejemplo Inalámbrico');
+-- MONITOR_A and HEADSET_A have no rows here on purpose — see the Links comment above for what
+-- that means (both still work fine in the app, offering only the generic fallback).
+
+INSERT INTO MODEL (brand_type_id, name)
+SELECT btl.id, m.model_name
+FROM #_seed_models m
+JOIN #_seed_links l ON l.link_key = m.link_key
+JOIN TYPE  t ON t.name = l.type_name
+JOIN BRAND b ON b.name = l.brand_name
+JOIN BRAND_TYPE_LINK btl ON btl.type_id = t.id AND btl.brand_id = b.id;
+
+-- Resolves every model_key to its real, database-generated MODEL.id (and its BRAND_TYPE_LINK.id)
+-- exactly once — every later step (S/N validation, stock) joins against this instead of re-deriving
+-- the Model from its Type+Brand+Model name a second and third time.
+CREATE TABLE #_seed_model_ids (
+    model_key     NVARCHAR(50) PRIMARY KEY,
+    model_id      INT NOT NULL,
+    brand_type_id INT NOT NULL
+);
+INSERT INTO #_seed_model_ids (model_key, model_id, brand_type_id)
+SELECT m.model_key, m2.id, btl.id
+FROM #_seed_models m
+JOIN #_seed_links l ON l.link_key = m.link_key
+JOIN TYPE  t ON t.name = l.type_name
+JOIN BRAND b ON b.name = l.brand_name
+JOIN BRAND_TYPE_LINK btl ON btl.type_id = t.id AND btl.brand_id = b.id
+JOIN MODEL m2 ON m2.brand_type_id = btl.id AND m2.name = m.model_name;
+
+-- 5) S/N VALIDATION — optional per Model, referenced by model_key only. regex_pattern is matched
+-- against whatever a technician types into the serial-number field in the app; leave a Model out
+-- of this list entirely to skip validation for it. EXAMPLE ROW ONLY.
+CREATE TABLE #_seed_sn_rules (
+    model_key     NVARCHAR(50) NOT NULL,
+    regex_pattern NVARCHAR(500) NOT NULL,
+    is_active     INT NOT NULL DEFAULT 1
+);
+INSERT INTO #_seed_sn_rules (model_key, regex_pattern, is_active) VALUES
+(N'NB14', N'^[A-Z0-9]{6,12}$', 1);
+
+INSERT INTO SN_VALIDATION (model_id, regex_pattern, is_active)
+SELECT mi.model_id, r.regex_pattern, r.is_active
+FROM #_seed_sn_rules r
+JOIN #_seed_model_ids mi ON mi.model_key = r.model_key;
+
+-- 6) PROVIDERS (Entrega - Proveedor notes select from this list, not free text) — flat, no
+-- Type/Brand/Model relationship, so no repetition risk here. EXAMPLE ROWS ONLY.
+INSERT INTO PROVIDER (name) VALUES
+(N'Proveedor Ejemplo S.A.'),
+(N'Proveedor Ejemplo Servicios');
+
+-- 7) STARTING STOCK — one row per (Model, Sede), referenced by model_key only. Every combination
+-- not listed here simply starts at 0, which is also the column's own DEFAULT. EXAMPLE ROWS ONLY.
+CREATE TABLE #_seed_stock (
+    model_key NVARCHAR(50) NOT NULL,
+    sede_name NVARCHAR(255) NOT NULL,
+    stock     INT NOT NULL
+);
+INSERT INTO #_seed_stock (model_key, sede_name, stock) VALUES
+(N'NB14',    N'Sede Central', 5),
+(N'MOUSE_W', N'Sede Central', 20);
+
+INSERT INTO MODEL_STOCK (brand_type_id, model_id, sede_id, stock)
+SELECT mi.brand_type_id, mi.model_id, s.id, st.stock
+FROM #_seed_stock st
+JOIN #_seed_model_ids mi ON mi.model_key = st.model_key
+JOIN SEDE s ON s.name = st.sede_name;
+
+-- 8) DIAGNOSTIC CHECK — run this script, then read this query's result set before trusting it.
+-- Every INSERT above uses no error-on-duplicate handling of its own for the *_key lookups, so a
+-- typo'd Type/Brand name in the Links list, or a typo'd *_key reference in Models/S/N
+-- validation/Stock, silently drops that one row instead of raising a SQL error or (worse) creating
+-- an unreal Type/Brand. This query is what actually surfaces which row had the typo, by name — an
+-- empty result set means everything above resolved correctly.
+SELECT 'Link: Type/Brand name not found' AS issue, l.link_key AS [key], l.type_name + N' / ' + l.brand_name AS detail
+FROM #_seed_links l
+WHERE NOT EXISTS (SELECT 1 FROM TYPE t WHERE t.name = l.type_name)
+   OR NOT EXISTS (SELECT 1 FROM BRAND b WHERE b.name = l.brand_name)
+UNION ALL
+SELECT 'Model: link_key not found in Links list', m.model_key, m.link_key
+FROM #_seed_models m
+WHERE NOT EXISTS (SELECT 1 FROM #_seed_links l WHERE l.link_key = m.link_key)
+UNION ALL
+SELECT 'S/N rule: model_key not found in Models list', r.model_key, r.regex_pattern
+FROM #_seed_sn_rules r
+WHERE NOT EXISTS (SELECT 1 FROM #_seed_model_ids mi WHERE mi.model_key = r.model_key)
+UNION ALL
+SELECT 'Stock: model_key not found in Models list', st.model_key, N'Sede: ' + st.sede_name
+FROM #_seed_stock st
+WHERE NOT EXISTS (SELECT 1 FROM #_seed_model_ids mi WHERE mi.model_key = st.model_key)
+UNION ALL
+SELECT 'Stock: Sede name not found', st.model_key, N'Sede: ' + st.sede_name
+FROM #_seed_stock st
+WHERE NOT EXISTS (SELECT 1 FROM SEDE s WHERE s.name = st.sede_name);
+
+DROP TABLE #_seed_stock;
+DROP TABLE #_seed_sn_rules;
+DROP TABLE #_seed_model_ids;
+DROP TABLE #_seed_models;
+DROP TABLE #_seed_links;
+
+COMMIT TRANSACTION;

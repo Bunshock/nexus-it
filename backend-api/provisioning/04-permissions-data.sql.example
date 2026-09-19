@@ -1,0 +1,50 @@
+-- NexusIT middleware — starting data: role permission grants
+--
+-- Unlike the other ".example" files in this folder, this is NOT organization-specific placeholder
+-- data — it is the default grant set for a fresh database, identical to what the `dev` profile's
+-- dev-seed.sql grants. Nothing seeds ROLE_PERMISSION under the `sqlserver` profile, so WITHOUT this
+-- script every permission check denies for every role (deny-by-default) and even a SUPERADMIN can
+-- do nothing after logging in. Still named ".example" so you review it before running: it is real
+-- security configuration.
+--
+-- Run AFTER the middleware has booted once on the `sqlserver` profile (ROLE is seeded by
+-- V1__init.sql). No dependency on any other data script.
+--
+-- Rule: ADMIN can do everything except edit SMTP config or A/F format config (both org-wide
+-- settings reserved for SUPERADMIN); SUPERADMIN can do everything. Every permission string below
+-- must match a value of the middleware's Permission enum exactly. A NEW Permission value added in
+-- a future version is denied to every role until a row is added here by hand.
+
+BEGIN TRANSACTION;
+
+INSERT INTO ROLE_PERMISSION (role_id, permission) VALUES
+((SELECT id FROM ROLE WHERE name = N'ADMIN'), 'MANAGE_TYPES'),
+((SELECT id FROM ROLE WHERE name = N'ADMIN'), 'MANAGE_BRANDS'),
+((SELECT id FROM ROLE WHERE name = N'ADMIN'), 'MANAGE_MODELS'),
+((SELECT id FROM ROLE WHERE name = N'ADMIN'), 'MANAGE_STOCK'),
+((SELECT id FROM ROLE WHERE name = N'ADMIN'), 'EDIT_SN_VALIDATION'),
+((SELECT id FROM ROLE WHERE name = N'ADMIN'), 'EDIT_GLPI_CONFIG'),
+((SELECT id FROM ROLE WHERE name = N'ADMIN'), 'EDIT_AD_CONFIG'),
+((SELECT id FROM ROLE WHERE name = N'ADMIN'), 'APPROVE_NOTES'),
+((SELECT id FROM ROLE WHERE name = N'ADMIN'), 'SYNC_GLPI'),
+((SELECT id FROM ROLE WHERE name = N'ADMIN'), 'VALIDATE_RETURNS'),
+-- ADMIN deliberately does NOT get EDIT_SMTP_CONFIG or EDIT_AF_FORMAT_CONFIG — SUPERADMIN only.
+
+((SELECT id FROM ROLE WHERE name = N'SUPERADMIN'), 'MANAGE_TYPES'),
+((SELECT id FROM ROLE WHERE name = N'SUPERADMIN'), 'MANAGE_BRANDS'),
+((SELECT id FROM ROLE WHERE name = N'SUPERADMIN'), 'MANAGE_MODELS'),
+((SELECT id FROM ROLE WHERE name = N'SUPERADMIN'), 'MANAGE_STOCK'),
+((SELECT id FROM ROLE WHERE name = N'SUPERADMIN'), 'EDIT_SN_VALIDATION'),
+((SELECT id FROM ROLE WHERE name = N'SUPERADMIN'), 'EDIT_SMTP_CONFIG'),
+((SELECT id FROM ROLE WHERE name = N'SUPERADMIN'), 'EDIT_GLPI_CONFIG'),
+((SELECT id FROM ROLE WHERE name = N'SUPERADMIN'), 'EDIT_AD_CONFIG'),
+((SELECT id FROM ROLE WHERE name = N'SUPERADMIN'), 'EDIT_AF_FORMAT_CONFIG'),
+((SELECT id FROM ROLE WHERE name = N'SUPERADMIN'), 'APPROVE_NOTES'),
+((SELECT id FROM ROLE WHERE name = N'SUPERADMIN'), 'SYNC_GLPI'),
+((SELECT id FROM ROLE WHERE name = N'SUPERADMIN'), 'VALIDATE_RETURNS');
+
+-- USER (plain technician) intentionally gets no rows at all — deny-by-default. A plain technician
+-- can still generate/print notes and use their own note history; they simply cannot approve
+-- notes, edit the catalog, sync GLPI, validate returns, or change any configuration.
+
+COMMIT TRANSACTION;

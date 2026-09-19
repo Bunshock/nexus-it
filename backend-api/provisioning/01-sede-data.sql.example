@@ -1,0 +1,35 @@
+-- NexusIT middleware — starting data: Sede (site) catalog
+--
+-- This is a TEMPLATE with placeholder rows, not real data. Copy this file to 01-sede-data.sql
+-- (gitignored) and replace the example rows below with your organization's real sites before
+-- running it. Never commit real site names/addresses/recipient names to this repository.
+--
+-- Run AFTER the middleware has booted once on the `sqlserver` profile (Flyway creates the schema —
+-- see README.md). Run BEFORE 02-equipment-data (MODEL_STOCK needs real SEDE rows) and
+-- 03-users-data (technician Sede assignment).
+--
+-- Sede has no create/rename endpoint in v1 — this script (and later direct SQL) is the only way
+-- rows get here. To retire a site, set deprecated = 1; never DELETE (old notes reference it).
+
+BEGIN TRANSACTION;
+
+-- EXAMPLE ROWS ONLY — replace with your organization's real sites.
+INSERT INTO SEDE (name) VALUES
+(N'Sede Central'),
+(N'Sede Ejemplo Norte'),
+(N'Sede Ejemplo Sur');
+
+-- SEDE_SHIPPING_INFO is optional per Sede — only add a row for a site that should be selectable
+-- as a Remito (shipment) destination from the catalog. A Sede with no row here can still receive a
+-- shipment via the app's "Personalizar destino" free-text fallback (stored in NOTE_REMITO_OTHER),
+-- just not from the catalog dropdown. destination_label/address/recipients are free text
+-- describing where and to whom a shipment to this Sede should be addressed.
+-- At most one ACTIVE (deprecated = 0) row per Sede is allowed (idx_sede_shipping_single_active).
+-- To change one later: set deprecated = 1 on the old row and INSERT a new one — never UPDATE in
+-- place, since NOTE_REMITO_SEDE references a specific row and its historical text must not change.
+INSERT INTO SEDE_SHIPPING_INFO (sede_id, destination_label, address, recipients)
+SELECT id, N'Recepción ' + name, N'Dirección de ejemplo 123', N'Responsable de recepción'
+FROM SEDE
+WHERE name IN (N'Sede Central', N'Sede Ejemplo Norte');
+
+COMMIT TRANSACTION;

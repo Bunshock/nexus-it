@@ -47,3 +47,10 @@ build/
 # Local-only config overrides (real Keycloak/AD directory values, incl. the directory
 # bearer token) — never commit, see NEXT-SESSION.md "Testing against production Keycloak".
 /src/main/resources/application-local.yml
+
+# Filled-in provisioning scripts (real usernames, sites, inventory) — only the .example
+# templates and README are tracked. See provisioning/README.md.
+/provisioning/*.sql
+
+# Local middleware run log from manual testing.
+/mw-run.log

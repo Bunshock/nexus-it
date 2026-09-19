@@ -1,0 +1,48 @@
+-- NexusIT middleware — starting data: users (login-time role / Sede assignment)
+--
+-- This is a TEMPLATE with placeholder rows, not real data. Copy this file to 03-users-data.sql
+-- (gitignored) and replace the example usernames below with your organization's real usernames
+-- before running it. Never commit real employee usernames to this repository.
+--
+-- Run AFTER 01-sede-data (sede_id below references real SEDE rows). ROLE is already seeded by
+-- V1__init.sql (USER / ADMIN / SUPERADMIN), so nothing to do for it here.
+--
+-- IMPORTANT — without at least one row here nobody can log in at all (403 USER_NOT_REGISTERED),
+-- and without at least one SUPERADMIN row nobody can ever grant anyone else anything, since there
+-- is no in-app user management — this table is edited by direct SQL only. Provision the first
+-- SUPERADMIN before go-live, together with 04-permissions-data.
+--
+-- username must match the technician's Keycloak `preferred_username` claim (the middleware looks
+-- the account up by that value after validating the IdP token). Use the real casing even though a
+-- default SQL Server collation compares case-insensitively.
+--
+-- A row here is NECESSARY but not SUFFICIENT to log in — unless middleware.idp.allowed-group-name
+-- is blank (check skipped), the technician's token must also carry that group, or
+-- bypass_group_check must be 1 on their own row (see the intern example below).
+--
+-- role: 'USER' (default technician), 'ADMIN' (approve notes / sync GLPI / validate returns /
+-- manage the equipment catalog — for their own Sede's notes only; see 04-permissions-data for the
+-- exact grant list), or 'SUPERADMIN' (everything ADMIN can do, for every Sede, plus SMTP and A/F
+-- format config).
+--
+-- sede_id: which site this technician belongs to. The middleware stamps it onto every note the
+-- technician creates (POST /notes resolves it server-side from this row — the client never sends
+-- one), so a technician with sede_id NULL cannot generate notes. For an ADMIN it also scopes which
+-- Sede's notes they may approve/sync/validate; SUPERADMIN bypasses the scoping.
+--
+-- bypass_group_check: 0 (default) means the account must be in the allowed group to log in. Set to
+-- 1 ONLY for an account that legitimately has no group of its own but should still be allowed in
+-- (e.g. an intern technician) — not as a workaround for real technicians who should simply be
+-- added to the group instead. Registration in this table is still required either way.
+
+BEGIN TRANSACTION;
+
+-- EXAMPLE ROWS ONLY — replace with your organization's real technicians.
+-- role_id is resolved by name against the ROLE lookup table.
+INSERT INTO APP_USER (username, role_id, sede_id, bypass_group_check) VALUES
+(N'jperez', (SELECT id FROM ROLE WHERE name = N'USER'), (SELECT id FROM SEDE WHERE name = N'Sede Central'), 0),
+(N'mgomez', (SELECT id FROM ROLE WHERE name = N'ADMIN'), (SELECT id FROM SEDE WHERE name = N'Sede Ejemplo Norte'), 0),
+(N'superadmin.ejemplo', (SELECT id FROM ROLE WHERE name = N'SUPERADMIN'), (SELECT id FROM SEDE WHERE name = N'Sede Central'), 0),
+(N'pasante.ejemplo', (SELECT id FROM ROLE WHERE name = N'USER'), (SELECT id FROM SEDE WHERE name = N'Sede Central'), 1);
+
+COMMIT TRANSACTION;
