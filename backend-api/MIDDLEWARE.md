@@ -99,8 +99,8 @@ are learned at runtime.
 
 ```jsonc
 // 200
-{ "sessionToken", "expiresAt", "role": "USER|ADMIN|SUPERADMIN",
-  "sedeId": "integer|null", "displayName",
+{ "sessionToken", "expiresAt", "username", "role": "USER|ADMIN|SUPERADMIN",
+  "sedeId": "integer|null", "sedeName": "string|null", "fullName", "dni": "string|null",
   "permissions": ["APPROVE_NOTES","SYNC_EXTERNAL","VALIDATE_RETURNS"] }
 // 401 — missing/invalid/expired IdP token
 // 403 — valid identity, but not registered in APP_USER, OR not in the allowed
@@ -183,7 +183,7 @@ refresh its (cosmetic) UI gate; every endpoint enforces server-side regardless.
 
 ```
 GET /api/v1/me
-→ { username, role, sedeId, displayName, permissions[], registered,
+→ { username, role, sedeId, sedeName, fullName, dni, permissions[], registered,
     bypassGroupCheck, glpiTokenSet }
 GET /api/v1/roles/{role}/permissions → ["APPROVE_NOTES", …]
 ```

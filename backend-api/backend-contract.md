@@ -199,9 +199,12 @@ Authorization: Bearer <IdP access token>
 {
   "sessionToken": "string",       // opaque middleware bearer token
   "expiresAt": "ISO-8601 datetime",
+  "username": "string",
   "role": "USER" | "ADMIN" | "SUPERADMIN",
   "sedeId": "integer | null",
-  "displayName": "string",
+  "sedeName": "string | null",    // display name of the assigned Sede
+  "fullName": "string",           // directory full name, username if the directory was unreachable
+  "dni": "string | null",         // null if the directory was unreachable or has none on record
   "permissions": ["APPROVE_NOTES", "SYNC_EXTERNAL", "VALIDATE_RETURNS"]  // see §7.3
 }
 
@@ -999,7 +1002,9 @@ GET /api/v1/me
   "username": "string",
   "role": "USER" | "ADMIN" | "SUPERADMIN",
   "sedeId": "integer | null",
-  "displayName": "string",
+  "sedeName": "string | null",
+  "fullName": "string",
+  "dni": "string | null",
   "permissions": ["APPROVE_NOTES", "SYNC_EXTERNAL", "VALIDATE_RETURNS"],
   "registered": true,
   "bypassGroupCheck": false,
