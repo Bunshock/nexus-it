@@ -1,0 +1,13 @@
+# Test-classpath override for the `dev` profile (the default active profile in tests).
+#
+# The main application.yml's dev document turns spring.sql.init ON (dev-schema.sql + dev-seed.sql)
+# so `mvn spring-boot:run` has a populated H2. Tests must NOT run those: the @JdbcTest slices share
+# the named `jdbc:h2:mem:notesit` instance and load their own @Sql stand-in schemas, so a dev seed
+# row (e.g. TYPE 'NOTEBOOK') collides with what a slice test inserts itself.
+#
+# This only disables the auto-run; dev-schema.sql/dev-seed.sql are still exercised for real by the
+# `mvn spring-boot:run` boot check.
+spring:
+  sql:
+    init:
+      mode: never
