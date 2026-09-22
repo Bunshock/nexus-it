@@ -201,17 +201,20 @@ Authorization: Bearer <IdP access token>
   "expiresAt": "ISO-8601 datetime",
   "username": "string",
   "role": "USER" | "ADMIN" | "SUPERADMIN",
-  "sedeId": "integer | null",
-  "sedeName": "string | null",    // display name of the assigned Sede
+  "sedeId": "string | null",      // APP_USER.sede_id — an external (GLPI Location) id, not a local catalog id
+  "sedeName": "string | null",    // display name of the assigned Sede — currently always null until M3 (no local join left to resolve it from)
   "fullName": "string",           // directory full name, username if the directory was unreachable
   "dni": "string | null",         // null if the directory was unreachable or has none on record
-  "permissions": ["APPROVE_NOTES", "SYNC_EXTERNAL", "VALIDATE_RETURNS"]  // see §7.3
+  "permissions": ["APPROVE_NOTES", "SYNC_EXTERNAL", "VALIDATE_RETURNS", "CREATE_ASSETS"]  // see §7.3
 }
 
 // Response 401 — missing / invalid / expired IdP token
 // Response 403 — valid IdP identity, but not registered in the user store,
 //   OR not in the allowed group and without the bypass-group-check flag
 //   (mirrors today's APP_USER registration gate + AD-group gate)
+
+// Dev-only: POST /api/v1/auth/dev-login {username} mints a byte-identical session for an
+// already-registered APP_USER with no IdP/JWT/group check — @Profile("dev"), absent from prod.
 ```
 
 The middleware validates the IdP token (signature via the IdP's JWKS,
@@ -1062,16 +1065,19 @@ GET /api/v1/users/{username}
 GET /api/v1/roles/{role}/permissions
 ```
 ```jsonc
-["APPROVE_NOTES", "SYNC_EXTERNAL", "VALIDATE_RETURNS"]
+["APPROVE_NOTES", "SYNC_EXTERNAL", "VALIDATE_RETURNS", "CREATE_ASSETS"]
 ```
 
-**RESOLVED 2026-08-31 (decision D3).** The enum is **exactly these three**:
+**RESOLVED 2026-08-31 (decision D3), extended since**: the enum built by M1 is **these four**, not
+three — `CREATE_ASSETS` (SUPERADMIN-only grant, for the not-yet-built Alta de equipos / M7 flow)
+was added on top of D3's original three and doesn't gate any endpoint yet:
 
 | Permission | Gates |
 |------------|-------|
 | `APPROVE_NOTES` | `approve` / `reject` a note (§5.3) |
 | `SYNC_EXTERNAL` | a `SYNC`-kind step: `sync`, `reject-sync`, and `retry` / `abandon` on a failed sync step (§4.1–4.2, §10.2). Both item kinds. Renamed from `SYNC_GLPI` per §1 #1. |
 | `VALIDATE_RETURNS` | a `RETURN`-kind step: `return`, `lost`, and `retry` / `abandon` on a failed return step (§4.3–4.4, §10.2) |
+| `CREATE_ASSETS` | Alta de equipos (M7/X9, not built) — SUPERADMIN-only grant |
 
 Retired (their screens / features no longer exist in the middleware
 world): `MANAGE_TYPES` / `MANAGE_BRANDS` / `MANAGE_MODELS` (catalog is
@@ -1097,10 +1103,16 @@ GET /api/v1/sedes
 ```
 
 The middleware keeps its own `SEDE` catalog (id + name) — the target of
-`APP_USER.sedeId`, `NOTE_REPORT.sedeId`, and a Remito's
-`destinationSedeId`. **Read-only from the app** (decision D3): no in-app
-add/edit/delete; administered out-of-band like `APP_USER` / roles.
-(Providers, §7.x, are the same — read-only.)
+`NOTE_REPORT.sedeId` and a Remito's `destinationSedeId` (both still local ints, pending M3).
+**Read-only from the app** (decision D3): no in-app add/edit/delete; administered out-of-band
+like `APP_USER` / roles. (Providers, §7.x, are the same — read-only.)
+
+**`APP_USER.sedeId` no longer targets this local `SEDE` catalog** — built ahead of M3, it's a
+`String` holding a real external (GLPI Location) id directly, so RBAC Sede-scoping already lands
+in the same id space the catalog itself will use once M3 ships. Until then, Sede-scoped
+permission checks bridge the two mismatched spaces via a string-comparison, and `POST /notes`
+fails loud (`409 SEDE_NOT_LOCAL`) if a real, non-numeric Location id is ever assigned to an
+account before M3 lands — see the implementation plan's M1/Sede-linking notes.
 
 **E2a — a Sede *is* a GLPI `Location`.** The GLPI adapter holds a
 `sede → locations_id` map (middleware-internal config, §8). GLPI Locations

@@ -100,14 +100,24 @@ are learned at runtime.
 ```jsonc
 // 200
 { "sessionToken", "expiresAt", "username", "role": "USER|ADMIN|SUPERADMIN",
-  "sedeId": "integer|null", "sedeName": "string|null", "fullName", "dni": "string|null",
-  "permissions": ["APPROVE_NOTES","SYNC_EXTERNAL","VALIDATE_RETURNS"] }
+  "sedeId": "string|null", "sedeName": "string|null", "fullName", "dni": "string|null",
+  "permissions": ["APPROVE_NOTES","SYNC_EXTERNAL","VALIDATE_RETURNS","CREATE_ASSETS"] }
 // 401 — missing/invalid/expired IdP token
 // 403 — valid identity, but not registered in APP_USER, OR not in the allowed
 //        group and without bypass_group_check
 ```
 
+`sedeId` here is `APP_USER.sede_id` — an **external id** (a GLPI Location id once assigned by a
+superadmin), not a local catalog reference; see §8's note on this. `sedeName` currently always
+resolves `null` (no local join left to resolve it from) until the catalog itself is GLPI-backed
+(M3 in the implementation plan).
+
 Login-attempt throttling is the IdP's job (`/auth/login` never sees a password).
+
+**Dev-only bypass**: `POST /api/v1/auth/dev-login {username}` mints a byte-identical session for
+an already-registered `APP_USER`, with no IdP/JWT/group check at all — `@Profile("dev")`, so the
+route is physically absent from a `sqlserver`/prod build. Lets a client develop against a working
+middleware without Keycloak in the loop.
 
 ### 2.3 Authenticated requests / logout / token
 
@@ -159,13 +169,14 @@ Until then the flow falls back to the IdP login page — no app/contract change.
 Three roles: `USER`, `ADMIN`, `SUPERADMIN`. **Deny-by-default** — an action with
 no grant row is denied to everyone.
 
-**Permission enum — exactly three:**
+**Permission enum — exactly four:**
 
 | Permission | Gates |
 |---|---|
 | `APPROVE_NOTES` | `approve` / `reject` a note |
 | `SYNC_EXTERNAL` | a `SYNC`-kind step: `sync`, `reject-sync`, `retry`/`abandon` on a failed sync. Both item kinds. (Renamed from `SYNC_GLPI`.) |
 | `VALIDATE_RETURNS` | a `RETURN`-kind step: `return`, `lost`, `retry`/`abandon` on a failed return |
+| `CREATE_ASSETS` | Alta de equipos (M7) — SUPERADMIN-only grant. Exists in the enum/seed today; not yet gating any endpoint (`POST /catalog/assets` isn't built). |
 
 No `EDIT_CONFIG` and **no `SUPERADMIN`-only permission**. `PUT /config` is gated
 by `role == SUPERADMIN` checked **directly**, not via a permission.
@@ -519,8 +530,15 @@ GET /api/v1/sedes → { results: [ { id, name, locationMapped: true } ] }
 ```
 
 The middleware keeps its own `SEDE` catalog (id + name) — the target of
-`APP_USER.sedeId`, `NOTE_REPORT.sedeId`, a Remito's `destinationSedeId`.
+`NOTE_REPORT.sedeId` and a Remito's `destinationSedeId` (both still local ints, pending M3).
 Read-only from the app; administered out-of-band.
+
+**`APP_USER.sedeId` no longer points at this local `SEDE` catalog** — implemented ahead of M3,
+it's a `String` holding a real external (GLPI Location) id directly, so RBAC Sede-scoping and the
+catalog's own eventual GLPI-Location id land in the same space once M3 ships. Until then,
+`PermissionGuard.requireSedeScoped` bridges the two mismatched spaces via a string-comparison
+(`NOTE_REPORT.sedeId.toString().equals(APP_USER.sedeId)`), and `POST /notes` fails loud with
+`409 SEDE_NOT_LOCAL` if a real (non-numeric) Location id is ever assigned before M3 lands.
 
 **E2a — a Sede *is* a GLPI `Location`.** The adapter holds a
 `sede → locations_id` map (deploy config, §12). Locations are a **tree**, so "at
