@@ -109,29 +109,8 @@ class AuditRepositoryTest {
         assertEquals(itemId, forNote.get(0).itemId());
     }
 
-    @Test
-    void recordStockChangeThenItIsPersisted() {
-        repository.recordStockChange(modelId, brandId, typeId, sedeId, "jperez", 5, 4, "Aprobación de nota #1");
-
-        Integer count = jdbc.queryForObject("SELECT COUNT(*) FROM AUDIT_STOCK", Integer.class);
-        assertEquals(1, count);
-        var row = jdbc.queryForMap("SELECT * FROM AUDIT_STOCK");
-        assertEquals(5, ((Number) row.get("old_stock")).intValue());
-        assertEquals(4, ((Number) row.get("new_stock")).intValue());
-    }
-
-    @Test
-    void recordStockChangeSilentlyNoOpsWhenNoBrandTypeLinkExists() {
-        // A brand/type combination with no BRAND_TYPE_LINK row at all — must not throw, per
-        // AuditRepository's own "audit writes must never crash the real mutation" contract.
-        jdbc.update("INSERT INTO BRAND (name) VALUES ('NEVERLINKED')");
-        int unlinkdBrandId = jdbc.queryForObject("SELECT id FROM BRAND WHERE name = 'NEVERLINKED'", Integer.class);
-
-        assertDoesNotThrow(() ->
-                repository.recordStockChange(modelId, unlinkdBrandId, typeId, sedeId, "jperez", 0, 1, "test"));
-        Integer count = jdbc.queryForObject("SELECT COUNT(*) FROM AUDIT_STOCK", Integer.class);
-        assertEquals(0, count);
-    }
+    // recordStockChange() and its tests were removed in M1 (GLPI-adapter strip) along with the
+    // whole local MODEL_STOCK counter — see AuditRepository's own class Javadoc.
 
     @Test
     void recordAdminActionThenReadItBackFilteredByActorAndTargetType() {

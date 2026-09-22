@@ -15,11 +15,12 @@ import java.util.List;
  * matches that real behavior and is also safer (a client can't create a note under an arbitrary
  * Sede).
  *
- * <p>For a Remito de Envío the <em>destination</em> IS a real client choice (unlike the
- * technician's own Sede): either {@code shippingInfoId} (a catalog-Sede destination — the FK of
- * that Sede's currently-active {@code SEDE_SHIPPING_INFO} row, obtained from
- * {@code GET /catalog/sedes/{id}/shipping-info}) OR the {@code destination*} free-text trio (a
- * custom destination with no catalog row). Exactly one applies.
+ * <p>For a Remito de Envío the destination is a real client choice (unlike the technician's own
+ * Sede): {@code destinationSedeId}, a real catalog {@code SEDE} id — collapsed from the old
+ * shippingInfoId/free-text-destination pair in M1 (GLPI-adapter strip): a custom/manual
+ * destination with no catalog row is no longer supported, since address/recipient info for a
+ * Remito destination is expected to come from GLPI's {@code Location} entity once M3 lands, not a
+ * local {@code SEDE_SHIPPING_INFO} table.
  */
 public record CreateNoteRequest(
         @NotBlank String profileType,
@@ -35,10 +36,7 @@ public record CreateNoteRequest(
         String responsibleName,
         String responsibleDni,
         String observations,
-        Integer shippingInfoId,
-        String destinationLabel,
-        String destinationAddress,
-        String destinationRecipients,
+        Integer destinationSedeId,
         @NotEmpty List<@Valid NoteItemRequest> items) {
 
     public boolean isProviderNote() {

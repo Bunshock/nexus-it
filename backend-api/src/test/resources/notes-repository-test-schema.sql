@@ -1,6 +1,10 @@
 -- H2-native test schema for NotesRepositoryTest — same "dialect-neutral stand-in" precedent as
 -- catalog-repository-test-schema.sql. IF NOT EXISTS matters for the same reason documented there
 -- (this @Sql script re-runs before every test method against one persistent embedded instance).
+--
+-- M1 (GLPI-adapter strip): MODEL_STOCK/SEDE_SHIPPING_INFO/NOTE_ITEM_STOCK_EXCEPTION/AUDIT_STOCK
+-- dropped; NOTE_REMITO_SEDE/NOTE_REMITO_OTHER collapsed into one NOTE_REMITO(destination_sede_id);
+-- NOTE_ITEM.modifies_stock and NOTE_REPORT.stock_applied dropped.
 
 CREATE TABLE IF NOT EXISTS TYPE (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -36,14 +40,6 @@ CREATE TABLE IF NOT EXISTS SEDE (
     deprecated INT NOT NULL DEFAULT 0
 );
 
-CREATE TABLE IF NOT EXISTS MODEL_STOCK (
-    brand_type_id INT NOT NULL REFERENCES BRAND_TYPE_LINK(id),
-    model_id INT NOT NULL REFERENCES MODEL(id),
-    sede_id INT NOT NULL REFERENCES SEDE(id),
-    stock INT NOT NULL DEFAULT 0,
-    CONSTRAINT pk_model_stock PRIMARY KEY (brand_type_id, model_id, sede_id)
-);
-
 CREATE TABLE IF NOT EXISTS PROVIDER (
     id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(255) NOT NULL UNIQUE,
@@ -58,8 +54,7 @@ CREATE TABLE IF NOT EXISTS NOTE_REPORT (
     technician_dni VARCHAR(255),
     observations VARCHAR(300),
     sede_id INT REFERENCES SEDE(id),
-    approval_status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
-    stock_applied INT NOT NULL DEFAULT 0
+    approval_status VARCHAR(20) NOT NULL DEFAULT 'PENDING'
 );
 
 CREATE TABLE IF NOT EXISTS NOTE_REPORT_REJECTION (
@@ -95,25 +90,9 @@ CREATE TABLE IF NOT EXISTS NOTE_PROVEEDOR (
     responsible_dni VARCHAR(255)
 );
 
-CREATE TABLE IF NOT EXISTS SEDE_SHIPPING_INFO (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    sede_id INT NOT NULL REFERENCES SEDE(id),
-    destination_label VARCHAR(255) NOT NULL,
-    address VARCHAR(500),
-    recipients VARCHAR(500),
-    deprecated INT NOT NULL DEFAULT 0
-);
-
-CREATE TABLE IF NOT EXISTS NOTE_REMITO_SEDE (
+CREATE TABLE IF NOT EXISTS NOTE_REMITO (
     note_report_id INT PRIMARY KEY REFERENCES NOTE_REPORT(id),
-    shipping_info_id INT NOT NULL REFERENCES SEDE_SHIPPING_INFO(id)
-);
-
-CREATE TABLE IF NOT EXISTS NOTE_REMITO_OTHER (
-    note_report_id INT PRIMARY KEY REFERENCES NOTE_REPORT(id),
-    destination_label VARCHAR(255) NOT NULL,
-    address VARCHAR(500),
-    recipients VARCHAR(500)
+    destination_sede_id INT NOT NULL REFERENCES SEDE(id)
 );
 
 CREATE TABLE IF NOT EXISTS NOTE_ITEM (
@@ -123,7 +102,7 @@ CREATE TABLE IF NOT EXISTS NOTE_ITEM (
     brand_id INT NOT NULL REFERENCES BRAND(id),
     model_id INT NOT NULL REFERENCES MODEL(id),
     observations VARCHAR(200),
-    modifies_stock INT NOT NULL DEFAULT 1
+    external_item_id VARCHAR(255)
 );
 
 CREATE TABLE IF NOT EXISTS NOTE_ITEM_ASSET (
@@ -147,32 +126,25 @@ CREATE TABLE IF NOT EXISTS NOTE_ITEM_STATUS_TRACKING (
     CONSTRAINT uq_note_item_status_tracking UNIQUE (item_id, tracking_type)
 );
 
-CREATE TABLE IF NOT EXISTS NOTE_ITEM_STOCK_EXCEPTION (
-    item_id INT PRIMARY KEY REFERENCES NOTE_ITEM(id),
-    reason VARCHAR(300) NOT NULL
-);
-
 CREATE TABLE IF NOT EXISTS NOTE_ITEM_RETURN_ALLOCATION (
     id INT AUTO_INCREMENT PRIMARY KEY,
     item_id INT NOT NULL REFERENCES NOTE_ITEM(id),
     status VARCHAR(50) NOT NULL,
     quantity INT NOT NULL,
     reason VARCHAR(300),
-    updated_at VARCHAR(50) NOT NULL
+    updated_at VARCHAR(50) NOT NULL,
+    external_item_id VARCHAR(255)
 );
 
--- APP_CONFIG(+seed) is needed because CatalogRepository (a NotesRepository dependency) now reads
--- genericLabel() live from ConfigRepository. APP_CONFIG_RETURNABLE_PROVIDER_MOTIVO is needed
--- directly — NotesRepository.isProviderReturnable() reads it instead of a hardcoded constant now.
+-- APP_CONFIG(+seed) is needed because CatalogRepository (a NotesRepository dependency, via
+-- ConfigRepository) reads genericLabel() live from ConfigRepository. SMTP columns removed (M1).
+-- APP_CONFIG_RETURNABLE_PROVIDER_MOTIVO is needed directly — NotesRepository.isProviderReturnable()
+-- reads it instead of a hardcoded constant.
 CREATE TABLE IF NOT EXISTS APP_CONFIG (
     id                      INT NOT NULL PRIMARY KEY,
     af_enabled              INT NOT NULL DEFAULT 1,
     af_prefix               VARCHAR(50) NOT NULL DEFAULT 'IT',
     af_separator            VARCHAR(10) NOT NULL DEFAULT '-',
-    smtp_host               VARCHAR(255),
-    smtp_port               INT,
-    smtp_sender_address     VARCHAR(255),
-    smtp_password_encrypted VARCHAR(500),
     note_item_limit         INT NOT NULL DEFAULT 50,
     failure_trigger_motivo  VARCHAR(100) NOT NULL DEFAULT 'Falla',
     generic_label           VARCHAR(255) NOT NULL DEFAULT 'Genérico / Otro'
@@ -186,20 +158,8 @@ CREATE TABLE IF NOT EXISTS APP_CONFIG_RETURNABLE_PROVIDER_MOTIVO (
 DELETE FROM APP_CONFIG_RETURNABLE_PROVIDER_MOTIVO;
 INSERT INTO APP_CONFIG_RETURNABLE_PROVIDER_MOTIVO (motivo) VALUES ('Garantía'), ('Reparación');
 
--- Needed because NotesRepository now writes AUDIT_STOCK (approval-time moves) and
--- AUDIT_ITEM_STATUS (sync/reject-sync/return/lost/allocate) rows via AuditRepository.
-CREATE TABLE IF NOT EXISTS AUDIT_STOCK (
-    id            INT AUTO_INCREMENT PRIMARY KEY,
-    brand_type_id INT NOT NULL REFERENCES BRAND_TYPE_LINK(id),
-    model_id      INT NOT NULL REFERENCES MODEL(id),
-    sede_id       INT NOT NULL REFERENCES SEDE(id),
-    username      VARCHAR(100) NOT NULL,
-    old_stock     INT NOT NULL,
-    new_stock     INT NOT NULL,
-    reason        VARCHAR(500) NOT NULL,
-    changed_at    TIMESTAMP NOT NULL
-);
-
+-- Needed because NotesRepository writes AUDIT_ITEM_STATUS rows (sync/reject-sync/return/lost/
+-- allocate) via AuditRepository.
 CREATE TABLE IF NOT EXISTS AUDIT_ITEM_STATUS (
     id          INT AUTO_INCREMENT PRIMARY KEY,
     item_id     INT NOT NULL REFERENCES NOTE_ITEM(id),

@@ -116,7 +116,7 @@ public class NotesController {
     @PostMapping("/{noteId}/items/{itemId}/sync")
     public NoteDetailResponse sync(@PathVariable int noteId, @PathVariable int itemId) {
         CallerPrincipal caller = currentUser.require();
-        permissionGuard.requireSedeScoped(caller, Permission.SYNC_GLPI, notes.getSedeIdForNote(noteId));
+        permissionGuard.requireSedeScoped(caller, Permission.SYNC_EXTERNAL, notes.getSedeIdForNote(noteId));
         notes.updateItemGlpiStatus(itemId, "SYNCED", null, caller.username());
         return notes.getById(noteId);
     }
@@ -125,7 +125,7 @@ public class NotesController {
     public NoteDetailResponse rejectSync(@PathVariable int noteId, @PathVariable int itemId,
             @Valid @RequestBody ReasonRequest request) {
         CallerPrincipal caller = currentUser.require();
-        permissionGuard.requireSedeScoped(caller, Permission.SYNC_GLPI, notes.getSedeIdForNote(noteId));
+        permissionGuard.requireSedeScoped(caller, Permission.SYNC_EXTERNAL, notes.getSedeIdForNote(noteId));
         notes.updateItemGlpiStatus(itemId, "REJECTED", request.reason(), caller.username());
         return notes.getById(noteId);
     }

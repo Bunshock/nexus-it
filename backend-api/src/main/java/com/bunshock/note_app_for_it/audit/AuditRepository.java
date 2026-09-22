@@ -49,24 +49,6 @@ public class AuditRepository {
                 """, itemId, statusKind, oldStatus, newStatus, reason, quantity, username, LocalDateTime.now());
     }
 
-    /** Resolves {@code BRAND_TYPE_LINK} internally — every real caller already has (modelId, brandId, typeId) on hand. */
-    public void recordStockChange(int modelId, int brandId, int typeId, int sedeId, String username,
-            int oldStock, int newStock, String reason) {
-        List<Integer> linkIds = jdbc.query(
-                "SELECT id FROM BRAND_TYPE_LINK WHERE type_id = ? AND brand_id = ?",
-                (rs, rowNum) -> rs.getInt(1), typeId, brandId);
-        if (linkIds.isEmpty()) {
-            // Should not happen in practice — a stock change always goes through
-            // CatalogRepository.ensureBrandTypeLink() first — but audit writes must never crash
-            // the actual stock mutation they're recording, so this is a silent no-op, not a throw.
-            return;
-        }
-        jdbc.update("""
-                INSERT INTO AUDIT_STOCK (brand_type_id, model_id, sede_id, username, old_stock, new_stock, reason, changed_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """, linkIds.get(0), modelId, sedeId, username, oldStock, newStock, reason, LocalDateTime.now());
-    }
-
     public void recordAdminAction(String username, String action, String targetType, String targetId,
             String oldValue, String newValue, String reason) {
         jdbc.update("""

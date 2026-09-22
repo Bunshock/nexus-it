@@ -1,8 +1,6 @@
 package com.bunshock.note_app_for_it.notes;
 
 import com.bunshock.note_app_for_it.audit.AuditRepository;
-import com.bunshock.note_app_for_it.catalog.CatalogRepository;
-import com.bunshock.note_app_for_it.common.security.EncryptionService;
 import com.bunshock.note_app_for_it.common.web.ApiException;
 import com.bunshock.note_app_for_it.config.ConfigRepository;
 import com.bunshock.note_app_for_it.notes.dto.CreateNoteRequest;
@@ -18,7 +16,6 @@ import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.jdbc.Sql;
 
-import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 
@@ -26,15 +23,16 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Real JDBC test against embedded H2 (notes-repository-test-schema.sql — H2-native stand-in, same
- * precedent as CatalogRepositoryTest). Covers the v1 scope: create, list/filter, get-by-id,
- * approve/reject with old-model stock movement, item sync (GLPI), whole-item and partial-countable
- * return/lost.
+ * precedent as CatalogRepositoryTest). Covers create, list/filter, get-by-id, approve/reject
+ * (M1: a pure status flip, no stock movement any more), item sync (GLPI), whole-item and
+ * partial-countable return/lost.
+ *
+ * <p>M1 (GLPI-adapter strip): every stock-movement test (approve decrementing/incrementing
+ * MODEL_STOCK, STOCK_WOULD_GO_NEGATIVE, the "modifies stock" exception, Remito's dual-Sede stock
+ * move) was removed along with the production code it covered. Remito tests now cover the
+ * collapsed single {@code destinationSedeId} shape instead of the old
+ * shippingInfoId/SEDE_SHIPPING_INFO/free-text-destination trio.
  */
-// @DirtiesContext forces a fresh embedded H2 instance for this class — @JdbcTest slice
-// contexts are cached/shared by Spring across test classes with identical configuration,
-// and this class's own @Sql schema (via IF NOT EXISTS) would otherwise silently lose a
-// table-shape race against whichever other *RepositoryTest class happened to run first
-// in the same JVM and already created a same-named table with different columns.
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 @JdbcTest
 @Sql("/notes-repository-test-schema.sql")
@@ -44,7 +42,6 @@ class NotesRepositoryTest {
     private JdbcTemplate jdbc;
 
     private NotesRepository notes;
-    private CatalogRepository catalog;
 
     private int notebookTypeId;
     private int dellBrandId;
@@ -56,12 +53,9 @@ class NotesRepositoryTest {
 
     @BeforeEach
     void setUp() {
-        // A fresh all-zero test-only key — never used outside this test, not a real secret.
         AuditRepository auditRepository = new AuditRepository(jdbc);
-        ConfigRepository configRepository = new ConfigRepository(jdbc,
-                new EncryptionService(Base64.getEncoder().encodeToString(new byte[32])), auditRepository);
-        catalog = new CatalogRepository(jdbc, configRepository, auditRepository);
-        notes = new NotesRepository(jdbc, catalog, configRepository, auditRepository);
+        ConfigRepository configRepository = new ConfigRepository(jdbc, auditRepository);
+        notes = new NotesRepository(jdbc, configRepository, auditRepository);
 
         notebookTypeId = insertType("NOTEBOOK", true);
         dellBrandId = insertBrand("DELL");
@@ -74,15 +68,13 @@ class NotesRepositoryTest {
         cableModelId = insertModel(cableLink, "USB-C");
 
         sedeId = insertSede("Campus Central");
-        catalog.setModelStock(laptopModelId, dellBrandId, notebookTypeId, sedeId, 5, "Ajuste de prueba", "tester");
-        catalog.setModelStock(cableModelId, cableBrandId, cableTypeId, sedeId, 10, "Ajuste de prueba", "tester");
     }
 
     private CreateNoteRequest entregaRequest(String profileType) {
         NoteItemRequest asset = new NoteItemRequest("ASSET", notebookTypeId, dellBrandId, laptopModelId,
-                "SN12345", "IT-SN12345", null, "obs", true, null);
+                "SN12345", "IT-SN12345", null, "obs");
         return new CreateNoteRequest(profileType, "Juan Perez", "12345678", "juan@example.com",
-                null, null, null, null, null, null, null, null, "notas", null, null, null, null, List.of(asset));
+                null, null, null, null, null, null, null, null, "notas", null, List.of(asset));
     }
 
     @Test
@@ -111,52 +103,12 @@ class NotesRepositoryTest {
     }
 
     @Test
-    void approvingEntregaDecrementsStockAtTheNotesSede() {
+    void approvingANoteIsAPureStatusFlip() {
         int id = notes.createNote(entregaRequest("ENTREGA"), "tech1", null, sedeId);
 
         notes.updateApprovalStatus(id, "APPROVED", null, "boss1");
 
-        assertEquals(4, catalog.getModelStock(laptopModelId, dellBrandId, notebookTypeId, sedeId));
-        assertTrue(notes.getById(id).stockApplied());
-
-        // setUp() already wrote 2 AUDIT_STOCK rows of its own (initial laptop/cable stock
-        // seeding, both under username "tester") — filter to the row this test's own approval
-        // actually wrote, rather than assuming AUDIT_STOCK has exactly one row.
-        var row = jdbc.queryForMap("SELECT * FROM AUDIT_STOCK WHERE username = 'boss1'");
-        assertEquals(5, ((Number) row.get("old_stock")).intValue());
-        assertEquals(4, ((Number) row.get("new_stock")).intValue());
-        assertEquals("boss1", row.get("username"));
-        assertEquals("Aprobación de nota #" + id, row.get("reason"));
-    }
-
-    @Test
-    void approvingEntregaTwiceOnlyMovesStockOnce_stockAppliedGuard() {
-        int id = notes.createNote(entregaRequest("ENTREGA"), "tech1", null, sedeId);
-
-        notes.updateApprovalStatus(id, "APPROVED", null, "tester");
-        notes.updateApprovalStatus(id, "APPROVED", null, "tester");
-
-        assertEquals(4, catalog.getModelStock(laptopModelId, dellBrandId, notebookTypeId, sedeId));
-    }
-
-    @Test
-    void approvingEntregaWithInsufficientStockThrowsAndMovesNothing() {
-        catalog.setModelStock(laptopModelId, dellBrandId, notebookTypeId, sedeId, 0, "Ajuste de prueba", "tester");
-        int id = notes.createNote(entregaRequest("ENTREGA"), "tech1", null, sedeId);
-
-        ApiException ex = assertThrows(ApiException.class, () -> notes.updateApprovalStatus(id, "APPROVED", null, "tester"));
-        assertEquals("STOCK_WOULD_GO_NEGATIVE", ex.getCode());
-        assertEquals(0, catalog.getModelStock(laptopModelId, dellBrandId, notebookTypeId, sedeId));
-        assertFalse(notes.getById(id).stockApplied());
-    }
-
-    @Test
-    void approvingDevolucionIncrementsStock() {
-        int id = notes.createNote(entregaRequest("DEVOLUCIÓN"), "tech1", null, sedeId);
-
-        notes.updateApprovalStatus(id, "APPROVED", null, "tester");
-
-        assertEquals(6, catalog.getModelStock(laptopModelId, dellBrandId, notebookTypeId, sedeId));
+        assertEquals("APPROVED", notes.getById(id).approvalStatus());
     }
 
     @Test
@@ -197,45 +149,39 @@ class NotesRepositoryTest {
     }
 
     @Test
-    void wholeItemReturnCreditsStockBackOnlyOnce() {
+    void wholeItemReturnFlipsReturnStatus() {
         int id = notes.createNote(entregaRequest("PRÉSTAMO"), "tech1", null, sedeId);
-        notes.updateApprovalStatus(id, "APPROVED", null, "tester"); // decrements stock (PRÉSTAMO is egress)
+        notes.updateApprovalStatus(id, "APPROVED", null, "tester");
         int itemId = notes.getById(id).items().get(0).id();
-        assertEquals(4, catalog.getModelStock(laptopModelId, dellBrandId, notebookTypeId, sedeId));
 
         notes.updateItemReturnStatus(itemId, "RETURNED", null, "tester");
-        assertEquals(5, catalog.getModelStock(laptopModelId, dellBrandId, notebookTypeId, sedeId));
-
-        // Re-calling with the same status must NOT credit stock a second time.
-        notes.updateItemReturnStatus(itemId, "RETURNED", null, "tester");
-        assertEquals(5, catalog.getModelStock(laptopModelId, dellBrandId, notebookTypeId, sedeId));
+        assertEquals("RETURNED", notes.getById(id).items().get(0).returnStatus());
     }
 
     @Test
-    void lostItemDoesNotCreditStockBack() {
+    void lostItemFlipsReturnStatusToLostWithReason() {
         int id = notes.createNote(entregaRequest("PRÉSTAMO"), "tech1", null, sedeId);
         notes.updateApprovalStatus(id, "APPROVED", null, "tester");
         int itemId = notes.getById(id).items().get(0).id();
 
         notes.updateItemReturnStatus(itemId, "LOST", "Robado", "tester");
 
-        assertEquals(4, catalog.getModelStock(laptopModelId, dellBrandId, notebookTypeId, sedeId));
-        assertEquals("LOST", notes.getById(id).items().get(0).returnStatus());
+        NoteItemResponse item = notes.getById(id).items().get(0);
+        assertEquals("LOST", item.returnStatus());
+        assertEquals("Robado", item.returnRejectionReason());
     }
 
     @Test
-    void partialCountableReturnCreditsOnlyTheAllocatedQuantity() {
+    void partialCountableReturnAllocatesOnlyTheGivenQuantity() {
         NoteItemRequest cables = new NoteItemRequest("COUNTABLE", cableTypeId, cableBrandId, cableModelId,
-                null, null, 5, null, true, null);
+                null, null, 5, null);
         CreateNoteRequest req = new CreateNoteRequest("PRÉSTAMO", "Juan Perez", "12345678", null,
-                null, null, null, null, null, null, null, null, null, null, null, null, null, List.of(cables));
+                null, null, null, null, null, null, null, null, null, null, List.of(cables));
         int id = notes.createNote(req, "tech1", null, sedeId);
-        notes.updateApprovalStatus(id, "APPROVED", null, "tester"); // stock 10 -> 5
+        notes.updateApprovalStatus(id, "APPROVED", null, "tester");
         int itemId = notes.getById(id).items().get(0).id();
-        assertEquals(5, catalog.getModelStock(cableModelId, cableBrandId, cableTypeId, sedeId));
 
         notes.allocateCountableReturn(itemId, "RETURNED", 3, null, "tester");
-        assertEquals(8, catalog.getModelStock(cableModelId, cableBrandId, cableTypeId, sedeId));
 
         NoteItemResponse item = notes.getById(id).items().get(0);
         assertEquals(3, item.returnedQuantity());
@@ -245,15 +191,14 @@ class NotesRepositoryTest {
         item = notes.getById(id).items().get(0);
         assertEquals(3, item.returnedQuantity());
         assertEquals(1, item.lostQuantity());
-        assertEquals(8, catalog.getModelStock(cableModelId, cableBrandId, cableTypeId, sedeId), "Lost never credits stock");
     }
 
     @Test
     void countableItemReturnsIndividualAllocationBatchesOrderedByTime() {
         NoteItemRequest cables = new NoteItemRequest("COUNTABLE", cableTypeId, cableBrandId, cableModelId,
-                null, null, 5, null, true, null);
+                null, null, 5, null);
         CreateNoteRequest req = new CreateNoteRequest("PRÉSTAMO", "Juan Perez", "12345678", null,
-                null, null, null, null, null, null, null, null, null, null, null, null, null, List.of(cables));
+                null, null, null, null, null, null, null, null, null, null, List.of(cables));
         int id = notes.createNote(req, "tech1", null, sedeId);
         int itemId = notes.getById(id).items().get(0).id();
 
@@ -282,9 +227,9 @@ class NotesRepositoryTest {
     @Test
     void allocatingMoreThanPendingQuantityThrows() {
         NoteItemRequest cables = new NoteItemRequest("COUNTABLE", cableTypeId, cableBrandId, cableModelId,
-                null, null, 5, null, true, null);
+                null, null, 5, null);
         CreateNoteRequest req = new CreateNoteRequest("PRÉSTAMO", "Juan Perez", "12345678", null,
-                null, null, null, null, null, null, null, null, null, null, null, null, null, List.of(cables));
+                null, null, null, null, null, null, null, null, null, null, List.of(cables));
         int id = notes.createNote(req, "tech1", null, sedeId);
         int itemId = notes.getById(id).items().get(0).id();
 
@@ -294,27 +239,13 @@ class NotesRepositoryTest {
     }
 
     @Test
-    void itemFlaggedNotModifiesStockIsExcludedFromApprovalStockMovement() {
-        NoteItemRequest exempt = new NoteItemRequest("ASSET", notebookTypeId, dellBrandId, laptopModelId,
-                "SN99999", "IT-SN99999", null, null, false, "Ya lo tenía físicamente");
-        CreateNoteRequest req = new CreateNoteRequest("ENTREGA", "Juan Perez", "12345678", null,
-                null, null, null, null, null, null, null, null, null, null, null, null, null, List.of(exempt));
-        int id = notes.createNote(req, "tech1", null, sedeId);
-
-        notes.updateApprovalStatus(id, "APPROVED", null, "tester");
-
-        assertEquals(5, catalog.getModelStock(laptopModelId, dellBrandId, notebookTypeId, sedeId),
-                "stock must be untouched for a modifiesStock=false item");
-    }
-
-    @Test
-    void providerNoteWithoutFalseGlpiPendingPersistsProviderFields() {
+    void providerNoteWithReturnableMotivoPersistsProviderFieldsAndStartsReturnPending() {
         int providerId = insertProvider("ACME Corp");
         NoteItemRequest asset = new NoteItemRequest("ASSET", notebookTypeId, dellBrandId, laptopModelId,
-                "SN1", "IT-SN1", null, null, true, null);
+                "SN1", "IT-SN1", null, null);
         CreateNoteRequest req = new CreateNoteRequest("ENTREGA - PROVEEDOR", null, null, null,
                 "Garantía", null, null, null, providerId, "30-12345678-9", "Responsable X", "87654321",
-                null, null, null, null, null, List.of(asset));
+                null, null, List.of(asset));
         int id = notes.createNote(req, "tech1", null, sedeId);
 
         NoteDetailResponse detail = notes.getById(id);
@@ -345,9 +276,9 @@ class NotesRepositoryTest {
     void getFilteredByItemType() {
         int notebookNote = notes.createNote(entregaRequest("ENTREGA"), "tech1", null, sedeId);
         NoteItemRequest cable = new NoteItemRequest("COUNTABLE", cableTypeId, cableBrandId, cableModelId,
-                null, null, 3, null, true, null);
+                null, null, 3, null);
         int cableNote = notes.createNote(new CreateNoteRequest("ENTREGA", "Ana Diaz", "22222222", null,
-                null, null, null, null, null, null, null, null, null, null, null, null, null, List.of(cable)), "tech1", null, sedeId);
+                null, null, null, null, null, null, null, null, null, null, List.of(cable)), "tech1", null, sedeId);
 
         List<NoteSummaryResponse> onlyNotebooks = notes.getFiltered(new NotesFilter(
                 null, null, null, null, null, null, null, List.of("NOTEBOOK"), null, null, null, null));
@@ -363,13 +294,12 @@ class NotesRepositoryTest {
         int hpBrandId = insertBrand("HP");
         int hpLink = link(notebookTypeId, hpBrandId);
         int hpModelId = insertModel(hpLink, "EliteBook 840");
-        catalog.setModelStock(hpModelId, hpBrandId, notebookTypeId, sedeId, 5, "Ajuste de prueba", "tester");
 
         int dellNote = notes.createNote(entregaRequest("ENTREGA"), "tech1", null, sedeId); // NOTEBOOK/DELL
         NoteItemRequest hpAsset = new NoteItemRequest("ASSET", notebookTypeId, hpBrandId, hpModelId,
-                "SNHP1", "IT-SNHP1", null, null, true, null);
+                "SNHP1", "IT-SNHP1", null, null);
         int hpNote = notes.createNote(new CreateNoteRequest("ENTREGA", "Ana Diaz", "22222222", null,
-                null, null, null, null, null, null, null, null, null, null, null, null, null, List.of(hpAsset)), "tech1", null, sedeId);
+                null, null, null, null, null, null, null, null, null, null, List.of(hpAsset)), "tech1", null, sedeId);
 
         List<NoteSummaryResponse> notebookAndDell = notes.getFiltered(new NotesFilter(
                 null, null, null, null, null, null, null, List.of("NOTEBOOK"), List.of("DELL"), null, null, null));
@@ -382,9 +312,9 @@ class NotesRepositoryTest {
     void getFilteredBySyncStatus() {
         int entrega = notes.createNote(entregaRequest("ENTREGA"), "tech1", null, sedeId); // asset -> GLPI PENDING
         NoteItemRequest cable = new NoteItemRequest("COUNTABLE", cableTypeId, cableBrandId, cableModelId,
-                null, null, 2, null, true, null);
+                null, null, 2, null);
         int cableOnly = notes.createNote(new CreateNoteRequest("ENTREGA", "Ana Diaz", "22222222", null,
-                null, null, null, null, null, null, null, null, null, null, null, null, null, List.of(cable)), "tech1", null, sedeId); // GLPI N_A
+                null, null, null, null, null, null, null, null, null, null, List.of(cable)), "tech1", null, sedeId); // GLPI N_A
 
         List<NoteSummaryResponse> pending = notes.getFiltered(new NotesFilter(
                 null, null, null, null, null, null, null, null, null, null, List.of("PENDING"), null));
@@ -425,114 +355,45 @@ class NotesRepositoryTest {
                 .stream().map(NoteSummaryResponse::id).toList());
     }
 
-    // ── Remito de Envío ──────────────────────────────────────────────────────
+    // ── Remito de Envío (M1: single destinationSedeId, no shipping-info/custom-destination split) ─
 
-    private CreateNoteRequest remitoToSede(int shippingInfoId) {
+    private CreateNoteRequest remitoTo(Integer destinationSedeId) {
         NoteItemRequest asset = new NoteItemRequest("ASSET", notebookTypeId, dellBrandId, laptopModelId,
-                "SNRMT1", "IT-SNRMT1", null, null, true, null);
+                "SNRMT1", "IT-SNRMT1", null, null);
         return new CreateNoteRequest("REMITO DE ENVÍO", null, null, null, null, null, null, null,
-                null, null, null, null, null, shippingInfoId, null, null, null, List.of(asset));
-    }
-
-    private CreateNoteRequest remitoToCustom(String label, String address, String recipients) {
-        NoteItemRequest asset = new NoteItemRequest("ASSET", notebookTypeId, dellBrandId, laptopModelId,
-                "SNRMT2", "IT-SNRMT2", null, null, true, null);
-        return new CreateNoteRequest("REMITO DE ENVÍO", null, null, null, null, null, null, null,
-                null, null, null, null, null, null, label, address, recipients, List.of(asset));
-    }
-
-    private int insertShippingInfo(int forSedeId, String label) {
-        jdbc.update("INSERT INTO SEDE_SHIPPING_INFO (sede_id, destination_label, address, recipients) VALUES (?, ?, ?, ?)",
-                forSedeId, label, "Calle 123", "Encargado");
-        return jdbc.queryForObject("SELECT id FROM SEDE_SHIPPING_INFO WHERE sede_id = ? AND deprecated = 0",
-                Integer.class, forSedeId);
+                null, null, null, null, null, destinationSedeId, List.of(asset));
     }
 
     @Test
-    void createRemitoToACatalogSedeLinksTheShippingInfoRow() {
+    void createRemitoToACatalogSedePersistsTheDestination() {
         int destSede = insertSede("Campus Norte");
-        int shippingInfoId = insertShippingInfo(destSede, "Depósito Norte");
 
-        int id = notes.createNote(remitoToSede(shippingInfoId), "tech1", null, sedeId);
+        int id = notes.createNote(remitoTo(destSede), "tech1", null, sedeId);
 
         NoteDetailResponse detail = notes.getById(id);
         assertEquals(destSede, detail.destinationSedeId());
-        assertEquals("Depósito Norte", detail.destinationLabel());
-        assertEquals("Calle 123", detail.destinationAddress());
+        assertEquals("Campus Norte", detail.destinationSedeName());
         Integer rows = jdbc.queryForObject(
-                "SELECT COUNT(*) FROM NOTE_REMITO_SEDE WHERE note_report_id = ?", Integer.class, id);
+                "SELECT COUNT(*) FROM NOTE_REMITO WHERE note_report_id = ?", Integer.class, id);
         assertEquals(1, rows);
     }
 
     @Test
-    void createRemitoWithACustomDestinationStoresTheFreeText() {
-        int id = notes.createNote(remitoToCustom("CAU Aeropuerto", "Terminal 2", "Jefe de CAU"), "tech1", null, sedeId);
-
-        NoteDetailResponse detail = notes.getById(id);
-        assertNull(detail.destinationSedeId());
-        assertEquals("CAU Aeropuerto", detail.destinationLabel());
-        assertEquals("Jefe de CAU", detail.destinationRecipients());
-        Integer rows = jdbc.queryForObject(
-                "SELECT COUNT(*) FROM NOTE_REMITO_OTHER WHERE note_report_id = ?", Integer.class, id);
-        assertEquals(1, rows);
-    }
-
-    @Test
-    void createRemitoWithoutAnyDestinationIsRejected() {
+    void createRemitoWithoutADestinationIsRejected() {
         ApiException ex = assertThrows(ApiException.class,
-                () -> notes.createNote(remitoToCustom(null, null, null), "tech1", null, sedeId));
+                () -> notes.createNote(remitoTo(null), "tech1", null, sedeId));
         assertEquals("REMITO_DESTINATION_REQUIRED", ex.getCode());
     }
 
     @Test
-    void approvingARemitoToACatalogSedeMovesStockFromSourceToDestination() {
+    void remitoDestinationSedeNameShowsAsTheRecipientInTheSummaryList() {
         int destSede = insertSede("Campus Norte");
-        int shippingInfoId = insertShippingInfo(destSede, "Depósito Norte");
-        int id = notes.createNote(remitoToSede(shippingInfoId), "tech1", null, sedeId);
-
-        notes.updateApprovalStatus(id, "APPROVED", null, "tester");
-
-        assertEquals(4, catalog.getModelStock(laptopModelId, dellBrandId, notebookTypeId, sedeId), "source Sede decremented");
-        assertEquals(1, catalog.getModelStock(laptopModelId, dellBrandId, notebookTypeId, destSede), "destination Sede incremented");
-        // idempotent — re-approving never double-moves
-        notes.updateApprovalStatus(id, "APPROVED", null, "tester");
-        assertEquals(4, catalog.getModelStock(laptopModelId, dellBrandId, notebookTypeId, sedeId));
-        assertEquals(1, catalog.getModelStock(laptopModelId, dellBrandId, notebookTypeId, destSede));
-    }
-
-    @Test
-    void approvingARemitoToACustomDestinationOnlyDecrementsTheSource() {
-        int id = notes.createNote(remitoToCustom("CAU Aeropuerto", null, null), "tech1", null, sedeId);
-
-        notes.updateApprovalStatus(id, "APPROVED", null, "tester");
-
-        assertEquals(4, catalog.getModelStock(laptopModelId, dellBrandId, notebookTypeId, sedeId));
-    }
-
-    @Test
-    void approvingARemitoWithInsufficientSourceStockThrowsAndMovesNothing() {
-        int destSede = insertSede("Campus Norte");
-        int shippingInfoId = insertShippingInfo(destSede, "Depósito Norte");
-        catalog.setModelStock(laptopModelId, dellBrandId, notebookTypeId, sedeId, 0, "Vaciar", "tester");
-        int id = notes.createNote(remitoToSede(shippingInfoId), "tech1", null, sedeId);
-
-        ApiException ex = assertThrows(ApiException.class,
-                () -> notes.updateApprovalStatus(id, "APPROVED", null, "tester"));
-        assertEquals("STOCK_WOULD_GO_NEGATIVE", ex.getCode());
-        assertEquals(0, catalog.getModelStock(laptopModelId, dellBrandId, notebookTypeId, destSede));
-    }
-
-    @Test
-    void remitoDestinationLabelShowsAsTheRecipientInTheSummaryList() {
-        int destSede = insertSede("Campus Norte");
-        int shippingInfoId = insertShippingInfo(destSede, "Depósito Norte");
-        int id = notes.createNote(remitoToSede(shippingInfoId), "tech1", null, sedeId);
+        int id = notes.createNote(remitoTo(destSede), "tech1", null, sedeId);
 
         NoteSummaryResponse row = notes.getFiltered(new NotesFilter(
                 List.of("REMITO DE ENVÍO"), null, null, null, null, null, null, null, null, null, null, null))
                 .stream().filter(r -> r.id() == id).findFirst().orElseThrow();
-        assertEquals("Depósito Norte", row.recipient());
-        assertEquals("Depósito Norte", row.destinationLabel());
+        assertEquals("Campus Norte", row.recipient());
     }
 
     @Test

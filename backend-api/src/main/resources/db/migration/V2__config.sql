@@ -8,8 +8,8 @@
 -- Single-row APP_CONFIG (id is CHECK'd to 1) rather than a generic key-value table: v1 is
 -- single-org (D1b — instance-per-org, not multi-tenant), so there is exactly one configuration,
 -- and typed columns are easier to read/validate than a key-value blob for that shape.
--- smtp_password_encrypted is AES-256/GCM ciphertext (see EncryptionService) — never returned by
--- GET /config, write-only via PUT, same convention as the desktop app's own SettingsController.
+-- SMTP columns removed in M1 (GLPI-adapter strip) — email notifications are out of scope for this
+-- middleware.
 
 IF OBJECT_ID('dbo.APP_CONFIG', 'U') IS NULL
 BEGIN
@@ -18,10 +18,6 @@ BEGIN
         af_enabled               INT NOT NULL DEFAULT 1,
         af_prefix                NVARCHAR(50) NOT NULL DEFAULT 'IT',
         af_separator             NVARCHAR(10) NOT NULL DEFAULT '-',
-        smtp_host                NVARCHAR(255),
-        smtp_port                INT,
-        smtp_sender_address      NVARCHAR(255),
-        smtp_password_encrypted  NVARCHAR(500),
         note_item_limit          INT NOT NULL DEFAULT 50,
         failure_trigger_motivo   NVARCHAR(100) NOT NULL DEFAULT 'Falla',
         generic_label            NVARCHAR(255) NOT NULL DEFAULT 'Genérico / Otro'

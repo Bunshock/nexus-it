@@ -2,11 +2,12 @@ package com.bunshock.note_app_for_it.notes.dto;
 
 import java.util.List;
 
+/** {@code modifiesStock}/{@code modifiesStockReason} removed in M1 along with MODEL_STOCK. */
 public record NoteItemResponse(
         int id, int typeId, int brandId, int modelId,
         String typeName, String brandName, String modelName,
         String serialNumber, String af, int quantity,
-        String observations, boolean modifiesStock, String modifiesStockReason,
+        String observations,
         boolean asset,
         String glpiStatus, String glpiRejectionReason, String glpiStatusUpdatedAt,
         String glpiReturnStatus, String glpiReturnRejectionReason, String glpiReturnStatusUpdatedAt,

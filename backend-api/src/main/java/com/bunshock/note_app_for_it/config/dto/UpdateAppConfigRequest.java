@@ -8,21 +8,16 @@ import jakarta.validation.constraints.NotNull;
 import java.util.List;
 
 /**
- * PUT /config body — replaces the whole document (real REST PUT semantics), except
- * {@code smtpPassword}: null or blank means "leave the stored value unchanged" (write-only field
- * convention already used throughout the desktop app for secrets — e.g. the remote-DB password
- * field). {@code genericLabel} IS settable here (renames the actual "Genérico / Otro" BRAND row
- * the next time it's touched — see ConfigRepository); {@code genericBrandId}/{@code genericModelId}
- * are NOT settable — they're derived, not stored.
+ * PUT /config body — replaces the whole document (real REST PUT semantics). SMTP fields removed
+ * in M1 (GLPI-adapter strip). {@code genericLabel} IS settable here (renames the actual
+ * "Genérico / Otro" BRAND row the next time it's touched — see ConfigRepository);
+ * {@code genericBrandId}/{@code genericModelId} are NOT settable — they're derived, not stored.
+ * Now flat SUPERADMIN-gated (see ConfigController) rather than per-field-group.
  */
 public record UpdateAppConfigRequest(
         boolean afEnabled,
         @NotBlank String afPrefix,
         @NotBlank String afSeparator,
-        String smtpHost,
-        Integer smtpPort,
-        String smtpSenderAddress,
-        String smtpPassword,
         @Min(1) int noteItemLimit,
         @NotBlank String failureTriggerMotivo,
         @NotBlank String genericLabel,

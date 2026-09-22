@@ -3,21 +3,17 @@
 -- matter for the same reason documented there (this @Sql script re-runs before every test method
 -- against one persistent embedded H2 instance).
 
+-- SMTP columns removed (M1, GLPI-adapter strip).
 CREATE TABLE IF NOT EXISTS APP_CONFIG (
     id                      INT NOT NULL PRIMARY KEY,
     af_enabled              INT NOT NULL DEFAULT 1,
     af_prefix               VARCHAR(50) NOT NULL DEFAULT 'IT',
     af_separator            VARCHAR(10) NOT NULL DEFAULT '-',
-    smtp_host               VARCHAR(255),
-    smtp_port               INT,
-    smtp_sender_address     VARCHAR(255),
-    smtp_password_encrypted VARCHAR(500),
     note_item_limit         INT NOT NULL DEFAULT 50,
     failure_trigger_motivo  VARCHAR(100) NOT NULL DEFAULT 'Falla',
     generic_label           VARCHAR(255) NOT NULL DEFAULT 'Genérico / Otro'
 );
-MERGE INTO APP_CONFIG (id, smtp_host, smtp_port, smtp_sender_address)
-    KEY (id) VALUES (1, 'smtp.example.org', 587, 'notas@example.org');
+MERGE INTO APP_CONFIG (id) KEY (id) VALUES (1);
 
 CREATE TABLE IF NOT EXISTS APP_CONFIG_MOTIVO_OPTION (
     id         INT AUTO_INCREMENT PRIMARY KEY,

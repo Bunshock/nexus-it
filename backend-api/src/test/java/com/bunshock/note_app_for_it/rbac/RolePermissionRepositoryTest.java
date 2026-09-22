@@ -42,10 +42,10 @@ class RolePermissionRepositoryTest {
     @Test
     void returnsExactlyTheGrantedPermissionsForARole() {
         grant("ADMIN", "APPROVE_NOTES");
-        grant("ADMIN", "MANAGE_STOCK");
+        grant("ADMIN", "SYNC_EXTERNAL");
         grant("USER", "VALIDATE_RETURNS");
 
-        assertEquals(Set.of(Permission.APPROVE_NOTES, Permission.MANAGE_STOCK),
+        assertEquals(Set.of(Permission.APPROVE_NOTES, Permission.SYNC_EXTERNAL),
                 repository.getPermissionsForRole("ADMIN"));
         assertEquals(Set.of(Permission.VALIDATE_RETURNS),
                 repository.getPermissionsForRole("USER"));

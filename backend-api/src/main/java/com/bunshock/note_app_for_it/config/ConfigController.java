@@ -6,14 +6,20 @@ import com.bunshock.note_app_for_it.common.security.CurrentUser;
 import com.bunshock.note_app_for_it.common.web.ApiException;
 import com.bunshock.note_app_for_it.config.dto.AppConfigResponse;
 import com.bunshock.note_app_for_it.config.dto.UpdateAppConfigRequest;
-import com.bunshock.note_app_for_it.rbac.Permission;
-import com.bunshock.note_app_for_it.rbac.RolePermissionRepository;
 import jakarta.validation.Valid;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
 /**
- * §8 — single-org config (D1b). See {@link ConfigRepository#updateConfig} for the per-field-group
- * permission gating this controller resolves before calling it.
+ * §8 — single-org config (D1b).
+ *
+ * <p><b>M1 (GLPI-adapter strip):</b> {@code PUT} was per-field-group permission-gated
+ * ({@code EDIT_AF_FORMAT_CONFIG}/{@code EDIT_SMTP_CONFIG}) — both permissions are gone along with
+ * the rest of the trimmed 12→4 {@code Permission} enum, and SMTP itself was removed from
+ * {@code APP_CONFIG} entirely. Config editing is now flat SUPERADMIN-gated, per the plan.
  */
 @RestController
 @RequestMapping("/api/v1/config")
@@ -22,14 +28,11 @@ public class ConfigController {
     private final ConfigRepository config;
     private final CatalogRepository catalog;
     private final CurrentUser currentUser;
-    private final RolePermissionRepository rolePermissions;
 
-    public ConfigController(ConfigRepository config, CatalogRepository catalog, CurrentUser currentUser,
-            RolePermissionRepository rolePermissions) {
+    public ConfigController(ConfigRepository config, CatalogRepository catalog, CurrentUser currentUser) {
         this.config = config;
         this.catalog = catalog;
         this.currentUser = currentUser;
-        this.rolePermissions = rolePermissions;
     }
 
     @GetMapping
@@ -43,15 +46,10 @@ public class ConfigController {
     @PutMapping
     public AppConfigResponse update(@Valid @RequestBody UpdateAppConfigRequest request) {
         CallerPrincipal caller = currentUser.require();
-        var permissions = rolePermissions.getPermissionsForRole(caller.role());
-        boolean canEditGeneral = permissions.contains(Permission.EDIT_AF_FORMAT_CONFIG);
-        boolean canEditSmtp = permissions.contains(Permission.EDIT_SMTP_CONFIG);
-        if (!canEditGeneral && !canEditSmtp) {
-            // Neither group grantable — nothing this caller is allowed to change; fail loud
-            // rather than silently accepting a no-op PUT.
+        if (!caller.isSuperadmin()) {
             throw ApiException.forbidden("PERMISSION_DENIED", "No tiene permiso para modificar la configuración.");
         }
-        config.updateConfig(request, canEditGeneral, canEditSmtp, caller.username());
+        config.updateConfig(request, caller.username());
         return get();
     }
 }
