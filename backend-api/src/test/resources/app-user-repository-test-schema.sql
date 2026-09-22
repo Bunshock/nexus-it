@@ -14,11 +14,12 @@ CREATE TABLE IF NOT EXISTS SEDE (
     deprecated INT NOT NULL DEFAULT 0
 );
 
+-- sede_id: plain VARCHAR, not a SEDE(id) FK — see V3__app_user_sede_external_id.sql.
 CREATE TABLE IF NOT EXISTS APP_USER (
     id                 INT AUTO_INCREMENT PRIMARY KEY,
     username           VARCHAR(100) NOT NULL UNIQUE,
     role_id            INT NOT NULL REFERENCES ROLE(id),
-    sede_id            INT REFERENCES SEDE(id),
+    sede_id            VARCHAR(255),
     bypass_group_check INT NOT NULL DEFAULT 0
 );
 

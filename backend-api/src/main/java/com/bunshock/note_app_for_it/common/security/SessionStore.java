@@ -37,7 +37,7 @@ public class SessionStore {
 
     private static final Logger log = LoggerFactory.getLogger(SessionStore.class);
 
-    private record Session(String username, String role, Integer sedeId, String fullName, String dni,
+    private record Session(String username, String role, String sedeId, String fullName, String dni,
             Instant createdAt, Instant lastSeenAt) {
         Session touch(Instant now) {
             return new Session(username, role, sedeId, fullName, dni, createdAt, now);
@@ -75,11 +75,11 @@ public class SessionStore {
     }
 
     /** Authorization-only session (tests, internal) — profile fields default to the username. */
-    public String create(String username, String role, Integer sedeId) {
+    public String create(String username, String role, String sedeId) {
         return create(username, role, sedeId, username, null);
     }
 
-    public String create(String username, String role, Integer sedeId, String fullName, String dni) {
+    public String create(String username, String role, String sedeId, String fullName, String dni) {
         Instant now = clock.instant();
         if (sessions.size() >= maxSessions) {
             sweep();

@@ -12,10 +12,13 @@ import java.util.Optional;
 @Repository
 public class AppUserRepository {
 
+    // No JOIN to SEDE anymore: sede_id is now an external id (a GLPI Location id, or a placeholder
+    // pending M3), a different id space from the local SEDE mirror's own int ids — see
+    // V3__app_user_sede_external_id.sql. sede_name has no local source until M3 wires up a real
+    // catalog-backed lookup, so mapRow always leaves it null.
     private static final String SELECT_BASE =
-            "SELECT u.username, r.name AS role, u.sede_id, s.name AS sede_name, u.bypass_group_check " +
-            "FROM APP_USER u JOIN ROLE r ON r.id = u.role_id " +
-            "LEFT JOIN SEDE s ON s.id = u.sede_id ";
+            "SELECT u.username, r.name AS role, u.sede_id, u.bypass_group_check " +
+            "FROM APP_USER u JOIN ROLE r ON r.id = u.role_id ";
 
     private final JdbcTemplate jdbc;
 
@@ -41,14 +44,10 @@ public class AppUserRepository {
     }
 
     private static AppUserRecord mapRow(ResultSet rs, int rowNum) throws SQLException {
-        // wasNull() reflects only the immediately-preceding getter call, so the null check
-        // on sede_id must happen right here — not inline inside the record constructor
-        // below, where a later getString()/getInt() call would silently overwrite it.
         String username = rs.getString("username");
         String role = rs.getString("role");
-        int sedeIdRaw = rs.getInt("sede_id");
-        Integer sedeId = rs.wasNull() ? null : sedeIdRaw;
-        String sedeName = rs.getString("sede_name"); // null when sede_id is null (LEFT JOIN)
+        String sedeId = rs.getString("sede_id"); // null natively when unset, no wasNull() needed
+        String sedeName = null; // TODO(M3): resolve via the GLPI-backed catalog once it exists
         boolean bypassGroupCheck = rs.getInt("bypass_group_check") != 0;
         return new AppUserRecord(username, role, sedeId, sedeName, bypassGroupCheck);
     }

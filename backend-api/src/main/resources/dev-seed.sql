@@ -21,10 +21,14 @@ MERGE INTO SEDE (id, name) KEY (id) VALUES (1, 'Casa Central'), (2, 'Sucursal No
 
 -- ── users ────────────────────────────────────────────────────────────────────
 -- Pass one of these usernames to POST /api/v1/auth/dev-login.
+-- sede_id is now a placeholder external-id string, not a SEDE(id) FK — '1' here just happens to
+-- match the seeded local SEDE row's own id (Sede-scoped approve/sync/validate-return dev testing
+-- needs NOTE_REPORT.sede_id, still local-int, to string-match this). Not a real GLPI Location id;
+-- replace once M3 wires up real ones.
 MERGE INTO APP_USER (id, username, role_id, sede_id, bypass_group_check) KEY (id) VALUES
-    (1, 'dev.superadmin', 3, 1, 0),
-    (2, 'dev.admin',      2, 1, 0),
-    (3, 'dev.user',       1, 1, 0);
+    (1, 'dev.superadmin', 3, '1', 0),
+    (2, 'dev.admin',      2, '1', 0),
+    (3, 'dev.user',       1, '1', 0);
 
 -- ── permission grants ────────────────────────────────────────────────────────
 -- SUPERADMIN: every Permission. ADMIN: every Permission except CREATE_ASSETS (SUPERADMIN-only —

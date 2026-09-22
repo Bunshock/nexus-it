@@ -13,8 +13,8 @@ public record LoginResponse(
         Instant expiresAt,
         String username,
         String role,
-        Integer sedeId,
-        String sedeName, // nullable — no Sede assigned
+        String sedeId, // external id (GLPI Location, or a placeholder pending M3), nullable
+        String sedeName, // nullable — no Sede assigned, or not resolvable locally until M3
         String fullName, // AD full name (username fallback); any cosmetic greeting override is client-local
         String dni,      // nullable — directory unreachable at login, or no DNI on record
         List<String> permissions) {

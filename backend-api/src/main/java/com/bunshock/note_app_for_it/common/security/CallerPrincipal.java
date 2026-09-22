@@ -5,7 +5,9 @@ package com.bunshock.note_app_for_it.common.security;
  * request — backend-contract.md §2.5's identity invariant: the acting user
  * is always the token subject, never a request parameter.
  *
- * <p>{@code username}/{@code role}/{@code sedeId} drive authorization.
+ * <p>{@code username}/{@code role}/{@code sedeId} drive authorization. {@code sedeId} is an
+ * external id (a GLPI Location id, or a placeholder pending M3) — see
+ * {@code AppUserRecord}/{@code V3__app_user_sede_external_id.sql}.
  * {@code fullName}/{@code dni} are the Active Directory identity snapshot taken
  * at login (§7.6 / the desktop app's {@code TechnicianSessionService}): the real
  * AD full name + DNI, or the username / {@code null} when the directory was
@@ -14,11 +16,11 @@ package com.bunshock.note_app_for_it.common.security;
  * name to greet with — but any <em>cosmetic</em> greeting override ("call me X")
  * is a desktop-client-local preference and never reaches the middleware.
  */
-public record CallerPrincipal(String username, String role, Integer sedeId,
+public record CallerPrincipal(String username, String role, String sedeId,
         String fullName, String dni) {
 
     /** Authorization-only construction (tests, internal call sites that don't carry a profile). */
-    public CallerPrincipal(String username, String role, Integer sedeId) {
+    public CallerPrincipal(String username, String role, String sedeId) {
         this(username, role, sedeId, username, null);
     }
 

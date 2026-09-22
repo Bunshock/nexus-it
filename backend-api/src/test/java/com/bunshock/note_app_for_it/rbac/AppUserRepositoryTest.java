@@ -14,9 +14,10 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Real JDBC test against embedded H2 (app-user-repository-test-schema.sql — H2-native stand-in,
- * same precedent as the other *RepositoryTest classes). {@link AppUserRepository}'s {@code APP_USER
- * JOIN ROLE LEFT JOIN SEDE} query had no direct coverage before the login/{@code /me} responses
- * started carrying {@code sedeName}.
+ * same precedent as the other *RepositoryTest classes). {@code sede_id} is a plain external-id
+ * String now (see {@code V3__app_user_sede_external_id.sql}), not a {@code SEDE(id)} FK — so
+ * {@code sedeName} is always null here; the local SEDE table only exists in this schema for other
+ * fixtures, not for resolving it.
  */
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 @JdbcTest
@@ -35,27 +36,21 @@ class AppUserRepositoryTest {
         repository = new AppUserRepository(jdbc);
     }
 
-    private int insertSede(String name) {
-        jdbc.update("INSERT INTO SEDE (name) VALUES (?)", name);
-        return jdbc.queryForObject("SELECT id FROM SEDE WHERE name = ?", Integer.class, name);
-    }
-
-    private void insertUser(String username, String role, Integer sedeId, boolean bypass) {
+    private void insertUser(String username, String role, String sedeId, boolean bypass) {
         jdbc.update("INSERT INTO APP_USER (username, role_id, sede_id, bypass_group_check) "
                 + "SELECT ?, id, ?, ? FROM ROLE WHERE name = ?", username, sedeId, bypass ? 1 : 0, role);
     }
 
     @Test
-    void resolvesRoleNameAndSedeName() {
-        int casaCentral = insertSede("Casa Central");
-        insertUser("jperez", "ADMIN", casaCentral, false);
+    void resolvesRoleAndExternalSedeIdButNeverALocalSedeName() {
+        insertUser("jperez", "ADMIN", "glpi-loc-42", false);
 
         AppUserRecord u = repository.findByUsername("jperez").orElseThrow();
 
         assertEquals("jperez", u.username());
         assertEquals("ADMIN", u.role());
-        assertEquals(casaCentral, u.sedeId());
-        assertEquals("Casa Central", u.sedeName());
+        assertEquals("glpi-loc-42", u.sedeId());
+        assertNull(u.sedeName());
         assertFalse(u.bypassGroupCheck());
     }
 

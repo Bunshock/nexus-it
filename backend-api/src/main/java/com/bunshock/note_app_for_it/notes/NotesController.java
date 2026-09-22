@@ -55,7 +55,11 @@ public class NotesController {
         // TODO(Phase B / AD integration): technicianName/Dni are placeholders (session username,
         // no DNI) until the middleware has a real directory-derived profile — see MeController's
         // matching TODO.
-        int id = notes.createNote(request, caller.username(), null, caller.sedeId());
+        // TODO(M3): caller.sedeId() is now an external id (String) but NOTE_REPORT.sede_id is
+        // still a local SEDE(id) int until M3 rewires the catalog onto GLPI — see
+        // V3__app_user_sede_external_id.sql. Bridged here with a numeric parse; once a real,
+        // non-numeric GLPI Location id is assigned this will correctly refuse until M3 lands.
+        int id = notes.createNote(request, caller.username(), null, localSedeId(caller.sedeId()));
         NoteDetailResponse created = notes.getById(id);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(new CreateNoteResponse(created.id(), created.approvalStatus(), created.createdAt()));
@@ -165,5 +169,21 @@ public class NotesController {
             notes.allocateCountableReturn(itemId, "LOST", request.quantity(), request.reason(), caller.username());
         }
         return notes.getById(noteId);
+    }
+
+    /**
+     * Bridges the caller's external {@code sedeId} (String) onto the local
+     * {@code NOTE_REPORT.sede_id} int column, which still points at the local SEDE mirror until
+     * M3 rewires the catalog onto GLPI. Fails loud (409, not 500) rather than silently truncating
+     * once a real, non-numeric GLPI Location id is actually assigned to an account.
+     */
+    private static int localSedeId(String sedeId) {
+        try {
+            return Integer.parseInt(sedeId);
+        } catch (NumberFormatException e) {
+            throw ApiException.conflict("SEDE_NOT_LOCAL",
+                    "La Sede asignada a este usuario todavía no está vinculada a la base local. "
+                            + "Contacte a un administrador.");
+        }
     }
 }

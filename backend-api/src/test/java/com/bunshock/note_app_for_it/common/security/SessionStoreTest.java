@@ -20,13 +20,13 @@ class SessionStoreTest {
         Instant t0 = Instant.parse("2026-09-04T10:00:00Z");
         SessionStore store = new SessionStore(120, 720, fixedClockAt(t0));
 
-        String token = store.create("jperez", "ADMIN", 3);
+        String token = store.create("jperez", "ADMIN", "3");
         Optional<CallerPrincipal> caller = store.validateAndTouch(token);
 
         assertTrue(caller.isPresent());
         assertEquals("jperez", caller.get().username());
         assertEquals("ADMIN", caller.get().role());
-        assertEquals(3, caller.get().sedeId());
+        assertEquals("3", caller.get().sedeId());
     }
 
     @Test

@@ -35,13 +35,20 @@ public class PermissionGuard {
      * never matches for a plain ADMIN (an unset Sede is a fail-safe non-match, same as
      * the desktop app's {@code noteSedeIdOrNull()} convention), even if the caller's own
      * Sede also happens to be unset.
+     *
+     * <p>{@code targetSedeId} is still a local {@code NOTE_REPORT.sede_id} int (M3 hasn't
+     * converted it yet — see {@code NotesRepository}), while {@code caller.sedeId()} is now a
+     * String (external id, or a placeholder pending M3 — see
+     * {@code V3__app_user_sede_external_id.sql}). Compared by string representation so this
+     * keeps working unchanged once M3 makes both sides String.
      */
     public void requireSedeScoped(CallerPrincipal caller, Permission permission, Integer targetSedeId) {
         require(caller, permission);
         if (caller.isSuperadmin()) {
             return;
         }
-        if (targetSedeId == null || caller.sedeId() == null || !targetSedeId.equals(caller.sedeId())) {
+        if (targetSedeId == null || caller.sedeId() == null
+                || !targetSedeId.toString().equals(caller.sedeId())) {
             throw new ApiException(HttpStatus.FORBIDDEN, "SEDE_MISMATCH",
                     "Esta nota pertenece a otra Sede.");
         }

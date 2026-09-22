@@ -36,11 +36,14 @@ CREATE TABLE IF NOT EXISTS SEDE (
     deprecated INT NOT NULL DEFAULT 0
 );
 
+-- sede_id is a plain VARCHAR, not a SEDE(id) FK — it now holds an external GLPI Location id (or,
+-- until M3 rewires the catalog onto GLPI, a placeholder stand-in for one), a separate id space
+-- from the local SEDE mirror below. See db/migration/V3__app_user_sede_external_id.sql.
 CREATE TABLE IF NOT EXISTS APP_USER (
     id                   INT IDENTITY(1,1) PRIMARY KEY,
     username             VARCHAR(100) NOT NULL UNIQUE,
     role_id              INT NOT NULL REFERENCES ROLE(id),
-    sede_id              INT REFERENCES SEDE(id),
+    sede_id              VARCHAR(255),
     bypass_group_check   INT NOT NULL DEFAULT 0,
     glpi_token_encrypted VARCHAR(500)
 );

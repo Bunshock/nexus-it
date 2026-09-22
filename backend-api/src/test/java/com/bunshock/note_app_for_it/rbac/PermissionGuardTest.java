@@ -31,7 +31,7 @@ class PermissionGuardTest {
     void requireSucceedsWhenTheRoleHasThePermission() {
         when(rolePermissions.getPermissionsForRole("ADMIN"))
                 .thenReturn(Set.of(Permission.APPROVE_NOTES));
-        CallerPrincipal caller = new CallerPrincipal("jperez", "ADMIN", 1);
+        CallerPrincipal caller = new CallerPrincipal("jperez", "ADMIN", "1");
 
         assertDoesNotThrow(() -> guard.require(caller, Permission.APPROVE_NOTES));
     }
@@ -39,7 +39,7 @@ class PermissionGuardTest {
     @Test
     void requireThrows403WhenTheRoleLacksThePermission_denyByDefault() {
         when(rolePermissions.getPermissionsForRole("USER")).thenReturn(EnumSet.noneOf(Permission.class));
-        CallerPrincipal caller = new CallerPrincipal("jperez", "USER", 1);
+        CallerPrincipal caller = new CallerPrincipal("jperez", "USER", "1");
 
         ApiException ex = assertThrows(ApiException.class,
                 () -> guard.require(caller, Permission.APPROVE_NOTES));
@@ -49,7 +49,7 @@ class PermissionGuardTest {
     @Test
     void adminScopedToOwnSedeIsAllowedOnAMatchingNote() {
         when(rolePermissions.getPermissionsForRole("ADMIN")).thenReturn(Set.of(Permission.APPROVE_NOTES));
-        CallerPrincipal admin = new CallerPrincipal("jperez", "ADMIN", 3);
+        CallerPrincipal admin = new CallerPrincipal("jperez", "ADMIN", "3");
 
         assertDoesNotThrow(() -> guard.requireSedeScoped(admin, Permission.APPROVE_NOTES, 3));
     }
@@ -57,7 +57,7 @@ class PermissionGuardTest {
     @Test
     void adminScopedToOwnSedeIsDeniedOnAnotherSedesNote_H2() {
         when(rolePermissions.getPermissionsForRole("ADMIN")).thenReturn(Set.of(Permission.APPROVE_NOTES));
-        CallerPrincipal admin = new CallerPrincipal("jperez", "ADMIN", 3);
+        CallerPrincipal admin = new CallerPrincipal("jperez", "ADMIN", "3");
 
         ApiException ex = assertThrows(ApiException.class,
                 () -> guard.requireSedeScoped(admin, Permission.APPROVE_NOTES, 99));
@@ -67,7 +67,7 @@ class PermissionGuardTest {
     @Test
     void superadminBypassesTheSedeFence_H3() {
         when(rolePermissions.getPermissionsForRole("SUPERADMIN")).thenReturn(Set.of(Permission.APPROVE_NOTES));
-        CallerPrincipal superadmin = new CallerPrincipal("mgarcia", "SUPERADMIN", 3);
+        CallerPrincipal superadmin = new CallerPrincipal("mgarcia", "SUPERADMIN", "3");
 
         assertDoesNotThrow(() -> guard.requireSedeScoped(superadmin, Permission.APPROVE_NOTES, 99));
     }
@@ -75,7 +75,7 @@ class PermissionGuardTest {
     @Test
     void aNullTargetSedeNeverMatchesForAPlainAdmin_failSafe() {
         when(rolePermissions.getPermissionsForRole("ADMIN")).thenReturn(Set.of(Permission.APPROVE_NOTES));
-        CallerPrincipal admin = new CallerPrincipal("jperez", "ADMIN", 3);
+        CallerPrincipal admin = new CallerPrincipal("jperez", "ADMIN", "3");
 
         assertThrows(ApiException.class,
                 () -> guard.requireSedeScoped(admin, Permission.APPROVE_NOTES, null));

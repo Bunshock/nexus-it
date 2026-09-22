@@ -39,7 +39,7 @@ class StatusControllerTest {
     void setUp() {
         controller = new StatusController(jdbc, adApiClient, directoryProperties, new CurrentUser());
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
-                new CallerPrincipal("tester", "USER", 1), null, List.of()));
+                new CallerPrincipal("tester", "USER", "1"), null, List.of()));
     }
 
     @AfterEach
