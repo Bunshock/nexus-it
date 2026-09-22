@@ -14,7 +14,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 /**
- * §6 — read-only. No dedicated {@code VIEW_AUDIT} permission exists in the ported 12-value
+ * §6 — read-only. No dedicated {@code VIEW_AUDIT} permission exists in the (post-strip, 4-value)
  * {@code Permission} enum (audit reading was never an in-app UI feature in the desktop app's own
  * history), so this gates on role directly rather than a permission.
  *
